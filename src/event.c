@@ -113,7 +113,7 @@ void init_events() {
 
   // add our proof of concept command
   add_cmd("devent", NULL, cmd_devent, 0, POS_SLEEPING, POS_FLYING,
-	  LEVEL_ADMIN, TRUE, FALSE);
+	  "admin", TRUE, FALSE);
 
   // make sure all events involving the object/char are cancelled when
   // either is extracted from the game

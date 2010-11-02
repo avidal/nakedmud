@@ -13,7 +13,8 @@
 // This must be put at the top of mud.h so the rest of the MUD knows that
 // we've got the scripts module installed
 // #define MODULE_SCRIPTS
-//
+
+
 
 //*****************************************************************************
 //                            SCRIPT DOCUMENTATION
@@ -140,10 +141,9 @@
 //   Description:
 //     Gods can use scrun to run a script of this type
 //   Arguments:
-//     The Arguments to be passed to the script
+//     The user groups allowed to run the script
 //   Numeric Arguments:
-//     Argument is the minimum level of a person who is allowed to 
-//     run this this script
+//     None
 //   Works with:
 //     mobiles (gods)
 //   Parameters:

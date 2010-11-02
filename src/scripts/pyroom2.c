@@ -48,19 +48,22 @@ typedef struct {
 //*****************************************************************************
 // allocation, deallocation, initialization, and comparison
 //*****************************************************************************
-void PyRoom_dealloc(PyRoom *self) {
+static void
+PyRoom_dealloc(PyRoom *self) {
   self->ob_type->tp_free((PyObject*)self);
 }
 
-PyObject *PyRoom_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+static PyObject *
+PyRoom_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
     PyRoom *self;
     self = (PyRoom *)type->tp_alloc(type, 0);
     self->vnum = NOWHERE;
     return (PyObject *)self;
 }
 
-int PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
-  char *kwlist[] = {"vnum", NULL};
+static int
+PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
+  static char *kwlist[] = {"vnum", NULL};
   int vnum = NOWHERE;
 
   // get the vnum
@@ -81,7 +84,8 @@ int PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
   return 0;
 }
 
-int PyRoom_compare(PyRoom *room1, PyRoom *room2) {
+static int
+PyRoom_compare(PyRoom *room1, PyRoom *room2) {
   if(room1->vnum == room2->vnum)
     return 0;
   else if(room1->vnum < room2->vnum)
@@ -95,14 +99,16 @@ int PyRoom_compare(PyRoom *room1, PyRoom *room2) {
 //*****************************************************************************
 // getters and setters for the Room class
 //*****************************************************************************
-PyObject *PyRoom_getvnum(PyRoom *self, void *closure) {
-  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+static PyObject *
+PyRoom_getvnum(PyRoom *self, void *closure) {
+  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
   if(room != NULL) return Py_BuildValue("i", roomGetVnum(room));
   else             return NULL;
 }
 
-PyObject *PyRoom_getchars(PyRoom *self, PyObject *args) {
-  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+static PyObject *
+PyRoom_getchars(PyRoom *self, PyObject *args) {
+  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
   if(room == NULL)
     return NULL;
   else {
@@ -118,8 +124,9 @@ PyObject *PyRoom_getchars(PyRoom *self, PyObject *args) {
   }
 }
 
-PyObject *PyRoom_getobjs(PyRoom *self, PyObject *args) {
-  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+static PyObject *
+PyRoom_getobjs(PyRoom *self, PyObject *args) {
+  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
   if(room == NULL)
     return NULL;
   else {
@@ -143,7 +150,8 @@ PyObject *PyRoom_getobjs(PyRoom *self, PyObject *args) {
 
 //
 // Send a newline-tagged message to everyone in the room
-PyObject *PyRoom_send(PyRoom *self, PyObject *value) {
+static PyObject *
+PyRoom_send(PyRoom *self, PyObject *value) {
   char *mssg = NULL;
   if (!PyArg_ParseTuple(value, "s", &mssg)) {
     PyErr_Format(PyExc_TypeError, 
@@ -151,7 +159,7 @@ PyObject *PyRoom_send(PyRoom *self, PyObject *value) {
     return NULL;
   }
 
-  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
   if(room) {
     send_to_list(roomGetCharacters(room), "%s\r\n", mssg);
     return Py_BuildValue("i", 1);
@@ -167,7 +175,8 @@ PyObject *PyRoom_send(PyRoom *self, PyObject *value) {
 
 //
 // close a door in the specified direction
-PyObject *PyRoom_close(PyRoom *self, PyObject *value) {
+static PyObject *
+PyRoom_close(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
   EXIT_DATA *exit = NULL;
   char *dirname = NULL;
@@ -179,7 +188,7 @@ PyObject *PyRoom_close(PyRoom *self, PyObject *value) {
     return NULL;
   }
 
-  room = PyRoom_AsRoom((PyObject *)self);
+  room = worldGetRoom(gameworld, self->vnum);
   if(room == NULL) {
     PyErr_Format(PyExc_TypeError, 
 		 "Tried to close door in non-existant room, %d.", 
@@ -218,7 +227,8 @@ PyObject *PyRoom_close(PyRoom *self, PyObject *value) {
 
 //
 // lock a door in the specified direction
-PyObject *PyRoom_lock(PyRoom *self, PyObject *value) {
+static PyObject *
+PyRoom_lock(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
   EXIT_DATA *exit = NULL;
   char *dirname = NULL;
@@ -230,7 +240,7 @@ PyObject *PyRoom_lock(PyRoom *self, PyObject *value) {
     return NULL;
   }
 
-  room = PyRoom_AsRoom((PyObject *)self);
+  room = worldGetRoom(gameworld, self->vnum);
   if(room == NULL) {
     PyErr_Format(PyExc_TypeError, 
 		 "Tried to lock door in non-existant room, %d.", 
@@ -276,7 +286,8 @@ PyObject *PyRoom_lock(PyRoom *self, PyObject *value) {
 
 //
 // lock a door in the specified direction
-PyObject *PyRoom_unlock(PyRoom *self, PyObject *value) {
+static PyObject *
+PyRoom_unlock(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
   EXIT_DATA *exit = NULL;
   char *dirname = NULL;
@@ -288,7 +299,7 @@ PyObject *PyRoom_unlock(PyRoom *self, PyObject *value) {
     return NULL;
   }
 
-  room = PyRoom_AsRoom((PyObject *)self);
+  room = worldGetRoom(gameworld, self->vnum);
   if(room == NULL) {
     PyErr_Format(PyExc_TypeError, 
 		 "Tried to unlock door in non-existant room, %d.", 
@@ -333,7 +344,8 @@ PyObject *PyRoom_unlock(PyRoom *self, PyObject *value) {
 
 //
 // close a door in the specified direction
-PyObject *PyRoom_open(PyRoom *self, PyObject *value) {
+static PyObject *
+PyRoom_open(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
   EXIT_DATA *exit = NULL;
   char *dirname = NULL;
@@ -345,7 +357,7 @@ PyObject *PyRoom_open(PyRoom *self, PyObject *value) {
     return NULL;
   }
 
-  room = PyRoom_AsRoom((PyObject *)self);
+  room = worldGetRoom(gameworld, self->vnum);
   if(room == NULL) {
     PyErr_Format(PyExc_TypeError, 
 		 "Tried to open door in non-existant room, %d.", 
@@ -376,7 +388,8 @@ PyObject *PyRoom_open(PyRoom *self, PyObject *value) {
 }
 
 
-PyObject *PyRoom_attach(PyRoom *self, PyObject *args) {  
+static PyObject *
+PyRoom_attach(PyRoom *self, PyObject *args) {  
   long vnum = NOTHING;
 
   // make sure we're getting passed the right type of data
@@ -387,7 +400,7 @@ PyObject *PyRoom_attach(PyRoom *self, PyObject *args) {
   }
 
   // pull out the character and do the attaching
-  ROOM_DATA     *room = PyRoom_AsRoom((PyObject *)self);
+  ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
   SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
   if(room != NULL && script != NULL) {
     scriptSetAdd(roomGetScripts(room), vnum);
@@ -402,7 +415,8 @@ PyObject *PyRoom_attach(PyRoom *self, PyObject *args) {
 }
 
 
-PyObject *PyRoom_detach(PyRoom *self, PyObject *args) {  
+static PyObject *
+PyRoom_detach(PyRoom *self, PyObject *args) {  
   long vnum = NOTHING;
 
   // make sure we're getting passed the right type of data
@@ -413,7 +427,7 @@ PyObject *PyRoom_detach(PyRoom *self, PyObject *args) {
   }
 
   // pull out the character and do the attaching
-  ROOM_DATA     *room = PyRoom_AsRoom((PyObject *)self);
+  ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
   SCRIPT_DATA *script = worldGetScript(gameworld, (int)vnum);
   if(room != NULL && script != NULL) {
     scriptSetRemove(roomGetScripts(room), vnum);
@@ -432,7 +446,7 @@ PyObject *PyRoom_detach(PyRoom *self, PyObject *args) {
 //*****************************************************************************
 // structures to define our methods and classes
 //*****************************************************************************
-PyTypeObject PyRoom_Type = {
+static PyTypeObject PyRoom_Type = {
     PyObject_HEAD_INIT(NULL)
     0,                         /*ob_size*/
     "room.Room",               /*tp_name*/
@@ -474,7 +488,7 @@ PyTypeObject PyRoom_Type = {
     PyRoom_new,                /* tp_new */
 };
 
-PyMethodDef room_module_methods[] = {
+static PyMethodDef room_module_methods[] = {
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -483,6 +497,7 @@ PyMethodDef room_module_methods[] = {
 //*****************************************************************************
 // implementation of pyroom.h
 //*****************************************************************************
+
 void PyRoom_addGetSetter(const char *name, void *g, void *s, const char *doc) {
   // make sure our list of get/setters is created
   if(pyroom_getsetters == NULL) pyroom_getsetters = newList();
@@ -496,6 +511,7 @@ void PyRoom_addGetSetter(const char *name, void *g, void *s, const char *doc) {
   def->closure     = NULL;
   listPut(pyroom_getsetters, def);
 }
+
 
 void PyRoom_addMethod(const char *name, void *f, int flags, const char *doc) {
   // make sure our list of methods is created

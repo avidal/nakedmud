@@ -117,12 +117,25 @@ int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, const char *option){
     olc_display_table(sock, scriptTypeName, NUM_SCRIPTS, 1);
     text_to_buffer(sock, "Pick a script type: ");
     return SCEDIT_TYPE;
-  case '3':
-    text_to_buffer(sock, "Enter new arguments: ");
-    return SCEDIT_ARGS;
   case '5':
     socketStartEditor(sock, script_editor,scriptGetCodeBuffer(script));
     return MENU_NOCHOICE;
+  case '3':
+    switch(scriptGetType(script)) {
+    case SCRIPT_TYPE_SPEECH:
+      text_to_buffer(sock, "Enter speech patterns (comma-separated) "
+		     "that trigger this script: ");
+      return SCEDIT_ARGS;
+    case SCRIPT_TYPE_RUNNABLE:
+      text_to_buffer(sock, "Enter user groups allowed to run this script: ");
+      return SCEDIT_ARGS;
+    default:
+      send_to_socket(sock, 
+		     "This script type does not use string arguments.\r\n"
+		     "Enter choice (Q to quit) : ");
+      return MENU_NOCHOICE;
+    }
+
   case '4':
     switch(scriptGetType(script)) {
       // 0 = triggers always
@@ -135,11 +148,6 @@ int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, const char *option){
 		     "  1 = triggers if the scriptor can see the char\r\n"
 		     "\r\n"
 		     "Enter choice : ");
-      return SCEDIT_NARG;
-
-    case SCRIPT_TYPE_RUNNABLE:
-      send_to_socket(sock,
-		     "Enter the minimum level that can run this script: ");
       return SCEDIT_NARG;
 
     case SCRIPT_TYPE_COMMAND:
@@ -187,10 +195,6 @@ bool scedit_parser (SOCKET_DATA *sock, SCRIPT_DATA *script, int choice,
       // 1 = cancel normal command
     case SCRIPT_TYPE_COMMAND:
       scriptSetNumArg(script, MIN(1, MAX(0, atoi(arg))));
-      break;
-      // narg = minimum level that can run this script
-    case SCRIPT_TYPE_RUNNABLE:
-      scriptSetNumArg(script, MIN(MAX_LEVEL, MAX(0, atoi(arg))));
       break;
     }
     return TRUE;

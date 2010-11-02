@@ -35,6 +35,21 @@
 
 
 //*****************************************************************************
+// setter functions
+//*****************************************************************************
+
+//
+// most everything already has a setter function done up, but because user
+// groups go through a bitvector, we need an extra function to get in and be
+// able to set a character's groups...
+void charSetUserGroups(CHAR_DATA *ch, const char *groups) {
+  bitClear(charGetUserGroups(ch));
+  bitSet(charGetUserGroups(ch), groups);
+}
+
+
+
+//*****************************************************************************
 // local defines, datastructures, functions, and commands
 //*****************************************************************************
 HASHTABLE *char_set_table = NULL;
@@ -100,14 +115,6 @@ void try_set(CHAR_DATA *ch, void *tgt, HASHTABLE *table,
 }
 
 
-//
-// used for setting; make sure the value we're trying to set is in an
-// acceptable range.
-//
-bool isLevel(int level) {
-  return (level >= LEVEL_PLAYER && level <= MAX_LEVEL);
-}
-
 // are we trying to set a value from an argument, or from our notepad?
 #define SET_SUBCMD_SET        0
 #define SET_SUBCMD_SETPAD     1
@@ -159,8 +166,8 @@ COMMAND(cmd_set) {
 		       FIND_SCOPE_ALL | FIND_SCOPE_VISIBLE, FALSE, &found);
 
     if(found == FOUND_CHAR) {
-      if(charGetLevel(ch) <= charGetLevel(tgt) && ch != tgt)
-	send_to_char(ch, "Sorry, %s is too high a level!\r\n", 
+      if(!charHasMoreUserGroups(ch, tgt))
+	send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
 		     see_char_as(ch, tgt));
       else
 	try_set(ch, tgt, char_set_table, field, val);
@@ -196,38 +203,38 @@ void init_set() {
   /************************************************************/
 
   // PLAYER SETS
-  add_set("desc",  LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetDesc, NULL);
-  add_set("rdesc", LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetRdesc,NULL);
-  add_set("name",  LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetName, NULL);
-  add_set("mrdesc",LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetMultiRdesc, NULL);
-  add_set("mname", LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetMultiName, NULL);
-  add_set("keywords",LEVEL_BUILDER,SET_CHAR,SET_TYPE_STRING, charSetKeywords, NULL);
-  add_set("dialog",LEVEL_BUILDER, SET_CHAR, SET_TYPE_INT, charSetDialog,  NULL);
-  add_set("level", LEVEL_ADMIN,   SET_CHAR, SET_TYPE_INT, charSetLevel,isLevel);
-  add_set("race",  LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING,charSetRace,isRace);
+  add_set("desc",     SET_CHAR, SET_TYPE_STRING, charSetDesc,         NULL);
+  add_set("rdesc",    SET_CHAR, SET_TYPE_STRING, charSetRdesc,        NULL);
+  add_set("name",     SET_CHAR, SET_TYPE_STRING, charSetName,         NULL);
+  add_set("mrdesc",   SET_CHAR, SET_TYPE_STRING, charSetMultiRdesc,   NULL);
+  add_set("mname",    SET_CHAR, SET_TYPE_STRING, charSetMultiName,    NULL);
+  add_set("keywords", SET_CHAR, SET_TYPE_STRING, charSetKeywords,     NULL);
+  add_set("dialog",   SET_CHAR, SET_TYPE_INT,    charSetDialog,       NULL);
+  add_set("race",     SET_CHAR, SET_TYPE_STRING, charSetRace,       isRace);
+  add_set("groups",   SET_CHAR, SET_TYPE_STRING, charSetUserGroups,   NULL);
 
   // ROOM SETS
-  add_set("name", LEVEL_BUILDER, SET_ROOM, SET_TYPE_STRING, roomSetName, NULL);
-  add_set("desc", LEVEL_BUILDER, SET_ROOM, SET_TYPE_STRING, roomSetDesc, NULL);
+  add_set("name",     SET_ROOM, SET_TYPE_STRING, roomSetName,         NULL);
+  add_set("desc",     SET_ROOM, SET_TYPE_STRING, roomSetDesc,         NULL);
 
   // OBJECT SETS
-  add_set("name",    LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetName, NULL);
-  add_set("desc",    LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetDesc, NULL);
-  add_set("rdesc",   LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetRdesc,NULL);
-  add_set("name",    LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetName, NULL);
-  add_set("mrdesc",  LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetMultiRdesc, NULL);
-  add_set("mname",   LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetMultiName, NULL);
-  add_set("keywords",LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetKeywords, NULL);
+  add_set("name",     SET_OBJECT,SET_TYPE_STRING,objSetName,          NULL);
+  add_set("desc",     SET_OBJECT,SET_TYPE_STRING,objSetDesc,          NULL);
+  add_set("rdesc",    SET_OBJECT,SET_TYPE_STRING,objSetRdesc,         NULL);
+  add_set("name",     SET_OBJECT,SET_TYPE_STRING,objSetName,          NULL);
+  add_set("mrdesc",   SET_OBJECT,SET_TYPE_STRING,objSetMultiRdesc,    NULL);
+  add_set("mname",    SET_OBJECT,SET_TYPE_STRING,objSetMultiName,     NULL);
+  add_set("keywords", SET_OBJECT,SET_TYPE_STRING,objSetKeywords,      NULL);
 
   // now, add the admin commands for working with set
   add_cmd("set", NULL, cmd_set, SET_SUBCMD_SET, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_ADMIN, FALSE, FALSE);
+	  "admin", FALSE, FALSE);
   add_cmd("setpad", NULL, cmd_set, SET_SUBCMD_SETPAD, POS_UNCONCIOUS,POS_FLYING,
-	  LEVEL_ADMIN, FALSE, FALSE);
+	  "admin", FALSE, FALSE);
 }
 
 
-void add_set(const char *name, int min_lev, int set_for, int type, void *setter, void *checker) {
+void add_set(const char *name, int set_for, int type, void *setter, void *checker) {
   HASHTABLE *table = NULL;
   // first, find our table
   if     (set_for == SET_CHAR)   table = char_set_table;

@@ -14,9 +14,6 @@ COMMAND(cmd_transfer);
 COMMAND(cmd_copyover);
 COMMAND(cmd_shutdown);
 COMMAND(cmd_linkdead);
-COMMAND(cmd_wizhelp);
-COMMAND(cmd_invis);
-COMMAND(cmd_visible);
 COMMAND(cmd_repeat);
 COMMAND(cmd_at);
 COMMAND(cmd_lockdown);
@@ -84,6 +81,7 @@ COMMAND(cmd_who);
 COMMAND(cmd_look);
 COMMAND(cmd_inventory);
 COMMAND(cmd_equipment);
+COMMAND(cmd_groupcmds);
 
 
 /* olc.c */

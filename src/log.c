@@ -99,7 +99,7 @@ void init_logs() {
   }
 
   add_cmd("log", NULL, cmd_log, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_ADMIN, FALSE, FALSE);
+	  "admin", FALSE, FALSE);
 }
 
 

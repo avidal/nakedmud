@@ -361,9 +361,7 @@ DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, dialog_vnum dialog) {
 //
 //*****************************************************************************
 bool canEditZone(ZONE_DATA *zone, CHAR_DATA *ch) {
-  return (!charIsNPC(ch) && 
-	  (charGetLevel(ch) >= LEVEL_SCRIPTER || 
-	   is_keyword(zone->editors, charGetName(ch), FALSE)));
+  return (!charIsNPC(ch) && is_keyword(zone->editors, charGetName(ch), FALSE));
 }
 
 zone_vnum zoneGetVnum(ZONE_DATA *zone) { 

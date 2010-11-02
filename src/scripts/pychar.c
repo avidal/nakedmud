@@ -19,11 +19,13 @@
 #include "../handler.h"
 #include "../utils.h"
 
+#include "pyplugs.h"
 #include "script.h"
 #include "script_set.h"
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
+
 
 
 //*****************************************************************************
@@ -33,6 +35,16 @@
 #include "../items/items.h"
 
 
+
+//*****************************************************************************
+// local structures and defines
+//*****************************************************************************
+// a list of the get/setters on the Char class
+LIST *pychar_getsetters = NULL;
+
+// a list of the methods on the Char class
+LIST *pychar_methods = NULL;
+
 typedef struct {
   PyObject_HEAD
   int uid;
@@ -41,24 +53,20 @@ typedef struct {
 
 
 //*****************************************************************************
-// allocation, deallocation, and initialiation
+// allocation, deallocation, initialization, and comparison
 //*****************************************************************************
-static void
-PyChar_dealloc(PyChar *self) {
+void PyChar_dealloc(PyChar *self) {
   self->ob_type->tp_free((PyObject*)self);
 }
 
-static PyObject *
-PyChar_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+PyObject *PyChar_new(PyTypeObject *type, PyObject *args, PyObject *kwds){
     PyChar *self;
-
     self = (PyChar  *)type->tp_alloc(type, 0);
-    self->uid = NOBODY;//NULL;
+    self->uid = NOBODY;
     return (PyObject *)self;
 }
 
-static int
-PyChar_init(PyChar *self, PyObject *args, PyObject *kwds) {
+int PyChar_init(PyChar *self, PyObject *args, PyObject *kwds) {
   static char *kwlist[] = {"uid", NULL};
   int uid = NOBODY;
 
@@ -81,312 +89,76 @@ PyChar_init(PyChar *self, PyObject *args, PyObject *kwds) {
 }
 
 
-
-//*****************************************************************************
-// methods and stuff for building the class
-//*****************************************************************************
-
-//
-// sends a newline-tagged message to the character
-//
-static PyObject *
-PyChar_send(PyChar *self, PyObject *value) {
-  char *mssg = NULL;
-  if (!PyArg_ParseTuple(value, "s", &mssg)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Characters may only be sent strings");
-    return NULL;
-  }
-
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
-  if(ch) {
-    send_to_char(ch, "%s\r\n", mssg);
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-                    "Tried to send message to nonexistant character, %d.", 
-		    self->uid);
-    return NULL;
-  }
+int PyChar_compare(PyChar *ch1, PyChar *ch2) {
+  if(ch1->uid == ch2->uid)
+    return 0;
+  else if(ch1->uid < ch2->uid)
+    return -1;
+  else
+    return 1;
 }
-
-
-//
-// Send a newline-tagged message to everyone around the character
-//
-static PyObject *
-PyChar_sendaround(PyChar *self, PyObject *value) {
-  char *mssg = NULL;
-  if (!PyArg_ParseTuple(value, "s", &mssg)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Characters may only be sent strings");
-    return NULL;
-  }
-
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
-  if(ch) {
-    send_around_char(ch, FALSE, "%s\r\n", mssg);
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-                    "Tried to send message to nonexistant character, %d.", 
-		    self->uid);
-    return NULL;
-  }
-}
-
-
-//
-// make the character perform an action
-//
-static PyObject *
-PyChar_act(PyChar *self, PyObject *value) {
-  int scripts_ok     = TRUE;
-  char *act          = NULL;
-  if (!PyArg_ParseTuple(value, "s|i", &act, &scripts_ok)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Characters actions must be strings.");
-    return NULL;
-  }
-
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
-  if(ch) {
-    do_cmd(ch, act, scripts_ok, FALSE);
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-                    "Nonexistant character, %d, tried to perform an action.", 
-		    self->uid);
-    return NULL;
-  }
-}
-
-
-//
-// Get the value of a variable stored on the character
-//
-static PyObject *
-PyChar_getvar(PyChar *self, PyObject *arg) {
-  char *var = NULL;
-  if (!PyArg_ParseTuple(arg, "s", &var)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Character variables must have string names.");
-    return NULL;
-  }
-
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
-  if(ch != NULL) {
-    int vartype = charGetVarType(ch, var);
-    if(vartype == CHAR_VAR_INT)
-      return Py_BuildValue("i", charGetInt(ch, var));
-    else if(vartype == CHAR_VAR_LONG)
-      return Py_BuildValue("i", charGetLong(ch, var));
-    else if(vartype == CHAR_VAR_DOUBLE)
-      return Py_BuildValue("d", charGetDouble(ch, var));
-    else
-      return Py_BuildValue("s", charGetString(ch, var));
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to get a variable value for nonexistant character, %d",
-		 self->uid);
-    return NULL;
-  }
-}
-
-
-//
-// Set the value of a variable assocciated with the character
-static PyObject *
-PyChar_setvar(PyChar *self, PyObject *args) {  
-  char     *var = NULL;
-  PyObject *val = NULL;
-
-  if (!PyArg_ParseTuple(args, "sO", &var, &val)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Character setvar must be supplied with a var name and integer value.");
-    return NULL;
-  }
-
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
-  if(ch != NULL) {
-    if(PyInt_Check(val))
-      charSetInt(ch, var, (int)PyInt_AsLong(val));
-    else if(PyFloat_Check(val))
-      charSetDouble(ch, var, PyFloat_AsDouble(val));
-    else if(PyString_Check(val))
-      charSetString(ch, var, PyString_AsString(val));
-    else {
-      PyErr_Format(PyExc_TypeError,
-		   "Tried to store a char_var of invalid type on char %d.",
-		   self->uid);
-      return NULL;
-    }
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to set a variable value for nonexistant character, %d",
-		 self->uid);
-    return NULL;
-  }
-}
-
-
-static PyObject *
-PyChar_attach(PyChar *self, PyObject *args) {  
-  long vnum = NOTHING;
-
-  // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "To attach a script, the vnum must be suppplied.");
-    return NULL;
-  }
-
-  // pull out the character and do the attaching
-  CHAR_DATA       *ch = propertyTableGet(mob_table, self->uid);
-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
-  if(ch != NULL && script != NULL) {
-    scriptSetAdd(charGetScripts(ch), vnum);
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to attach script to nonexistant char, %d, or script %d "
-		 "does not exit.", self->uid, (int)vnum);
-    return NULL;
-  }
-}
-
-
-static PyObject *
-PyChar_detach(PyChar *self, PyObject *args) {  
-  long vnum = NOTHING;
-
-  // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "To detach a script, the vnum must be suppplied.");
-    return NULL;
-  }
-
-  // pull out the character and do the attaching
-  CHAR_DATA       *ch = propertyTableGet(mob_table, self->uid);
-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
-  if(ch != NULL && script != NULL) {
-    scriptSetRemove(charGetScripts(ch), vnum);
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to detach script from nonexistant char, %d, or script "
-		 "%d does not exit.", self->uid, (int)vnum);
-    return NULL;
-  }
-}
-
-
-
-static PyMethodDef PyChar_methods[] = {
-  {"attach", (PyCFunction)PyChar_attach, METH_VARARGS,
-   "attach a new script to the character." },
-  {"detach", (PyCFunction)PyChar_detach, METH_VARARGS,
-   "detach a script from the character." },
-  {"send", (PyCFunction)PyChar_send, METH_VARARGS,
-   "send a message to the character." },
-  {"sendaround", (PyCFunction)PyChar_sendaround, METH_VARARGS,
-   "send a message to everyone around a character."},
-  {"act", (PyCFunction)PyChar_act, METH_VARARGS,
-   "make the character perform an action." },
-  {"getvar", (PyCFunction)PyChar_getvar, METH_VARARGS,
-   "get the value of a special variable the character has."},
-  {"setvar", (PyCFunction)PyChar_setvar, METH_VARARGS,
-   "set the value of a special variable."},
-  {NULL}  /* Sentinel */
-};
 
 
 
 //*****************************************************************************
-// character attributes - mostly get and set
+// getters and setters for the Char class
 //*****************************************************************************
-static PyObject *
-PyChar_getname(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getname(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", charGetName(ch));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_getdesc(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getdesc(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", charGetDesc(ch));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_getrdesc(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getrdesc(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", charGetRdesc(ch));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_getrace(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getrace(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", charGetRace(ch));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_getlevel(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
-  if(ch != NULL) return Py_BuildValue("i", charGetLevel(ch));
-  else           return NULL;
-}
-
-static PyObject *
-PyChar_getsex(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getsex(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", sexGetName(charGetSex(ch)));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_getposition(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getposition(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", posGetName(charGetPos(ch)));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_getroom(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getroom(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("O", newPyRoom(charGetRoom(ch)));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_getisnpc(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getisnpc(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("i", charIsNPC(ch));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_getispc(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getispc(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("i", !charIsNPC(ch));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_geton(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_geton(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch == NULL) 
     return NULL;
   else if(charGetFurniture(ch) == NULL)
@@ -395,22 +167,19 @@ PyChar_geton(PyChar *self, void *closure) {
     return Py_BuildValue("i", newPyObj(charGetFurniture(ch)));
 }
 
-static PyObject *
-PyChar_getuid(PyChar *self, void *closure) {
+PyObject *PyChar_getuid(PyChar *self, void *closure) {
   return Py_BuildValue("i", self->uid);
 }
 
 
-static PyObject *
-PyChar_getvnum(PyChar *self, void *closure) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getvnum(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("i", charGetVnum(ch));
   else           return NULL;
 }
 
-static PyObject *
-PyChar_getinv(PyChar *self, PyObject *args) {
-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+PyObject *PyChar_getinv(PyChar *self, PyObject *args) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch == NULL) 
     return NULL;
 
@@ -426,12 +195,10 @@ PyChar_getinv(PyChar *self, PyObject *args) {
 }
 
 
-
 //
 // Standard check to make sure the character exists when
 // trying to set a value for it. If successful, assign the
 // character to ch. Otherwise, return -1 (error)
-//
 #define PYCHAR_CHECK_CHAR_EXISTS(uid, ch)                                      \
   ch = propertyTableGet(mob_table, uid);                                       \
   if(ch == NULL) {                                                             \
@@ -441,8 +208,7 @@ PyChar_getinv(PyChar *self, PyObject *args) {
   }                                                                            
 
 
-static int
-PyChar_setname(PyChar *self, PyObject *value, void *closure) {
+int PyChar_setname(PyChar *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete character's name");
     return -1;
@@ -460,8 +226,7 @@ PyChar_setname(PyChar *self, PyObject *value, void *closure) {
   return 0;
 }
 
-static int
-PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
+int PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete character's description");
     return -1;
@@ -479,8 +244,7 @@ PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
   return 0;
 }
 
-static int
-PyChar_setrdesc(PyChar *self, PyObject *value, void *closure) {
+int PyChar_setrdesc(PyChar *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete character's rdesc");
     return -1;
@@ -498,8 +262,7 @@ PyChar_setrdesc(PyChar *self, PyObject *value, void *closure) {
   return 0;
 }
 
-static int
-PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
+int PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete a character's race");
     return -1;
@@ -525,8 +288,7 @@ PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
   return 0;
 }
 
-static int
-PyChar_seton(PyChar *self, PyObject *value, void *closure) {
+int PyChar_seton(PyChar *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete a character's furniture.");
     return -1;
@@ -561,8 +323,7 @@ PyChar_seton(PyChar *self, PyObject *value, void *closure) {
   return -1;
 }
 
-static int
-PyChar_setsex(PyChar *self, PyObject *value, void *closure) {
+int PyChar_setsex(PyChar *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete a character's sex");
     return -1;
@@ -588,8 +349,7 @@ PyChar_setsex(PyChar *self, PyObject *value, void *closure) {
   return 0;
 }
 
-static int
-PyChar_setposition(PyChar *self, PyObject *value, void *closure) {
+int PyChar_setposition(PyChar *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete a character's position");
     return -1;
@@ -618,35 +378,7 @@ PyChar_setposition(PyChar *self, PyObject *value, void *closure) {
   return 0;
 }
 
-static int
-PyChar_setlevel(PyChar *self, PyObject *value, void *closure) {
-  if (value == NULL) {
-    PyErr_Format(PyExc_TypeError, "Cannot delete a character's level");
-    return -1;
-  }
-  
-  if (!PyInt_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Character levels must be integers");
-    return -1;
-  }
-
-  long lvl = PyInt_AsLong(value);
-  if(lvl < 1 || lvl > MAX_LEVEL) {
-    char buf[SMALL_BUFFER];
-    sprintf(buf, "Character levels are bounded between 1 and %d", MAX_LEVEL);
-    PyErr_Format(PyExc_TypeError, buf);
-    return -1;
-  }
-
-  CHAR_DATA *ch;
-  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
-  charSetLevel(ch, lvl);
-  return 0;
-}
-
-static int
-PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
+int PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete a character's room");
     return -1;
@@ -689,77 +421,209 @@ PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
 }
 
 
-static PyGetSetDef PyChar_getseters[] = {
-  {"inv", (getter)PyChar_getinv, (setter)NULL,
-   "The objects in the character's inventory", 
-   NULL},
-  {"objs", (getter)PyChar_getinv, (setter)NULL,
-   "The objects in the character's inventory", 
-   NULL},
-  {"name", (getter)PyChar_getname, (setter)PyChar_setname,
-   "the character's name",
-   NULL},
-  {"desc", (getter)PyChar_getdesc, (setter)PyChar_setdesc,
-   "the character's description",
-   NULL},
-  {"rdesc", (getter)PyChar_getrdesc, (setter)PyChar_setrdesc,
-   "the character's room description",
-   NULL},
-  {"level", (getter)PyChar_getlevel, (setter)PyChar_setlevel,
-   "the character's level",
-   NULL},
-  {"sex", (getter)PyChar_getsex, (setter)PyChar_setsex,
-   "the character's sex",
-   NULL},
-  {"race", (getter)PyChar_getrace, (setter)PyChar_setrace,
-   "the character's race",
-   NULL},
-  {"position", (getter)PyChar_getposition, (setter)PyChar_setposition,
-   "the character's position",
-   NULL},
-  {"room", (getter)PyChar_getroom, (setter)PyChar_setroom,
-   "the character's room",
-   NULL},
-  {"on", (getter)PyChar_geton, (setter)PyChar_seton,
-   "The furniture the character is sitting on/at. If the character is not "
-   "on furniture, None is returned. To remove a character from furniture, "
-   "then use None",
-   NULL},
-  {"uid", (getter)PyChar_getuid, (setter)NULL,
-   "the unique identification number",
-   NULL},
-  {"vnum", (getter)PyChar_getvnum, (setter)NULL,
-   "the virtual number for the NPC. Returns -1 for characters.",
-   NULL},
-  {"is_npc", (getter)PyChar_getisnpc, (setter)NULL,
-   "returns 1 if the char is an NPC, and 0 otherwise.",
-   NULL},
-  {"is_pc", (getter)PyChar_getispc, (setter)NULL,
-   "returns 1 if the char is an NPC, and 0 otherwise.",
-   NULL},
 
-  {NULL}  /* Sentinel */
-};
+//*****************************************************************************
+// methods for the Char class
+//*****************************************************************************
+
+//
+// sends a newline-tagged message to the character
+PyObject *PyChar_send(PyChar *self, PyObject *value) {
+  char *mssg = NULL;
+  if (!PyArg_ParseTuple(value, "s", &mssg)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Characters may only be sent strings");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch) {
+    send_to_char(ch, "%s\r\n", mssg);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+                    "Tried to send message to nonexistant character, %d.", 
+		    self->uid);
+    return NULL;
+  }
+}
+
+
+//
+// Send a newline-tagged message to everyone around the character
+PyObject *PyChar_sendaround(PyChar *self, PyObject *value) {
+  char *mssg = NULL;
+  if (!PyArg_ParseTuple(value, "s", &mssg)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Characters may only be sent strings");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch) {
+    send_around_char(ch, FALSE, "%s\r\n", mssg);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+                    "Tried to send message to nonexistant character, %d.", 
+		    self->uid);
+    return NULL;
+  }
+}
+
+
+//
+// make the character perform an action
+PyObject *PyChar_act(PyChar *self, PyObject *value) {
+  int scripts_ok     = TRUE;
+  char *act          = NULL;
+  if (!PyArg_ParseTuple(value, "s|i", &act, &scripts_ok)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Characters actions must be strings.");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch) {
+    do_cmd(ch, act, scripts_ok, FALSE);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+                    "Nonexistant character, %d, tried to perform an action.", 
+		    self->uid);
+    return NULL;
+  }
+}
+
+
+//
+// Get the value of a variable stored on the character
+PyObject *PyChar_getvar(PyChar *self, PyObject *arg) {
+  char *var = NULL;
+  if (!PyArg_ParseTuple(arg, "s", &var)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Character variables must have string names.");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) {
+    int vartype = charGetVarType(ch, var);
+    if(vartype == CHAR_VAR_INT)
+      return Py_BuildValue("i", charGetInt(ch, var));
+    else if(vartype == CHAR_VAR_LONG)
+      return Py_BuildValue("i", charGetLong(ch, var));
+    else if(vartype == CHAR_VAR_DOUBLE)
+      return Py_BuildValue("d", charGetDouble(ch, var));
+    else
+      return Py_BuildValue("s", charGetString(ch, var));
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to get a variable value for nonexistant character, %d",
+		 self->uid);
+    return NULL;
+  }
+}
+
+
+//
+// Set the value of a variable assocciated with the character
+PyObject *PyChar_setvar(PyChar *self, PyObject *args) {  
+  char     *var = NULL;
+  PyObject *val = NULL;
+
+  if (!PyArg_ParseTuple(args, "sO", &var, &val)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Character setvar must be supplied with a var name and integer value.");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) {
+    if(PyInt_Check(val))
+      charSetInt(ch, var, (int)PyInt_AsLong(val));
+    else if(PyFloat_Check(val))
+      charSetDouble(ch, var, PyFloat_AsDouble(val));
+    else if(PyString_Check(val))
+      charSetString(ch, var, PyString_AsString(val));
+    else {
+      PyErr_Format(PyExc_TypeError,
+		   "Tried to store a char_var of invalid type on char %d.",
+		   self->uid);
+      return NULL;
+    }
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to set a variable value for nonexistant character, %d",
+		 self->uid);
+    return NULL;
+  }
+}
+
+
+PyObject *PyChar_attach(PyChar *self, PyObject *args) {  
+  long vnum = NOTHING;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To attach a script, the vnum must be suppplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  CHAR_DATA       *ch = PyChar_AsChar((PyObject *)self);
+  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+  if(ch != NULL && script != NULL) {
+    scriptSetAdd(charGetScripts(ch), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to attach script to nonexistant char, %d, or script %d "
+		 "does not exit.", self->uid, (int)vnum);
+    return NULL;
+  }
+}
+
+
+PyObject *PyChar_detach(PyChar *self, PyObject *args) {  
+  long vnum = NOTHING;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To detach a script, the vnum must be suppplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  CHAR_DATA       *ch = PyChar_AsChar((PyObject *)self);
+  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+  if(ch != NULL && script != NULL) {
+    scriptSetRemove(charGetScripts(ch), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to detach script from nonexistant char, %d, or script "
+		 "%d does not exit.", self->uid, (int)vnum);
+    return NULL;
+  }
+}
 
 
 
 //*****************************************************************************
 // comparators, getattr, setattr, and all that other class stuff
 //*****************************************************************************
-
-//
-// compare one character to another
-static int
-PyChar_compare(PyChar *ch1, PyChar *ch2) {
-  if(ch1->uid == ch2->uid)
-    return 0;
-  else if(ch1->uid < ch2->uid)
-    return -1;
-  else
-    return 1;
-}
-
-static PyTypeObject PyChar_Type = {
+PyTypeObject PyChar_Type = {
     PyObject_HEAD_INIT(NULL)
     0,                         /*ob_size*/
     "char.Char",               /*tp_name*/
@@ -788,26 +652,25 @@ static PyTypeObject PyChar_Type = {
     0,		               /* tp_weaklistoffset */
     0,		               /* tp_iter */
     0,		               /* tp_iternext */
-    PyChar_methods,            /* tp_methods */
+    0,                         /* tp_methods */
     0,                         /* tp_members */
-    PyChar_getseters,          /* tp_getset */
+    0,                         /* tp_getset */
     0,                         /* tp_base */
     0,                         /* tp_dict */
     0,                         /* tp_descr_get */
     0,                         /* tp_descr_set */
     0,                         /* tp_dictoffset */
-    (initproc)PyChar_init,    /* tp_init */
+    (initproc)PyChar_init,     /* tp_init */
     0,                         /* tp_alloc */
-    PyChar_new,               /* tp_new */
+    PyChar_new,                /* tp_new */
 };
 
 
 
 //*****************************************************************************
-// the char module
+// methods in the char module
 //*****************************************************************************
-static PyObject *
-PyChar_load_mob(PyObject *self, PyObject *args) {
+PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
   int mob_vnum    = NOBODY, room_vnum = NOWHERE;
   PyObject *to    = NULL;
 
@@ -894,8 +757,7 @@ PyChar_load_mob(PyObject *self, PyObject *args) {
 }
 
 
-static PyObject *
-PyChar_count_mobs(PyObject *self, PyObject *args) {
+PyObject *PyChar_count_mobs(PyObject *self, PyObject *args) {
   LIST *list = NULL;
   PyObject *tgt;
   PyObject *in = NULL;
@@ -947,9 +809,7 @@ PyChar_count_mobs(PyObject *self, PyObject *args) {
   return Py_BuildValue("i", count_chars(NULL, list, name, vnum, FALSE));
 }
 
-
-static PyObject *
-PyChar_all_chars(PyObject *self) {
+PyObject *PyChar_all_chars(PyObject *self) {
   PyObject      *list = PyList_New(0);
   LIST_ITERATOR *ch_i = newListIterator(mobile_list);
   CHAR_DATA       *ch = NULL;
@@ -959,9 +819,7 @@ PyChar_all_chars(PyObject *self) {
   return Py_BuildValue("O", list);
 }
 
-
-
-static PyMethodDef char_module_methods[] = {
+PyMethodDef char_module_methods[] = {
   { "all_chars", (PyCFunction)PyChar_all_chars, METH_NOARGS,
     "Return a python list containing an entry for every character in game." },
   { "load_mob", PyChar_load_mob, METH_VARARGS,
@@ -973,23 +831,114 @@ static PyMethodDef char_module_methods[] = {
 };
 
 
-PyMODINIT_FUNC
-init_PyChar(void) 
-{
-    PyObject* m;
 
-    if (PyType_Ready(&PyChar_Type) < 0)
-        return;
+//*****************************************************************************
+// implementation of pychar.h
+//*****************************************************************************
+void PyChar_addGetSetter(const char *name, void *g, void *s, const char *doc) {
+  // make sure our list of get/setters is created
+  if(pychar_getsetters == NULL) pychar_getsetters = newList();
 
-    m = Py_InitModule3("char", char_module_methods,
-                       "The char module, for all char/mob-related MUD stuff.");
-
-    if (m == NULL)
-      return;
-
-    Py_INCREF(&PyChar_Type);
-    PyModule_AddObject(m, "Char", (PyObject *)&PyChar_Type);
+  // make the GetSetter def
+  PyGetSetDef *def = calloc(1, sizeof(PyGetSetDef));
+  def->name        = strdup(name);
+  def->get         = (getter)g;
+  def->set         = (setter)s;
+  def->doc         = (doc ? strdup(doc) : NULL);
+  def->closure     = NULL;
+  listPut(pychar_getsetters, def);
 }
+
+void PyChar_addMethod(const char *name, void *f, int flags, const char *doc) {
+  // make sure our list of methods is created
+  if(pychar_methods == NULL) pychar_methods = newList();
+
+  // make the Method def
+  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
+  def->ml_name     = strdup(name);
+  def->ml_meth     = (PyCFunction)f;
+  def->ml_flags    = flags;
+  def->ml_doc      = (doc ? strdup(doc) : NULL);
+  listPut(pychar_methods, def);
+}
+
+
+
+PyMODINIT_FUNC init_PyChar(void) {
+  PyObject* m;
+
+  // add in our setters and getters for the char class
+  PyChar_addGetSetter("inv", PyChar_getinv, NULL,
+		      "returns a list of objects in the char's inventory");
+  PyChar_addGetSetter("objs", PyChar_getinv, NULL,
+		      "returns a list of objects in the char's inventory");
+  PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
+		      "handle the character's name");
+  PyChar_addGetSetter("desc", PyChar_getdesc, PyChar_setdesc,
+		      "handle the character's description");
+  PyChar_addGetSetter("rdesc", PyChar_getrdesc, PyChar_setrdesc,
+		      "handle the character's room description");
+  PyChar_addGetSetter("sex", PyChar_getsex, PyChar_setsex,
+		      "handle the character's gender");
+  PyChar_addGetSetter("race", PyChar_getrace, PyChar_setrace,
+		      "handle the character's race");
+  PyChar_addGetSetter("pos", PyChar_getposition, PyChar_setposition,
+		      "handle the character's position");
+  PyChar_addGetSetter("position", PyChar_getposition, PyChar_setposition,
+		      "handle the character's position");
+  PyChar_addGetSetter("room", PyChar_getroom, PyChar_setroom,
+		      "handle the character's room");
+  PyChar_addGetSetter("on", PyChar_geton, PyChar_seton,
+   "The furniture the character is sitting on/at. If the character is not "
+   "on furniture, None is returned. To remove a character from furniture, "
+  "then use None");
+  PyChar_addGetSetter("uid", PyChar_getuid, NULL,
+		      "the character's unique identification number");
+  PyChar_addGetSetter("vnum", PyChar_getvnum, NULL,
+		      "The virtual number for NPCs. Returns -1 for PCs");
+  PyChar_addGetSetter("is_npc", PyChar_getisnpc, NULL,
+		      "Returns 1 if the char is an NPC, and 0 otherwise.");
+  PyChar_addGetSetter("is_pc", PyChar_getispc, NULL,
+		      "Returns 1 if the char is a PC, and 0 otherwise.");
+
+  // add in all of our methods for the Char class
+  PyChar_addMethod("attach", PyChar_attach, METH_VARARGS,
+		   "attach a new script to the character.");
+  PyChar_addMethod("detach", PyChar_detach, METH_VARARGS,
+		   "detach an old script from the character.");
+  PyChar_addMethod("send", PyChar_send, METH_VARARGS,
+		   "send a message to the character.");
+  PyChar_addMethod("sendarond", PyChar_sendaround, METH_VARARGS,
+		   "send a message to everyone around the character.");
+  PyChar_addMethod("act", PyChar_act, METH_VARARGS,
+		   "make the character perform an action.");
+  PyChar_addMethod("getvar", PyChar_getvar, METH_VARARGS,
+		   "get the value of a special variable the character has.");
+  PyChar_addMethod("setvar", PyChar_setvar, METH_VARARGS,
+		   "set the value of a special variable the character has.");
+
+  // add in all the getsetters and methods
+  makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);
+  deleteListWith(pychar_getsetters, free); pychar_getsetters = NULL;
+  deleteListWith(pychar_methods,    free); pychar_methods    = NULL;
+
+  // make sure the room class is ready to be made
+  if (PyType_Ready(&PyChar_Type) < 0)
+    return;
+
+  // load the module
+  m = Py_InitModule3("char", char_module_methods,
+		     "The char module, for all char/mob-related MUD stuff.");
+  
+  // make sure it loaded OK
+  if (m == NULL)
+    return;
+
+  // add the Char class to the module
+  Py_INCREF(&PyChar_Type);
+  PyModule_AddObject(m, "Char", (PyObject *)&PyChar_Type);
+}
+
 
 int PyChar_Check(PyObject *value) {
   return PyObject_TypeCheck(value, &PyChar_Type);
@@ -997,6 +946,10 @@ int PyChar_Check(PyObject *value) {
 
 int PyChar_AsUid(PyObject *ch) {
   return ((PyChar *)ch)->uid;
+}
+
+CHAR_DATA *PyChar_AsChar(PyObject *ch) {
+  return propertyTableGet(mob_table, PyChar_AsUid(ch));
 }
 
 PyObject *

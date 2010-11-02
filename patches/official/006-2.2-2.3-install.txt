@@ -1,0 +1,27 @@
+--- PATCH INSTRUCTIONS FROM v2.2 TO v2.3
+
+The bulk of the patch from version 2.2 to 2.3 is pretty easy. Simply enter
+your MUD's root directory (the one that has the src/ and lib/ and doc/
+directories) and then run the patch file:
+  patch -p0 < nakedmudv2.2-to-nakedmudv2.3.patch
+
+One of the major changes in this patch was the elimination of levels and the
+addition of "user groups" to control access to different commands. You will have
+to edit the groups of all your admin-type characters to reflect their previous
+level status. This can be done through editing a player file and setting the
+appropriate groups:
+
+user_groups: <comma-separated list of groups here>
+
+Each command belongs to one and only one group. Any user can belong to multiple
+groups. Your head admin will probably want to belong to all of the groups (e.g.
+admin, scripter, builder, playtester, player) for access to all of the game's
+commands (hint: that is what the user_groups tag in your head admin's pfile
+should look like - hopefully you can figure out the rest from there). 
+
+One you have one admin character reassigned groups, you can reassign the rest
+online through the set <person> groups <groups go here> command.
+
+You may also want to add in the new helpfiles, which can be downloaded from the
+NakedMud website; they are bundled in the download for the latest 
+version (v2.3).

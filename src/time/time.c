@@ -200,7 +200,7 @@ void init_time() {
 
   // add the time command
   add_cmd("time", NULL, cmd_time, 0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, TRUE, FALSE);
+	  "player", TRUE, FALSE);
 
   // add night descriptions for rooms
   auxiliariesInstall("time_aux_data",

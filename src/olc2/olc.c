@@ -109,7 +109,7 @@ void olc_menu(SOCKET_DATA *sock) {
   if(olc->cmd == MENU_NOCHOICE) {
     text_to_buffer(sock, CLEAR_SCREEN);
     olc->menu(sock, olc->working_copy);
-    text_to_buffer(sock, "\r\nEnter choice, or Q to quit: ");
+    text_to_buffer(sock, "\r\n{gEnter choice, or Q to quit: ");
   }
 }
 
@@ -238,17 +238,17 @@ void init_olc2() {
   extern COMMAND(cmd_oedit);
   extern COMMAND(cmd_accedit);
   add_cmd("zedit", NULL, cmd_zedit, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, TRUE);
+	  "builder", FALSE, TRUE);
   add_cmd("redit", NULL, cmd_redit, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, TRUE);
+	  "builder", FALSE, TRUE);
   add_cmd("dedit", NULL, cmd_dedit, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, TRUE);
+	  "builder", FALSE, TRUE);
   add_cmd("medit", NULL, cmd_medit, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, TRUE);
+	  "builder", FALSE, TRUE);
   add_cmd("oedit", NULL, cmd_oedit, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, TRUE);
+	  "builder", FALSE, TRUE);
   add_cmd("accedit", NULL, cmd_accedit, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_ADMIN,   FALSE, TRUE);
+	  "admin",   FALSE, TRUE);
 }
 
 void do_olc(SOCKET_DATA *sock,

@@ -574,11 +574,13 @@ void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
   }
 
   /* and terminate it with the standard color */
+  /*
   if (last != -1 || underline || bold) 
   {
     output[iPtr++] =  27; output[iPtr++] = '[';
     output[iPtr++] = '0'; output[iPtr++] = 'm';
-  }
+  } 
+  */
   output[iPtr] = '\0';
 
   /* check to see if the socket can accept that much data */

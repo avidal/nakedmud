@@ -19,6 +19,7 @@
 #include "../handler.h"
 #include "../utils.h"
 
+#include "pyplugs.h"
 #include "script.h"
 #include "script_set.h"
 #include "pychar.h"
@@ -26,24 +27,32 @@
 #include "pyobj.h"
 
 
+
+
+//*****************************************************************************
+// local structures and defines
+//*****************************************************************************
+// a list of the get/setters on the Obj class
+LIST *pyobj_getsetters = NULL;
+
+// a list of the methods on the Obj class
+LIST *pyobj_methods = NULL;
+
 typedef struct {
   PyObject_HEAD
   int uid;
 } PyObj;
 
 
+
 //*****************************************************************************
-//
-// allocation, deallocation, and initialiation
-//
+// allocation, deallocation, initialization, and comparison
 //*****************************************************************************
-static void
-PyObj_dealloc(PyObj *self) {
+void PyObj_dealloc(PyObj *self) {
   self->ob_type->tp_free((PyObject*)self);
 }
 
-static PyObject *
-PyObj_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+PyObject *PyObj_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
     PyObj *self;
 
     self = (PyObj  *)type->tp_alloc(type, 0);
@@ -51,9 +60,8 @@ PyObj_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
     return (PyObject *)self;
 }
 
-static int
-PyObj_init(PyObj *self, PyObject *args, PyObject *kwds) {
-  static char *kwlist[] = {"uid", NULL};
+int PyObj_init(PyObj *self, PyObject *args, PyObject *kwds) {
+  char *kwlist[] = {"uid", NULL};
   int uid = NOTHING;
 
   // get the universal id
@@ -74,119 +82,50 @@ PyObj_init(PyObj *self, PyObject *args, PyObject *kwds) {
   return 0;
 }
 
-
-
-
-//*****************************************************************************
-//
-// methods and stuff for building the class
-//
-//*****************************************************************************
-
-static PyObject *
-PyObj_attach(PyObj *self, PyObject *args) {  
-  long vnum = NOTHING;
-
-  // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "To attach a script, the vnum must be suppplied.");
-    return NULL;
-  }
-
-  // pull out the character and do the attaching
-  OBJ_DATA       *obj = propertyTableGet(obj_table, self->uid);
-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
-  if(obj != NULL && script != NULL) {
-    scriptSetAdd(objGetScripts(obj), vnum);
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to attach script to nonexistant obj, %d, or script %d "
-		 "does not exit.", self->uid, (int)vnum);
-    return NULL;
-  }
+int PyObj_compare(PyObj *obj1, PyObj *obj2) {
+  if(obj1->uid == obj2->uid)
+    return 0;
+  else if(obj1->uid < obj2->uid)
+    return -1;
+  else
+    return 1;
 }
 
 
-static PyObject *
-PyObj_detach(PyObj *self, PyObject *args) {  
-  long vnum = NOTHING;
-
-  // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "To detach a script, the vnum must be suppplied.");
-    return NULL;
-  }
-
-  // pull out the character and do the attaching
-  OBJ_DATA       *obj = propertyTableGet(obj_table, self->uid);
-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
-  if(obj != NULL && script != NULL) {
-    scriptSetRemove(objGetScripts(obj), vnum);
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to detach script from nonexistant obj, %d, or script "
-		 "%d does not exit.", self->uid, (int)vnum);
-    return NULL;
-  }
-}
-
-
-static PyMethodDef PyObj_methods[] = {
-  {"attach", (PyCFunction)PyObj_attach, METH_VARARGS,
-   "attach a new script to the object." },
-  {"detach", (PyCFunction)PyObj_detach, METH_VARARGS,
-   "detach a script from the object." },
-  {NULL}  /* Sentinel */
-};
-
 
 //*****************************************************************************
-//
-// character attributes - mostly get and set
-//
+// getters and setters for the Obj class
 //*****************************************************************************
-static PyObject *
-PyObj_getname(PyObj *self, void *closure) {
-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
+PyObject *PyObj_getname(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj != NULL) return Py_BuildValue("s", objGetName(obj));
   else           return NULL;
 }
 
-static PyObject *
-PyObj_getdesc(PyObj *self, void *closure) {
-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
+PyObject *PyObj_getdesc(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj != NULL) return Py_BuildValue("s", objGetDesc(obj));
   else           return NULL;
 }
 
-static PyObject *
-PyObj_getrdesc(PyObj *self, void *closure) {
-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
+PyObject *PyObj_getrdesc(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj != NULL) return Py_BuildValue("s", objGetRdesc(obj));
   else           return NULL;
 }
 
-static PyObject *
-PyObj_getuid(PyObj *self, void *closure) {
+PyObject *PyObj_getuid(PyObj *self, void *closure) {
   return Py_BuildValue("i", self->uid);
 }
 
-static PyObject *
-PyObj_getvnum(PyObj *self, void *closure) {
-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
+PyObject *PyObj_getvnum(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj != NULL) return Py_BuildValue("i", objGetVnum(obj));
   else           return NULL;
 }
 
-static PyObject *
-PyObj_getcontents(PyObj *self, PyObject *args) {
-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
+PyObject *PyObj_getcontents(PyObj *self, PyObject *args) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj == NULL) 
     return NULL;
 
@@ -201,9 +140,8 @@ PyObj_getcontents(PyObj *self, PyObject *args) {
   return Py_BuildValue("O", list);
 }
 
-static PyObject *
-PyObj_getchars(PyObj *self, PyObject *args) {
-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
+PyObject *PyObj_getchars(PyObj *self, PyObject *args) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj == NULL) 
     return NULL;
 
@@ -223,7 +161,6 @@ PyObj_getchars(PyObj *self, PyObject *args) {
 // Standard check to make sure the object exists when
 // trying to set a value for it. If successful, assign the
 // object to ch. Otherwise, return -1 (error)
-//
 #define PYOBJ_CHECK_OBJ_EXISTS(uid, obj)                                       \
   obj = propertyTableGet(obj_table, uid);                                      \
   if(obj == NULL) {                                                            \
@@ -232,8 +169,7 @@ PyObj_getchars(PyObj *self, PyObject *args) {
     return -1;                                                                 \
   }                                                                            
 
-static int
-PyObj_setname(PyObj *self, PyObject *value, void *closure) {
+int PyObj_setname(PyObj *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete object's name");
     return -1;
@@ -251,8 +187,7 @@ PyObj_setname(PyObj *self, PyObject *value, void *closure) {
   return 0;
 }
 
-static int
-PyObj_setdesc(PyObj *self, PyObject *value, void *closure) {
+int PyObj_setdesc(PyObj *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete object's description");
     return -1;
@@ -270,8 +205,7 @@ PyObj_setdesc(PyObj *self, PyObject *value, void *closure) {
   return 0;
 }
 
-static int
-PyObj_setrdesc(PyObj *self, PyObject *value, void *closure) {
+int PyObj_setrdesc(PyObj *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete object's rdesc");
     return -1;
@@ -290,56 +224,67 @@ PyObj_setrdesc(PyObj *self, PyObject *value, void *closure) {
 }
 
 
-static PyGetSetDef PyObj_getseters[] = {
-  {"contents", (getter)PyObj_getcontents, (setter)NULL,
-   "the object's contents",
-   NULL},
-  {"objs", (getter)PyObj_getcontents, (setter)NULL,
-   "the object's contents",
-   NULL},
-  {"chars", (getter)PyObj_getchars, (setter)NULL,
-   "the characters sitting on/riding the object",
-   NULL},
-  {"name", (getter)PyObj_getname, (setter)PyObj_setname,
-   "the object's name",
-   NULL},
-  {"desc", (getter)PyObj_getdesc, (setter)PyObj_setdesc,
-   "the object's description",
-   NULL},
-  {"rdesc", (getter)PyObj_getrdesc, (setter)PyObj_setrdesc,
-   "the object's room description",
-   NULL},
-  {"uid", (getter)PyObj_getuid, (setter)NULL,
-   "the unique identification number",
-   NULL},
-  {"vnum", (getter)PyObj_getvnum, (setter)NULL,
-   "the virtual number for the object.",
-   NULL},
-  {NULL}  /* Sentinel */
-};
-
-
 
 //*****************************************************************************
-//
-// comparators, getattr, setattr, and all that other class stuff
-//
+// methods for the obj class
 //*****************************************************************************
+PyObject *PyObj_attach(PyObj *self, PyObject *args) {  
+  long vnum = NOTHING;
 
-//
-// compare one object to another
-//
-static int
-PyObj_compare(PyObj *obj1, PyObj *obj2) {
-  if(obj1->uid == obj2->uid)
-    return 0;
-  else if(obj1->uid < obj2->uid)
-    return -1;
-  else
-    return 1;
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To attach a script, the vnum must be suppplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  OBJ_DATA       *obj = PyObj_AsObj((PyObject *)self);
+  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+  if(obj != NULL && script != NULL) {
+    scriptSetAdd(objGetScripts(obj), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to attach script to nonexistant obj, %d, or script %d "
+		 "does not exit.", self->uid, (int)vnum);
+    return NULL;
+  }
 }
 
-static PyTypeObject PyObj_Type = {
+
+PyObject *PyObj_detach(PyObj *self, PyObject *args) {  
+  long vnum = NOTHING;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To detach a script, the vnum must be suppplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  OBJ_DATA       *obj = PyObj_AsObj((PyObject *)self);
+  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+  if(obj != NULL && script != NULL) {
+    scriptSetRemove(objGetScripts(obj), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to detach script from nonexistant obj, %d, or script "
+		 "%d does not exit.", self->uid, (int)vnum);
+    return NULL;
+  }
+}
+
+
+
+//*****************************************************************************
+// structures to define our methods and classes
+//*****************************************************************************
+PyTypeObject PyObj_Type = {
     PyObject_HEAD_INIT(NULL)
     0,                         /*ob_size*/
     "obj.Obj",                 /*tp_name*/
@@ -368,9 +313,9 @@ static PyTypeObject PyObj_Type = {
     0,		               /* tp_weaklistoffset */
     0,		               /* tp_iter */
     0,		               /* tp_iternext */
-    PyObj_methods,             /* tp_methods */
+    0,                         /* tp_methods */
     0,                         /* tp_members */
-    PyObj_getseters,           /* tp_getset */
+    0,                         /* tp_getset */
     0,                         /* tp_base */
     0,                         /* tp_dict */
     0,                         /* tp_descr_get */
@@ -384,12 +329,9 @@ static PyTypeObject PyObj_Type = {
 
 
 //*****************************************************************************
-//
 // the obj module
-//
 //*****************************************************************************
-static PyObject *
-PyObj_load_obj(PyObject *self, PyObject *args) {
+PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
   int obj_vnum = NOBODY;
   PyObject *in = NULL;
 
@@ -467,8 +409,7 @@ PyObj_load_obj(PyObject *self, PyObject *args) {
 }
 
 
-static PyObject *
-PyObj_count_objs(PyObject *self, PyObject *args) {
+PyObject *PyObj_count_objs(PyObject *self, PyObject *args) {
   LIST *list      = NULL;
   PyObject *tgt;
   PyObject *in    = NULL;
@@ -524,8 +465,7 @@ PyObj_count_objs(PyObject *self, PyObject *args) {
 }
 
 
-static PyObject *
-PyObj_find_obj(PyObject *self, PyObject *args) {
+PyObject *PyObj_find_obj(PyObject *self, PyObject *args) {
   LIST *list           = object_list;
   PyObject *in         = NULL;
   ROOM_DATA *room      = NULL;
@@ -584,9 +524,7 @@ PyObj_find_obj(PyObject *self, PyObject *args) {
   }
 }
 
-
-
-static PyMethodDef obj_module_methods[] = {
+PyMethodDef obj_module_methods[] = {
   { "load_obj", PyObj_load_obj, METH_VARARGS,
     "load a object with the specified vnum to a room." },
   { "count_objs", PyObj_count_objs, METH_VARARGS,
@@ -600,23 +538,85 @@ static PyMethodDef obj_module_methods[] = {
 
 
 
+//*****************************************************************************
+// implementation of pyobj.h
+//*****************************************************************************
+void PyObj_addGetSetter(const char *name, void *g, void *s, const char *doc) {
+  // make sure our list of get/setters is created
+  if(pyobj_getsetters == NULL) pyobj_getsetters = newList();
+
+  // make the GetSetter def
+  PyGetSetDef *def = calloc(1, sizeof(PyGetSetDef));
+  def->name        = strdup(name);
+  def->get         = (getter)g;
+  def->set         = (setter)s;
+  def->doc         = (doc ? strdup(doc) : NULL);
+  def->closure     = NULL;
+  listPut(pyobj_getsetters, def);
+}
+
+void PyObj_addMethod(const char *name, void *f, int flags, const char *doc) {
+  // make sure our list of methods is created
+  if(pyobj_methods == NULL) pyobj_methods = newList();
+
+  // make the Method def
+  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
+  def->ml_name     = strdup(name);
+  def->ml_meth     = (PyCFunction)f;
+  def->ml_flags    = flags;
+  def->ml_doc      = (doc ? strdup(doc) : NULL);
+  listPut(pyobj_methods, def);
+}
+
 PyMODINIT_FUNC
-init_PyObj(void) 
-{
+init_PyObj(void) {
     PyObject* m;
 
+    // getters and setters
+    PyObj_addGetSetter("contents", PyObj_getcontents, NULL,
+		       "the object's contents");
+    PyObj_addGetSetter("objs", PyObj_getcontents, NULL,
+		       "the object's contents");
+    PyObj_addGetSetter("chars", PyObj_getchars, NULL,
+		       "the characters sitting on/riding the object");
+    PyObj_addGetSetter("name", PyObj_getname, PyObj_setname,
+		       "the object's name");
+    PyObj_addGetSetter("desc", PyObj_getdesc, PyObj_setdesc,
+		       "the object's long description");
+    PyObj_addGetSetter("rdesc", PyObj_getrdesc, PyObj_setrdesc,
+		       "the object's room description");
+    PyObj_addGetSetter("uid", PyObj_getuid, NULL,
+		       "the object's unique identification number");
+    PyObj_addGetSetter("vnum", PyObj_getvnum, NULL,
+		       "the virtual number for the object.");
+
+    // methods
+    PyObj_addMethod("attach", PyObj_attach, METH_VARARGS,
+		    "attach a new script to the object");
+    PyObj_addMethod("detach", PyObj_detach, METH_VARARGS,
+		    "detach an old script from the object, by vnum");
+
+    makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
+    deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;
+    deleteListWith(pyobj_methods,    free); pyobj_methods    = NULL;
+
+    // make sure the obj class is ready to be made
     if (PyType_Ready(&PyObj_Type) < 0)
         return;
 
+    // make the obj module
     m = Py_InitModule3("obj", obj_module_methods,
                        "The object module, for all object-related MUD stuff.");
 
+    // make sure the obj module parsed OK
     if (m == NULL)
       return;
 
+    // add the obj class to the obj module
     Py_INCREF(&PyObj_Type);
     PyModule_AddObject(m, "Obj", (PyObject *)&PyObj_Type);
 }
+
 
 int PyObj_Check(PyObject *value) {
   return PyObject_TypeCheck(value, &PyObj_Type);
@@ -624,6 +624,10 @@ int PyObj_Check(PyObject *value) {
 
 int PyObj_AsUid(PyObject *obj) {
   return ((PyObj *)obj)->uid;
+}
+
+OBJ_DATA *PyObj_AsObj(PyObject *obj) {
+  return propertyTableGet(obj_table, PyObj_AsUid(obj));
 }
 
 PyObject *

@@ -457,16 +457,16 @@ void init_socials() {
 
   ITERATE_HASH(cmd, data, hash_i)
     add_cmd(cmd, NULL, cmd_social, 0, data->min_pos, data->max_pos, 
-	    LEVEL_PLAYER, TRUE, FALSE);
+	    "player", TRUE, FALSE);
   deleteHashIterator(hash_i);
 
   // link/unlink commands for the admins
   add_cmd("soclink", NULL, cmd_soclink, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, FALSE);
+	  "builder", FALSE, FALSE);
   add_cmd("socunlink", NULL, cmd_socunlink, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, FALSE);
+	  "builder", FALSE, FALSE);
   add_cmd("socials",   NULL, cmd_socials,   0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER,  TRUE, FALSE);
+	  "player",  TRUE, FALSE);
 
   // let add_social know it can start saving again
   in_social_init = FALSE;
@@ -491,7 +491,7 @@ void add_social(SOCIAL_DATA *social) {
     hashPut(social_table, cmd_list[i], social);
     // add the new command to the game
     add_cmd(cmd_list[i], NULL, cmd_social, 0, social->min_pos, social->max_pos,
-	    LEVEL_PLAYER, TRUE, FALSE);
+	    "player", TRUE, FALSE);
     free(cmd_list[i]);
   }
   free(cmd_list);
@@ -519,7 +519,7 @@ void link_social(const char *new_cmd, const char *old_cmd) {
     
     // add the new command to the game
     add_cmd(new_cmd, NULL, cmd_social, 0, data->min_pos, data->max_pos,
-	    LEVEL_PLAYER, TRUE, FALSE);
+	    "player", TRUE, FALSE);
   }
 
   // save changes

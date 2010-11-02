@@ -123,7 +123,7 @@ void init_aliases() {
 
   // allow people to view their aliases
   add_cmd("alias", NULL, cmd_alias, 0, POS_UNCONCIOUS, POS_FLYING, 
-	  LEVEL_PLAYER, FALSE, TRUE);
+	  "player", FALSE, TRUE);
 }
 
 

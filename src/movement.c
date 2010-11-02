@@ -121,7 +121,7 @@ bool try_move(CHAR_DATA *ch, int dir, const char *specdir) {
     if(bitIsOneSet(charGetPrfs(ch), "buildwalk"))
       return try_buildwalk(ch, dir);
     else
-      send_to_char(ch, "Alas, there is no exit in that direction.\r\n");
+      send_to_char(ch, "{gAlas, there is no exit in that direction.\r\n");
     return FALSE;
   }
 

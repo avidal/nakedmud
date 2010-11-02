@@ -191,5 +191,5 @@ void init_portal(void) {
 	       iedit_portal_parser);
 
   add_cmd("enter", NULL, cmd_enter, 0, POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE, TRUE);
+	  "player", TRUE, TRUE);
 }

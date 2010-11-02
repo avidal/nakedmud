@@ -15,10 +15,23 @@
 //*****************************************************************************
 
 
+
+//*****************************************************************************
+// character defines
+//*****************************************************************************
+
+// the group a character belongs to by default
+#define DFLT_USER_GROUP        "player"
+
+
+
+//*****************************************************************************
+// character functions
+//*****************************************************************************
+
 //
 // the difference between newChar and newMobile is that newMobile
 // assigned a new UID whereas newChar does not.
-//
 CHAR_DATA   *newChar          (void);
 CHAR_DATA    *newMobile       (void);
 void         deleteChar       (CHAR_DATA *mob);
@@ -37,10 +50,9 @@ void         charResetBody    (CHAR_DATA *ch);
 
 
 
+
 //*****************************************************************************
-//
 // utility functions
-//
 //*****************************************************************************
 
 /* buffers the output        */
@@ -51,14 +63,13 @@ void  send_to_list          (LIST *list, const char *format, ...)
 __attribute__ ((format (printf, 2, 3)));
 void send_around_char(CHAR_DATA *ch, bool hide_nosee, const char *format, ...) 
 __attribute__ ((format (printf, 3, 4)));
-void send_to_level(int level, const char *format, ...) 
+void send_to_groups(const char *groups, const char *Format, ...)
 __attribute__ ((format (printf, 2, 3)));
 
 
+
 //*****************************************************************************
-//
 // set and get functions
-//
 //*****************************************************************************
 SOCKET_DATA *charGetSocket    ( CHAR_DATA *ch);
 ROOM_DATA   *charGetRoom      ( CHAR_DATA *ch);
@@ -67,7 +78,6 @@ const char  *charGetDesc      ( CHAR_DATA *ch);
 const char  *charGetRdesc     ( CHAR_DATA *ch);
 const char  *charGetMultiRdesc( CHAR_DATA *ch);
 const char  *charGetMultiName ( CHAR_DATA *ch);
-int          charGetLevel     ( CHAR_DATA *ch);
 int          charGetSex       ( CHAR_DATA *ch);
 // for editing with the text editor
 BUFFER      *charGetDescBuffer( CHAR_DATA *ch);
@@ -79,14 +89,13 @@ OBJ_DATA    *charGetFurniture ( CHAR_DATA *ch);
 int          charGetPos       ( CHAR_DATA *ch);
 int          charGetUID       ( const CHAR_DATA *ch);
 void        *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name);
-int          charGetImmInvis  ( CHAR_DATA *ch);
 BITVECTOR   *charGetPrfs      ( CHAR_DATA *ch);
+BITVECTOR   *charGetUserGroups( CHAR_DATA *ch);
 
 
 void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket);
 void         charSetRoom      ( CHAR_DATA *ch, ROOM_DATA *room);
 void         charSetName      ( CHAR_DATA *ch, const char *name);
-void         charSetLevel     ( CHAR_DATA *ch, int level);
 void         charSetSex       ( CHAR_DATA *ch, int sex);
 void         charSetDesc      ( CHAR_DATA *ch, const char *desc);
 void         charSetRdesc     ( CHAR_DATA *ch, const char *rdesc);
@@ -98,14 +107,11 @@ void         charSetUID       ( CHAR_DATA *ch, int uid);
 void         charSetLoadroom  ( CHAR_DATA *ch, room_vnum loadroom);
 void         charSetFurniture ( CHAR_DATA *ch, OBJ_DATA *furniture);
 void         charSetPos       ( CHAR_DATA *ch, int pos);
-void         charSetImmInvis  ( CHAR_DATA *ch, int level);
 
 
 
 //*****************************************************************************
-//
 // mob-specific functions
-//
 //*****************************************************************************
 mob_vnum     charGetVnum       (CHAR_DATA *ch);
 dialog_vnum  charGetDialog     (CHAR_DATA *ch);
@@ -118,9 +124,7 @@ void         charSetKeywords   (CHAR_DATA *ch, const char *keywords);
 
 
 //*****************************************************************************
-//
 // Sexes
-//
 //*****************************************************************************
 #define SEX_NONE                (-1)
 #define SEX_MALE                  0
@@ -134,9 +138,7 @@ int  sexGetNum(const char *sex);
 
 
 //*****************************************************************************
-//
 // Positions
-//
 //*****************************************************************************
 #define POS_NONE                (-1)
 #define POS_UNCONCIOUS            0

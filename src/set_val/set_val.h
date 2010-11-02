@@ -26,7 +26,6 @@
 
 //
 // prepare the set utility for use
-//
 void init_set();
 
 
@@ -38,7 +37,7 @@ void init_set();
 // can be set, checker should be provided. It takes in the to-be-set value and
 // makes sure it is OK, returning TRUE if it is and FALSE if it is not. The
 // checker function should be of the form:
-//
-void add_set(const char *name, int min_lev, int set_for, int type, void *setter, void *checker);
+//    bool checker(datatype newval)
+void add_set(const char *name, int set_for, int type, void *setter, void *checker);
 
 #endif // SET_VAL_H

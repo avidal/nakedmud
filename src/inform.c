@@ -58,14 +58,14 @@ void list_one_furniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
   listRemove(can_see, ch);
 
   char *chars = print_list(can_see, charGetName, charGetMultiName);
-  if(*chars) send_to_char(ch, "%s %s %s %s%s.\r\n",
+  if(*chars) send_to_char(ch, "{g%s %s %s %s%s.\r\n",
 			  chars, (listSize(can_see) == 1 ? "is" : "are"),
 			  (furnitureGetType(furniture)==FURNITURE_AT?"at":"on"),
 			  objGetName(furniture),
 			  (charGetFurniture(ch) == furniture ?" with you": ""));
   // everyone was invisible to us... we should still show the furniture though
   else
-    send_to_char(ch, "%s\r\n", objGetRdesc(furniture));
+    send_to_char(ch, "{g%s\r\n", objGetRdesc(furniture));
   deleteList(can_see);
   free(chars);
 }
@@ -240,12 +240,12 @@ void list_room_exits(CHAR_DATA *ch, ROOM_DATA *room) {
       continue;
     }
     
-    if(charGetLevel(ch) > LEVEL_PLAYER)
+    if(bitIsOneSet(charGetUserGroups(ch), "builder"))
       sprintf(buf, "[%d] ", roomGetVnum(to));
     else
       buf[0] = '\0';
     
-    send_to_char(ch, "  %-10s :: %s%s\r\n", 
+    send_to_char(ch, "{g  %-10s :: %s%s\r\n", 
 		 dirGetName(i),
 		 buf,
 		 (exitIsClosed(exit) ? 
@@ -270,12 +270,12 @@ void list_room_exits(CHAR_DATA *ch, ROOM_DATA *room) {
        continue;
     }
 
-    if(charGetLevel(ch) > LEVEL_PLAYER)
+    if(bitIsOneSet(charGetUserGroups(ch), "builder"))
       sprintf(buf, "[%d] ", roomGetVnum(to));
     else
       buf[0] = '\0';
     
-    send_to_char(ch, "  %-10s :: %s%s\r\n", 
+    send_to_char(ch, "{g  %-10s :: %s%s\r\n", 
 		 names[i],
 		 buf,
 		 (exitIsClosed(exit) ? 
@@ -318,7 +318,7 @@ void look_at_char(CHAR_DATA *ch, CHAR_DATA *vict) {
 
 
 void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
-  if(charGetLevel(ch) > LEVEL_PLAYER)
+  if(bitIsOneSet(charGetUserGroups(ch), "builder"))
     send_to_char(ch, "{c[%d] ", roomGetVnum(room));
 
   send_to_char(ch, "{c%s\r\n", roomGetName(room));
@@ -417,7 +417,7 @@ void send_around_char(CHAR_DATA *ch, bool hide_nosee, const char *format, ...) {
 }
 
 
-void send_to_level(int level, const char *format, ...) {
+void send_to_groups(const char *groups, const char *format, ...) {
   static char buf[MAX_BUFFER];
   va_list args;
   va_start(args, format);
@@ -428,7 +428,7 @@ void send_to_level(int level, const char *format, ...) {
   CHAR_DATA       *ch = NULL;
 
   ITERATE_LIST(ch, ch_i) {
-    if(!charGetSocket(ch) || charGetLevel(ch) < level)
+    if(!charGetSocket(ch) || !bitIsSet(charGetUserGroups(ch), groups))
       continue;
     text_to_char(ch, buf);
   }
@@ -478,6 +478,20 @@ COMMAND(cmd_more) {
 COMMAND(cmd_back) {
   if(charGetSocket(ch))
     page_back(charGetSocket(ch));
+}
+
+
+//
+// lists all of the commands available to a character via some group. If the
+// character is not part of the group, s/he cannot see the commands
+COMMAND(cmd_groupcmds) {
+  if(!*arg)
+    send_to_char(ch, "Which group did you want to commands for: %s\r\n",
+		 bitvectorGetBits(charGetUserGroups(ch)));
+  else if(!bitIsOneSet(charGetUserGroups(ch), arg))
+    send_to_char(ch, "You are not a member of user group, %s.\r\n", arg);
+  else
+    show_commands(ch, arg);
 }
 
 
@@ -592,7 +606,7 @@ COMMAND(cmd_inventory) {
   if(listSize(charGetInventory(ch)) == 0)
     send_to_char(ch, "You aren't carrying anything.\r\n");
   else {
-    send_to_char(ch, "You are carrying:\r\n");
+    send_to_char(ch, "{gYou are carrying:\r\n");
     LIST *vis_objs = find_all_objs(ch, charGetInventory(ch), "", NOTHING, TRUE);
     show_list(ch, vis_objs, objGetName, objGetMultiName, objGetVnum);
     deleteList(vis_objs);
@@ -604,7 +618,7 @@ COMMAND(cmd_inventory) {
 // show a list of all commands available to the character
 //
 COMMAND(cmd_commands) {
-  show_commands(ch, LEVEL_PLAYER, charGetLevel(ch));
+  show_commands(ch, bitvectorGetBits(charGetUserGroups(ch)));
 }
 
 
@@ -620,7 +634,7 @@ COMMAND(cmd_who)
 
   bprintf(buf, 
 	  "{cPlayers Online:\r\n"
-	  "{gLevel    Race )\r\n"
+	  "{gStatus   Race )\r\n"
 	  );
 
   // build our list of people online
@@ -628,10 +642,12 @@ COMMAND(cmd_who)
     socket_count++;
     if ((plr = socketGetChar(dsock)) == NULL) continue;
     playing_count++;
-    bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n", 
-	    (charGetLevel(plr) == LEVEL_PLAYER ? "player" :
-	     (charGetLevel(plr) == LEVEL_BUILDER  ? "builder" :
-	      (charGetLevel(plr) == LEVEL_SCRIPTER    ? "scripter" : "admin"))),
+    bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n",
+	    (bitIsSet(charGetUserGroups(ch), "admin") ? "admin" :
+	     (bitIsSet(charGetUserGroups(ch), "scripter") ? "scripter" :
+	      (bitIsSet(charGetUserGroups(ch), "builder") ? "builder"  :
+	       (bitIsSet(charGetUserGroups(ch), "player") ? "player" : 
+		"noone!")))),
 	    raceGetAbbrev(charGetRace(plr)),
 	    charGetName(plr), socketGetHostname(dsock));
   } deleteListIterator(sock_i);

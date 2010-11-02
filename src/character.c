@@ -91,7 +91,6 @@ int poscmp(int pos1, int pos2) {
 struct char_data {
   // data for PCs only
   room_vnum              loadroom;
-  int                    imm_invis;
 
   // shared data for PCs and NPCs
   int                    uid;
@@ -105,13 +104,13 @@ struct char_data {
   OBJ_DATA             * furniture;
   BUFFER               * desc;
   char                 * name;
-  int                    level;
   int                    sex;
   int                    position;
 
   LIST                 * inventory;
   HASHTABLE            * auxiliary_data;
   BITVECTOR            * prfs;
+  BITVECTOR            * user_groups;
 
   // data for NPCs only
   dialog_vnum            dialog;
@@ -126,8 +125,6 @@ struct char_data {
 CHAR_DATA *newChar() {
   CHAR_DATA *ch   = calloc(1, sizeof(CHAR_DATA));
 
-  ch->imm_invis     = 0;
-
   ch->loadroom      = NOWHERE;
   ch->uid           = NOBODY;
 
@@ -138,7 +135,6 @@ CHAR_DATA *newChar() {
   ch->socket        = NULL;
   ch->desc          = newBuffer(1);
   ch->name          = strdup("");
-  ch->level         = LEVEL_PLAYER;
   ch->sex           = SEX_NEUTRAL;
   ch->position      = POS_STANDING;
   ch->inventory     = newList();
@@ -150,6 +146,8 @@ CHAR_DATA *newChar() {
   ch->dialog        = NOTHING;
   ch->vnum          = NOBODY;
   ch->prfs          = bitvectorInstanceOf("char_prfs");
+  ch->user_groups   = bitvectorInstanceOf("user_groups");
+  bitSet(ch->user_groups, DFLT_USER_GROUP);
 
   ch->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_CHAR);
 
@@ -231,10 +229,6 @@ const char  *charGetMultiName( CHAR_DATA *ch) {
   return ch->multi_name;
 }
 
-int          charGetLevel     ( CHAR_DATA *ch) {
-  return ch->level;
-};
-
 int         charGetSex        ( CHAR_DATA *ch) {
   return ch->sex;
 };
@@ -268,12 +262,12 @@ OBJ_DATA *charGetFurniture(CHAR_DATA *ch) {
   return ch->furniture;
 }
 
-int charGetImmInvis(CHAR_DATA *ch) {
-  return ch->imm_invis;
-}
-
 BITVECTOR *charGetPrfs(CHAR_DATA *ch) {
   return ch->prfs;
+}
+
+BITVECTOR *charGetUserGroups(CHAR_DATA *ch) {
+  return ch->user_groups;
 }
 
 void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket) {
@@ -287,10 +281,6 @@ void         charSetRoom      ( CHAR_DATA *ch, ROOM_DATA *room) {
 void         charSetName      ( CHAR_DATA *ch, const char *name) {
   if(ch->name) free(ch->name);
   ch->name = strdup(name ? name : "");
-};
-
-void         charSetLevel     ( CHAR_DATA *ch, int level) {
-  ch->level = level;
 };
 
 void         charSetSex       ( CHAR_DATA *ch, int sex) {
@@ -335,9 +325,6 @@ void charSetFurniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
   ch->furniture = furniture;
 }
 
-void charSetImmInvis(CHAR_DATA *ch, int level) {
-  ch->imm_invis = level;
-}
 
 
 //*****************************************************************************
@@ -366,6 +353,7 @@ void deleteChar( CHAR_DATA *mob) {
   if(mob->multi_name)  free(mob->multi_name);
   if(mob->keywords)    free(mob->keywords);
   if(mob->prfs)        deleteBitvector(mob->prfs);
+  if(mob->user_groups) deleteBitvector(mob->user_groups);
   deleteAuxiliaryData(mob->auxiliary_data);
 
   free(mob);
@@ -382,14 +370,17 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
   charSetDesc(mob,         read_string(set, "desc"));
   charSetMultiRdesc(mob,   read_string(set, "multirdesc"));
   charSetMultiName(mob,    read_string(set, "multiname"));
-  charSetLevel(mob,        read_int   (set, "level"));
   charSetSex(mob,          read_int   (set, "sex"));
   charSetRace(mob,         read_string(set, "race"));
   bitSet(mob->prfs,        read_string(set, "prfs"));
+  bitSet(mob->user_groups, read_string(set, "user_groups"));
+
+  // make sure we always have the default group assigned
+  if(!*bitvectorGetBits(mob->user_groups))
+    bitSet(mob->user_groups, DFLT_USER_GROUP);
 
   // read in PC data if it exists
   if(storage_contains(set, "uid")) {
-    charSetImmInvis(mob,   read_int   (set, "imm_invis"));
     charSetUID(mob,        read_int   (set, "uid"));
     charSetLoadroom(mob,   read_int   (set, "loadroom"));
     charSetPos(mob,        read_int   (set, "position"));
@@ -424,14 +415,13 @@ STORAGE_SET *charStore(CHAR_DATA *mob) {
   store_string(set, "desc",       bufferString(mob->desc));
   store_string(set, "multirdesc", mob->multi_rdesc);
   store_string(set, "multiname",  mob->multi_name);
-  store_int   (set, "level",      mob->level);
   store_int   (set, "sex",        mob->sex);
   store_string(set, "race",       mob->race);
   store_string(set, "prfs",       bitvectorGetBits(mob->prfs));
+  store_string(set, "user_groups",bitvectorGetBits(mob->user_groups));
 
   // PC-only data
   if(!charIsNPC(mob)) {
-    store_int   (set, "imm_invis",  mob->imm_invis);
     store_int   (set, "position",   mob->position);
     store_int   (set, "uid",        mob->uid);
     store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)));
@@ -455,12 +445,11 @@ void charCopyTo( CHAR_DATA *from, CHAR_DATA *to) {
   charSetRdesc      (to, charGetRdesc(from));
   charSetMultiRdesc (to, charGetMultiRdesc(from));
   charSetMultiName  (to, charGetMultiName(from));
-  charSetLevel      (to, charGetLevel(from));
   charSetSex        (to, charGetSex(from));
   charSetPos        (to, charGetPos(from));
   charSetRace       (to, charGetRace(from));
   charSetBody       (to, bodyCopy(charGetBody(from)));
-  charSetImmInvis   (to, charGetImmInvis(from));
+  bitvectorCopyTo   (from->prfs, to->prfs);
   bitvectorCopyTo   (from->prfs, to->prfs);
 
   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);

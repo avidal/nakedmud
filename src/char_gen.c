@@ -145,9 +145,10 @@ void char_ask_race(SOCKET_DATA *sock, char *arg) {
     mudsettingSetInt("puid", next_char_uid);
     charSetUID(socketGetChar(sock), next_char_uid);
     
-    // if it's the first player, set him as the highest level 
+    // if it's the first player, give him all priviledges
     if(charGetUID(socketGetChar(sock)) == 1)
-      charSetLevel(socketGetChar(sock), MAX_LEVEL);
+      bitSet(charGetUserGroups(socketGetChar(sock)),
+	     "admin, builder, scripter, player, playtester");
 
     // add the character to the game 
     char_to_game(socketGetChar(sock));

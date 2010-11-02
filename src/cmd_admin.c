@@ -26,48 +26,39 @@
 //*****************************************************************************
 
 //
-// Locks the game for anyone at or below the lockdown level. No argument tells
-// us the current lockdown level. Suggested by Rhaelar
+// Locks the game for anyone not a member of one of the user groups we specify.
 COMMAND(cmd_lockdown) {
-  int lockdown = 0;
-
-  // we're trying to view the current lockdown level
+  // check the current lockdown status
   if(!*arg) {
-    lockdown = mudsettingGetInt("lockdown");
-    // no lockdown in place
-    if(lockdown == 0)
-      send_to_char(ch, "The mud currently is not locked to anyone.\r\n");
-    else if(lockdown == 1)
-      send_to_char(ch, "The mud is locked down to new players.\r\n");
-    else
-      send_to_char(ch, "The mud is locked to anyone below level %d.\r\n",
-		   lockdown);
+    if(!*mudsettingGetString("lockdown"))
+      send_to_char(ch, "Lockdown is currently turned off.\r\n");
+    else {
+      send_to_char(ch, "Current lockdown is to members not of: %s\r\n",
+		   mudsettingGetString("lockdown"));
+      send_to_char(ch, "To turn off lockdown, use {clockdown off{n\r\n");
+    }
   }
 
-  // make sure we've got a level number
-  else if(!isdigit(*arg))
-    send_to_char(ch, "Which level would you like to set the lockdown to?\r\n");
+  // turn lockdown off
+  else if(!strcasecmp(arg, "off")) {
+    send_to_char(ch, "Lockdown disabled.\r\n");
+    mudsettingSetString("lockdown", "");
+  }
 
-  // make sure we don't lock ourself out
-  else if( (lockdown = atoi(arg)) > charGetLevel(ch))
-    send_to_char(ch, "You cannot lock out people below that level!\r\n");
+  // make sure we're not locking ourself out
+  else if(!bitIsSet(charGetUserGroups(ch), arg))
+    send_to_char(ch, "You cannot lock yourself out!\r\n");
 
-  // do the lockdown
+  // lock out anyone not in the groups we specify
   else {
-    mudsettingSetInt("lockdown", lockdown);
-    if(lockdown == 0)
-      send_to_char(ch, "Lockdown removed.\r\n");
-    else if(lockdown == 1)
-      send_to_char(ch, "New players are locked down.\r\n");
-    else
-      send_to_char(ch, "Everyone below level %d is locked down.\r\n", lockdown);
+    send_to_char(ch, "MUD locked down to everyone not in groups: %s\r\n", arg);
+    mudsettingSetString("lockdown", arg);
 
-    // kick out anyone that is at or below our lockdown threshold.
+    // kick out everyone who we've just locked out
     LIST_ITERATOR *ch_i = newListIterator(mobile_list);
     ITERATE_LIST(ch, ch_i) {
-      if(!charIsNPC(ch) && charGetLevel(ch) < lockdown) {
-	send_to_char(ch, "The mud has just been locked down to anyone at or "
-		     "below your level.\r\n");
+      if(!charIsNPC(ch) && !bitIsSet(charGetUserGroups(ch), arg)) {
+	send_to_char(ch, "The mud has just been locked down to you.\r\n");
 	save_player(ch);
 
 	// and close the socket if we have one
@@ -280,59 +271,4 @@ COMMAND(cmd_linkdead) {
 
   if (!found)
     text_to_char(ch, "Noone is currently linkdead.\n\r");
-}
-
-
-//
-// List all of the non-player commands the character has access to
-COMMAND(cmd_wizhelp) {
-  show_commands(ch, LEVEL_BUILDER, charGetLevel(ch));
-}
-
-
-//
-// Turn on/off immortal invisibility
-COMMAND(cmd_invis) {
-  int level = charGetLevel(ch); // default to our level
-  if(arg && *arg && isdigit(*arg))
-    level = atoi(arg);
-
-  // make sure we're not trying to go invisible at a level higher than us
-  if(level > charGetLevel(ch)) {
-    send_to_char(ch, "You cannot go invisibile to a level higher than yours.\r\n");
-    return;
-  }
-
-  // see if we're trying to go visible
-  if(level == 0 && charGetImmInvis(ch) > 0) {
-    send_to_char(ch, "Invisibility turned off.\r\n");
-    charSetImmInvis(ch, 0);
-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	    "$n slowly fades into existence.");    
-  }
-  // or invisible
-  else if(level > 0) {
-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	    "$n slowly fades out of existence.");
-    charSetImmInvis(ch, level);
-    send_to_char(ch, "You are now invisible to anyone below level %d.\r\n",
-		 level);
-  }
-  // we tried to go visible, but we already are visible
-  else
-    send_to_char(ch, "But you're already visible!\r\n");
-}
-
-
-//
-// turn off immortal invisibility
-COMMAND(cmd_visible) {
-  if(charGetImmInvis(ch) == 0)
-    send_to_char(ch, "But you're already visible!\r\n");
-  else {
-    charSetImmInvis(ch, 0);
-    send_to_char(ch, "You fade into existence.\r\n");
-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	    "$n slowly fades into existence.");
-  }
 }

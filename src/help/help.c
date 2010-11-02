@@ -449,15 +449,15 @@ void init_help() {
 
   // add all of our commands
   add_cmd("help", NULL, cmd_help, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE, FALSE);
+	  "player", FALSE, FALSE);
   add_cmd("hlink", NULL, cmd_hlink, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_ADMIN, FALSE, FALSE);
+	  "admin", FALSE, FALSE);
   add_cmd("hunlink", NULL, cmd_hunlink, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_ADMIN, FALSE, FALSE);
+	  "admin", FALSE, FALSE);
   add_cmd("hupdate", NULL, cmd_hupdate, 0, POS_SITTING, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, TRUE);
+	  "builder", FALSE, TRUE);
   add_cmd("hedit", NULL, cmd_hedit, 0, POS_SITTING, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, TRUE);
+	  "builder", FALSE, TRUE);
 
   // read in all of our helps
   STORAGE_SET       *set = storage_read(HELP_FILE);

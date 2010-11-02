@@ -90,6 +90,10 @@ void bitSet(BITVECTOR *v, const char *name);
 void bitRemove(BITVECTOR *v, const char *name);
 
 //
+// sets all of the bits on the vector to off
+void bitClear(BITVECTOR *v);
+
+//
 // toggle the specified bits on or off... whichever one they are not, currently
 void bitToggle(BITVECTOR *v, const char *name);
 

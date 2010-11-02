@@ -133,14 +133,6 @@ typedef  unsigned char     byte;
 #define TSTATE_WAIT            2  /* Closed while in thread.         */
 #define TSTATE_CLOSED          3  /* Closed, ready to be recycled.   */
 
-/* player levels */
-#define LEVEL_PLAYER           1           // All of the normal players
-#define LEVEL_GOD              2           // All the people who run the show
-#define LEVEL_BUILDER          LEVEL_GOD   // Players who have building rights
-#define LEVEL_SCRIPTER         3           // Builders who have scripting rights
-#define LEVEL_ADMIN            4           // The people who oversee the MUD
-#define MAX_LEVEL              LEVEL_ADMIN
-
 /* Communication Ranges */
 #define COMM_LOCAL             0  /* same room only                  */
 #define COMM_GLOBAL            1  /* all over the game               */
@@ -172,11 +164,11 @@ typedef  unsigned char     byte;
 #define COMMAND(name)      void name(CHAR_DATA *ch, const char *cmd, \
 				     int subcmd, char *arg)
 void init_commands();
-void show_commands(CHAR_DATA *ch, int min_lev, int max_lev);
+void show_commands(CHAR_DATA *ch, const char *user_groups);
 void remove_cmd   (const char *cmd);
 void add_cmd      (const char *cmd, const char *sort_by, void *func, 
 	           int subcmd, int min_pos, int max_pos,
-	           int min_level, bool mob_ok, bool interrupts);
+	           const char *user_group, bool mob_ok, bool interrupts);
 bool cmd_exists   (const char *cmd);
 
 

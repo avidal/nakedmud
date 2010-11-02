@@ -94,7 +94,7 @@ void init_notepad() {
 
   // install our commands
   add_cmd("write", NULL, cmd_write, 0, POS_SITTING, POS_FLYING,
-	  LEVEL_PLAYER, FALSE, TRUE);
+	  "player", FALSE, TRUE);
   add_cmd("notepad", NULL, cmd_notepad, 0, POS_SITTING, POS_FLYING,
-	  LEVEL_PLAYER, FALSE, TRUE);
+	  "player", FALSE, TRUE);
 }

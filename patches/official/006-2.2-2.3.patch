@@ -1,0 +1,5355 @@
+diff -ruN ../nakedmudv2.2/src/account_handler.c src/account_handler.c
+--- ../nakedmudv2.2/src/account_handler.c	Thu May 12 17:22:38 2005
++++ src/account_handler.c	Fri May 27 01:30:58 2005
+@@ -103,7 +103,8 @@
+     // check for new account
+     if ( (acct = load_account(arg)) == NULL) {
+       // check for lockdown
+-      if(mudsettingGetInt("lockdown") > 0) {
++      if(*mudsettingGetString("lockdown") &&
++	 !is_keyword(mudsettingGetString("lockdown"), DFLT_USER_GROUP, FALSE)) {
+ 	text_to_socket(sock, "Sorry, creating new accounts is not allowed at the moment.\r\n");
+ 	close_socket(sock, FALSE);
+ 	return;
+@@ -229,8 +230,9 @@
+       charSetSocket(ch, sock);
+ 
+       // make sure the mud isn't locked to this person
+-      if(charGetLevel(ch) < mudsettingGetInt("lockdown")) {
+-	text_to_socket(sock, "Sorry, the mud is currently locked down to anyone of your level and below.\r\n");
++      if(*mudsettingGetString("lockdown") &&
++	 !bitIsSet(charGetUserGroups(ch), mudsettingGetString("lockdown"))) {
++	send_to_char(ch, "You are currently locked out of the mud.\r\n");
+ 	deleteChar(ch);
+ 	socketSetChar(sock, NULL);
+ 	return;
+@@ -302,7 +304,8 @@
+ 
+   case 'N':
+     // make a new character
+-    if(mudsettingGetBool("lockdown") > 0) {
++    if(*mudsettingGetString("lockdown") &&
++       !is_keyword(mudsettingGetString("lockdown"), DFLT_USER_GROUP, FALSE)) {
+       text_to_buffer(sock, "The MUD is currently locked to new players.\r\n");
+       return;
+     }
+diff -ruN ../nakedmudv2.2/src/action.c src/action.c
+--- ../nakedmudv2.2/src/action.c	Thu May 12 17:08:52 2005
++++ src/action.c	Fri May 27 01:30:58 2005
+@@ -123,7 +123,7 @@
+ 
+   // add in our example delayed action
+   add_cmd("dsay", NULL, cmd_dsay, 0, POS_SITTING, POS_FLYING, 
+-	  LEVEL_ADMIN, TRUE, FALSE);
++	  "admin", TRUE, FALSE);
+ 
+   // make sure the character does not continue actions after being extracted
+   add_extract_mob_func(stop_all_actions);
+diff -ruN ../nakedmudv2.2/src/alias/alias.c src/alias/alias.c
+--- ../nakedmudv2.2/src/alias/alias.c	Thu May 12 17:08:51 2005
++++ src/alias/alias.c	Fri May 27 01:30:57 2005
+@@ -123,7 +123,7 @@
+ 
+   // allow people to view their aliases
+   add_cmd("alias", NULL, cmd_alias, 0, POS_UNCONCIOUS, POS_FLYING, 
+-	  LEVEL_PLAYER, FALSE, TRUE);
++	  "player", FALSE, TRUE);
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.2/src/bitvector.c src/bitvector.c
+--- ../nakedmudv2.2/src/bitvector.c	Thu May 12 17:08:51 2005
++++ src/bitvector.c	Fri May 27 01:58:56 2005
+@@ -85,6 +85,13 @@
+ 
+   bitvectorCreate("obj_bits");
+   bitvectorAddBit("obj_bits", "notake");
++
++  bitvectorCreate("user_groups");
++  bitvectorAddBit("user_groups", "admin");
++  bitvectorAddBit("user_groups", "scripter");
++  bitvectorAddBit("user_groups", "builder");
++  bitvectorAddBit("user_groups", "player");
++  bitvectorAddBit("user_groups", "playtester");
+ }
+ 
+ void bitvectorAddBit(const char *name, const char *bit) {
+@@ -191,6 +198,12 @@
+     SET_BIT(v->bits[val/8], (1 << (val % 8)));
+   }
+   free(bits);
++}
++
++void bitClear(BITVECTOR *v) {
++  int i;
++  for(i = 1; i <= hashSize(v->data->bitmap); i++)
++    REMOVE_BIT(v->bits[i/8], (1 << (i % 8)));
+ }
+ 
+ void bitRemove(BITVECTOR *v, const char *name) {
+diff -ruN ../nakedmudv2.2/src/bitvector.h src/bitvector.h
+--- ../nakedmudv2.2/src/bitvector.h	Thu May 12 17:08:51 2005
++++ src/bitvector.h	Fri May 27 01:58:56 2005
+@@ -90,6 +90,10 @@
+ void bitRemove(BITVECTOR *v, const char *name);
+ 
+ //
++// sets all of the bits on the vector to off
++void bitClear(BITVECTOR *v);
++
++//
+ // toggle the specified bits on or off... whichever one they are not, currently
+ void bitToggle(BITVECTOR *v, const char *name);
+ 
+diff -ruN ../nakedmudv2.2/src/body.c src/body.c
+--- ../nakedmudv2.2/src/body.c	Thu May 12 17:08:51 2005
++++ src/body.c	Fri May 27 01:30:58 2005
+@@ -480,7 +480,7 @@
+   BODYPART *part = NULL;
+ 
+   ITERATE_LIST(part, part_i)
+-    if(part->equipment)
++    if(part->equipment && !listIn(equipment, part->equipment))
+       listPut(equipment, part->equipment);
+   deleteListIterator(part_i);
+   return equipment;
+@@ -492,7 +492,7 @@
+   BODYPART *part = NULL;
+ 
+   ITERATE_LIST(part, part_i) {
+-    if(part->equipment) {
++    if(part->equipment && !listIn(equipment, part->equipment)) {
+       listPut(equipment, part->equipment);
+       part->equipment = NULL;
+     }
+diff -ruN ../nakedmudv2.2/src/char_gen.c src/char_gen.c
+--- ../nakedmudv2.2/src/char_gen.c	Thu May 12 17:08:51 2005
++++ src/char_gen.c	Fri May 27 01:30:58 2005
+@@ -145,9 +145,10 @@
+     mudsettingSetInt("puid", next_char_uid);
+     charSetUID(socketGetChar(sock), next_char_uid);
+     
+-    // if it's the first player, set him as the highest level 
++    // if it's the first player, give him all priviledges
+     if(charGetUID(socketGetChar(sock)) == 1)
+-      charSetLevel(socketGetChar(sock), MAX_LEVEL);
++      bitSet(charGetUserGroups(socketGetChar(sock)),
++	     "admin, builder, scripter, player, playtester");
+ 
+     // add the character to the game 
+     char_to_game(socketGetChar(sock));
+diff -ruN ../nakedmudv2.2/src/character.c src/character.c
+--- ../nakedmudv2.2/src/character.c	Thu May 12 17:08:51 2005
++++ src/character.c	Fri May 27 01:30:58 2005
+@@ -91,7 +91,6 @@
+ struct char_data {
+   // data for PCs only
+   room_vnum              loadroom;
+-  int                    imm_invis;
+ 
+   // shared data for PCs and NPCs
+   int                    uid;
+@@ -105,13 +104,13 @@
+   OBJ_DATA             * furniture;
+   BUFFER               * desc;
+   char                 * name;
+-  int                    level;
+   int                    sex;
+   int                    position;
+ 
+   LIST                 * inventory;
+   HASHTABLE            * auxiliary_data;
+   BITVECTOR            * prfs;
++  BITVECTOR            * user_groups;
+ 
+   // data for NPCs only
+   dialog_vnum            dialog;
+@@ -126,8 +125,6 @@
+ CHAR_DATA *newChar() {
+   CHAR_DATA *ch   = calloc(1, sizeof(CHAR_DATA));
+ 
+-  ch->imm_invis     = 0;
+-
+   ch->loadroom      = NOWHERE;
+   ch->uid           = NOBODY;
+ 
+@@ -138,7 +135,6 @@
+   ch->socket        = NULL;
+   ch->desc          = newBuffer(1);
+   ch->name          = strdup("");
+-  ch->level         = LEVEL_PLAYER;
+   ch->sex           = SEX_NEUTRAL;
+   ch->position      = POS_STANDING;
+   ch->inventory     = newList();
+@@ -150,6 +146,8 @@
+   ch->dialog        = NOTHING;
+   ch->vnum          = NOBODY;
+   ch->prfs          = bitvectorInstanceOf("char_prfs");
++  ch->user_groups   = bitvectorInstanceOf("user_groups");
++  bitSet(ch->user_groups, DFLT_USER_GROUP);
+ 
+   ch->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_CHAR);
+ 
+@@ -231,10 +229,6 @@
+   return ch->multi_name;
+ }
+ 
+-int          charGetLevel     ( CHAR_DATA *ch) {
+-  return ch->level;
+-};
+-
+ int         charGetSex        ( CHAR_DATA *ch) {
+   return ch->sex;
+ };
+@@ -268,14 +262,14 @@
+   return ch->furniture;
+ }
+ 
+-int charGetImmInvis(CHAR_DATA *ch) {
+-  return ch->imm_invis;
+-}
+-
+ BITVECTOR *charGetPrfs(CHAR_DATA *ch) {
+   return ch->prfs;
+ }
+ 
++BITVECTOR *charGetUserGroups(CHAR_DATA *ch) {
++  return ch->user_groups;
++}
++
+ void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket) {
+   ch->socket = socket;
+ };
+@@ -289,10 +283,6 @@
+   ch->name = strdup(name ? name : "");
+ };
+ 
+-void         charSetLevel     ( CHAR_DATA *ch, int level) {
+-  ch->level = level;
+-};
+-
+ void         charSetSex       ( CHAR_DATA *ch, int sex) {
+   ch->sex = sex;
+ };
+@@ -335,9 +325,6 @@
+   ch->furniture = furniture;
+ }
+ 
+-void charSetImmInvis(CHAR_DATA *ch, int level) {
+-  ch->imm_invis = level;
+-}
+ 
+ 
+ //*****************************************************************************
+@@ -366,6 +353,7 @@
+   if(mob->multi_name)  free(mob->multi_name);
+   if(mob->keywords)    free(mob->keywords);
+   if(mob->prfs)        deleteBitvector(mob->prfs);
++  if(mob->user_groups) deleteBitvector(mob->user_groups);
+   deleteAuxiliaryData(mob->auxiliary_data);
+ 
+   free(mob);
+@@ -382,14 +370,17 @@
+   charSetDesc(mob,         read_string(set, "desc"));
+   charSetMultiRdesc(mob,   read_string(set, "multirdesc"));
+   charSetMultiName(mob,    read_string(set, "multiname"));
+-  charSetLevel(mob,        read_int   (set, "level"));
+   charSetSex(mob,          read_int   (set, "sex"));
+   charSetRace(mob,         read_string(set, "race"));
+   bitSet(mob->prfs,        read_string(set, "prfs"));
++  bitSet(mob->user_groups, read_string(set, "user_groups"));
++
++  // make sure we always have the default group assigned
++  if(!*bitvectorGetBits(mob->user_groups))
++    bitSet(mob->user_groups, DFLT_USER_GROUP);
+ 
+   // read in PC data if it exists
+   if(storage_contains(set, "uid")) {
+-    charSetImmInvis(mob,   read_int   (set, "imm_invis"));
+     charSetUID(mob,        read_int   (set, "uid"));
+     charSetLoadroom(mob,   read_int   (set, "loadroom"));
+     charSetPos(mob,        read_int   (set, "position"));
+@@ -424,14 +415,13 @@
+   store_string(set, "desc",       bufferString(mob->desc));
+   store_string(set, "multirdesc", mob->multi_rdesc);
+   store_string(set, "multiname",  mob->multi_name);
+-  store_int   (set, "level",      mob->level);
+   store_int   (set, "sex",        mob->sex);
+   store_string(set, "race",       mob->race);
+   store_string(set, "prfs",       bitvectorGetBits(mob->prfs));
++  store_string(set, "user_groups",bitvectorGetBits(mob->user_groups));
+ 
+   // PC-only data
+   if(!charIsNPC(mob)) {
+-    store_int   (set, "imm_invis",  mob->imm_invis);
+     store_int   (set, "position",   mob->position);
+     store_int   (set, "uid",        mob->uid);
+     store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)));
+@@ -455,12 +445,11 @@
+   charSetRdesc      (to, charGetRdesc(from));
+   charSetMultiRdesc (to, charGetMultiRdesc(from));
+   charSetMultiName  (to, charGetMultiName(from));
+-  charSetLevel      (to, charGetLevel(from));
+   charSetSex        (to, charGetSex(from));
+   charSetPos        (to, charGetPos(from));
+   charSetRace       (to, charGetRace(from));
+   charSetBody       (to, bodyCopy(charGetBody(from)));
+-  charSetImmInvis   (to, charGetImmInvis(from));
++  bitvectorCopyTo   (from->prfs, to->prfs);
+   bitvectorCopyTo   (from->prfs, to->prfs);
+ 
+   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
+diff -ruN ../nakedmudv2.2/src/character.h src/character.h
+--- ../nakedmudv2.2/src/character.h	Thu May 12 17:08:51 2005
++++ src/character.h	Fri May 27 01:30:58 2005
+@@ -15,10 +15,23 @@
+ //*****************************************************************************
+ 
+ 
++
++//*****************************************************************************
++// character defines
++//*****************************************************************************
++
++// the group a character belongs to by default
++#define DFLT_USER_GROUP        "player"
++
++
++
++//*****************************************************************************
++// character functions
++//*****************************************************************************
++
+ //
+ // the difference between newChar and newMobile is that newMobile
+ // assigned a new UID whereas newChar does not.
+-//
+ CHAR_DATA   *newChar          (void);
+ CHAR_DATA    *newMobile       (void);
+ void         deleteChar       (CHAR_DATA *mob);
+@@ -37,10 +50,9 @@
+ 
+ 
+ 
++
+ //*****************************************************************************
+-//
+ // utility functions
+-//
+ //*****************************************************************************
+ 
+ /* buffers the output        */
+@@ -51,14 +63,13 @@
+ __attribute__ ((format (printf, 2, 3)));
+ void send_around_char(CHAR_DATA *ch, bool hide_nosee, const char *format, ...) 
+ __attribute__ ((format (printf, 3, 4)));
+-void send_to_level(int level, const char *format, ...) 
++void send_to_groups(const char *groups, const char *Format, ...)
+ __attribute__ ((format (printf, 2, 3)));
+ 
+ 
++
+ //*****************************************************************************
+-//
+ // set and get functions
+-//
+ //*****************************************************************************
+ SOCKET_DATA *charGetSocket    ( CHAR_DATA *ch);
+ ROOM_DATA   *charGetRoom      ( CHAR_DATA *ch);
+@@ -67,7 +78,6 @@
+ const char  *charGetRdesc     ( CHAR_DATA *ch);
+ const char  *charGetMultiRdesc( CHAR_DATA *ch);
+ const char  *charGetMultiName ( CHAR_DATA *ch);
+-int          charGetLevel     ( CHAR_DATA *ch);
+ int          charGetSex       ( CHAR_DATA *ch);
+ // for editing with the text editor
+ BUFFER      *charGetDescBuffer( CHAR_DATA *ch);
+@@ -79,14 +89,13 @@
+ int          charGetPos       ( CHAR_DATA *ch);
+ int          charGetUID       ( const CHAR_DATA *ch);
+ void        *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name);
+-int          charGetImmInvis  ( CHAR_DATA *ch);
+ BITVECTOR   *charGetPrfs      ( CHAR_DATA *ch);
++BITVECTOR   *charGetUserGroups( CHAR_DATA *ch);
+ 
+ 
+ void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket);
+ void         charSetRoom      ( CHAR_DATA *ch, ROOM_DATA *room);
+ void         charSetName      ( CHAR_DATA *ch, const char *name);
+-void         charSetLevel     ( CHAR_DATA *ch, int level);
+ void         charSetSex       ( CHAR_DATA *ch, int sex);
+ void         charSetDesc      ( CHAR_DATA *ch, const char *desc);
+ void         charSetRdesc     ( CHAR_DATA *ch, const char *rdesc);
+@@ -98,14 +107,11 @@
+ void         charSetLoadroom  ( CHAR_DATA *ch, room_vnum loadroom);
+ void         charSetFurniture ( CHAR_DATA *ch, OBJ_DATA *furniture);
+ void         charSetPos       ( CHAR_DATA *ch, int pos);
+-void         charSetImmInvis  ( CHAR_DATA *ch, int level);
+ 
+ 
+ 
+ //*****************************************************************************
+-//
+ // mob-specific functions
+-//
+ //*****************************************************************************
+ mob_vnum     charGetVnum       (CHAR_DATA *ch);
+ dialog_vnum  charGetDialog     (CHAR_DATA *ch);
+@@ -118,9 +124,7 @@
+ 
+ 
+ //*****************************************************************************
+-//
+ // Sexes
+-//
+ //*****************************************************************************
+ #define SEX_NONE                (-1)
+ #define SEX_MALE                  0
+@@ -134,9 +138,7 @@
+ 
+ 
+ //*****************************************************************************
+-//
+ // Positions
+-//
+ //*****************************************************************************
+ #define POS_NONE                (-1)
+ #define POS_UNCONCIOUS            0
+diff -ruN ../nakedmudv2.2/src/cmd_admin.c src/cmd_admin.c
+--- ../nakedmudv2.2/src/cmd_admin.c	Thu May 12 17:08:51 2005
++++ src/cmd_admin.c	Fri May 27 01:30:58 2005
+@@ -26,48 +26,39 @@
+ //*****************************************************************************
+ 
+ //
+-// Locks the game for anyone at or below the lockdown level. No argument tells
+-// us the current lockdown level. Suggested by Rhaelar
++// Locks the game for anyone not a member of one of the user groups we specify.
+ COMMAND(cmd_lockdown) {
+-  int lockdown = 0;
+-
+-  // we're trying to view the current lockdown level
++  // check the current lockdown status
+   if(!*arg) {
+-    lockdown = mudsettingGetInt("lockdown");
+-    // no lockdown in place
+-    if(lockdown == 0)
+-      send_to_char(ch, "The mud currently is not locked to anyone.\r\n");
+-    else if(lockdown == 1)
+-      send_to_char(ch, "The mud is locked down to new players.\r\n");
+-    else
+-      send_to_char(ch, "The mud is locked to anyone below level %d.\r\n",
+-		   lockdown);
++    if(!*mudsettingGetString("lockdown"))
++      send_to_char(ch, "Lockdown is currently turned off.\r\n");
++    else {
++      send_to_char(ch, "Current lockdown is to members not of: %s\r\n",
++		   mudsettingGetString("lockdown"));
++      send_to_char(ch, "To turn off lockdown, use {clockdown off{n\r\n");
++    }
+   }
+ 
+-  // make sure we've got a level number
+-  else if(!isdigit(*arg))
+-    send_to_char(ch, "Which level would you like to set the lockdown to?\r\n");
++  // turn lockdown off
++  else if(!strcasecmp(arg, "off")) {
++    send_to_char(ch, "Lockdown disabled.\r\n");
++    mudsettingSetString("lockdown", "");
++  }
+ 
+-  // make sure we don't lock ourself out
+-  else if( (lockdown = atoi(arg)) > charGetLevel(ch))
+-    send_to_char(ch, "You cannot lock out people below that level!\r\n");
++  // make sure we're not locking ourself out
++  else if(!bitIsSet(charGetUserGroups(ch), arg))
++    send_to_char(ch, "You cannot lock yourself out!\r\n");
+ 
+-  // do the lockdown
++  // lock out anyone not in the groups we specify
+   else {
+-    mudsettingSetInt("lockdown", lockdown);
+-    if(lockdown == 0)
+-      send_to_char(ch, "Lockdown removed.\r\n");
+-    else if(lockdown == 1)
+-      send_to_char(ch, "New players are locked down.\r\n");
+-    else
+-      send_to_char(ch, "Everyone below level %d is locked down.\r\n", lockdown);
++    send_to_char(ch, "MUD locked down to everyone not in groups: %s\r\n", arg);
++    mudsettingSetString("lockdown", arg);
+ 
+-    // kick out anyone that is at or below our lockdown threshold.
++    // kick out everyone who we've just locked out
+     LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+     ITERATE_LIST(ch, ch_i) {
+-      if(!charIsNPC(ch) && charGetLevel(ch) < lockdown) {
+-	send_to_char(ch, "The mud has just been locked down to anyone at or "
+-		     "below your level.\r\n");
++      if(!charIsNPC(ch) && !bitIsSet(charGetUserGroups(ch), arg)) {
++	send_to_char(ch, "The mud has just been locked down to you.\r\n");
+ 	save_player(ch);
+ 
+ 	// and close the socket if we have one
+@@ -280,59 +271,4 @@
+ 
+   if (!found)
+     text_to_char(ch, "Noone is currently linkdead.\n\r");
+-}
+-
+-
+-//
+-// List all of the non-player commands the character has access to
+-COMMAND(cmd_wizhelp) {
+-  show_commands(ch, LEVEL_BUILDER, charGetLevel(ch));
+-}
+-
+-
+-//
+-// Turn on/off immortal invisibility
+-COMMAND(cmd_invis) {
+-  int level = charGetLevel(ch); // default to our level
+-  if(arg && *arg && isdigit(*arg))
+-    level = atoi(arg);
+-
+-  // make sure we're not trying to go invisible at a level higher than us
+-  if(level > charGetLevel(ch)) {
+-    send_to_char(ch, "You cannot go invisibile to a level higher than yours.\r\n");
+-    return;
+-  }
+-
+-  // see if we're trying to go visible
+-  if(level == 0 && charGetImmInvis(ch) > 0) {
+-    send_to_char(ch, "Invisibility turned off.\r\n");
+-    charSetImmInvis(ch, 0);
+-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+-	    "$n slowly fades into existence.");    
+-  }
+-  // or invisible
+-  else if(level > 0) {
+-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+-	    "$n slowly fades out of existence.");
+-    charSetImmInvis(ch, level);
+-    send_to_char(ch, "You are now invisible to anyone below level %d.\r\n",
+-		 level);
+-  }
+-  // we tried to go visible, but we already are visible
+-  else
+-    send_to_char(ch, "But you're already visible!\r\n");
+-}
+-
+-
+-//
+-// turn off immortal invisibility
+-COMMAND(cmd_visible) {
+-  if(charGetImmInvis(ch) == 0)
+-    send_to_char(ch, "But you're already visible!\r\n");
+-  else {
+-    charSetImmInvis(ch, 0);
+-    send_to_char(ch, "You fade into existence.\r\n");
+-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+-	    "$n slowly fades into existence.");
+-  }
+ }
+diff -ruN ../nakedmudv2.2/src/cmd_builder.c src/cmd_builder.c
+--- ../nakedmudv2.2/src/cmd_builder.c	Thu May 12 17:08:51 2005
++++ src/cmd_builder.c	Fri May 27 01:30:58 2005
+@@ -215,6 +215,10 @@
+ 		    ch, NULL, charGetRoom(ch), NULL, NULL, 0);
+       }
+     }
++
++    // type not found
++    else 
++      send_to_char(ch, "What type of thing did you want to load?\r\n");
+   }
+ }
+ 
+@@ -225,7 +229,6 @@
+ //   usage: purge <target>
+ //
+ COMMAND(cmd_purge) {
+-
+   // purge everything
+   if(!arg || !*arg) {
+     LIST_ITERATOR *list_i = newListIterator(roomGetContents(charGetRoom(ch)));
+@@ -246,7 +249,6 @@
+     ITERATE_LIST(vict, list_i) {
+       if(vict == ch || !charIsNPC(vict)) 
+ 	continue;
+-      char_from_room(vict);
+       extract_mobile(vict);
+     }
+     deleteListIterator(list_i);
+@@ -263,11 +265,17 @@
+ 			 FIND_SCOPE_ROOM | FIND_SCOPE_VISIBLE,
+ 			 FALSE, &found_type);
+ 
+-    // purge  characters
+-    if(found_type == FOUND_CHAR) {
+-      if(charGetLevel(ch) <= charGetLevel(found))
+-	send_to_char(ch, "Erm, you better not try that on %s.\r\n", 
+-		     HIMHER(found));
++    // make sure we found something
++    if(found == NULL)
++      send_to_char(ch, "Purge what?\r\n");
++
++    // purge characters
++    else if(found_type == FOUND_CHAR) {
++      // we can only purge him if we have all the same groups as him, and more
++      if(!charHasMoreUserGroups(ch, found))
++	send_to_char(ch, "Erm, you better not try that on %s. %s has "
++		     "just as much priviledges as you.\r\n", 
++		     HIMHER(found), HESHE(found));
+       else {
+ 	send_to_char(ch, "You purge %s.\r\n", charGetName(found));
+ 	message(ch, found, NULL, NULL, FALSE, TO_NOTVICT | TO_NOTCHAR,
+diff -ruN ../nakedmudv2.2/src/commands.h src/commands.h
+--- ../nakedmudv2.2/src/commands.h	Thu May 12 17:08:52 2005
++++ src/commands.h	Fri May 27 01:30:58 2005
+@@ -14,9 +14,6 @@
+ COMMAND(cmd_copyover);
+ COMMAND(cmd_shutdown);
+ COMMAND(cmd_linkdead);
+-COMMAND(cmd_wizhelp);
+-COMMAND(cmd_invis);
+-COMMAND(cmd_visible);
+ COMMAND(cmd_repeat);
+ COMMAND(cmd_at);
+ COMMAND(cmd_lockdown);
+@@ -84,6 +81,7 @@
+ COMMAND(cmd_look);
+ COMMAND(cmd_inventory);
+ COMMAND(cmd_equipment);
++COMMAND(cmd_groupcmds);
+ 
+ 
+ /* olc.c */
+diff -ruN ../nakedmudv2.2/src/editor/notepad.c src/editor/notepad.c
+--- ../nakedmudv2.2/src/editor/notepad.c	Thu May 12 17:08:51 2005
++++ src/editor/notepad.c	Fri May 27 01:30:57 2005
+@@ -94,7 +94,7 @@
+ 
+   // install our commands
+   add_cmd("write", NULL, cmd_write, 0, POS_SITTING, POS_FLYING,
+-	  LEVEL_PLAYER, FALSE, TRUE);
++	  "player", FALSE, TRUE);
+   add_cmd("notepad", NULL, cmd_notepad, 0, POS_SITTING, POS_FLYING,
+-	  LEVEL_PLAYER, FALSE, TRUE);
++	  "player", FALSE, TRUE);
+ }
+diff -ruN ../nakedmudv2.2/src/event.c src/event.c
+--- ../nakedmudv2.2/src/event.c	Thu May 12 17:08:52 2005
++++ src/event.c	Fri May 27 01:30:58 2005
+@@ -113,7 +113,7 @@
+ 
+   // add our proof of concept command
+   add_cmd("devent", NULL, cmd_devent, 0, POS_SLEEPING, POS_FLYING,
+-	  LEVEL_ADMIN, TRUE, FALSE);
++	  "admin", TRUE, FALSE);
+ 
+   // make sure all events involving the object/char are cancelled when
+   // either is extracted from the game
+diff -ruN ../nakedmudv2.2/src/extra_descs.c src/extra_descs.c
+--- ../nakedmudv2.2/src/extra_descs.c	Thu May 12 17:08:52 2005
++++ src/extra_descs.c	Fri May 27 01:41:17 2005
+@@ -72,14 +72,7 @@
+ void edescSetCopyTo(EDESC_SET *from, EDESC_SET *to) {
+   // delete all of the current entries
+   deleteListWith(to->edescs, deleteEdesc);
+-  to->edescs = newList();
+-
+-  // copy all of them over and set their parent to us
+-  EDESC_DATA    *entry   = NULL;
+-  LIST_ITERATOR *edesc_i = newListIterator(from->edescs);
+-  ITERATE_LIST(entry, edesc_i)
+-    edescSetPut(to, edescCopy(entry));
+-  deleteListIterator(edesc_i);
++  to->edescs = listCopyWith(from->edescs, edescCopy);
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.2/src/gameloop.c src/gameloop.c
+--- ../nakedmudv2.2/src/gameloop.c	Thu May 12 17:15:17 2005
++++ src/gameloop.c	Fri May 27 01:33:01 2005
+@@ -53,7 +53,6 @@
+ #endif
+ 
+ 
+-
+ /* local procedures */
+ void game_loop    ( int control );
+ bool gameloop_end = FALSE;
+@@ -120,9 +119,6 @@
+   /* get the current time */
+   current_time = time(NULL);
+ 
+-  // change to the lib directory
+-  //log_string("Changing to lib directory.");
+-  //chdir("../lib");
+ 
+ 
+   /************************************************************/
+@@ -153,13 +149,9 @@
+   /*        INITIALIZE OUR SETTINGS AND BASIC SYSTEMS         */
+   /************************************************************/
+ 
+-  /* initialize our mud settings, such as top character id */
+-  log_string("Initializing MUD settings.");
+-  init_mud_settings();
+-
+-  /* set up the stuff for auxiliary data */
+-  log_string("Preparing auxiliary data for usage.");
+-  init_auxiliaries();
++  // change to the lib directory
++  log_string("Changing to lib directory.");
++  chdir("../lib");
+ 
+   log_string("Initializing bitvectors.");
+   init_bitvectors();
+@@ -167,6 +159,12 @@
+   log_string("Initializing races and default bodies.");
+   init_races();
+ 
++  log_string("Initializing MUD settings.");
++  init_mud_settings();
++
++  log_string("Preparing auxiliary data for usage.");
++  init_auxiliaries();
++
+   log_string("Initializing command table.");
+   init_commands();
+ 
+@@ -200,9 +198,6 @@
+   log_string("Initializing set utility.");
+   init_set();
+ 
+-  log_string("Initializing scripts.");
+-  init_scripts();
+-
+ 
+   
+   /**********************************************************************/
+@@ -227,6 +222,19 @@
+   log_string("Initializing helpfiles.");
+   init_help();
+ #endif
++
++
++
++  /**********************************************************************/
++  /*                   SET UP ALL OF OUR PYTHON STUFF                   */
++  /**********************************************************************/
++
++  //
++  // this HAS to be the last module initialized, to allow all the other
++  // modules to add get/setters and methods to the Python incarnations of
++  // our various datatypes.
++  log_string("Initializing scripts.");
++  init_scripts();
+ 
+ 
+ 
+Binary files ../nakedmudv2.2/src/help/.DS_Store and src/help/.DS_Store differ
+diff -ruN ../nakedmudv2.2/src/help/help.c src/help/help.c
+--- ../nakedmudv2.2/src/help/help.c	Thu May 12 17:08:51 2005
++++ src/help/help.c	Fri May 27 01:30:57 2005
+@@ -449,15 +449,15 @@
+ 
+   // add all of our commands
+   add_cmd("help", NULL, cmd_help, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, FALSE, FALSE);
++	  "player", FALSE, FALSE);
+   add_cmd("hlink", NULL, cmd_hlink, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN, FALSE, FALSE);
++	  "admin", FALSE, FALSE);
+   add_cmd("hunlink", NULL, cmd_hunlink, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN, FALSE, FALSE);
++	  "admin", FALSE, FALSE);
+   add_cmd("hupdate", NULL, cmd_hupdate, 0, POS_SITTING, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+   add_cmd("hedit", NULL, cmd_hedit, 0, POS_SITTING, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+ 
+   // read in all of our helps
+   STORAGE_SET       *set = storage_read(HELP_FILE);
+diff -ruN ../nakedmudv2.2/src/inform.c src/inform.c
+--- ../nakedmudv2.2/src/inform.c	Thu May 12 17:08:52 2005
++++ src/inform.c	Fri May 27 01:30:58 2005
+@@ -58,14 +58,14 @@
+   listRemove(can_see, ch);
+ 
+   char *chars = print_list(can_see, charGetName, charGetMultiName);
+-  if(*chars) send_to_char(ch, "%s %s %s %s%s.\r\n",
++  if(*chars) send_to_char(ch, "{g%s %s %s %s%s.\r\n",
+ 			  chars, (listSize(can_see) == 1 ? "is" : "are"),
+ 			  (furnitureGetType(furniture)==FURNITURE_AT?"at":"on"),
+ 			  objGetName(furniture),
+ 			  (charGetFurniture(ch) == furniture ?" with you": ""));
+   // everyone was invisible to us... we should still show the furniture though
+   else
+-    send_to_char(ch, "%s\r\n", objGetRdesc(furniture));
++    send_to_char(ch, "{g%s\r\n", objGetRdesc(furniture));
+   deleteList(can_see);
+   free(chars);
+ }
+@@ -240,12 +240,12 @@
+       continue;
+     }
+     
+-    if(charGetLevel(ch) > LEVEL_PLAYER)
++    if(bitIsOneSet(charGetUserGroups(ch), "builder"))
+       sprintf(buf, "[%d] ", roomGetVnum(to));
+     else
+       buf[0] = '\0';
+     
+-    send_to_char(ch, "  %-10s :: %s%s\r\n", 
++    send_to_char(ch, "{g  %-10s :: %s%s\r\n", 
+ 		 dirGetName(i),
+ 		 buf,
+ 		 (exitIsClosed(exit) ? 
+@@ -270,12 +270,12 @@
+        continue;
+     }
+ 
+-    if(charGetLevel(ch) > LEVEL_PLAYER)
++    if(bitIsOneSet(charGetUserGroups(ch), "builder"))
+       sprintf(buf, "[%d] ", roomGetVnum(to));
+     else
+       buf[0] = '\0';
+     
+-    send_to_char(ch, "  %-10s :: %s%s\r\n", 
++    send_to_char(ch, "{g  %-10s :: %s%s\r\n", 
+ 		 names[i],
+ 		 buf,
+ 		 (exitIsClosed(exit) ? 
+@@ -318,7 +318,7 @@
+ 
+ 
+ void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
+-  if(charGetLevel(ch) > LEVEL_PLAYER)
++  if(bitIsOneSet(charGetUserGroups(ch), "builder"))
+     send_to_char(ch, "{c[%d] ", roomGetVnum(room));
+ 
+   send_to_char(ch, "{c%s\r\n", roomGetName(room));
+@@ -417,7 +417,7 @@
+ }
+ 
+ 
+-void send_to_level(int level, const char *format, ...) {
++void send_to_groups(const char *groups, const char *format, ...) {
+   static char buf[MAX_BUFFER];
+   va_list args;
+   va_start(args, format);
+@@ -428,7 +428,7 @@
+   CHAR_DATA       *ch = NULL;
+ 
+   ITERATE_LIST(ch, ch_i) {
+-    if(!charGetSocket(ch) || charGetLevel(ch) < level)
++    if(!charGetSocket(ch) || !bitIsSet(charGetUserGroups(ch), groups))
+       continue;
+     text_to_char(ch, buf);
+   }
+@@ -482,6 +482,20 @@
+ 
+ 
+ //
++// lists all of the commands available to a character via some group. If the
++// character is not part of the group, s/he cannot see the commands
++COMMAND(cmd_groupcmds) {
++  if(!*arg)
++    send_to_char(ch, "Which group did you want to commands for: %s\r\n",
++		 bitvectorGetBits(charGetUserGroups(ch)));
++  else if(!bitIsOneSet(charGetUserGroups(ch), arg))
++    send_to_char(ch, "You are not a member of user group, %s.\r\n", arg);
++  else
++    show_commands(ch, arg);
++}
++
++
++//
+ // cmd_look lets a character get information about a specific thing. Objects,
+ // characters, extra descriptions, and just about anything else that can exist
+ // in the MUD can be looked at.
+@@ -592,7 +606,7 @@
+   if(listSize(charGetInventory(ch)) == 0)
+     send_to_char(ch, "You aren't carrying anything.\r\n");
+   else {
+-    send_to_char(ch, "You are carrying:\r\n");
++    send_to_char(ch, "{gYou are carrying:\r\n");
+     LIST *vis_objs = find_all_objs(ch, charGetInventory(ch), "", NOTHING, TRUE);
+     show_list(ch, vis_objs, objGetName, objGetMultiName, objGetVnum);
+     deleteList(vis_objs);
+@@ -604,7 +618,7 @@
+ // show a list of all commands available to the character
+ //
+ COMMAND(cmd_commands) {
+-  show_commands(ch, LEVEL_PLAYER, charGetLevel(ch));
++  show_commands(ch, bitvectorGetBits(charGetUserGroups(ch)));
+ }
+ 
+ 
+@@ -620,7 +634,7 @@
+ 
+   bprintf(buf, 
+ 	  "{cPlayers Online:\r\n"
+-	  "{gLevel    Race )\r\n"
++	  "{gStatus   Race )\r\n"
+ 	  );
+ 
+   // build our list of people online
+@@ -628,10 +642,12 @@
+     socket_count++;
+     if ((plr = socketGetChar(dsock)) == NULL) continue;
+     playing_count++;
+-    bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n", 
+-	    (charGetLevel(plr) == LEVEL_PLAYER ? "player" :
+-	     (charGetLevel(plr) == LEVEL_BUILDER  ? "builder" :
+-	      (charGetLevel(plr) == LEVEL_SCRIPTER    ? "scripter" : "admin"))),
++    bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n",
++	    (bitIsSet(charGetUserGroups(ch), "admin") ? "admin" :
++	     (bitIsSet(charGetUserGroups(ch), "scripter") ? "scripter" :
++	      (bitIsSet(charGetUserGroups(ch), "builder") ? "builder"  :
++	       (bitIsSet(charGetUserGroups(ch), "player") ? "player" : 
++		"noone!")))),
+ 	    raceGetAbbrev(charGetRace(plr)),
+ 	    charGetName(plr), socketGetHostname(dsock));
+   } deleteListIterator(sock_i);
+diff -ruN ../nakedmudv2.2/src/interpret.c src/interpret.c
+--- ../nakedmudv2.2/src/interpret.c	Thu May 12 17:08:52 2005
++++ src/interpret.c	Fri May 27 01:30:58 2005
+@@ -38,15 +38,15 @@
+ LIST   **cmd_table = NULL;
+ 
+ typedef struct cmd_data {
+-  char      * cmd_name;
+-  char      * sort_by;
++  char *cmd_name;
++  char *sort_by;
+   CMD_PTR(cmd_funct);
+-  int        subcmd;
+-  int        min_pos;
+-  int        max_pos;
+-  int        level;
+-  bool       mob_ok;     // can NPCs use this command?
+-  bool       interrupts; // does it interrupt actions?
++  int   subcmd;
++  int   min_pos;
++  int   max_pos;
++  char *user_group;
++  bool  mob_ok;     // can NPCs use this command?
++  bool  interrupts; // does it interrupt actions?
+ } CMD_DATA;
+ 
+ 
+@@ -56,226 +56,220 @@
+   for(i = 0; i < 26; i++)
+     cmd_table[i] = newList();
+ 
+-  //************************************************************************
++  //***************************************************************************
+   // This is for core functions ONLY! If you have a module that adds new
+   // functions to the MUD, they should be added in the init_xxx() function
+   // associated with your module.
+-  //************************************************************************
++  //***************************************************************************
+   add_cmd("north", "n", cmd_move,     DIR_NORTH,    POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("east",  "e", cmd_move,     DIR_EAST,     POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("south", "s", cmd_move,     DIR_SOUTH,    POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("west",  "w", cmd_move,     DIR_WEST,     POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("up",    "u", cmd_move,     DIR_UP,       POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("down",  "d", cmd_move,     DIR_DOWN,     POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("northeast", "na", cmd_move,DIR_NORTHEAST,POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("southeast", "sa",  cmd_move,DIR_SOUTHEAST,POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("southwest", "sb", cmd_move,DIR_SOUTHWEST,POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("northwest", "nb", cmd_move,DIR_NORTHWEST,POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("ne",        "ne", cmd_move,DIR_NORTHEAST,POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("se",        "se", cmd_move,DIR_SOUTHEAST,POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("sw",        "sw", cmd_move,DIR_SOUTHWEST,POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("nw",        "nw", cmd_move,DIR_NORTHWEST,POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+ 
+   // A
+   add_cmd("approach",   NULL, cmd_greet,    0, POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("ask",        NULL, cmd_ask,      0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("at",         NULL, cmd_at,       0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, TRUE, FALSE);
++	  "builder", TRUE, FALSE);
+ 
+   // B
+   add_cmd("back",       NULL, cmd_back,     0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("buildwalk",  NULL, cmd_buildwalk, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+ 
+   // C
+   add_cmd("chat",       NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("clear",      NULL, cmd_clear,    0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("close",      NULL, cmd_close,    0, POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("commands",   NULL, cmd_commands, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("compress",   NULL, cmd_compress, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, FALSE, FALSE);
++	  "player", FALSE, FALSE);
+   add_cmd("copyover",   NULL, cmd_copyover, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN,  FALSE, TRUE);
++	  "admin",  FALSE, TRUE);
+ 
+   // D
+   add_cmd("delay",      NULL, cmd_delay,    0, POS_SLEEPING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE,  FALSE);
++	  "player", TRUE,  FALSE);
+   add_cmd("dig",        NULL, cmd_dig,      0, POS_STANDING, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("dlist",      NULL, cmd_dlist,    0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("ddelete",    NULL, cmd_ddelete,  0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("drop",       NULL, cmd_drop,     0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+ 
+   // E
+   add_cmd("emote",      NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd(":",          NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("equipment",  NULL, cmd_equipment,0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+ 
+   // F
+   add_cmd("fill",       NULL, cmd_fill,     0, POS_STANDING, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE );
++	  "builder", FALSE, TRUE );
+ 
+   // G
+   add_cmd("gemote",     NULL, cmd_gemote,   0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("give",       NULL, cmd_give,     0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("gossip",     NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("\"",         NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("greet",      NULL, cmd_greet,    0, POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("get",        NULL, cmd_get,      0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("goto",       NULL, cmd_goto,     0, POS_STANDING, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE );
++	  "builder", FALSE, TRUE );
++  add_cmd("groupcmds",  NULL, cmd_groupcmds,0, POS_UNCONCIOUS, POS_FLYING,
++	  "player", FALSE, FALSE);
+ 
+   // I
+   add_cmd("inventory",  NULL, cmd_inventory,0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
+-  add_cmd("invis",      NULL, cmd_invis,    0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "player", TRUE, FALSE);
+ 
+   // L
+   add_cmd("look",       "l",  cmd_look,     0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("lock",       NULL,  cmd_lock,    0, POS_STANDING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE);
++	  "player", TRUE, TRUE);
+   add_cmd("land",       NULL, cmd_stand,    0, POS_FLYING,   POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("load",       NULL, cmd_load,     0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("linkdead",   NULL, cmd_linkdead, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN, FALSE, FALSE);
++	  "admin", FALSE, FALSE);
+   add_cmd("lockdown",   NULL, cmd_lockdown, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN, FALSE, FALSE);
++	  "admin", FALSE, FALSE);
+ 
+   // M
+   add_cmd("mlist",      NULL, cmd_mlist,    0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("mdelete",    NULL, cmd_mdelete,  0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("more",       NULL, cmd_more,     0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("motd",       NULL, cmd_motd,     0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+ 
+   // O
+   add_cmd("olist",      NULL, cmd_olist,    0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("odelete",    NULL, cmd_odelete,  0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("open",       NULL, cmd_open,     0, POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+ 
+   // P
+   add_cmd("put",        "p", cmd_put,       0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE,  TRUE );
++	  "player", TRUE,  TRUE );
+   add_cmd("page",       NULL, cmd_page,     0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_BUILDER, TRUE, FALSE);
++	  "builder", TRUE, FALSE);
+   add_cmd("purge",      NULL, cmd_purge,    0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   
+   // Q
+   add_cmd("quit",       NULL, cmd_quit,     0, POS_SLEEPING, POS_FLYING,
+-	  LEVEL_PLAYER, FALSE, TRUE );
++	  "player", FALSE, TRUE );
+ 
+   // R
+   add_cmd("remove",     NULL, cmd_remove,   0, POS_SITTING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("rlist",      NULL, cmd_rlist,    0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("rdelete",    NULL, cmd_rdelete,  0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("repeat",     NULL, cmd_repeat,   0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN, FALSE, FALSE);
++	  "admin", FALSE, FALSE);
+ 
+   // S
+   add_cmd("say",        NULL, cmd_say,      0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("'",          NULL, cmd_say,      0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("save",       NULL, cmd_save,     0, POS_SLEEPING, POS_FLYING,
+-	  LEVEL_PLAYER, FALSE, FALSE);
++	  "player", FALSE, FALSE);
+   add_cmd("shutdown",   NULL, cmd_shutdown, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN, FALSE, TRUE );
++	  "admin", FALSE, TRUE );
+   add_cmd("sit",        NULL, cmd_sit,      0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("sleep",      NULL, cmd_sleep,    0, POS_SITTING,  POS_STANDING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("stand",      NULL, cmd_stand,    0, POS_SITTING,  POS_STANDING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("stop",       NULL, cmd_stop,     0, POS_SITTING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   // really, we -should- put this in the scripts module, but there are some
+   // very nice functions in builder.c that cmd_sclist uses to print scripts,
+   // which wouldn't be accessable from outside of builder.c
+   add_cmd("sclist",     NULL, cmd_sclist,   0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
+-  add_cmd("sdelete",    NULL, cmd_scdelete, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
++  add_cmd("scdelete",    NULL, cmd_scdelete, 0, POS_UNCONCIOUS, POS_FLYING,
++	  "builder", FALSE, FALSE);
+ 
+   // T
+   add_cmd("take",       NULL, cmd_get,      0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("tell",       NULL, cmd_tell,     0, POS_SLEEPING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("transfer",   NULL, cmd_transfer, 0, POS_STANDING, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+ 
+   // U
+   add_cmd("unlock",       NULL,  cmd_unlock,    0, POS_STANDING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE);
+-
+-  // V
+-  add_cmd("visible",      NULL, cmd_visible,    0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "player", TRUE, TRUE);
+ 
+   // W
+   add_cmd("wake",       NULL, cmd_wake,     0, POS_SLEEPING,  POS_SLEEPING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("wear",       NULL, cmd_wear,     0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE );
++	  "player", TRUE, TRUE );
+   add_cmd("who",        NULL, cmd_who,      0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
+-  add_cmd("wizhelp",    NULL, cmd_wizhelp,  0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "player", TRUE, FALSE);
+   add_cmd("worn",       NULL, cmd_equipment,0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+ 
+   // Z
+   add_cmd("zlist",      NULL, cmd_zlist,    0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+   add_cmd("zreset",     NULL, cmd_zreset,   0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+ }
+ 
+ 
+@@ -326,15 +320,16 @@
+ void remove_cmd(const char *cmd) {
+   CMD_DATA *removed = listRemoveWith(cmd_table[cmdbucket(cmd)], cmd, is_cmd);
+   if(removed) {
+-    if(removed->cmd_name) free(removed->cmd_name);
+-    if(removed->sort_by)  free(removed->sort_by);
++    if(removed->cmd_name)   free(removed->cmd_name);
++    if(removed->sort_by)    free(removed->sort_by);
++    if(removed->user_group) free(removed->user_group);
+     free(removed);
+   }
+ }
+ 
+ void add_cmd(const char *cmd, const char *sort_by,
+ 	     void *func, int subcmd, int min_pos, int max_pos,
+-	     int min_level, bool mob_ok, bool interrupts) {
++	     const char *user_group, bool mob_ok, bool interrupts) {
+   // if we've already got a command named this, remove it
+   remove_cmd(cmd);
+ 
+@@ -346,7 +341,7 @@
+   new_cmd->subcmd     = subcmd;
+   new_cmd->min_pos    = min_pos;
+   new_cmd->max_pos    = max_pos;
+-  new_cmd->level      = min_level;
++  new_cmd->user_group = strdup(user_group);
+   new_cmd->mob_ok     = mob_ok;
+   new_cmd->interrupts = interrupts;
+ 
+@@ -355,8 +350,8 @@
+ }
+ 
+ 
+-// show the character all of the commands he or she can perform
+-void show_commands(CHAR_DATA *ch, int min_lev, int max_lev) {
++// show the character all of the commands in the specified group(s).
++void show_commands(CHAR_DATA *ch, const char *user_groups) {
+   BUFFER *buf = newBuffer(MAX_BUFFER);
+   int i, col = 0;
+ 
+@@ -366,7 +361,7 @@
+     CMD_DATA *cmd = NULL;
+ 
+     ITERATE_LIST(cmd, buck_i) {
+-      if(min_lev > cmd->level || max_lev < cmd->level)
++      if(!is_keyword(user_groups, cmd->user_group, FALSE))
+ 	continue;
+       bprintf(buf, "%-20.20s", cmd->cmd_name);
+       if (!(++col % 4))
+@@ -505,13 +500,16 @@
+   if(scripts_ok && try_command_script(ch, command, arg))
+     return;
+ 
++  // get the groups we belong to for seeing if we can use the command
++  const char *user_groups = bitvectorGetBits(charGetUserGroups(ch));
+ 
+   // iterate over the commands that would be in our 
+   // bucket and find the one that we are trying to use
+   LIST_ITERATOR *cmd_i = newListIterator(cmd_table[cmdbucket(command)]);
+   CMD_DATA *cmd = NULL;
+   ITERATE_LIST(cmd, cmd_i) {
+-    if (cmd->level > charGetLevel(ch))
++    // no group means anyone can do it
++    if(!is_keyword(user_groups, cmd->user_group, FALSE))
+       continue;
+ 
+     if (is_prefix(command, cmd->cmd_name)) {
+diff -ruN ../nakedmudv2.2/src/items/portal.c src/items/portal.c
+--- ../nakedmudv2.2/src/items/portal.c	Thu May 12 17:08:51 2005
++++ src/items/portal.c	Fri May 27 01:30:57 2005
+@@ -191,5 +191,5 @@
+ 	       iedit_portal_parser);
+ 
+   add_cmd("enter", NULL, cmd_enter, 0, POS_STANDING, POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, TRUE);
++	  "player", TRUE, TRUE);
+ }
+diff -ruN ../nakedmudv2.2/src/log.c src/log.c
+--- ../nakedmudv2.2/src/log.c	Thu May 12 17:08:52 2005
++++ src/log.c	Fri May 27 01:30:58 2005
+@@ -99,7 +99,7 @@
+   }
+ 
+   add_cmd("log", NULL, cmd_log, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN, FALSE, FALSE);
++	  "admin", FALSE, FALSE);
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.2/src/movement.c src/movement.c
+--- ../nakedmudv2.2/src/movement.c	Thu May 12 17:08:52 2005
++++ src/movement.c	Fri May 27 01:30:58 2005
+@@ -121,7 +121,7 @@
+     if(bitIsOneSet(charGetPrfs(ch), "buildwalk"))
+       return try_buildwalk(ch, dir);
+     else
+-      send_to_char(ch, "Alas, there is no exit in that direction.\r\n");
++      send_to_char(ch, "{gAlas, there is no exit in that direction.\r\n");
+     return FALSE;
+   }
+ 
+diff -ruN ../nakedmudv2.2/src/mud.h src/mud.h
+--- ../nakedmudv2.2/src/mud.h	Thu May 12 17:17:41 2005
++++ src/mud.h	Fri May 27 01:33:10 2005
+@@ -133,14 +133,6 @@
+ #define TSTATE_WAIT            2  /* Closed while in thread.         */
+ #define TSTATE_CLOSED          3  /* Closed, ready to be recycled.   */
+ 
+-/* player levels */
+-#define LEVEL_PLAYER           1           // All of the normal players
+-#define LEVEL_GOD              2           // All the people who run the show
+-#define LEVEL_BUILDER          LEVEL_GOD   // Players who have building rights
+-#define LEVEL_SCRIPTER         3           // Builders who have scripting rights
+-#define LEVEL_ADMIN            4           // The people who oversee the MUD
+-#define MAX_LEVEL              LEVEL_ADMIN
+-
+ /* Communication Ranges */
+ #define COMM_LOCAL             0  /* same room only                  */
+ #define COMM_GLOBAL            1  /* all over the game               */
+@@ -172,11 +164,11 @@
+ #define COMMAND(name)      void name(CHAR_DATA *ch, const char *cmd, \
+ 				     int subcmd, char *arg)
+ void init_commands();
+-void show_commands(CHAR_DATA *ch, int min_lev, int max_lev);
++void show_commands(CHAR_DATA *ch, const char *user_groups);
+ void remove_cmd   (const char *cmd);
+ void add_cmd      (const char *cmd, const char *sort_by, void *func, 
+ 	           int subcmd, int min_pos, int max_pos,
+-	           int min_level, bool mob_ok, bool interrupts);
++	           const char *user_group, bool mob_ok, bool interrupts);
+ bool cmd_exists   (const char *cmd);
+ 
+ 
+diff -ruN ../nakedmudv2.2/src/olc2/olc.c src/olc2/olc.c
+--- ../nakedmudv2.2/src/olc2/olc.c	Thu May 12 17:08:51 2005
++++ src/olc2/olc.c	Fri May 27 01:30:57 2005
+@@ -109,7 +109,7 @@
+   if(olc->cmd == MENU_NOCHOICE) {
+     text_to_buffer(sock, CLEAR_SCREEN);
+     olc->menu(sock, olc->working_copy);
+-    text_to_buffer(sock, "\r\nEnter choice, or Q to quit: ");
++    text_to_buffer(sock, "\r\n{gEnter choice, or Q to quit: ");
+   }
+ }
+ 
+@@ -238,17 +238,17 @@
+   extern COMMAND(cmd_oedit);
+   extern COMMAND(cmd_accedit);
+   add_cmd("zedit", NULL, cmd_zedit, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+   add_cmd("redit", NULL, cmd_redit, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+   add_cmd("dedit", NULL, cmd_dedit, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+   add_cmd("medit", NULL, cmd_medit, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+   add_cmd("oedit", NULL, cmd_oedit, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+   add_cmd("accedit", NULL, cmd_accedit, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN,   FALSE, TRUE);
++	  "admin",   FALSE, TRUE);
+ }
+ 
+ void do_olc(SOCKET_DATA *sock,
+Binary files ../nakedmudv2.2/src/scripts/.DS_Store and src/scripts/.DS_Store differ
+diff -ruN ../nakedmudv2.2/src/scripts/module.mk src/scripts/module.mk
+--- ../nakedmudv2.2/src/scripts/module.mk	Thu May 12 17:13:57 2005
++++ src/scripts/module.mk	Fri May 27 01:49:59 2005
+@@ -104,13 +104,13 @@
+ # Object files we generate
+ SRC      += scripts/script_set.c scripts/script.c scripts/pychar.c \
+ 	    scripts/pyobj.c scripts/pymud.c scripts/pyroom.c \
+-	    scripts/script_editor.c scripts/script_edit.c
++	    scripts/script_editor.c scripts/script_edit.c scripts/pyplugs.c
+ 
+-# the top level directory of python
++# the top level directory of python.
+ PYTHONTOP = /usr/local/include
+ 
+ # the folder where python headers are located
+ C_FLAGS  += -I$(PYTHONTOP)/python2.4
+ 
+-# libraries we have to include
++# libraries we have to include.
+ LIBS     += -Xlinker -export-dynamic -lm -ldl -lutil -L/usr/local/lib/python2.4/config -lpython2.4
+diff -ruN ../nakedmudv2.2/src/scripts/pychar.c src/scripts/pychar.c
+--- ../nakedmudv2.2/src/scripts/pychar.c	Thu May 12 17:08:51 2005
++++ src/scripts/pychar.c	Fri May 27 01:30:57 2005
+@@ -19,6 +19,7 @@
+ #include "../handler.h"
+ #include "../utils.h"
+ 
++#include "pyplugs.h"
+ #include "script.h"
+ #include "script_set.h"
+ #include "pychar.h"
+@@ -26,6 +27,7 @@
+ #include "pyobj.h"
+ 
+ 
++
+ //*****************************************************************************
+ // mandatory modules
+ //*****************************************************************************
+@@ -33,6 +35,16 @@
+ #include "../items/items.h"
+ 
+ 
++
++//*****************************************************************************
++// local structures and defines
++//*****************************************************************************
++// a list of the get/setters on the Char class
++LIST *pychar_getsetters = NULL;
++
++// a list of the methods on the Char class
++LIST *pychar_methods = NULL;
++
+ typedef struct {
+   PyObject_HEAD
+   int uid;
+@@ -41,24 +53,20 @@
+ 
+ 
+ //*****************************************************************************
+-// allocation, deallocation, and initialiation
++// allocation, deallocation, initialization, and comparison
+ //*****************************************************************************
+-static void
+-PyChar_dealloc(PyChar *self) {
++void PyChar_dealloc(PyChar *self) {
+   self->ob_type->tp_free((PyObject*)self);
+ }
+ 
+-static PyObject *
+-PyChar_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
++PyObject *PyChar_new(PyTypeObject *type, PyObject *args, PyObject *kwds){
+     PyChar *self;
+-
+     self = (PyChar  *)type->tp_alloc(type, 0);
+-    self->uid = NOBODY;//NULL;
++    self->uid = NOBODY;
+     return (PyObject *)self;
+ }
+ 
+-static int
+-PyChar_init(PyChar *self, PyObject *args, PyObject *kwds) {
++int PyChar_init(PyChar *self, PyObject *args, PyObject *kwds) {
+   static char *kwlist[] = {"uid", NULL};
+   int uid = NOBODY;
+ 
+@@ -81,312 +89,76 @@
+ }
+ 
+ 
+-
+-//*****************************************************************************
+-// methods and stuff for building the class
+-//*****************************************************************************
+-
+-//
+-// sends a newline-tagged message to the character
+-//
+-static PyObject *
+-PyChar_send(PyChar *self, PyObject *value) {
+-  char *mssg = NULL;
+-  if (!PyArg_ParseTuple(value, "s", &mssg)) {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Characters may only be sent strings");
+-    return NULL;
+-  }
+-
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+-  if(ch) {
+-    send_to_char(ch, "%s\r\n", mssg);
+-    return Py_BuildValue("i", 1);
+-  }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Tried to send message to nonexistant character, %d.", 
+-		    self->uid);
+-    return NULL;
+-  }
+-}
+-
+-
+-//
+-// Send a newline-tagged message to everyone around the character
+-//
+-static PyObject *
+-PyChar_sendaround(PyChar *self, PyObject *value) {
+-  char *mssg = NULL;
+-  if (!PyArg_ParseTuple(value, "s", &mssg)) {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Characters may only be sent strings");
+-    return NULL;
+-  }
+-
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+-  if(ch) {
+-    send_around_char(ch, FALSE, "%s\r\n", mssg);
+-    return Py_BuildValue("i", 1);
+-  }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Tried to send message to nonexistant character, %d.", 
+-		    self->uid);
+-    return NULL;
+-  }
+-}
+-
+-
+-//
+-// make the character perform an action
+-//
+-static PyObject *
+-PyChar_act(PyChar *self, PyObject *value) {
+-  int scripts_ok     = TRUE;
+-  char *act          = NULL;
+-  if (!PyArg_ParseTuple(value, "s|i", &act, &scripts_ok)) {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Characters actions must be strings.");
+-    return NULL;
+-  }
+-
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+-  if(ch) {
+-    do_cmd(ch, act, scripts_ok, FALSE);
+-    return Py_BuildValue("i", 1);
+-  }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Nonexistant character, %d, tried to perform an action.", 
+-		    self->uid);
+-    return NULL;
+-  }
+-}
+-
+-
+-//
+-// Get the value of a variable stored on the character
+-//
+-static PyObject *
+-PyChar_getvar(PyChar *self, PyObject *arg) {
+-  char *var = NULL;
+-  if (!PyArg_ParseTuple(arg, "s", &var)) {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Character variables must have string names.");
+-    return NULL;
+-  }
+-
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+-  if(ch != NULL) {
+-    int vartype = charGetVarType(ch, var);
+-    if(vartype == CHAR_VAR_INT)
+-      return Py_BuildValue("i", charGetInt(ch, var));
+-    else if(vartype == CHAR_VAR_LONG)
+-      return Py_BuildValue("i", charGetLong(ch, var));
+-    else if(vartype == CHAR_VAR_DOUBLE)
+-      return Py_BuildValue("d", charGetDouble(ch, var));
+-    else
+-      return Py_BuildValue("s", charGetString(ch, var));
+-  }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "Tried to get a variable value for nonexistant character, %d",
+-		 self->uid);
+-    return NULL;
+-  }
+-}
+-
+-
+-//
+-// Set the value of a variable assocciated with the character
+-static PyObject *
+-PyChar_setvar(PyChar *self, PyObject *args) {  
+-  char     *var = NULL;
+-  PyObject *val = NULL;
+-
+-  if (!PyArg_ParseTuple(args, "sO", &var, &val)) {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "Character setvar must be supplied with a var name and integer value.");
+-    return NULL;
+-  }
+-
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+-  if(ch != NULL) {
+-    if(PyInt_Check(val))
+-      charSetInt(ch, var, (int)PyInt_AsLong(val));
+-    else if(PyFloat_Check(val))
+-      charSetDouble(ch, var, PyFloat_AsDouble(val));
+-    else if(PyString_Check(val))
+-      charSetString(ch, var, PyString_AsString(val));
+-    else {
+-      PyErr_Format(PyExc_TypeError,
+-		   "Tried to store a char_var of invalid type on char %d.",
+-		   self->uid);
+-      return NULL;
+-    }
+-    return Py_BuildValue("i", 1);
+-  }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "Tried to set a variable value for nonexistant character, %d",
+-		 self->uid);
+-    return NULL;
+-  }
+-}
+-
+-
+-static PyObject *
+-PyChar_attach(PyChar *self, PyObject *args) {  
+-  long vnum = NOTHING;
+-
+-  // make sure we're getting passed the right type of data
+-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "To attach a script, the vnum must be suppplied.");
+-    return NULL;
+-  }
+-
+-  // pull out the character and do the attaching
+-  CHAR_DATA       *ch = propertyTableGet(mob_table, self->uid);
+-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+-  if(ch != NULL && script != NULL) {
+-    scriptSetAdd(charGetScripts(ch), vnum);
+-    return Py_BuildValue("i", 1);
+-  }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "Tried to attach script to nonexistant char, %d, or script %d "
+-		 "does not exit.", self->uid, (int)vnum);
+-    return NULL;
+-  }
+-}
+-
+-
+-static PyObject *
+-PyChar_detach(PyChar *self, PyObject *args) {  
+-  long vnum = NOTHING;
+-
+-  // make sure we're getting passed the right type of data
+-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "To detach a script, the vnum must be suppplied.");
+-    return NULL;
+-  }
+-
+-  // pull out the character and do the attaching
+-  CHAR_DATA       *ch = propertyTableGet(mob_table, self->uid);
+-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+-  if(ch != NULL && script != NULL) {
+-    scriptSetRemove(charGetScripts(ch), vnum);
+-    return Py_BuildValue("i", 1);
+-  }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "Tried to detach script from nonexistant char, %d, or script "
+-		 "%d does not exit.", self->uid, (int)vnum);
+-    return NULL;
+-  }
++int PyChar_compare(PyChar *ch1, PyChar *ch2) {
++  if(ch1->uid == ch2->uid)
++    return 0;
++  else if(ch1->uid < ch2->uid)
++    return -1;
++  else
++    return 1;
+ }
+ 
+ 
+ 
+-static PyMethodDef PyChar_methods[] = {
+-  {"attach", (PyCFunction)PyChar_attach, METH_VARARGS,
+-   "attach a new script to the character." },
+-  {"detach", (PyCFunction)PyChar_detach, METH_VARARGS,
+-   "detach a script from the character." },
+-  {"send", (PyCFunction)PyChar_send, METH_VARARGS,
+-   "send a message to the character." },
+-  {"sendaround", (PyCFunction)PyChar_sendaround, METH_VARARGS,
+-   "send a message to everyone around a character."},
+-  {"act", (PyCFunction)PyChar_act, METH_VARARGS,
+-   "make the character perform an action." },
+-  {"getvar", (PyCFunction)PyChar_getvar, METH_VARARGS,
+-   "get the value of a special variable the character has."},
+-  {"setvar", (PyCFunction)PyChar_setvar, METH_VARARGS,
+-   "set the value of a special variable."},
+-  {NULL}  /* Sentinel */
+-};
+-
+-
+-
+ //*****************************************************************************
+-// character attributes - mostly get and set
++// getters and setters for the Char class
+ //*****************************************************************************
+-static PyObject *
+-PyChar_getname(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getname(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("s", charGetName(ch));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_getdesc(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getdesc(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("s", charGetDesc(ch));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_getrdesc(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getrdesc(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("s", charGetRdesc(ch));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_getrace(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getrace(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("s", charGetRace(ch));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_getlevel(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+-  if(ch != NULL) return Py_BuildValue("i", charGetLevel(ch));
+-  else           return NULL;
+-}
+-
+-static PyObject *
+-PyChar_getsex(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getsex(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("s", sexGetName(charGetSex(ch)));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_getposition(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getposition(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("s", posGetName(charGetPos(ch)));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_getroom(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getroom(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("O", newPyRoom(charGetRoom(ch)));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_getisnpc(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getisnpc(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("i", charIsNPC(ch));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_getispc(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getispc(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("i", !charIsNPC(ch));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_geton(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_geton(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch == NULL) 
+     return NULL;
+   else if(charGetFurniture(ch) == NULL)
+@@ -395,22 +167,19 @@
+     return Py_BuildValue("i", newPyObj(charGetFurniture(ch)));
+ }
+ 
+-static PyObject *
+-PyChar_getuid(PyChar *self, void *closure) {
++PyObject *PyChar_getuid(PyChar *self, void *closure) {
+   return Py_BuildValue("i", self->uid);
+ }
+ 
+ 
+-static PyObject *
+-PyChar_getvnum(PyChar *self, void *closure) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getvnum(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("i", charGetVnum(ch));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyChar_getinv(PyChar *self, PyObject *args) {
+-  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
++PyObject *PyChar_getinv(PyChar *self, PyObject *args) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch == NULL) 
+     return NULL;
+ 
+@@ -426,12 +195,10 @@
+ }
+ 
+ 
+-
+ //
+ // Standard check to make sure the character exists when
+ // trying to set a value for it. If successful, assign the
+ // character to ch. Otherwise, return -1 (error)
+-//
+ #define PYCHAR_CHECK_CHAR_EXISTS(uid, ch)                                      \
+   ch = propertyTableGet(mob_table, uid);                                       \
+   if(ch == NULL) {                                                             \
+@@ -441,8 +208,7 @@
+   }                                                                            
+ 
+ 
+-static int
+-PyChar_setname(PyChar *self, PyObject *value, void *closure) {
++int PyChar_setname(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete character's name");
+     return -1;
+@@ -460,8 +226,7 @@
+   return 0;
+ }
+ 
+-static int
+-PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
++int PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete character's description");
+     return -1;
+@@ -479,8 +244,7 @@
+   return 0;
+ }
+ 
+-static int
+-PyChar_setrdesc(PyChar *self, PyObject *value, void *closure) {
++int PyChar_setrdesc(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete character's rdesc");
+     return -1;
+@@ -498,8 +262,7 @@
+   return 0;
+ }
+ 
+-static int
+-PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
++int PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete a character's race");
+     return -1;
+@@ -525,8 +288,7 @@
+   return 0;
+ }
+ 
+-static int
+-PyChar_seton(PyChar *self, PyObject *value, void *closure) {
++int PyChar_seton(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete a character's furniture.");
+     return -1;
+@@ -561,8 +323,7 @@
+   return -1;
+ }
+ 
+-static int
+-PyChar_setsex(PyChar *self, PyObject *value, void *closure) {
++int PyChar_setsex(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete a character's sex");
+     return -1;
+@@ -588,8 +349,7 @@
+   return 0;
+ }
+ 
+-static int
+-PyChar_setposition(PyChar *self, PyObject *value, void *closure) {
++int PyChar_setposition(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete a character's position");
+     return -1;
+@@ -618,35 +378,7 @@
+   return 0;
+ }
+ 
+-static int
+-PyChar_setlevel(PyChar *self, PyObject *value, void *closure) {
+-  if (value == NULL) {
+-    PyErr_Format(PyExc_TypeError, "Cannot delete a character's level");
+-    return -1;
+-  }
+-  
+-  if (!PyInt_Check(value)) {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Character levels must be integers");
+-    return -1;
+-  }
+-
+-  long lvl = PyInt_AsLong(value);
+-  if(lvl < 1 || lvl > MAX_LEVEL) {
+-    char buf[SMALL_BUFFER];
+-    sprintf(buf, "Character levels are bounded between 1 and %d", MAX_LEVEL);
+-    PyErr_Format(PyExc_TypeError, buf);
+-    return -1;
+-  }
+-
+-  CHAR_DATA *ch;
+-  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+-  charSetLevel(ch, lvl);
+-  return 0;
+-}
+-
+-static int
+-PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
++int PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete a character's room");
+     return -1;
+@@ -689,77 +421,209 @@
+ }
+ 
+ 
+-static PyGetSetDef PyChar_getseters[] = {
+-  {"inv", (getter)PyChar_getinv, (setter)NULL,
+-   "The objects in the character's inventory", 
+-   NULL},
+-  {"objs", (getter)PyChar_getinv, (setter)NULL,
+-   "The objects in the character's inventory", 
+-   NULL},
+-  {"name", (getter)PyChar_getname, (setter)PyChar_setname,
+-   "the character's name",
+-   NULL},
+-  {"desc", (getter)PyChar_getdesc, (setter)PyChar_setdesc,
+-   "the character's description",
+-   NULL},
+-  {"rdesc", (getter)PyChar_getrdesc, (setter)PyChar_setrdesc,
+-   "the character's room description",
+-   NULL},
+-  {"level", (getter)PyChar_getlevel, (setter)PyChar_setlevel,
+-   "the character's level",
+-   NULL},
+-  {"sex", (getter)PyChar_getsex, (setter)PyChar_setsex,
+-   "the character's sex",
+-   NULL},
+-  {"race", (getter)PyChar_getrace, (setter)PyChar_setrace,
+-   "the character's race",
+-   NULL},
+-  {"position", (getter)PyChar_getposition, (setter)PyChar_setposition,
+-   "the character's position",
+-   NULL},
+-  {"room", (getter)PyChar_getroom, (setter)PyChar_setroom,
+-   "the character's room",
+-   NULL},
+-  {"on", (getter)PyChar_geton, (setter)PyChar_seton,
+-   "The furniture the character is sitting on/at. If the character is not "
+-   "on furniture, None is returned. To remove a character from furniture, "
+-   "then use None",
+-   NULL},
+-  {"uid", (getter)PyChar_getuid, (setter)NULL,
+-   "the unique identification number",
+-   NULL},
+-  {"vnum", (getter)PyChar_getvnum, (setter)NULL,
+-   "the virtual number for the NPC. Returns -1 for characters.",
+-   NULL},
+-  {"is_npc", (getter)PyChar_getisnpc, (setter)NULL,
+-   "returns 1 if the char is an NPC, and 0 otherwise.",
+-   NULL},
+-  {"is_pc", (getter)PyChar_getispc, (setter)NULL,
+-   "returns 1 if the char is an NPC, and 0 otherwise.",
+-   NULL},
+ 
+-  {NULL}  /* Sentinel */
+-};
++//*****************************************************************************
++// methods for the Char class
++//*****************************************************************************
+ 
++//
++// sends a newline-tagged message to the character
++PyObject *PyChar_send(PyChar *self, PyObject *value) {
++  char *mssg = NULL;
++  if (!PyArg_ParseTuple(value, "s", &mssg)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Characters may only be sent strings");
++    return NULL;
++  }
+ 
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch) {
++    send_to_char(ch, "%s\r\n", mssg);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++                    "Tried to send message to nonexistant character, %d.", 
++		    self->uid);
++    return NULL;
++  }
++}
+ 
+-//*****************************************************************************
+-// comparators, getattr, setattr, and all that other class stuff
+-//*****************************************************************************
+ 
+ //
+-// compare one character to another
+-static int
+-PyChar_compare(PyChar *ch1, PyChar *ch2) {
+-  if(ch1->uid == ch2->uid)
+-    return 0;
+-  else if(ch1->uid < ch2->uid)
+-    return -1;
+-  else
+-    return 1;
++// Send a newline-tagged message to everyone around the character
++PyObject *PyChar_sendaround(PyChar *self, PyObject *value) {
++  char *mssg = NULL;
++  if (!PyArg_ParseTuple(value, "s", &mssg)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Characters may only be sent strings");
++    return NULL;
++  }
++
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch) {
++    send_around_char(ch, FALSE, "%s\r\n", mssg);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++                    "Tried to send message to nonexistant character, %d.", 
++		    self->uid);
++    return NULL;
++  }
++}
++
++
++//
++// make the character perform an action
++PyObject *PyChar_act(PyChar *self, PyObject *value) {
++  int scripts_ok     = TRUE;
++  char *act          = NULL;
++  if (!PyArg_ParseTuple(value, "s|i", &act, &scripts_ok)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Characters actions must be strings.");
++    return NULL;
++  }
++
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch) {
++    do_cmd(ch, act, scripts_ok, FALSE);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++                    "Nonexistant character, %d, tried to perform an action.", 
++		    self->uid);
++    return NULL;
++  }
++}
++
++
++//
++// Get the value of a variable stored on the character
++PyObject *PyChar_getvar(PyChar *self, PyObject *arg) {
++  char *var = NULL;
++  if (!PyArg_ParseTuple(arg, "s", &var)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Character variables must have string names.");
++    return NULL;
++  }
++
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) {
++    int vartype = charGetVarType(ch, var);
++    if(vartype == CHAR_VAR_INT)
++      return Py_BuildValue("i", charGetInt(ch, var));
++    else if(vartype == CHAR_VAR_LONG)
++      return Py_BuildValue("i", charGetLong(ch, var));
++    else if(vartype == CHAR_VAR_DOUBLE)
++      return Py_BuildValue("d", charGetDouble(ch, var));
++    else
++      return Py_BuildValue("s", charGetString(ch, var));
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to get a variable value for nonexistant character, %d",
++		 self->uid);
++    return NULL;
++  }
++}
++
++
++//
++// Set the value of a variable assocciated with the character
++PyObject *PyChar_setvar(PyChar *self, PyObject *args) {  
++  char     *var = NULL;
++  PyObject *val = NULL;
++
++  if (!PyArg_ParseTuple(args, "sO", &var, &val)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Character setvar must be supplied with a var name and integer value.");
++    return NULL;
++  }
++
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) {
++    if(PyInt_Check(val))
++      charSetInt(ch, var, (int)PyInt_AsLong(val));
++    else if(PyFloat_Check(val))
++      charSetDouble(ch, var, PyFloat_AsDouble(val));
++    else if(PyString_Check(val))
++      charSetString(ch, var, PyString_AsString(val));
++    else {
++      PyErr_Format(PyExc_TypeError,
++		   "Tried to store a char_var of invalid type on char %d.",
++		   self->uid);
++      return NULL;
++    }
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to set a variable value for nonexistant character, %d",
++		 self->uid);
++    return NULL;
++  }
+ }
+ 
+-static PyTypeObject PyChar_Type = {
++
++PyObject *PyChar_attach(PyChar *self, PyObject *args) {  
++  long vnum = NOTHING;
++
++  // make sure we're getting passed the right type of data
++  if (!PyArg_ParseTuple(args, "i", &vnum)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "To attach a script, the vnum must be suppplied.");
++    return NULL;
++  }
++
++  // pull out the character and do the attaching
++  CHAR_DATA       *ch = PyChar_AsChar((PyObject *)self);
++  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++  if(ch != NULL && script != NULL) {
++    scriptSetAdd(charGetScripts(ch), vnum);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to attach script to nonexistant char, %d, or script %d "
++		 "does not exit.", self->uid, (int)vnum);
++    return NULL;
++  }
++}
++
++
++PyObject *PyChar_detach(PyChar *self, PyObject *args) {  
++  long vnum = NOTHING;
++
++  // make sure we're getting passed the right type of data
++  if (!PyArg_ParseTuple(args, "i", &vnum)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "To detach a script, the vnum must be suppplied.");
++    return NULL;
++  }
++
++  // pull out the character and do the attaching
++  CHAR_DATA       *ch = PyChar_AsChar((PyObject *)self);
++  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++  if(ch != NULL && script != NULL) {
++    scriptSetRemove(charGetScripts(ch), vnum);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to detach script from nonexistant char, %d, or script "
++		 "%d does not exit.", self->uid, (int)vnum);
++    return NULL;
++  }
++}
++
++
++
++//*****************************************************************************
++// comparators, getattr, setattr, and all that other class stuff
++//*****************************************************************************
++PyTypeObject PyChar_Type = {
+     PyObject_HEAD_INIT(NULL)
+     0,                         /*ob_size*/
+     "char.Char",               /*tp_name*/
+@@ -788,26 +652,25 @@
+     0,		               /* tp_weaklistoffset */
+     0,		               /* tp_iter */
+     0,		               /* tp_iternext */
+-    PyChar_methods,            /* tp_methods */
++    0,                         /* tp_methods */
+     0,                         /* tp_members */
+-    PyChar_getseters,          /* tp_getset */
++    0,                         /* tp_getset */
+     0,                         /* tp_base */
+     0,                         /* tp_dict */
+     0,                         /* tp_descr_get */
+     0,                         /* tp_descr_set */
+     0,                         /* tp_dictoffset */
+-    (initproc)PyChar_init,    /* tp_init */
++    (initproc)PyChar_init,     /* tp_init */
+     0,                         /* tp_alloc */
+-    PyChar_new,               /* tp_new */
++    PyChar_new,                /* tp_new */
+ };
+ 
+ 
+ 
+ //*****************************************************************************
+-// the char module
++// methods in the char module
+ //*****************************************************************************
+-static PyObject *
+-PyChar_load_mob(PyObject *self, PyObject *args) {
++PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
+   int mob_vnum    = NOBODY, room_vnum = NOWHERE;
+   PyObject *to    = NULL;
+ 
+@@ -894,8 +757,7 @@
+ }
+ 
+ 
+-static PyObject *
+-PyChar_count_mobs(PyObject *self, PyObject *args) {
++PyObject *PyChar_count_mobs(PyObject *self, PyObject *args) {
+   LIST *list = NULL;
+   PyObject *tgt;
+   PyObject *in = NULL;
+@@ -947,9 +809,7 @@
+   return Py_BuildValue("i", count_chars(NULL, list, name, vnum, FALSE));
+ }
+ 
+-
+-static PyObject *
+-PyChar_all_chars(PyObject *self) {
++PyObject *PyChar_all_chars(PyObject *self) {
+   PyObject      *list = PyList_New(0);
+   LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+   CHAR_DATA       *ch = NULL;
+@@ -959,9 +819,7 @@
+   return Py_BuildValue("O", list);
+ }
+ 
+-
+-
+-static PyMethodDef char_module_methods[] = {
++PyMethodDef char_module_methods[] = {
+   { "all_chars", (PyCFunction)PyChar_all_chars, METH_NOARGS,
+     "Return a python list containing an entry for every character in game." },
+   { "load_mob", PyChar_load_mob, METH_VARARGS,
+@@ -973,30 +831,125 @@
+ };
+ 
+ 
+-PyMODINIT_FUNC
+-init_PyChar(void) 
+-{
+-    PyObject* m;
+-
+-    if (PyType_Ready(&PyChar_Type) < 0)
+-        return;
+ 
+-    m = Py_InitModule3("char", char_module_methods,
+-                       "The char module, for all char/mob-related MUD stuff.");
++//*****************************************************************************
++// implementation of pychar.h
++//*****************************************************************************
++void PyChar_addGetSetter(const char *name, void *g, void *s, const char *doc) {
++  // make sure our list of get/setters is created
++  if(pychar_getsetters == NULL) pychar_getsetters = newList();
++
++  // make the GetSetter def
++  PyGetSetDef *def = calloc(1, sizeof(PyGetSetDef));
++  def->name        = strdup(name);
++  def->get         = (getter)g;
++  def->set         = (setter)s;
++  def->doc         = (doc ? strdup(doc) : NULL);
++  def->closure     = NULL;
++  listPut(pychar_getsetters, def);
++}
++
++void PyChar_addMethod(const char *name, void *f, int flags, const char *doc) {
++  // make sure our list of methods is created
++  if(pychar_methods == NULL) pychar_methods = newList();
++
++  // make the Method def
++  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
++  def->ml_name     = strdup(name);
++  def->ml_meth     = (PyCFunction)f;
++  def->ml_flags    = flags;
++  def->ml_doc      = (doc ? strdup(doc) : NULL);
++  listPut(pychar_methods, def);
++}
++
+ 
+-    if (m == NULL)
+-      return;
+ 
+-    Py_INCREF(&PyChar_Type);
+-    PyModule_AddObject(m, "Char", (PyObject *)&PyChar_Type);
++PyMODINIT_FUNC init_PyChar(void) {
++  PyObject* m;
++
++  // add in our setters and getters for the char class
++  PyChar_addGetSetter("inv", PyChar_getinv, NULL,
++		      "returns a list of objects in the char's inventory");
++  PyChar_addGetSetter("objs", PyChar_getinv, NULL,
++		      "returns a list of objects in the char's inventory");
++  PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
++		      "handle the character's name");
++  PyChar_addGetSetter("desc", PyChar_getdesc, PyChar_setdesc,
++		      "handle the character's description");
++  PyChar_addGetSetter("rdesc", PyChar_getrdesc, PyChar_setrdesc,
++		      "handle the character's room description");
++  PyChar_addGetSetter("sex", PyChar_getsex, PyChar_setsex,
++		      "handle the character's gender");
++  PyChar_addGetSetter("race", PyChar_getrace, PyChar_setrace,
++		      "handle the character's race");
++  PyChar_addGetSetter("pos", PyChar_getposition, PyChar_setposition,
++		      "handle the character's position");
++  PyChar_addGetSetter("position", PyChar_getposition, PyChar_setposition,
++		      "handle the character's position");
++  PyChar_addGetSetter("room", PyChar_getroom, PyChar_setroom,
++		      "handle the character's room");
++  PyChar_addGetSetter("on", PyChar_geton, PyChar_seton,
++   "The furniture the character is sitting on/at. If the character is not "
++   "on furniture, None is returned. To remove a character from furniture, "
++  "then use None");
++  PyChar_addGetSetter("uid", PyChar_getuid, NULL,
++		      "the character's unique identification number");
++  PyChar_addGetSetter("vnum", PyChar_getvnum, NULL,
++		      "The virtual number for NPCs. Returns -1 for PCs");
++  PyChar_addGetSetter("is_npc", PyChar_getisnpc, NULL,
++		      "Returns 1 if the char is an NPC, and 0 otherwise.");
++  PyChar_addGetSetter("is_pc", PyChar_getispc, NULL,
++		      "Returns 1 if the char is a PC, and 0 otherwise.");
++
++  // add in all of our methods for the Char class
++  PyChar_addMethod("attach", PyChar_attach, METH_VARARGS,
++		   "attach a new script to the character.");
++  PyChar_addMethod("detach", PyChar_detach, METH_VARARGS,
++		   "detach an old script from the character.");
++  PyChar_addMethod("send", PyChar_send, METH_VARARGS,
++		   "send a message to the character.");
++  PyChar_addMethod("sendarond", PyChar_sendaround, METH_VARARGS,
++		   "send a message to everyone around the character.");
++  PyChar_addMethod("act", PyChar_act, METH_VARARGS,
++		   "make the character perform an action.");
++  PyChar_addMethod("getvar", PyChar_getvar, METH_VARARGS,
++		   "get the value of a special variable the character has.");
++  PyChar_addMethod("setvar", PyChar_setvar, METH_VARARGS,
++		   "set the value of a special variable the character has.");
++
++  // add in all the getsetters and methods
++  makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);
++  deleteListWith(pychar_getsetters, free); pychar_getsetters = NULL;
++  deleteListWith(pychar_methods,    free); pychar_methods    = NULL;
++
++  // make sure the room class is ready to be made
++  if (PyType_Ready(&PyChar_Type) < 0)
++    return;
++
++  // load the module
++  m = Py_InitModule3("char", char_module_methods,
++		     "The char module, for all char/mob-related MUD stuff.");
++  
++  // make sure it loaded OK
++  if (m == NULL)
++    return;
++
++  // add the Char class to the module
++  Py_INCREF(&PyChar_Type);
++  PyModule_AddObject(m, "Char", (PyObject *)&PyChar_Type);
+ }
+ 
++
+ int PyChar_Check(PyObject *value) {
+   return PyObject_TypeCheck(value, &PyChar_Type);
+ }
+ 
+ int PyChar_AsUid(PyObject *ch) {
+   return ((PyChar *)ch)->uid;
++}
++
++CHAR_DATA *PyChar_AsChar(PyObject *ch) {
++  return propertyTableGet(mob_table, PyChar_AsUid(ch));
+ }
+ 
+ PyObject *
+diff -ruN ../nakedmudv2.2/src/scripts/pychar.d src/scripts/pychar.d
+--- ../nakedmudv2.2/src/scripts/pychar.d	Thu May 12 17:08:51 2005
++++ src/scripts/pychar.d	Fri May 27 01:33:34 2005
+@@ -0,0 +1,5 @@
++scripts/pychar.d scripts/pychar.o: scripts/pychar.c mud.h wrapsock.h property_table.h list.h map.h \
++  hashtable.h set.h buffer.h bitvector.h world.h room.h character.h \
++  object.h races.h handler.h utils.h scripts/pyplugs.h scripts/script.h \
++  scripts/script_set.h scripts/pychar.h scripts/pyroom.h scripts/pyobj.h \
++  char_vars/char_vars.h items/items.h
+diff -ruN ../nakedmudv2.2/src/scripts/pychar.h src/scripts/pychar.h
+--- ../nakedmudv2.2/src/scripts/pychar.h	Thu May 12 17:08:51 2005
++++ src/scripts/pychar.h	Fri May 27 01:30:57 2005
+@@ -2,20 +2,43 @@
+ #define __PYCHAR_H
+ //*****************************************************************************
+ //
+-// py_char.h
++// pychar.h
+ //
+-// A python extention to allow python scripts to treat MUD characters as an
+-// object within the script.
++// A python extention to allow python scripts to treat MUD chars as an
++// object within the script. If you wish to give python access to more features
++// of a char, it should NOT be done by editing pychar.c! Use PyChar_addGetSetter
++// and PyChar_addMethod in a new module implementing the feature you want to
++// give Python access to.
+ //
+ //*****************************************************************************
+ 
+-/* initialize characters for use */
+-PyMODINIT_FUNC
+-init_PyChar(void);
+-int PyChar_AsUid(PyObject *ch);
++// initialize rooms for use. This must be called AFTER all other modules
++// have added in new get/setters and methods to pyroom
++PyMODINIT_FUNC init_PyChar(void);
++PyObject        *newPyChar(CHAR_DATA *ch);
++
++CHAR_DATA   *PyChar_AsChar(PyObject *ch);
++int           PyChar_AsUid(PyObject *ch);
++
++//
++// checks to see if the PyObject is a PyChar
+ int PyChar_Check(PyObject *value);
+ 
+-PyObject *
+-newPyChar(CHAR_DATA *ch);
++//
++// getters allow Python to access pieces of the Char module. Setters allow
++// Python to change pieces of the char module. Getters are called when Python
++// tries to get the value of some variable on the object, and setters are called
++// when Python tries to set the value of some variable on the object. Get and
++// Set do not both need to be supplied. Examples of how to add new getters and
++// setters is presented in pychar.c
++void PyChar_addGetSetter(const char *name, void *g, void *s, const char *doc);
++
++//
++// Adds a new method function (i.e. void *f) to the Char class. Name is the name
++// of the function, f is the PyCFunction implementing the new method, flags is
++// the type of method beings used (almost always METH_VARARGS), and dog is an
++// (optional) description of what the method does. For examples on how to add
++// new methods, see pychar.c
++void PyChar_addMethod(const char *name, void *f, int flags, const char *doc);
+ 
+ #endif //__PYCHAR_H
+diff -ruN ../nakedmudv2.2/src/scripts/pymud.c src/scripts/pymud.c
+--- ../nakedmudv2.2/src/scripts/pymud.c	Thu May 12 17:08:51 2005
++++ src/scripts/pymud.c	Fri May 27 01:30:57 2005
+@@ -15,13 +15,51 @@
+ #include <structmember.h>
+ 
+ #include "../mud.h"
++#include "../character.h"
+ 
+ #include "script.h"
+ #include "pyroom.h"
+ #include "pychar.h"
+ #include "pyobj.h"
++#include "pyplugs.h"
++
++
++
++//*****************************************************************************
++// local variables and functions
++//*****************************************************************************
++// global variables we have set.
++PyObject  *globals = NULL;
++
++// Python commands that have been added to the game
++HASHTABLE *py_cmds = NULL;
++
++
++//
++// This is the glue between python commands and normal mud commands; checks for
++// the command entry in py_cmds, and calls the appropriate function
++COMMAND(cmd_py_cmd) {
++  PyObject *func = hashGet(py_cmds, cmd);
++  if(func == NULL)
++    log_string("ERROR: Tried python command, %s, but it does not exist!\r\n", 
++	       cmd);
++  else {
++    PyObject *arglist = Py_BuildValue("Osis", newPyChar(ch), cmd, subcmd, arg);
++    PyObject *retval  = PyEval_CallObject(func, arglist);
++    // check for an error:
++    if(retval == NULL) {
++      char *tb = getPythonTraceback();
++      if(tb != NULL) {
++	log_string("Error running python command, %s:\r\n%s\r\n", cmd, tb);
++	free(tb);
++      }
++    }
++    Py_XDECREF(retval);
++    Py_XDECREF(arglist);
++  }
++}
++
+ 
+-PyObject *globals = NULL;
+ 
+ 
+ //*****************************************************************************
+@@ -65,7 +103,6 @@
+     return NULL;
+   }
+ 
+-  //  Py_INCREF(val);
+   PyDict_SetItem(globals, key, val);
+   return Py_BuildValue("i", 1);
+ }
+@@ -81,12 +118,53 @@
+     return NULL;
+   }
+ 
+-  //  Py_INCREF(Py_None);
+   PyDict_SetItem(globals, key, Py_None);
+   return Py_BuildValue("i", 1);
+ }
+ 
+ 
++//
++// add a new command to the mud, via a python script or module. Takes in a
++// command name, a sort_by command, the function, a subcmd int value, a minimum
++// and maximum position in the form of strings, a level, and boolean values
++// for whether the command can be performed by mobiles, and whether it 
++// interrupts actions.
++static PyObject *
++mud_add_cmd(PyObject *self, PyObject *args) {
++  PyObject *func = NULL;
++  char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
++       *group = NULL;
++  int  subcmd = 0;
++  bool mob_ok = FALSE, interrupts = FALSE;
++  int min_pos_num, max_pos_num;
++
++  // parse all of the values
++  if (!PyArg_ParseTuple(args, "szOisssbb", &name, &sort_by, &func, &subcmd,
++  			&min_pos, &max_pos, &group, &mob_ok, &interrupts)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Could not add new command. Improper arguments supplied");
++    return NULL;
++  }
++
++  // get our positions
++  min_pos_num = posGetNum(min_pos);
++  max_pos_num = posGetNum(max_pos);
++  if(min_pos_num == POS_NONE || max_pos_num == POS_NONE) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Could not add new command. Invalid position names.");
++    return NULL;
++  }
++
++  // map our python function to its command name 
++  Py_INCREF(func);
++  hashPut(py_cmds, name, func);
++  add_cmd(name, sort_by, cmd_py_cmd, subcmd, min_pos_num, max_pos_num,
++	  group, mob_ok, interrupts);
++  return Py_None;
++}
++
++
++
+ 
+ //*****************************************************************************
+ //
+@@ -100,6 +178,8 @@
+      "Set the value of a global variable."},
+     {"erase_global",  mud_erase_global, METH_VARARGS,
+      "Erase the value of a global variable."},
++    {"add_cmd", mud_add_cmd, METH_VARARGS,
++     "Add a new command to the game,"},
+     {NULL, NULL, 0, NULL}        /* Sentinel */
+ };
+ 
+@@ -113,4 +193,6 @@
+ 
+   m = Py_InitModule3("mud", mud_module_methods,
+ 		     "The mud module, for all MUD misc mud utils.");
++
++  py_cmds = newHashtable();
+ }
+diff -ruN ../nakedmudv2.2/src/scripts/pymud.d src/scripts/pymud.d
+--- ../nakedmudv2.2/src/scripts/pymud.d	Thu May 12 17:08:51 2005
++++ src/scripts/pymud.d	Fri May 27 01:33:34 2005
+@@ -0,0 +1,3 @@
++scripts/pymud.d scripts/pymud.o: scripts/pymud.c mud.h wrapsock.h property_table.h list.h map.h \
++  hashtable.h set.h buffer.h bitvector.h character.h scripts/script.h \
++  scripts/pyroom.h scripts/pychar.h scripts/pyobj.h scripts/pyplugs.h
+diff -ruN ../nakedmudv2.2/src/scripts/pyobj.c src/scripts/pyobj.c
+--- ../nakedmudv2.2/src/scripts/pyobj.c	Thu May 12 17:08:51 2005
++++ src/scripts/pyobj.c	Fri May 27 01:30:57 2005
+@@ -19,6 +19,7 @@
+ #include "../handler.h"
+ #include "../utils.h"
+ 
++#include "pyplugs.h"
+ #include "script.h"
+ #include "script_set.h"
+ #include "pychar.h"
+@@ -26,24 +27,32 @@
+ #include "pyobj.h"
+ 
+ 
++
++
++//*****************************************************************************
++// local structures and defines
++//*****************************************************************************
++// a list of the get/setters on the Obj class
++LIST *pyobj_getsetters = NULL;
++
++// a list of the methods on the Obj class
++LIST *pyobj_methods = NULL;
++
+ typedef struct {
+   PyObject_HEAD
+   int uid;
+ } PyObj;
+ 
+ 
++
+ //*****************************************************************************
+-//
+-// allocation, deallocation, and initialiation
+-//
++// allocation, deallocation, initialization, and comparison
+ //*****************************************************************************
+-static void
+-PyObj_dealloc(PyObj *self) {
++void PyObj_dealloc(PyObj *self) {
+   self->ob_type->tp_free((PyObject*)self);
+ }
+ 
+-static PyObject *
+-PyObj_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
++PyObject *PyObj_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+     PyObj *self;
+ 
+     self = (PyObj  *)type->tp_alloc(type, 0);
+@@ -51,9 +60,8 @@
+     return (PyObject *)self;
+ }
+ 
+-static int
+-PyObj_init(PyObj *self, PyObject *args, PyObject *kwds) {
+-  static char *kwlist[] = {"uid", NULL};
++int PyObj_init(PyObj *self, PyObject *args, PyObject *kwds) {
++  char *kwlist[] = {"uid", NULL};
+   int uid = NOTHING;
+ 
+   // get the universal id
+@@ -74,119 +82,50 @@
+   return 0;
+ }
+ 
+-
+-
+-
+-//*****************************************************************************
+-//
+-// methods and stuff for building the class
+-//
+-//*****************************************************************************
+-
+-static PyObject *
+-PyObj_attach(PyObj *self, PyObject *args) {  
+-  long vnum = NOTHING;
+-
+-  // make sure we're getting passed the right type of data
+-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "To attach a script, the vnum must be suppplied.");
+-    return NULL;
+-  }
+-
+-  // pull out the character and do the attaching
+-  OBJ_DATA       *obj = propertyTableGet(obj_table, self->uid);
+-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+-  if(obj != NULL && script != NULL) {
+-    scriptSetAdd(objGetScripts(obj), vnum);
+-    return Py_BuildValue("i", 1);
+-  }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "Tried to attach script to nonexistant obj, %d, or script %d "
+-		 "does not exit.", self->uid, (int)vnum);
+-    return NULL;
+-  }
+-}
+-
+-
+-static PyObject *
+-PyObj_detach(PyObj *self, PyObject *args) {  
+-  long vnum = NOTHING;
+-
+-  // make sure we're getting passed the right type of data
+-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "To detach a script, the vnum must be suppplied.");
+-    return NULL;
+-  }
+-
+-  // pull out the character and do the attaching
+-  OBJ_DATA       *obj = propertyTableGet(obj_table, self->uid);
+-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+-  if(obj != NULL && script != NULL) {
+-    scriptSetRemove(objGetScripts(obj), vnum);
+-    return Py_BuildValue("i", 1);
+-  }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-		 "Tried to detach script from nonexistant obj, %d, or script "
+-		 "%d does not exit.", self->uid, (int)vnum);
+-    return NULL;
+-  }
++int PyObj_compare(PyObj *obj1, PyObj *obj2) {
++  if(obj1->uid == obj2->uid)
++    return 0;
++  else if(obj1->uid < obj2->uid)
++    return -1;
++  else
++    return 1;
+ }
+ 
+ 
+-static PyMethodDef PyObj_methods[] = {
+-  {"attach", (PyCFunction)PyObj_attach, METH_VARARGS,
+-   "attach a new script to the object." },
+-  {"detach", (PyCFunction)PyObj_detach, METH_VARARGS,
+-   "detach a script from the object." },
+-  {NULL}  /* Sentinel */
+-};
+-
+ 
+ //*****************************************************************************
+-//
+-// character attributes - mostly get and set
+-//
++// getters and setters for the Obj class
+ //*****************************************************************************
+-static PyObject *
+-PyObj_getname(PyObj *self, void *closure) {
+-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
++PyObject *PyObj_getname(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj != NULL) return Py_BuildValue("s", objGetName(obj));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyObj_getdesc(PyObj *self, void *closure) {
+-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
++PyObject *PyObj_getdesc(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj != NULL) return Py_BuildValue("s", objGetDesc(obj));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyObj_getrdesc(PyObj *self, void *closure) {
+-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
++PyObject *PyObj_getrdesc(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj != NULL) return Py_BuildValue("s", objGetRdesc(obj));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyObj_getuid(PyObj *self, void *closure) {
++PyObject *PyObj_getuid(PyObj *self, void *closure) {
+   return Py_BuildValue("i", self->uid);
+ }
+ 
+-static PyObject *
+-PyObj_getvnum(PyObj *self, void *closure) {
+-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
++PyObject *PyObj_getvnum(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj != NULL) return Py_BuildValue("i", objGetVnum(obj));
+   else           return NULL;
+ }
+ 
+-static PyObject *
+-PyObj_getcontents(PyObj *self, PyObject *args) {
+-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
++PyObject *PyObj_getcontents(PyObj *self, PyObject *args) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj == NULL) 
+     return NULL;
+ 
+@@ -201,9 +140,8 @@
+   return Py_BuildValue("O", list);
+ }
+ 
+-static PyObject *
+-PyObj_getchars(PyObj *self, PyObject *args) {
+-  OBJ_DATA *obj = propertyTableGet(obj_table, self->uid);
++PyObject *PyObj_getchars(PyObj *self, PyObject *args) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj == NULL) 
+     return NULL;
+ 
+@@ -223,7 +161,6 @@
+ // Standard check to make sure the object exists when
+ // trying to set a value for it. If successful, assign the
+ // object to ch. Otherwise, return -1 (error)
+-//
+ #define PYOBJ_CHECK_OBJ_EXISTS(uid, obj)                                       \
+   obj = propertyTableGet(obj_table, uid);                                      \
+   if(obj == NULL) {                                                            \
+@@ -232,8 +169,7 @@
+     return -1;                                                                 \
+   }                                                                            
+ 
+-static int
+-PyObj_setname(PyObj *self, PyObject *value, void *closure) {
++int PyObj_setname(PyObj *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete object's name");
+     return -1;
+@@ -251,8 +187,7 @@
+   return 0;
+ }
+ 
+-static int
+-PyObj_setdesc(PyObj *self, PyObject *value, void *closure) {
++int PyObj_setdesc(PyObj *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete object's description");
+     return -1;
+@@ -270,8 +205,7 @@
+   return 0;
+ }
+ 
+-static int
+-PyObj_setrdesc(PyObj *self, PyObject *value, void *closure) {
++int PyObj_setrdesc(PyObj *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete object's rdesc");
+     return -1;
+@@ -290,56 +224,67 @@
+ }
+ 
+ 
+-static PyGetSetDef PyObj_getseters[] = {
+-  {"contents", (getter)PyObj_getcontents, (setter)NULL,
+-   "the object's contents",
+-   NULL},
+-  {"objs", (getter)PyObj_getcontents, (setter)NULL,
+-   "the object's contents",
+-   NULL},
+-  {"chars", (getter)PyObj_getchars, (setter)NULL,
+-   "the characters sitting on/riding the object",
+-   NULL},
+-  {"name", (getter)PyObj_getname, (setter)PyObj_setname,
+-   "the object's name",
+-   NULL},
+-  {"desc", (getter)PyObj_getdesc, (setter)PyObj_setdesc,
+-   "the object's description",
+-   NULL},
+-  {"rdesc", (getter)PyObj_getrdesc, (setter)PyObj_setrdesc,
+-   "the object's room description",
+-   NULL},
+-  {"uid", (getter)PyObj_getuid, (setter)NULL,
+-   "the unique identification number",
+-   NULL},
+-  {"vnum", (getter)PyObj_getvnum, (setter)NULL,
+-   "the virtual number for the object.",
+-   NULL},
+-  {NULL}  /* Sentinel */
+-};
+-
+-
+ 
+ //*****************************************************************************
+-//
+-// comparators, getattr, setattr, and all that other class stuff
+-//
++// methods for the obj class
+ //*****************************************************************************
++PyObject *PyObj_attach(PyObj *self, PyObject *args) {  
++  long vnum = NOTHING;
+ 
+-//
+-// compare one object to another
+-//
+-static int
+-PyObj_compare(PyObj *obj1, PyObj *obj2) {
+-  if(obj1->uid == obj2->uid)
+-    return 0;
+-  else if(obj1->uid < obj2->uid)
+-    return -1;
+-  else
+-    return 1;
++  // make sure we're getting passed the right type of data
++  if (!PyArg_ParseTuple(args, "i", &vnum)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "To attach a script, the vnum must be suppplied.");
++    return NULL;
++  }
++
++  // pull out the character and do the attaching
++  OBJ_DATA       *obj = PyObj_AsObj((PyObject *)self);
++  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++  if(obj != NULL && script != NULL) {
++    scriptSetAdd(objGetScripts(obj), vnum);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to attach script to nonexistant obj, %d, or script %d "
++		 "does not exit.", self->uid, (int)vnum);
++    return NULL;
++  }
+ }
+ 
+-static PyTypeObject PyObj_Type = {
++
++PyObject *PyObj_detach(PyObj *self, PyObject *args) {  
++  long vnum = NOTHING;
++
++  // make sure we're getting passed the right type of data
++  if (!PyArg_ParseTuple(args, "i", &vnum)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "To detach a script, the vnum must be suppplied.");
++    return NULL;
++  }
++
++  // pull out the character and do the attaching
++  OBJ_DATA       *obj = PyObj_AsObj((PyObject *)self);
++  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++  if(obj != NULL && script != NULL) {
++    scriptSetRemove(objGetScripts(obj), vnum);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to detach script from nonexistant obj, %d, or script "
++		 "%d does not exit.", self->uid, (int)vnum);
++    return NULL;
++  }
++}
++
++
++
++//*****************************************************************************
++// structures to define our methods and classes
++//*****************************************************************************
++PyTypeObject PyObj_Type = {
+     PyObject_HEAD_INIT(NULL)
+     0,                         /*ob_size*/
+     "obj.Obj",                 /*tp_name*/
+@@ -368,9 +313,9 @@
+     0,		               /* tp_weaklistoffset */
+     0,		               /* tp_iter */
+     0,		               /* tp_iternext */
+-    PyObj_methods,             /* tp_methods */
++    0,                         /* tp_methods */
+     0,                         /* tp_members */
+-    PyObj_getseters,           /* tp_getset */
++    0,                         /* tp_getset */
+     0,                         /* tp_base */
+     0,                         /* tp_dict */
+     0,                         /* tp_descr_get */
+@@ -384,12 +329,9 @@
+ 
+ 
+ //*****************************************************************************
+-//
+ // the obj module
+-//
+ //*****************************************************************************
+-static PyObject *
+-PyObj_load_obj(PyObject *self, PyObject *args) {
++PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
+   int obj_vnum = NOBODY;
+   PyObject *in = NULL;
+ 
+@@ -467,8 +409,7 @@
+ }
+ 
+ 
+-static PyObject *
+-PyObj_count_objs(PyObject *self, PyObject *args) {
++PyObject *PyObj_count_objs(PyObject *self, PyObject *args) {
+   LIST *list      = NULL;
+   PyObject *tgt;
+   PyObject *in    = NULL;
+@@ -524,8 +465,7 @@
+ }
+ 
+ 
+-static PyObject *
+-PyObj_find_obj(PyObject *self, PyObject *args) {
++PyObject *PyObj_find_obj(PyObject *self, PyObject *args) {
+   LIST *list           = object_list;
+   PyObject *in         = NULL;
+   ROOM_DATA *room      = NULL;
+@@ -584,9 +524,7 @@
+   }
+ }
+ 
+-
+-
+-static PyMethodDef obj_module_methods[] = {
++PyMethodDef obj_module_methods[] = {
+   { "load_obj", PyObj_load_obj, METH_VARARGS,
+     "load a object with the specified vnum to a room." },
+   { "count_objs", PyObj_count_objs, METH_VARARGS,
+@@ -600,30 +538,96 @@
+ 
+ 
+ 
++//*****************************************************************************
++// implementation of pyobj.h
++//*****************************************************************************
++void PyObj_addGetSetter(const char *name, void *g, void *s, const char *doc) {
++  // make sure our list of get/setters is created
++  if(pyobj_getsetters == NULL) pyobj_getsetters = newList();
++
++  // make the GetSetter def
++  PyGetSetDef *def = calloc(1, sizeof(PyGetSetDef));
++  def->name        = strdup(name);
++  def->get         = (getter)g;
++  def->set         = (setter)s;
++  def->doc         = (doc ? strdup(doc) : NULL);
++  def->closure     = NULL;
++  listPut(pyobj_getsetters, def);
++}
++
++void PyObj_addMethod(const char *name, void *f, int flags, const char *doc) {
++  // make sure our list of methods is created
++  if(pyobj_methods == NULL) pyobj_methods = newList();
++
++  // make the Method def
++  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
++  def->ml_name     = strdup(name);
++  def->ml_meth     = (PyCFunction)f;
++  def->ml_flags    = flags;
++  def->ml_doc      = (doc ? strdup(doc) : NULL);
++  listPut(pyobj_methods, def);
++}
++
+ PyMODINIT_FUNC
+-init_PyObj(void) 
+-{
++init_PyObj(void) {
+     PyObject* m;
+ 
++    // getters and setters
++    PyObj_addGetSetter("contents", PyObj_getcontents, NULL,
++		       "the object's contents");
++    PyObj_addGetSetter("objs", PyObj_getcontents, NULL,
++		       "the object's contents");
++    PyObj_addGetSetter("chars", PyObj_getchars, NULL,
++		       "the characters sitting on/riding the object");
++    PyObj_addGetSetter("name", PyObj_getname, PyObj_setname,
++		       "the object's name");
++    PyObj_addGetSetter("desc", PyObj_getdesc, PyObj_setdesc,
++		       "the object's long description");
++    PyObj_addGetSetter("rdesc", PyObj_getrdesc, PyObj_setrdesc,
++		       "the object's room description");
++    PyObj_addGetSetter("uid", PyObj_getuid, NULL,
++		       "the object's unique identification number");
++    PyObj_addGetSetter("vnum", PyObj_getvnum, NULL,
++		       "the virtual number for the object.");
++
++    // methods
++    PyObj_addMethod("attach", PyObj_attach, METH_VARARGS,
++		    "attach a new script to the object");
++    PyObj_addMethod("detach", PyObj_detach, METH_VARARGS,
++		    "detach an old script from the object, by vnum");
++
++    makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
++    deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;
++    deleteListWith(pyobj_methods,    free); pyobj_methods    = NULL;
++
++    // make sure the obj class is ready to be made
+     if (PyType_Ready(&PyObj_Type) < 0)
+         return;
+ 
++    // make the obj module
+     m = Py_InitModule3("obj", obj_module_methods,
+                        "The object module, for all object-related MUD stuff.");
+ 
++    // make sure the obj module parsed OK
+     if (m == NULL)
+       return;
+ 
++    // add the obj class to the obj module
+     Py_INCREF(&PyObj_Type);
+     PyModule_AddObject(m, "Obj", (PyObject *)&PyObj_Type);
+ }
+ 
++
+ int PyObj_Check(PyObject *value) {
+   return PyObject_TypeCheck(value, &PyObj_Type);
+ }
+ 
+ int PyObj_AsUid(PyObject *obj) {
+   return ((PyObj *)obj)->uid;
++}
++
++OBJ_DATA *PyObj_AsObj(PyObject *obj) {
++  return propertyTableGet(obj_table, PyObj_AsUid(obj));
+ }
+ 
+ PyObject *
+diff -ruN ../nakedmudv2.2/src/scripts/pyobj.d src/scripts/pyobj.d
+--- ../nakedmudv2.2/src/scripts/pyobj.d	Thu May 12 17:08:51 2005
++++ src/scripts/pyobj.d	Fri May 27 01:33:34 2005
+@@ -0,0 +1,4 @@
++scripts/pyobj.d scripts/pyobj.o: scripts/pyobj.c mud.h wrapsock.h property_table.h list.h map.h \
++  hashtable.h set.h buffer.h bitvector.h world.h room.h character.h \
++  object.h races.h handler.h utils.h scripts/pyplugs.h scripts/script.h \
++  scripts/script_set.h scripts/pychar.h scripts/pyroom.h scripts/pyobj.h
+diff -ruN ../nakedmudv2.2/src/scripts/pyobj.h src/scripts/pyobj.h
+--- ../nakedmudv2.2/src/scripts/pyobj.h	Thu May 12 17:08:51 2005
++++ src/scripts/pyobj.h	Fri May 27 01:30:57 2005
+@@ -4,18 +4,41 @@
+ //
+ // pyobj.h
+ //
+-// A python extention to allow python scripts to treat MUD objects as an
+-// object within the script.
++// A python extention to allow python scripts to treat MUD obj as an
++// object within the script. If you wish to give python access to more features
++// of an obj, it should NOT be done by editing pyobj.c! Use PyObj_addGetSetter
++// and PyObj_addMethod in a new module implementing the feature you want to
++// give Python access to.
+ //
+ //*****************************************************************************
+ 
+-/* initialize characters for use */
+-PyMODINIT_FUNC
+-init_PyObj(void);
+-int PyObj_AsUid(PyObject *ch);
+-int PyObj_Check(PyObject *value);
++// initialize objects for use. This must be called AFTER all other modules
++// have added in new get/setters and methods to pyobj
++PyMODINIT_FUNC init_PyObj(void);
++PyObject      *newPyObj(OBJ_DATA *obj);
+ 
+-PyObject *
+-newPyObj(OBJ_DATA *obj);
++OBJ_DATA   *PyObj_AsObj(PyObject *obj);
++int         PyObj_AsUid(PyObject *obj);
++
++//
++// checks to see of the object is a PyObj
++int         PyObj_Check(PyObject *value);
++
++//
++// getters allow Python to access pieces of the Obj module. Setters allow
++// Python to change pieces of the obj module. Getters are called when Python
++// tries to get the value of some variable on the object, and setters are called
++// when Python tries to set the value of some variable on the object. Get and
++// Set do not both need to be supplied. Examples of how to add new getters and
++// setters is presented in pyobj.c
++void PyObj_addGetSetter(const char *name, void *g, void *s, const char *doc);
++
++//
++// Adds a new method function (i.e. void *f) to the Obj class. Name is the name
++// of the function, f is the PyCFunction implementing the new method, flags is
++// the type of method beings used (almost always METH_VARARGS), and dog is an
++// (optional) description of what the method does. For examples on how to add
++// new methods, see pyobj.c
++void PyObj_addMethod(const char *name, void *f, int flags, const char *doc);
+ 
+ #endif //__PYOBJ_H
+diff -ruN ../nakedmudv2.2/src/scripts/pyplugs.c src/scripts/pyplugs.c
+--- ../nakedmudv2.2/src/scripts/pyplugs.c	Wed Dec 31 17:00:00 1969
++++ src/scripts/pyplugs.c	Fri May 27 01:30:57 2005
+@@ -0,0 +1,239 @@
++//*****************************************************************************
++//
++// pyplugs.c
++//
++// Pyplugs are just various things that occur at the intersection between 
++// Python and C, in NakedMud. They include the loading of python modules,
++// a few commands for interacting with python modules, and miscellaneory (sp?)
++// python stuff that doesn't neccessarily fall under "scripting".
++//
++//*****************************************************************************
++
++#include <Python.h>
++#include <structmember.h>
++#include <compile.h>
++#include <dirent.h> 
++#include <node.h>
++
++#include "../mud.h"
++#include "../utils.h"
++#include "../character.h"
++#include "pyplugs.h"
++
++
++
++//*****************************************************************************
++// local functions, structures, and defines
++//*****************************************************************************
++
++// the directory where we keep python modules that we have extended ourself with
++#define PYMOD_LIB       "../lib/pymodules"
++
++
++//
++// Similar to Py_CompileString (in the Python API), but a file is compiled
++// instead. fname is the file that will be compiled. The code object will be
++// stored in a file named fname + c (e.g. foo.py becomes foo.pyc)
++PyObject *Py_CompileFile(char *fname) {
++  FILE *fl = fopen(fname, "r");
++  if(fl == NULL) return NULL;
++  char cfname[strlen(fname) + 2];
++  sprintf(cfname, "%sc", fname);
++
++  struct _node *node = PyParser_SimpleParseFile(fl, fname, Py_file_input);
++  if(node == NULL) return NULL;
++  PyCodeObject *code = PyNode_Compile(node, cfname);
++  PyNode_Free(node);
++  fclose(fl);
++  return (PyObject *)code;
++}
++
++
++//
++// reads in one python module, and adds it to the game. Fname is the name of
++// the file we are reading the module from, and mname is the name of the module
++// we will be storing it as. This function will reload the module if it has
++// already been loaded
++bool PyModule_Reload(char *fname, char *mname) {
++  PyObject *code = Py_CompileFile(fname);
++  if(code == NULL) {
++    char *tb = getPythonTraceback();
++    log_string("Error in module file: %s\r\n"
++	       "\r\nTraceback is:\r\n%s\r\n", fname, tb);
++    free(tb);
++    return FALSE;
++  }
++  // no errors occured... load the module into our package
++  else {
++    PyObject *module = PyImport_ExecCodeModule(mname, code);
++    if(module == NULL) {
++      char *tb = getPythonTraceback();
++      log_string("Error in module file: %s\r\n"
++		 "\r\nTraceback is:\r\n%s\r\n", fname, tb);
++      free(tb);
++      return FALSE;
++    }
++    else
++      Py_DECREF(module);
++    Py_DECREF(code);
++    return TRUE;
++  }
++}
++
++//
++// takes the name of a python module, and loads that module into the game
++COMMAND(cmd_pyload) {
++  if(!*arg)
++    send_to_char(ch, "Which module did you want to load?\r\n");
++  else {
++    char fname[strlen(arg) + 6 + 4];
++    sprintf(fname, "%s/%s.py", PYMOD_LIB, arg);
++    // make sure the file exists
++    if(!file_exists(fname))
++      send_to_char(ch, "That module does not exist!\r\n");
++    else if(PyModule_Reload(fname, arg))
++      send_to_char(ch, "Module successfully loaded.\r\n");
++  }
++}
++
++//
++// NakedMud allows you to extend the codebase in Python. These extensions must
++// take the form of Python modules, and must be stored in the PYMOD_LIB
++// directory. These modules might add new commands to the mud, or provide new
++// functions that scripts or other extension modules can use. The game datatypes
++// (i.e. chars, rooms, objects, etc...) cannot be extended by Python, but just
++// about any other feature of the mud can be.
++void init_py_modules() {
++  // build a list of all the files in this directory
++  static char fname[SMALL_BUFFER];
++  static char mname[SMALL_BUFFER];
++  DIR *dir = opendir(PYMOD_LIB);
++  struct dirent *entry;
++
++  // add our PYMOD_LIB directory to the sys path, 
++  // so the modules can access each other
++  PyObject *sys  = PyImport_ImportModule("sys");
++  PyObject *path = (sys ? PyDict_GetItemString(PyModule_GetDict(sys), "path") :
++		    NULL);
++  if(path != NULL)
++    PyList_Append(path, Py_BuildValue("s", PYMOD_LIB));
++  else
++    log_string("ERROR: Unable to add %s to python sys.path", PYMOD_LIB);
++
++  // go through each of our python modules, and add them to the pymod package
++  for(entry = readdir(dir); entry; entry = readdir(dir)) {
++    // if it doesn't end in .py, ignore it
++    int nlen = strlen(entry->d_name);
++    if(nlen < 4 || strcasecmp(".py", entry->d_name + nlen-3) != 0)
++      continue;
++    sprintf(fname, "%s/%s", PYMOD_LIB, entry->d_name);
++    sprintf(mname, "%s",    entry->d_name);
++    mname[strlen(mname)-3] = '\0';
++
++    // Load the module if it hasn't been loaded yet
++    PyObject *mod = PyImport_ImportModule(mname);
++    if(mod != NULL)
++      log_string("loading python module, %s", mname);
++    // oops... something went wrong. Let's get the traceback
++    else {
++      char *tb = getPythonTraceback();
++      log_string("Error loading module, %s:\r\n%s\r\n",
++		 mname, tb);
++      free(tb);
++    }
++  }
++  closedir(dir);
++}
++
++
++
++//*****************************************************************************
++// implementation of pyplugs.h
++//*****************************************************************************
++void init_pyplugs(void) {
++  init_py_modules();
++  add_cmd("pyload", NULL, cmd_pyload, 0, POS_UNCONCIOUS, POS_FLYING,
++	  "admin", FALSE, FALSE);
++}
++
++
++
++//
++// Python makes it overly complicated (IMO) to get traceback information when
++// running in C. I spent some time hunting around, and came across a lovely
++// site that provided me with this function for getting a traceback of an error.
++// The site that provided this piece of code to me is located here:
++//   http://stompstompstomp.com/weblog/technical/2004-03-29
++char* getPythonTraceback(void) {
++    // Python equivilant:
++    // import traceback, sys
++    // return "".join(traceback.format_exception(sys.exc_type, 
++    //    sys.exc_value, sys.exc_traceback))
++
++    PyObject *type, *value, *traceback;
++    PyObject *tracebackModule;
++    char *chrRetval;
++
++    PyErr_Fetch(&type, &value, &traceback);
++
++    tracebackModule = PyImport_ImportModule("traceback");
++    if (tracebackModule != NULL) {
++        PyObject *tbList, *emptyString, *strRetval;
++
++        tbList = PyObject_CallMethod(
++            tracebackModule, 
++            "format_exception", 
++            "OOO",
++            type,
++            value == NULL ? Py_None : value,
++            traceback == NULL ? Py_None : traceback);
++
++        emptyString = PyString_FromString("");
++        strRetval = PyObject_CallMethod(emptyString, "join", "O", tbList);
++
++        chrRetval = strdup((strRetval ? PyString_AsString(strRetval) :
++			    "unknown error"));
++
++        Py_XDECREF(tbList);
++        Py_XDECREF(emptyString);
++        Py_XDECREF(strRetval);
++        Py_XDECREF(tracebackModule);
++    }
++    else
++      chrRetval = strdup("Unable to import traceback module.");
++
++    Py_XDECREF(type);
++    Py_XDECREF(value);
++    Py_XDECREF(traceback);
++
++    return chrRetval;
++}
++
++
++void makePyType(PyTypeObject *type, LIST *getsetters, LIST *methods) {
++  // build up the array of getsetters for this object
++  if(getsetters != NULL) {
++    PyGetSetDef *getsets = calloc(listSize(getsetters)+1,sizeof(PyGetSetDef));
++    LIST_ITERATOR  *gs_i = newListIterator(getsetters);
++    PyGetSetDef      *gs = NULL;
++    int i                = 0;
++    ITERATE_LIST(gs, gs_i) {
++      getsets[i] = *gs;
++      i++;
++    } deleteListIterator(gs_i);
++    type->tp_getset = getsets;
++  }
++  
++  // build up the array of methods for this object
++  if(methods != NULL) {
++    PyMethodDef *meth  = calloc(listSize(methods)+1, sizeof(PyMethodDef));
++    LIST_ITERATOR *m_i = newListIterator(methods);
++    PyMethodDef     *m = NULL;
++    int i              = 0;
++    ITERATE_LIST(m, m_i) {
++      meth[i] = *m;
++      i++;
++    } deleteListIterator(m_i);
++    type->tp_methods = meth;
++  }
++}
+diff -ruN ../nakedmudv2.2/src/scripts/pyplugs.d src/scripts/pyplugs.d
+--- ../nakedmudv2.2/src/scripts/pyplugs.d	Wed Dec 31 17:00:00 1969
++++ src/scripts/pyplugs.d	Fri May 27 01:33:33 2005
+@@ -0,0 +1,3 @@
++scripts/pyplugs.d scripts/pyplugs.o: scripts/pyplugs.c mud.h wrapsock.h property_table.h list.h \
++  map.h hashtable.h set.h buffer.h bitvector.h utils.h character.h \
++  scripts/pyplugs.h
+diff -ruN ../nakedmudv2.2/src/scripts/pyplugs.h src/scripts/pyplugs.h
+--- ../nakedmudv2.2/src/scripts/pyplugs.h	Wed Dec 31 17:00:00 1969
++++ src/scripts/pyplugs.h	Fri May 27 01:30:57 2005
+@@ -0,0 +1,28 @@
++#ifndef PYPLUGS_H
++#define PYPLUGS_H
++//*****************************************************************************
++//
++// pyplugs.h
++//
++// Pyplugs are just various things that occur at the intersection between 
++// Python and C, in NakedMud. They include the loading of python modules,
++// a few commands for interacting with python modules, and miscellaneory (sp?)
++// python stuff that doesn't neccessarily fall under "scripting".
++//
++//*****************************************************************************
++
++// 
++// Returns a string representation of the last error that Python threw. Must
++// be freed afterwards.
++char *getPythonTraceback(void);
++
++//
++// initialize all of our plugs with python
++void init_pyplugs();
++
++//
++// Takes in a PyType, and adds lists of get/setters and methods to it. The
++// lists can each be NULL if there are no getsetters or methods, respectively
++void makePyType(PyTypeObject *type, LIST *getsetters, LIST *methods);
++
++#endif // PYPLUGS_H
+diff -ruN ../nakedmudv2.2/src/scripts/pyroom.c src/scripts/pyroom.c
+--- ../nakedmudv2.2/src/scripts/pyroom.c	Thu May 12 17:08:51 2005
++++ src/scripts/pyroom.c	Fri May 27 01:30:57 2005
+@@ -2,8 +2,9 @@
+ //
+ // pyroom.c
+ //
+-// A python extention to allow python scripts to treat MUD characters as an
+-// object within the script.
++// Contains the implementation of a module that contains all of the methods
++// for dealing with rooms. Also contains a Python Class implementation of
++// NakedMud rooms.
+ //
+ //*****************************************************************************
+ 
+@@ -15,15 +16,27 @@
+ #include "../room.h"
+ #include "../exit.h"
+ #include "../character.h"
+-#include "../races.h"
+ #include "../handler.h"
+ #include "../utils.h"
+ 
+-#include "script.h"
++#include "pyplugs.h"
+ #include "script_set.h"
+-#include "pyroom.h"
++#include "script.h"
+ #include "pychar.h"
+ #include "pyobj.h"
++#include "pyroom.h"
++
++
++
++//*****************************************************************************
++// local structures and defines
++//*****************************************************************************
++
++// a list of the get/setters on the Room class
++LIST *pyroom_getsetters = NULL;
++
++// a list of the methods on the Room class
++LIST *pyroom_methods = NULL;
+ 
+ typedef struct {
+   PyObject_HEAD
+@@ -33,25 +46,21 @@
+ 
+ 
+ //*****************************************************************************
+-// allocation, deallocation, and initialiation
++// allocation, deallocation, initialization, and comparison
+ //*****************************************************************************
+-static void
+-PyRoom_dealloc(PyRoom *self) {
++void PyRoom_dealloc(PyRoom *self) {
+   self->ob_type->tp_free((PyObject*)self);
+ }
+ 
+-static PyObject *
+-PyRoom_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
++PyObject *PyRoom_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+     PyRoom *self;
+-
+-    self = (PyRoom  *)type->tp_alloc(type, 0);
++    self = (PyRoom *)type->tp_alloc(type, 0);
+     self->vnum = NOWHERE;
+     return (PyObject *)self;
+ }
+ 
+-static int
+-PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
+-  static char *kwlist[] = {"vnum", NULL};
++int PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
++  char *kwlist[] = {"vnum", NULL};
+   int vnum = NOWHERE;
+ 
+   // get the vnum
+@@ -64,7 +73,7 @@
+   // make sure a room with the vnum exists
+   if(!worldGetRoom(gameworld, vnum)) {
+     PyErr_Format(PyExc_TypeError, 
+-		 "Rom with vnum, %d, does not exist", vnum);
++		 "Room with vnum, %d, does not exist", vnum);
+     return -1;
+   }
+ 
+@@ -72,16 +81,69 @@
+   return 0;
+ }
+ 
++int PyRoom_compare(PyRoom *room1, PyRoom *room2) {
++  if(room1->vnum == room2->vnum)
++    return 0;
++  else if(room1->vnum < room2->vnum)
++    return -1;
++  else
++    return 1;
++}
++
+ 
+ 
+ //*****************************************************************************
+-// methods and stuff for building the class
++// getters and setters for the Room class
++//*****************************************************************************
++PyObject *PyRoom_getvnum(PyRoom *self, void *closure) {
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room != NULL) return Py_BuildValue("i", roomGetVnum(room));
++  else             return NULL;
++}
++
++PyObject *PyRoom_getchars(PyRoom *self, PyObject *args) {
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room == NULL)
++    return NULL;
++  else {
++    LIST_ITERATOR *char_i = newListIterator(roomGetCharacters(room));
++    PyObject *list = PyList_New(0);
++    CHAR_DATA *ch;
++
++    // for each char in the room list, add him to a Python list
++    ITERATE_LIST(ch, char_i)
++      PyList_Append(list, newPyChar(ch));
++    deleteListIterator(char_i);
++    return Py_BuildValue("O", list);
++  }
++}
++
++PyObject *PyRoom_getobjs(PyRoom *self, PyObject *args) {
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room == NULL)
++    return NULL;
++  else {
++    LIST_ITERATOR *obj_i = newListIterator(roomGetContents(room));
++    PyObject *list = PyList_New(0);
++    OBJ_DATA *obj;
++
++    // for each obj in the room list, add him to a Python list
++    ITERATE_LIST(obj, obj_i)
++      PyList_Append(list, newPyObj(obj));
++    deleteListIterator(obj_i);
++    return Py_BuildValue("O", list);
++  }
++}
++
++
++
++//*****************************************************************************
++// methods for the room class
+ //*****************************************************************************
+ 
+ //
+ // Send a newline-tagged message to everyone in the room
+-static PyObject *
+-PyRoom_send(PyRoom *self, PyObject *value) {
++PyObject *PyRoom_send(PyRoom *self, PyObject *value) {
+   char *mssg = NULL;
+   if (!PyArg_ParseTuple(value, "s", &mssg)) {
+     PyErr_Format(PyExc_TypeError, 
+@@ -89,7 +151,7 @@
+     return NULL;
+   }
+ 
+-  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+   if(room) {
+     send_to_list(roomGetCharacters(room), "%s\r\n", mssg);
+     return Py_BuildValue("i", 1);
+@@ -105,8 +167,7 @@
+ 
+ //
+ // close a door in the specified direction
+-static PyObject *
+-PyRoom_close(PyRoom *self, PyObject *value) {
++PyObject *PyRoom_close(PyRoom *self, PyObject *value) {
+   ROOM_DATA *room = NULL;
+   EXIT_DATA *exit = NULL;
+   char *dirname = NULL;
+@@ -118,7 +179,7 @@
+     return NULL;
+   }
+ 
+-  room = worldGetRoom(gameworld, self->vnum);
++  room = PyRoom_AsRoom((PyObject *)self);
+   if(room == NULL) {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Tried to close door in non-existant room, %d.", 
+@@ -157,8 +218,7 @@
+ 
+ //
+ // lock a door in the specified direction
+-static PyObject *
+-PyRoom_lock(PyRoom *self, PyObject *value) {
++PyObject *PyRoom_lock(PyRoom *self, PyObject *value) {
+   ROOM_DATA *room = NULL;
+   EXIT_DATA *exit = NULL;
+   char *dirname = NULL;
+@@ -170,7 +230,7 @@
+     return NULL;
+   }
+ 
+-  room = worldGetRoom(gameworld, self->vnum);
++  room = PyRoom_AsRoom((PyObject *)self);
+   if(room == NULL) {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Tried to lock door in non-existant room, %d.", 
+@@ -216,8 +276,7 @@
+ 
+ //
+ // lock a door in the specified direction
+-static PyObject *
+-PyRoom_unlock(PyRoom *self, PyObject *value) {
++PyObject *PyRoom_unlock(PyRoom *self, PyObject *value) {
+   ROOM_DATA *room = NULL;
+   EXIT_DATA *exit = NULL;
+   char *dirname = NULL;
+@@ -229,7 +288,7 @@
+     return NULL;
+   }
+ 
+-  room = worldGetRoom(gameworld, self->vnum);
++  room = PyRoom_AsRoom((PyObject *)self);
+   if(room == NULL) {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Tried to unlock door in non-existant room, %d.", 
+@@ -274,8 +333,7 @@
+ 
+ //
+ // close a door in the specified direction
+-static PyObject *
+-PyRoom_open(PyRoom *self, PyObject *value) {
++PyObject *PyRoom_open(PyRoom *self, PyObject *value) {
+   ROOM_DATA *room = NULL;
+   EXIT_DATA *exit = NULL;
+   char *dirname = NULL;
+@@ -287,7 +345,7 @@
+     return NULL;
+   }
+ 
+-  room = worldGetRoom(gameworld, self->vnum);
++  room = PyRoom_AsRoom((PyObject *)self);
+   if(room == NULL) {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Tried to open door in non-existant room, %d.", 
+@@ -318,8 +376,7 @@
+ }
+ 
+ 
+-static PyObject *
+-PyRoom_attach(PyRoom *self, PyObject *args) {  
++PyObject *PyRoom_attach(PyRoom *self, PyObject *args) {  
+   long vnum = NOTHING;
+ 
+   // make sure we're getting passed the right type of data
+@@ -330,7 +387,7 @@
+   }
+ 
+   // pull out the character and do the attaching
+-  ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
++  ROOM_DATA     *room = PyRoom_AsRoom((PyObject *)self);
+   SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+   if(room != NULL && script != NULL) {
+     scriptSetAdd(roomGetScripts(room), vnum);
+@@ -345,8 +402,7 @@
+ }
+ 
+ 
+-static PyObject *
+-PyRoom_detach(PyRoom *self, PyObject *args) {  
++PyObject *PyRoom_detach(PyRoom *self, PyObject *args) {  
+   long vnum = NOTHING;
+ 
+   // make sure we're getting passed the right type of data
+@@ -357,7 +413,7 @@
+   }
+ 
+   // pull out the character and do the attaching
+-  ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
++  ROOM_DATA     *room = PyRoom_AsRoom((PyObject *)self);
+   SCRIPT_DATA *script = worldGetScript(gameworld, (int)vnum);
+   if(room != NULL && script != NULL) {
+     scriptSetRemove(roomGetScripts(room), vnum);
+@@ -372,104 +428,11 @@
+ }
+ 
+ 
+-static PyMethodDef PyRoom_methods[] = {
+-  {"attach", (PyCFunction)PyRoom_attach, METH_VARARGS,
+-   "attach a new script to the room." },
+-  {"detach", (PyCFunction)PyRoom_detach, METH_VARARGS,
+-   "detach a script from the room." },
+-  {"close", (PyCFunction)PyRoom_close, METH_VARARGS,
+-   "close a door in the specified direction." },
+-  {"open", (PyCFunction)PyRoom_open, METH_VARARGS,
+-   "open a door in the specified direction. Unlocks it if neccessary." },
+-  {"lock", (PyCFunction)PyRoom_lock, METH_VARARGS,
+-   "lock a door in the specified direction, closing it if it is open." },
+-  {"unlock", (PyCFunction)PyRoom_unlock, METH_VARARGS,
+-   "unlocks the door in the specified direction." },
+-  {"send", (PyCFunction)PyRoom_send, METH_VARARGS,
+-   "send a message to everyone in the room."},
+-  {NULL}  /* Sentinel */
+-};
+-
+-
+-//*****************************************************************************
+-// character attributes - mostly get and set
+-//*****************************************************************************
+-static PyObject *
+-PyRoom_getvnum(PyRoom *self, void *closure) {
+-  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
+-  if(room != NULL) return Py_BuildValue("i", roomGetVnum(room));
+-  else             return NULL;
+-}
+-
+-static PyObject *
+-PyRoom_getcharacters(PyRoom *self, PyObject *args) {
+-  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
+-  if(room == NULL)
+-    return NULL;
+-  else {
+-    LIST_ITERATOR *char_i = newListIterator(roomGetCharacters(room));
+-    PyObject *list = PyList_New(0);
+-    CHAR_DATA *ch;
+-
+-    // for each char in the room list, add him to a Python list
+-    ITERATE_LIST(ch, char_i)
+-      PyList_Append(list, newPyChar(ch));
+-    deleteListIterator(char_i);
+-    return Py_BuildValue("O", list);
+-  }
+-}
+-
+-static PyObject *
+-PyRoom_getcontents(PyRoom *self, PyObject *args) {
+-  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
+-  if(room == NULL)
+-    return NULL;
+-  else {
+-    LIST_ITERATOR *obj_i = newListIterator(roomGetContents(room));
+-    PyObject *list = PyList_New(0);
+-    OBJ_DATA *obj;
+-
+-    // for each obj in the room list, add him to a Python list
+-    ITERATE_LIST(obj, obj_i)
+-      PyList_Append(list, newPyObj(obj));
+-    deleteListIterator(obj_i);
+-    return Py_BuildValue("O", list);
+-  }
+-}
+-
+-
+-static PyGetSetDef PyRoom_getseters[] = {
+-  {"vnum", (getter)PyRoom_getvnum, (setter)NULL,
+-   "The room's vnum", NULL},
+-  {"chars", (getter)PyRoom_getcharacters, (setter)NULL,
+-   "The characters in the room", NULL},
+-  {"objs", (getter)PyRoom_getcontents, (setter)NULL,
+-   "The objects in the room", NULL},
+-  {"contents", (getter)PyRoom_getcontents, (setter)NULL,
+-   "The objects in the room", NULL},
+-  {NULL}  /* Sentinel */
+-};
+-
+-
+ 
+ //*****************************************************************************
+-// comparators, getattr, setattr, and all that other class stuff
++// structures to define our methods and classes
+ //*****************************************************************************
+-
+-//
+-// compare one character to another
+-//
+-static int
+-PyRoom_compare(PyRoom *room1, PyRoom *room2) {
+-  if(room1->vnum == room2->vnum)
+-    return 0;
+-  else if(room1->vnum < room2->vnum)
+-    return -1;
+-  else
+-    return 1;
+-}
+-
+-static PyTypeObject PyRoom_Type = {
++PyTypeObject PyRoom_Type = {
+     PyObject_HEAD_INIT(NULL)
+     0,                         /*ob_size*/
+     "room.Room",               /*tp_name*/
+@@ -498,48 +461,112 @@
+     0,		               /* tp_weaklistoffset */
+     0,		               /* tp_iter */
+     0,		               /* tp_iternext */
+-    PyRoom_methods,            /* tp_methods */
++    0,                         /* tp_methods */
+     0,                         /* tp_members */
+-    PyRoom_getseters,          /* tp_getset */
++    0,                         /* tp_getset */ 
+     0,                         /* tp_base */
+     0,                         /* tp_dict */
+     0,                         /* tp_descr_get */
+     0,                         /* tp_descr_set */
+     0,                         /* tp_dictoffset */
+-    (initproc)PyRoom_init,    /* tp_init */
++    (initproc)PyRoom_init,     /* tp_init */
+     0,                         /* tp_alloc */
+-    PyRoom_new,               /* tp_new */
++    PyRoom_new,                /* tp_new */
++};
++
++PyMethodDef room_module_methods[] = {
++  {NULL, NULL, 0, NULL}  /* Sentinel */
+ };
+ 
+ 
+ 
+ //*****************************************************************************
+-// the room module
++// implementation of pyroom.h
+ //*****************************************************************************
+-static PyMethodDef room_module_methods[] = {
+-  {NULL, NULL, 0, NULL}  /* Sentinel */
+-};
++void PyRoom_addGetSetter(const char *name, void *g, void *s, const char *doc) {
++  // make sure our list of get/setters is created
++  if(pyroom_getsetters == NULL) pyroom_getsetters = newList();
++
++  // make the GetSetter def
++  PyGetSetDef *def = calloc(1, sizeof(PyGetSetDef));
++  def->name        = strdup(name);
++  def->get         = (getter)g;
++  def->set         = (setter)s;
++  def->doc         = (doc ? strdup(doc) : NULL);
++  def->closure     = NULL;
++  listPut(pyroom_getsetters, def);
++}
+ 
++void PyRoom_addMethod(const char *name, void *f, int flags, const char *doc) {
++  // make sure our list of methods is created
++  if(pyroom_methods == NULL) pyroom_methods = newList();
+ 
++  // make the Method def
++  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
++  def->ml_name     = strdup(name);
++  def->ml_meth     = (PyCFunction)f;
++  def->ml_flags    = flags;
++  def->ml_doc      = (doc ? strdup(doc) : NULL);
++  listPut(pyroom_methods, def);
++}
++
++
++// initialize rooms for use. This must be called AFTER 
+ PyMODINIT_FUNC
+ init_PyRoom(void) {
+-    PyObject* m;
++    PyObject* module = NULL;
++
++    // add all of the basic getsetters
++    PyRoom_addGetSetter("vnum",  PyRoom_getvnum,   NULL, "The room's vnum");
++    PyRoom_addGetSetter("chars", PyRoom_getchars,  NULL, "chars in the room");
++    PyRoom_addGetSetter("objs",  PyRoom_getobjs,   NULL, "objects in the room");
++    PyRoom_addGetSetter("contents",PyRoom_getobjs, NULL, "objects in the room");
++
++    // add all of the basic methods
++    PyRoom_addMethod("attach", PyRoom_attach, METH_VARARGS,
++		     "attach a new script to the room.");
++    PyRoom_addMethod("detach", PyRoom_detach, METH_VARARGS,
++		     "detach a script from the room, by vnum.");
++    PyRoom_addMethod("close", PyRoom_close, METH_VARARGS,
++		     "close a door in the specified direction.");
++    PyRoom_addMethod("open", PyRoom_open, METH_VARARGS,
++		     "open a door in the specified direction. Also unlocks.");
++    PyRoom_addMethod("lock", PyRoom_lock, METH_VARARGS,
++		     "lock a door in the specified direction. Also closes.");
++    PyRoom_addMethod("unlock", PyRoom_unlock, METH_VARARGS,
++		     "unlocks a door in the specified direction.");
++    PyRoom_addMethod("send", PyRoom_send, METH_VARARGS,
++		     "send a message to everyone in the room.");
++
++    // add in all the getsetters and methods
++    makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);
++    deleteListWith(pyroom_getsetters, free); pyroom_getsetters = NULL;
++    deleteListWith(pyroom_methods,    free); pyroom_methods    = NULL;
+ 
++    // make sure the room class is ready to be made
+     if (PyType_Ready(&PyRoom_Type) < 0)
+         return;
+ 
+-    m = Py_InitModule3("room", room_module_methods,
+-                       "The room module, for all MUD room-related stuff.");
++    // initialize the module
++    module = Py_InitModule3("room", room_module_methods,
++			    "The room module, for all MUD room-related stuff.");
+ 
+-    if (m == NULL)
++    // make sure the module parsed OK
++    if (module == NULL)
+       return;
+ 
++    // add the Room class to the room module
++    PyModule_AddObject(module, "Room", (PyObject *)&PyRoom_Type);
+     Py_INCREF(&PyRoom_Type);
+-    PyModule_AddObject(m, "Room", (PyObject *)&PyRoom_Type);
+ }
+ 
++
+ int PyRoom_AsVnum(PyObject *room) {
+   return ((PyRoom *)room)->vnum;
++}
++
++ROOM_DATA *PyRoom_AsRoom(PyObject *room) {
++  return worldGetRoom(gameworld, PyRoom_AsVnum(room));
+ }
+ 
+ int PyRoom_Check(PyObject *value) {
+diff -ruN ../nakedmudv2.2/src/scripts/pyroom.d src/scripts/pyroom.d
+--- ../nakedmudv2.2/src/scripts/pyroom.d	Thu May 12 17:08:51 2005
++++ src/scripts/pyroom.d	Fri May 27 01:33:34 2005
+@@ -0,0 +1,4 @@
++scripts/pyroom.d scripts/pyroom.o: scripts/pyroom.c mud.h wrapsock.h property_table.h list.h map.h \
++  hashtable.h set.h buffer.h bitvector.h world.h room.h exit.h \
++  character.h handler.h utils.h scripts/pyplugs.h scripts/script_set.h \
++  scripts/script.h scripts/pychar.h scripts/pyobj.h scripts/pyroom.h
+diff -ruN ../nakedmudv2.2/src/scripts/pyroom.h src/scripts/pyroom.h
+--- ../nakedmudv2.2/src/scripts/pyroom.h	Thu May 12 17:08:51 2005
++++ src/scripts/pyroom.h	Fri May 27 01:30:57 2005
+@@ -5,18 +5,40 @@
+ // pyroom.h
+ //
+ // A python extention to allow python scripts to treat MUD rooms as an
+-// object within the script.
++// object within the script. If you wish to give python access to more features
++// of a room, it should NOT be done by editing pyroom.c! Use PyRoom_addGetSetter
++// and PyRoom_addMethod in a new module implementing the feature you want to
++// give Python access to.
+ //
+ //*****************************************************************************
+ 
+-/* initialize characters for use */
+-PyMODINIT_FUNC
+-init_PyRoom(void);
++// initialize rooms for use. This must be called AFTER all other modules
++// have added in new get/setters and methods to pyroom
++PyMODINIT_FUNC init_PyRoom(void);
++PyObject      *newPyRoom(ROOM_DATA *room);
+ 
+-int PyRoom_AsVnum(PyObject *room);
+-int PyRoom_Check(PyObject *value);
++ROOM_DATA *PyRoom_AsRoom(PyObject *room);
++int        PyRoom_AsVnum(PyObject *room);
+ 
+-PyObject *
+-newPyRoom(ROOM_DATA *room);
++//
++// checks to see if the PyObject is a PyRoom
++int        PyRoom_Check (PyObject *value);
++
++//
++// getters allow Python to access pieces of the Room module. Setters allow
++// Python to change pieces of the room module. Getters are called when Python
++// tries to get the value of some variable on the object, and setters are called
++// when Python tries to set the value of some variable on the object. Get and
++// Set do not both need to be supplied. Examples of how to add new getters and
++// setters is presented in pyroom.c
++void PyRoom_addGetSetter(const char *name, void *g, void *s, const char *doc);
++
++//
++// Adds a new method function (i.e. void *f) to the Room class. Name is the name
++// of the function, f is the PyCFunction implementing the new method, flags is
++// the type of method beings used (almost always METH_VARARGS), and dog is an
++// (optional) description of what the method does. For examples on how to add
++// new methods, see pyroom.c
++void PyRoom_addMethod(const char *name, void *f, int flags, const char *doc);
+ 
+ #endif //__PYROOM_H
+diff -ruN ../nakedmudv2.2/src/scripts/pyroom2.c src/scripts/pyroom2.c
+--- ../nakedmudv2.2/src/scripts/pyroom2.c	Wed Dec 31 17:00:00 1969
++++ src/scripts/pyroom2.c	Fri May 27 01:30:57 2005
+@@ -0,0 +1,597 @@
++//*****************************************************************************
++//
++// pyroom.c
++//
++// Contains the implementation of a module that contains all of the methods
++// for dealing with rooms. Also contains a Python Class implementation of
++// NakedMud rooms.
++//
++//*****************************************************************************
++
++#include <Python.h>
++#include <structmember.h>
++
++#include "../mud.h"
++#include "../world.h"
++#include "../room.h"
++#include "../exit.h"
++#include "../character.h"
++#include "../handler.h"
++#include "../utils.h"
++
++#include "pyplugs.h"
++#include "script_set.h"
++#include "script.h"
++#include "pychar.h"
++#include "pyobj.h"
++#include "pyroom.h"
++
++
++
++//*****************************************************************************
++// local structures and defines
++//*****************************************************************************
++
++// a list of the get/setters on the Room class
++LIST *pyroom_getsetters = NULL;
++
++// a list of the methods on the Room class
++LIST *pyroom_methods = NULL;
++
++typedef struct {
++  PyObject_HEAD
++  room_vnum vnum;
++} PyRoom;
++
++
++
++//*****************************************************************************
++// allocation, deallocation, initialization, and comparison
++//*****************************************************************************
++static void
++PyRoom_dealloc(PyRoom *self) {
++  self->ob_type->tp_free((PyObject*)self);
++}
++
++static PyObject *
++PyRoom_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
++    PyRoom *self;
++    self = (PyRoom *)type->tp_alloc(type, 0);
++    self->vnum = NOWHERE;
++    return (PyObject *)self;
++}
++
++static int
++PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
++  static char *kwlist[] = {"vnum", NULL};
++  int vnum = NOWHERE;
++
++  // get the vnum
++  if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwlist, &vnum)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Rooms may only be created using a vnum");
++    return -1;
++  }
++
++  // make sure a room with the vnum exists
++  if(!worldGetRoom(gameworld, vnum)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Room with vnum, %d, does not exist", vnum);
++    return -1;
++  }
++
++  self->vnum = vnum;
++  return 0;
++}
++
++static int
++PyRoom_compare(PyRoom *room1, PyRoom *room2) {
++  if(room1->vnum == room2->vnum)
++    return 0;
++  else if(room1->vnum < room2->vnum)
++    return -1;
++  else
++    return 1;
++}
++
++
++
++//*****************************************************************************
++// getters and setters for the Room class
++//*****************************************************************************
++static PyObject *
++PyRoom_getvnum(PyRoom *self, void *closure) {
++  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
++  if(room != NULL) return Py_BuildValue("i", roomGetVnum(room));
++  else             return NULL;
++}
++
++static PyObject *
++PyRoom_getchars(PyRoom *self, PyObject *args) {
++  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
++  if(room == NULL)
++    return NULL;
++  else {
++    LIST_ITERATOR *char_i = newListIterator(roomGetCharacters(room));
++    PyObject *list = PyList_New(0);
++    CHAR_DATA *ch;
++
++    // for each char in the room list, add him to a Python list
++    ITERATE_LIST(ch, char_i)
++      PyList_Append(list, newPyChar(ch));
++    deleteListIterator(char_i);
++    return Py_BuildValue("O", list);
++  }
++}
++
++static PyObject *
++PyRoom_getobjs(PyRoom *self, PyObject *args) {
++  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
++  if(room == NULL)
++    return NULL;
++  else {
++    LIST_ITERATOR *obj_i = newListIterator(roomGetContents(room));
++    PyObject *list = PyList_New(0);
++    OBJ_DATA *obj;
++
++    // for each obj in the room list, add him to a Python list
++    ITERATE_LIST(obj, obj_i)
++      PyList_Append(list, newPyObj(obj));
++    deleteListIterator(obj_i);
++    return Py_BuildValue("O", list);
++  }
++}
++
++
++
++//*****************************************************************************
++// methods for the room class
++//*****************************************************************************
++
++//
++// Send a newline-tagged message to everyone in the room
++static PyObject *
++PyRoom_send(PyRoom *self, PyObject *value) {
++  char *mssg = NULL;
++  if (!PyArg_ParseTuple(value, "s", &mssg)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Characters may only be sent strings");
++    return NULL;
++  }
++
++  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
++  if(room) {
++    send_to_list(roomGetCharacters(room), "%s\r\n", mssg);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++                    "Tried to send message to nonexistant room, %d.", 
++		    self->vnum);
++    return NULL;
++  }
++}
++
++
++//
++// close a door in the specified direction
++static PyObject *
++PyRoom_close(PyRoom *self, PyObject *value) {
++  ROOM_DATA *room = NULL;
++  EXIT_DATA *exit = NULL;
++  char *dirname = NULL;
++  int dir = DIR_NONE;
++
++  if (!PyArg_ParseTuple(value, "s", &dirname)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Doornames provided to PyRoom_close must be directions.");
++    return NULL;
++  }
++
++  room = worldGetRoom(gameworld, self->vnum);
++  if(room == NULL) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to close door in non-existant room, %d.", 
++		 self->vnum);
++    return NULL;
++  }
++
++  // see if it's a normal exit
++  dir = dirGetNum(dirname);
++
++  if(dir != DIR_NONE)
++    exit = roomGetExit(room, dir);
++  else
++    exit = roomGetExitSpecial(room, dirname);
++
++  // make sure the exit exists
++  if(exit == NULL) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to close non-existant exit, %s, in room %d.",
++		 dirname, self->vnum);
++    return NULL;
++  }
++
++  // make sure the exit can be closed in the first place
++  if(!exitIsClosable(exit)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to close exit, %s, in room %d that is not closable.",
++		 dirname, self->vnum);
++    return NULL;
++  }
++
++  exitSetClosed(exit, TRUE);
++  return Py_BuildValue("i", 1);
++}
++
++
++//
++// lock a door in the specified direction
++static PyObject *
++PyRoom_lock(PyRoom *self, PyObject *value) {
++  ROOM_DATA *room = NULL;
++  EXIT_DATA *exit = NULL;
++  char *dirname = NULL;
++  int dir = DIR_NONE;
++
++  if (!PyArg_ParseTuple(value, "s", &dirname)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Doornames provided to PyRoom_lock must be directions.");
++    return NULL;
++  }
++
++  room = worldGetRoom(gameworld, self->vnum);
++  if(room == NULL) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to lock door in non-existant room, %d.", 
++		 self->vnum);
++    return NULL;
++  }
++
++  // see if it's a normal exit
++  dir = dirGetNum(dirname);
++
++  if(dir != DIR_NONE)
++    exit = roomGetExit(room, dir);
++  else
++    exit = roomGetExitSpecial(room, dirname);
++
++  // make sure the exit exists
++  if(exit == NULL) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to lock non-existant exit, %s, in room %d.",
++		 dirname, self->vnum);
++    return NULL;
++  }
++
++  // make sure the exit can be closed in the first place
++  if(!exitIsClosable(exit)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to lock exit, %s, in room %d that is not closable.",
++		 dirname, self->vnum);
++    return NULL;
++  }
++  if(exitGetKey(exit) == NOTHING) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to lock exit, %s, in room %d that is not lockable.",
++		 dirname, self->vnum);
++    return NULL;
++  }
++
++  exitSetClosed(exit, TRUE);
++  exitSetLocked(exit, TRUE);
++  return Py_BuildValue("i", 1);
++}
++
++
++//
++// lock a door in the specified direction
++static PyObject *
++PyRoom_unlock(PyRoom *self, PyObject *value) {
++  ROOM_DATA *room = NULL;
++  EXIT_DATA *exit = NULL;
++  char *dirname = NULL;
++  int dir = DIR_NONE;
++
++  if (!PyArg_ParseTuple(value, "s", &dirname)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Doornames provided to PyRoom_unlock must be directions.");
++    return NULL;
++  }
++
++  room = worldGetRoom(gameworld, self->vnum);
++  if(room == NULL) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to unlock door in non-existant room, %d.", 
++		 self->vnum);
++    return NULL;
++  }
++
++  // see if it's a normal exit
++  dir = dirGetNum(dirname);
++
++  if(dir != DIR_NONE)
++    exit = roomGetExit(room, dir);
++  else
++    exit = roomGetExitSpecial(room, dirname);
++
++  // make sure the exit exists
++  if(exit == NULL) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to unlock non-existant exit, %s, in room %d.",
++		 dirname, self->vnum);
++    return NULL;
++  }
++
++  // make sure the exit can be closed in the first place
++  if(!exitIsClosable(exit)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to unlock exit, %s, in room %d that is not closable.",
++		 dirname, self->vnum);
++    return NULL;
++  }
++  if(exitGetKey(exit) == NOTHING) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to unlock exit, %s, in room %d that is not lockable.",
++		 dirname, self->vnum);
++    return NULL;
++  }
++
++  exitSetLocked(exit, FALSE);
++  return Py_BuildValue("i", 1);
++}
++
++
++//
++// close a door in the specified direction
++static PyObject *
++PyRoom_open(PyRoom *self, PyObject *value) {
++  ROOM_DATA *room = NULL;
++  EXIT_DATA *exit = NULL;
++  char *dirname = NULL;
++  int dir = DIR_NONE;
++
++  if (!PyArg_ParseTuple(value, "s", &dirname)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Doornames provided to PyRoom_open must be directions.");
++    return NULL;
++  }
++
++  room = worldGetRoom(gameworld, self->vnum);
++  if(room == NULL) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to open door in non-existant room, %d.", 
++		 self->vnum);
++    return NULL;
++  }
++
++
++  // see if it's a normal exit
++  dir = dirGetNum(dirname);
++
++  if(dir != DIR_NONE)
++    exit = roomGetExit(room, dir);
++  else
++    exit = roomGetExitSpecial(room, dirname);
++
++  // make sure the exit exists
++  if(exit == NULL) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to open non-existant exit, %s, in room %d.",
++		 dirname, self->vnum);
++    return NULL;
++  }
++
++  exitSetClosed(exit, FALSE);
++  exitSetLocked(exit, FALSE);
++  return Py_BuildValue("i", 1);
++}
++
++
++static PyObject *
++PyRoom_attach(PyRoom *self, PyObject *args) {  
++  long vnum = NOTHING;
++
++  // make sure we're getting passed the right type of data
++  if (!PyArg_ParseTuple(args, "i", &vnum)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "To attach a script, the vnum must be supplied.");
++    return NULL;
++  }
++
++  // pull out the character and do the attaching
++  ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
++  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++  if(room != NULL && script != NULL) {
++    scriptSetAdd(roomGetScripts(room), vnum);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to attach script to nonexistant room, %d, or script %d "
++		 "does not exit.", self->vnum, (int)vnum);
++    return NULL;
++  }
++}
++
++
++static PyObject *
++PyRoom_detach(PyRoom *self, PyObject *args) {  
++  long vnum = NOTHING;
++
++  // make sure we're getting passed the right type of data
++  if (!PyArg_ParseTuple(args, "i", &vnum)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "To detach a script, the vnum must be suppplied.");
++    return NULL;
++  }
++
++  // pull out the character and do the attaching
++  ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
++  SCRIPT_DATA *script = worldGetScript(gameworld, (int)vnum);
++  if(room != NULL && script != NULL) {
++    scriptSetRemove(roomGetScripts(room), vnum);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to detach script from nonexistant room, %d, or script "
++		 "%d does not exit.", self->vnum, (int)vnum);
++    return NULL;
++  }
++}
++
++
++
++//*****************************************************************************
++// structures to define our methods and classes
++//*****************************************************************************
++static PyTypeObject PyRoom_Type = {
++    PyObject_HEAD_INIT(NULL)
++    0,                         /*ob_size*/
++    "room.Room",               /*tp_name*/
++    sizeof(PyRoom),            /*tp_basicsize*/
++    0,                         /*tp_itemsize*/
++    (destructor)PyRoom_dealloc,/*tp_dealloc*/
++    0,                         /*tp_print*/
++    0,                         /*tp_getattr*/
++    0,                         /*tp_setattr*/
++    (cmpfunc)PyRoom_compare,   /*tp_compare*/
++    0,                         /*tp_repr*/
++    0,                         /*tp_as_number*/
++    0,                         /*tp_as_sequence*/
++    0,                         /*tp_as_mapping*/
++    0,                         /*tp_hash */
++    0,                         /*tp_call*/
++    0,                         /*tp_str*/
++    0,                         /*tp_getattro*/
++    0,                         /*tp_setattro*/
++    0,                         /*tp_as_buffer*/
++    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
++    "Python Room object",      /* tp_doc */
++    0,		               /* tp_traverse */
++    0,		               /* tp_clear */
++    0,		               /* tp_richcompare */
++    0,		               /* tp_weaklistoffset */
++    0,		               /* tp_iter */
++    0,		               /* tp_iternext */
++    0,                         /* tp_methods */
++    0,                         /* tp_members */
++    0,                         /* tp_getset */ 
++    0,                         /* tp_base */
++    0,                         /* tp_dict */
++    0,                         /* tp_descr_get */
++    0,                         /* tp_descr_set */
++    0,                         /* tp_dictoffset */
++    (initproc)PyRoom_init,     /* tp_init */
++    0,                         /* tp_alloc */
++    PyRoom_new,                /* tp_new */
++};
++
++static PyMethodDef room_module_methods[] = {
++  {NULL, NULL, 0, NULL}  /* Sentinel */
++};
++
++
++
++//*****************************************************************************
++// implementation of pyroom.h
++//*****************************************************************************
++
++void PyRoom_addGetSetter(const char *name, void *g, void *s, const char *doc) {
++  // make sure our list of get/setters is created
++  if(pyroom_getsetters == NULL) pyroom_getsetters = newList();
++
++  // make the GetSetter def
++  PyGetSetDef *def = calloc(1, sizeof(PyGetSetDef));
++  def->name        = strdup(name);
++  def->get         = (getter)g;
++  def->set         = (setter)s;
++  def->doc         = (doc ? strdup(doc) : NULL);
++  def->closure     = NULL;
++  listPut(pyroom_getsetters, def);
++}
++
++
++void PyRoom_addMethod(const char *name, void *f, int flags, const char *doc) {
++  // make sure our list of methods is created
++  if(pyroom_methods == NULL) pyroom_methods = newList();
++
++  // make the Method def
++  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
++  def->ml_name     = strdup(name);
++  def->ml_meth     = (PyCFunction)f;
++  def->ml_flags    = flags;
++  def->ml_doc      = (doc ? strdup(doc) : NULL);
++  listPut(pyroom_methods, def);
++}
++
++
++// initialize rooms for use. This must be called AFTER 
++PyMODINIT_FUNC
++init_PyRoom(void) {
++    PyObject* module = NULL;
++
++    // add all of the basic getsetters
++    PyRoom_addGetSetter("vnum",  PyRoom_getvnum,   NULL, "The room's vnum");
++    PyRoom_addGetSetter("chars", PyRoom_getchars,  NULL, "chars in the room");
++    PyRoom_addGetSetter("objs",  PyRoom_getobjs,   NULL, "objects in the room");
++    PyRoom_addGetSetter("contents",PyRoom_getobjs, NULL, "objects in the room");
++
++    // add all of the basic methods
++    PyRoom_addMethod("attach", PyRoom_attach, METH_VARARGS,
++		     "attach a new script to the room.");
++    PyRoom_addMethod("detach", PyRoom_detach, METH_VARARGS,
++		     "detach a script from the room, by vnum.");
++    PyRoom_addMethod("close", PyRoom_close, METH_VARARGS,
++		     "close a door in the specified direction.");
++    PyRoom_addMethod("open", PyRoom_open, METH_VARARGS,
++		     "open a door in the specified direction. Also unlocks.");
++    PyRoom_addMethod("lock", PyRoom_lock, METH_VARARGS,
++		     "lock a door in the specified direction. Also closes.");
++    PyRoom_addMethod("unlock", PyRoom_unlock, METH_VARARGS,
++		     "unlocks a door in the specified direction.");
++    PyRoom_addMethod("send", PyRoom_send, METH_VARARGS,
++		     "send a message to everyone in the room.");
++
++    // add in all the getsetters and methods
++    makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);
++    deleteListWith(pyroom_getsetters, free); pyroom_getsetters = NULL;
++    deleteListWith(pyroom_methods,    free); pyroom_methods    = NULL;
++
++    // make sure the room class is ready to be made
++    if (PyType_Ready(&PyRoom_Type) < 0)
++        return;
++
++    // initialize the module
++    module = Py_InitModule3("room", room_module_methods,
++			    "The room module, for all MUD room-related stuff.");
++
++    // make sure the module parsed OK
++    if (module == NULL)
++      return;
++
++    // add the Room class to the room module
++    PyModule_AddObject(module, "Room", (PyObject *)&PyRoom_Type);
++    Py_INCREF(&PyRoom_Type);
++}
++
++
++int PyRoom_AsVnum(PyObject *room) {
++  return ((PyRoom *)room)->vnum;
++}
++
++ROOM_DATA *PyRoom_AsRoom(PyObject *room) {
++  return worldGetRoom(gameworld, PyRoom_AsVnum(room));
++}
++
++int PyRoom_Check(PyObject *value) {
++  return PyObject_TypeCheck(value, &PyRoom_Type);
++}
++
++PyObject *
++newPyRoom(ROOM_DATA *room) {
++  PyRoom *py_room = (PyRoom *)PyRoom_new(&PyRoom_Type, NULL, NULL);
++  py_room->vnum = roomGetVnum(room);
++  return (PyObject *)py_room;
++}
+diff -ruN ../nakedmudv2.2/src/scripts/pyroom2.d src/scripts/pyroom2.d
+--- ../nakedmudv2.2/src/scripts/pyroom2.d	Wed Dec 31 17:00:00 1969
++++ src/scripts/pyroom2.d	Fri May 27 01:30:57 2005
+@@ -0,0 +1,4 @@
++scripts/pyroom2.d scripts/pyroom2.o: scripts/pyroom2.c mud.h wrapsock.h property_table.h list.h \
++  map.h hashtable.h set.h buffer.h bitvector.h world.h room.h exit.h \
++  character.h handler.h utils.h scripts/pyplugs.h scripts/script_set.h \
++  scripts/script.h scripts/pychar.h scripts/pyobj.h scripts/pyroom.h
+diff -ruN ../nakedmudv2.2/src/scripts/script.c src/scripts/script.c
+--- ../nakedmudv2.2/src/scripts/script.c	Thu May 12 17:08:51 2005
++++ src/scripts/script.c	Fri May 27 01:30:57 2005
+@@ -28,6 +28,7 @@
+ #include "pyroom.h"
+ #include "pyobj.h"
+ #include "pymud.h"
++#include "pyplugs.h"
+ 
+ // online editor stuff
+ #include "../editor/editor.h"
+@@ -37,7 +38,7 @@
+ 
+ 
+ //*****************************************************************************
+-// local functions and commands
++// local functions, variables, and commands
+ //*****************************************************************************
+ 
+ //
+@@ -59,8 +60,8 @@
+       send_to_char(ch, "No script with that vnum exists!\r\n");
+     else if(scriptGetType(script) != SCRIPT_TYPE_RUNNABLE)
+       send_to_char(ch, "That script is not runnable!\r\n");
+-    else if(charGetLevel(ch) < scriptGetNumArg(script))
+-      send_to_char(ch, "You are not high enough level to run that script!\r\n");
++    else if(!bitIsSet(charGetUserGroups(ch), mudsettingGetString("lockdown")))
++      send_to_char(ch, "You do not have the priviledges to run that script!\r\n");
+     else {
+       send_to_char(ch, "Ok.\r\n");
+       run_script(scriptGetCode(script), ch, SCRIPTOR_CHAR, NULL, NULL, NULL,
+@@ -333,62 +334,6 @@
+ 
+ 
+ //
+-// Python makes it overly complicated (IMO) to get traceback information when
+-// running in C. I spent some time hunting around, and came across a lovely
+-// site that provided me with this function for getting a traceback of an error.
+-// The site that provided this piece of code to me is located here:
+-//   http://stompstompstomp.com/weblog/technical/2004-03-29
+-char* getPythonTraceback()
+-{
+-    // Python equivilant:
+-    // import traceback, sys
+-    // return "".join(traceback.format_exception(sys.exc_type, 
+-    //    sys.exc_value, sys.exc_traceback))
+-
+-    PyObject *type, *value, *traceback;
+-    PyObject *tracebackModule;
+-    char *chrRetval;
+-
+-    PyErr_Fetch(&type, &value, &traceback);
+-
+-    tracebackModule = PyImport_ImportModule("traceback");
+-    if (tracebackModule != NULL)
+-    {
+-        PyObject *tbList, *emptyString, *strRetval;
+-
+-        tbList = PyObject_CallMethod(
+-            tracebackModule, 
+-            "format_exception", 
+-            "OOO",
+-            type,
+-            value == NULL ? Py_None : value,
+-            traceback == NULL ? Py_None : traceback);
+-
+-        emptyString = PyString_FromString("");
+-        strRetval = PyObject_CallMethod(emptyString, "join", 
+-            "O", tbList);
+-
+-        chrRetval = strdup(PyString_AsString(strRetval));
+-
+-        Py_DECREF(tbList);
+-        Py_DECREF(emptyString);
+-        Py_DECREF(strRetval);
+-        Py_DECREF(tracebackModule);
+-    }
+-    else
+-    {
+-        chrRetval = strdup("Unable to import traceback module.");
+-    }
+-
+-    Py_DECREF(type);
+-    Py_XDECREF(value);
+-    Py_XDECREF(traceback);
+-
+-    return chrRetval;
+-}
+-
+-
+-//
+ // Return a new dictionary with all the basic modules imported
+ PyObject *newScriptDict() {
+   PyObject* dict = PyDict_New();
+@@ -463,12 +408,15 @@
+   // initialize python
+   Py_Initialize();
+ 
+-  // initialize modules
++  // initialize all of our modules written in C
+   init_PyChar();
+   init_PyRoom();
+   init_PyObj();
+   init_PyMud();
+ 
++  // initialize all of our modules written in Python
++  init_pyplugs();
++
+ 
+   // initialize our auxiliary data
+   auxiliariesInstall("script_aux_data",
+@@ -480,9 +428,9 @@
+ 
+   extern COMMAND(cmd_scedit); // define the command
+   add_cmd("scedit", NULL, cmd_scedit, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_SCRIPTER, FALSE, TRUE);
++	  "scripter", FALSE, TRUE);
+   add_cmd("scrun", NULL, cmd_scrun, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+ 
+   init_script_editor();
+ }
+@@ -558,10 +506,11 @@
+ 
+ 
+ //
+-// Control we need to highlight
+-//
++// statements we need to highlight
+ const char *control_table[] = {
++  "import",
+   "while",
++  "from",
+   "elif",
+   "else",
+   "def",
+diff -ruN ../nakedmudv2.2/src/scripts/script.d src/scripts/script.d
+--- ../nakedmudv2.2/src/scripts/script.d	Thu May 12 17:08:51 2005
++++ src/scripts/script.d	Fri May 27 01:33:34 2005
+@@ -0,0 +1,6 @@
++scripts/script.d scripts/script.o: scripts/script.c mud.h wrapsock.h property_table.h list.h map.h \
++  hashtable.h set.h buffer.h bitvector.h utils.h socket.h world.h \
++  character.h room.h object.h storage.h auxiliary.h scripts/script.h \
++  scripts/script_set.h scripts/pychar.h scripts/pyroom.h scripts/pyobj.h \
++  scripts/pymud.h scripts/pyplugs.h editor/editor.h \
++  scripts/script_editor.h olc2/olc.h
+diff -ruN ../nakedmudv2.2/src/scripts/script.h src/scripts/script.h
+--- ../nakedmudv2.2/src/scripts/script.h	Thu May 12 17:08:51 2005
++++ src/scripts/script.h	Fri May 27 01:30:57 2005
+@@ -13,7 +13,8 @@
+ // This must be put at the top of mud.h so the rest of the MUD knows that
+ // we've got the scripts module installed
+ // #define MODULE_SCRIPTS
+-//
++
++
+ 
+ //*****************************************************************************
+ //                            SCRIPT DOCUMENTATION
+@@ -140,10 +141,9 @@
+ //   Description:
+ //     Gods can use scrun to run a script of this type
+ //   Arguments:
+-//     The Arguments to be passed to the script
++//     The user groups allowed to run the script
+ //   Numeric Arguments:
+-//     Argument is the minimum level of a person who is allowed to 
+-//     run this this script
++//     None
+ //   Works with:
+ //     mobiles (gods)
+ //   Parameters:
+diff -ruN ../nakedmudv2.2/src/scripts/script_edit.c src/scripts/script_edit.c
+--- ../nakedmudv2.2/src/scripts/script_edit.c	Thu May 12 17:08:51 2005
++++ src/scripts/script_edit.c	Fri May 27 01:30:57 2005
+@@ -117,12 +117,25 @@
+     olc_display_table(sock, scriptTypeName, NUM_SCRIPTS, 1);
+     text_to_buffer(sock, "Pick a script type: ");
+     return SCEDIT_TYPE;
+-  case '3':
+-    text_to_buffer(sock, "Enter new arguments: ");
+-    return SCEDIT_ARGS;
+   case '5':
+     socketStartEditor(sock, script_editor,scriptGetCodeBuffer(script));
+     return MENU_NOCHOICE;
++  case '3':
++    switch(scriptGetType(script)) {
++    case SCRIPT_TYPE_SPEECH:
++      text_to_buffer(sock, "Enter speech patterns (comma-separated) "
++		     "that trigger this script: ");
++      return SCEDIT_ARGS;
++    case SCRIPT_TYPE_RUNNABLE:
++      text_to_buffer(sock, "Enter user groups allowed to run this script: ");
++      return SCEDIT_ARGS;
++    default:
++      send_to_socket(sock, 
++		     "This script type does not use string arguments.\r\n"
++		     "Enter choice (Q to quit) : ");
++      return MENU_NOCHOICE;
++    }
++
+   case '4':
+     switch(scriptGetType(script)) {
+       // 0 = triggers always
+@@ -137,11 +150,6 @@
+ 		     "Enter choice : ");
+       return SCEDIT_NARG;
+ 
+-    case SCRIPT_TYPE_RUNNABLE:
+-      send_to_socket(sock,
+-		     "Enter the minimum level that can run this script: ");
+-      return SCEDIT_NARG;
+-
+     case SCRIPT_TYPE_COMMAND:
+       send_to_socket(sock,
+ 		     "Control for the actual MUD command:\r\n"
+@@ -187,10 +195,6 @@
+       // 1 = cancel normal command
+     case SCRIPT_TYPE_COMMAND:
+       scriptSetNumArg(script, MIN(1, MAX(0, atoi(arg))));
+-      break;
+-      // narg = minimum level that can run this script
+-    case SCRIPT_TYPE_RUNNABLE:
+-      scriptSetNumArg(script, MIN(MAX_LEVEL, MAX(0, atoi(arg))));
+       break;
+     }
+     return TRUE;
+diff -ruN ../nakedmudv2.2/src/set_val/set_val.c src/set_val/set_val.c
+--- ../nakedmudv2.2/src/set_val/set_val.c	Thu May 12 17:08:51 2005
++++ src/set_val/set_val.c	Fri May 27 01:59:11 2005
+@@ -35,6 +35,21 @@
+ 
+ 
+ //*****************************************************************************
++// setter functions
++//*****************************************************************************
++
++//
++// most everything already has a setter function done up, but because user
++// groups go through a bitvector, we need an extra function to get in and be
++// able to set a character's groups...
++void charSetUserGroups(CHAR_DATA *ch, const char *groups) {
++  bitClear(charGetUserGroups(ch));
++  bitSet(charGetUserGroups(ch), groups);
++}
++
++
++
++//*****************************************************************************
+ // local defines, datastructures, functions, and commands
+ //*****************************************************************************
+ HASHTABLE *char_set_table = NULL;
+@@ -100,14 +115,6 @@
+ }
+ 
+ 
+-//
+-// used for setting; make sure the value we're trying to set is in an
+-// acceptable range.
+-//
+-bool isLevel(int level) {
+-  return (level >= LEVEL_PLAYER && level <= MAX_LEVEL);
+-}
+-
+ // are we trying to set a value from an argument, or from our notepad?
+ #define SET_SUBCMD_SET        0
+ #define SET_SUBCMD_SETPAD     1
+@@ -159,8 +166,8 @@
+ 		       FIND_SCOPE_ALL | FIND_SCOPE_VISIBLE, FALSE, &found);
+ 
+     if(found == FOUND_CHAR) {
+-      if(charGetLevel(ch) <= charGetLevel(tgt) && ch != tgt)
+-	send_to_char(ch, "Sorry, %s is too high a level!\r\n", 
++      if(!charHasMoreUserGroups(ch, tgt))
++	send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
+ 		     see_char_as(ch, tgt));
+       else
+ 	try_set(ch, tgt, char_set_table, field, val);
+@@ -196,38 +203,38 @@
+   /************************************************************/
+ 
+   // PLAYER SETS
+-  add_set("desc",  LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetDesc, NULL);
+-  add_set("rdesc", LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetRdesc,NULL);
+-  add_set("name",  LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetName, NULL);
+-  add_set("mrdesc",LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetMultiRdesc, NULL);
+-  add_set("mname", LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING, charSetMultiName, NULL);
+-  add_set("keywords",LEVEL_BUILDER,SET_CHAR,SET_TYPE_STRING, charSetKeywords, NULL);
+-  add_set("dialog",LEVEL_BUILDER, SET_CHAR, SET_TYPE_INT, charSetDialog,  NULL);
+-  add_set("level", LEVEL_ADMIN,   SET_CHAR, SET_TYPE_INT, charSetLevel,isLevel);
+-  add_set("race",  LEVEL_BUILDER, SET_CHAR, SET_TYPE_STRING,charSetRace,isRace);
++  add_set("desc",     SET_CHAR, SET_TYPE_STRING, charSetDesc,         NULL);
++  add_set("rdesc",    SET_CHAR, SET_TYPE_STRING, charSetRdesc,        NULL);
++  add_set("name",     SET_CHAR, SET_TYPE_STRING, charSetName,         NULL);
++  add_set("mrdesc",   SET_CHAR, SET_TYPE_STRING, charSetMultiRdesc,   NULL);
++  add_set("mname",    SET_CHAR, SET_TYPE_STRING, charSetMultiName,    NULL);
++  add_set("keywords", SET_CHAR, SET_TYPE_STRING, charSetKeywords,     NULL);
++  add_set("dialog",   SET_CHAR, SET_TYPE_INT,    charSetDialog,       NULL);
++  add_set("race",     SET_CHAR, SET_TYPE_STRING, charSetRace,       isRace);
++  add_set("groups",   SET_CHAR, SET_TYPE_STRING, charSetUserGroups,   NULL);
+ 
+   // ROOM SETS
+-  add_set("name", LEVEL_BUILDER, SET_ROOM, SET_TYPE_STRING, roomSetName, NULL);
+-  add_set("desc", LEVEL_BUILDER, SET_ROOM, SET_TYPE_STRING, roomSetDesc, NULL);
++  add_set("name",     SET_ROOM, SET_TYPE_STRING, roomSetName,         NULL);
++  add_set("desc",     SET_ROOM, SET_TYPE_STRING, roomSetDesc,         NULL);
+ 
+   // OBJECT SETS
+-  add_set("name",    LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetName, NULL);
+-  add_set("desc",    LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetDesc, NULL);
+-  add_set("rdesc",   LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetRdesc,NULL);
+-  add_set("name",    LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetName, NULL);
+-  add_set("mrdesc",  LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetMultiRdesc, NULL);
+-  add_set("mname",   LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetMultiName, NULL);
+-  add_set("keywords",LEVEL_BUILDER,SET_OBJECT,SET_TYPE_STRING,objSetKeywords, NULL);
++  add_set("name",     SET_OBJECT,SET_TYPE_STRING,objSetName,          NULL);
++  add_set("desc",     SET_OBJECT,SET_TYPE_STRING,objSetDesc,          NULL);
++  add_set("rdesc",    SET_OBJECT,SET_TYPE_STRING,objSetRdesc,         NULL);
++  add_set("name",     SET_OBJECT,SET_TYPE_STRING,objSetName,          NULL);
++  add_set("mrdesc",   SET_OBJECT,SET_TYPE_STRING,objSetMultiRdesc,    NULL);
++  add_set("mname",    SET_OBJECT,SET_TYPE_STRING,objSetMultiName,     NULL);
++  add_set("keywords", SET_OBJECT,SET_TYPE_STRING,objSetKeywords,      NULL);
+ 
+   // now, add the admin commands for working with set
+   add_cmd("set", NULL, cmd_set, SET_SUBCMD_SET, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_ADMIN, FALSE, FALSE);
++	  "admin", FALSE, FALSE);
+   add_cmd("setpad", NULL, cmd_set, SET_SUBCMD_SETPAD, POS_UNCONCIOUS,POS_FLYING,
+-	  LEVEL_ADMIN, FALSE, FALSE);
++	  "admin", FALSE, FALSE);
+ }
+ 
+ 
+-void add_set(const char *name, int min_lev, int set_for, int type, void *setter, void *checker) {
++void add_set(const char *name, int set_for, int type, void *setter, void *checker) {
+   HASHTABLE *table = NULL;
+   // first, find our table
+   if     (set_for == SET_CHAR)   table = char_set_table;
+diff -ruN ../nakedmudv2.2/src/set_val/set_val.h src/set_val/set_val.h
+--- ../nakedmudv2.2/src/set_val/set_val.h	Thu May 12 17:08:51 2005
++++ src/set_val/set_val.h	Fri May 27 01:30:57 2005
+@@ -26,7 +26,6 @@
+ 
+ //
+ // prepare the set utility for use
+-//
+ void init_set();
+ 
+ 
+@@ -38,7 +37,7 @@
+ // can be set, checker should be provided. It takes in the to-be-set value and
+ // makes sure it is OK, returning TRUE if it is and FALSE if it is not. The
+ // checker function should be of the form:
+-//
+-void add_set(const char *name, int min_lev, int set_for, int type, void *setter, void *checker);
++//    bool checker(datatype newval)
++void add_set(const char *name, int set_for, int type, void *setter, void *checker);
+ 
+ #endif // SET_VAL_H
+diff -ruN ../nakedmudv2.2/src/socials/socedit.c src/socials/socedit.c
+--- ../nakedmudv2.2/src/socials/socedit.c	Thu May 12 17:08:51 2005
++++ src/socials/socedit.c	Fri May 27 01:30:57 2005
+@@ -188,5 +188,5 @@
+ //*****************************************************************************
+ void init_socedit(void) {
+   add_cmd("socedit", NULL, cmd_socedit, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, TRUE);
++	  "builder", FALSE, TRUE);
+ }
+diff -ruN ../nakedmudv2.2/src/socials/socials.c src/socials/socials.c
+--- ../nakedmudv2.2/src/socials/socials.c	Thu May 12 17:08:51 2005
++++ src/socials/socials.c	Fri May 27 01:30:57 2005
+@@ -457,16 +457,16 @@
+ 
+   ITERATE_HASH(cmd, data, hash_i)
+     add_cmd(cmd, NULL, cmd_social, 0, data->min_pos, data->max_pos, 
+-	    LEVEL_PLAYER, TRUE, FALSE);
++	    "player", TRUE, FALSE);
+   deleteHashIterator(hash_i);
+ 
+   // link/unlink commands for the admins
+   add_cmd("soclink", NULL, cmd_soclink, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("socunlink", NULL, cmd_socunlink, 0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_BUILDER, FALSE, FALSE);
++	  "builder", FALSE, FALSE);
+   add_cmd("socials",   NULL, cmd_socials,   0, POS_UNCONCIOUS, POS_FLYING,
+-	  LEVEL_PLAYER,  TRUE, FALSE);
++	  "player",  TRUE, FALSE);
+ 
+   // let add_social know it can start saving again
+   in_social_init = FALSE;
+@@ -491,7 +491,7 @@
+     hashPut(social_table, cmd_list[i], social);
+     // add the new command to the game
+     add_cmd(cmd_list[i], NULL, cmd_social, 0, social->min_pos, social->max_pos,
+-	    LEVEL_PLAYER, TRUE, FALSE);
++	    "player", TRUE, FALSE);
+     free(cmd_list[i]);
+   }
+   free(cmd_list);
+@@ -519,7 +519,7 @@
+     
+     // add the new command to the game
+     add_cmd(new_cmd, NULL, cmd_social, 0, data->min_pos, data->max_pos,
+-	    LEVEL_PLAYER, TRUE, FALSE);
++	    "player", TRUE, FALSE);
+   }
+ 
+   // save changes
+diff -ruN ../nakedmudv2.2/src/socket.c src/socket.c
+--- ../nakedmudv2.2/src/socket.c	Thu May 12 17:08:52 2005
++++ src/socket.c	Fri May 27 01:30:58 2005
+@@ -574,11 +574,13 @@
+   }
+ 
+   /* and terminate it with the standard color */
++  /*
+   if (last != -1 || underline || bold) 
+   {
+     output[iPtr++] =  27; output[iPtr++] = '[';
+     output[iPtr++] = '0'; output[iPtr++] = 'm';
+-  }
++  } 
++  */
+   output[iPtr] = '\0';
+ 
+   /* check to see if the socket can accept that much data */
+diff -ruN ../nakedmudv2.2/src/time/time.c src/time/time.c
+--- ../nakedmudv2.2/src/time/time.c	Thu May 12 17:08:51 2005
++++ src/time/time.c	Fri May 27 01:30:58 2005
+@@ -200,7 +200,7 @@
+ 
+   // add the time command
+   add_cmd("time", NULL, cmd_time, 0, POS_SITTING,  POS_FLYING,
+-	  LEVEL_PLAYER, TRUE, FALSE);
++	  "player", TRUE, FALSE);
+ 
+   // add night descriptions for rooms
+   auxiliariesInstall("time_aux_data",
+diff -ruN ../nakedmudv2.2/src/utils.c src/utils.c
+--- ../nakedmudv2.2/src/utils.c	Thu May 12 17:08:52 2005
++++ src/utils.c	Fri May 27 01:30:58 2005
+@@ -89,10 +89,8 @@
+   unequip_all(ch);
+   // extract everything in the character's inventory
+   OBJ_DATA *obj = NULL;
+-  while( (obj = listGet(charGetInventory(ch), 0)) != NULL) {
+-    obj_from_char(obj);
++  while( (obj = listGet(charGetInventory(ch), 0)) != NULL)
+     extract_obj(obj);
+-  }
+ 
+   // make sure we're not attached to anything
+   if(charGetFurniture(ch))
+@@ -136,7 +134,7 @@
+   }
+ 
+   case COMM_LOG:
+-    send_to_level(LEVEL_ADMIN, "[LOG: %s]\r\n", txt);
++    send_to_groups("admin", "[LOG: %s]\r\n", txt);
+     break;
+   }
+ }
+@@ -241,8 +239,6 @@
+     return TRUE;
+   if(poscmp(charGetPos(ch), POS_SLEEPING) <= 0)
+     return FALSE;
+-  if(charGetImmInvis(target) > charGetLevel(ch))
+-    return FALSE;
+ 
+   return TRUE;
+ }
+@@ -1213,19 +1209,19 @@
+       break;
+     else {
+       char vnum_buf[20];
+-      if(charGetLevel(ch) < LEVEL_BUILDER || vnum_func == NULL)
+-	*vnum_buf = '\0';
+-      else
++      if(vnum_func != NULL && bitIsOneSet(charGetUserGroups(ch), "builder"))
+ 	sprintf(vnum_buf, "[%d] ", vnum_func(things[i]));
++      else
++	*vnum_buf = '\0';
+ 
+       if(counts[i] == 1)
+-	send_to_char(ch, "%s%s\r\n", vnum_buf, desc_func(things[i]));
++	send_to_char(ch, "{g%s%s\r\n", vnum_buf, desc_func(things[i]));
+       else if(multi_desc == NULL || !*multi_desc(things[i]))
+-	send_to_char(ch, "%s(%d) %s\r\n", vnum_buf, 
++	send_to_char(ch, "{g%s(%d) %s\r\n", vnum_buf, 
+ 		     counts[i], desc_func(things[i]));
+       else {
+ 	char fmt[SMALL_BUFFER];
+-	sprintf(fmt, "%s%s\r\n", vnum_buf, multi_desc(things[i]));
++	sprintf(fmt, "{g%s%s\r\n", vnum_buf, multi_desc(things[i]));
+ 	send_to_char(ch, fmt, counts[i]);
+       }
+     }
+@@ -1279,6 +1275,20 @@
+   return data;
+ }
+ 
++bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2) {
++  return (bitIsAllSet(charGetUserGroups(ch1),
++		      bitvectorGetBits(charGetUserGroups(ch2))) &&
++	  !bitIsAllSet(charGetUserGroups(ch2),
++		       bitvectorGetBits(charGetUserGroups(ch1))));
++}
++
++bool file_exists(char *fname) {
++  FILE *fl = fopen(fname, "r");
++  if(fl == NULL) return FALSE;
++  fclose(fl);
++  return TRUE;
++}
++
+ void show_prompt(SOCKET_DATA *socket) {
+   text_to_buffer(socket, custom_prompt(socketGetChar(socket)));
+ }
+@@ -1286,7 +1296,7 @@
+ const char *custom_prompt(CHAR_DATA *ch) {
+   static char prompt[MAX_BUFFER];
+   *prompt = '\0';
+-  strcat(prompt, "\r\nprompt> ");    
++  strcat(prompt, "\r\n{nprompt> ");    
+   return prompt;
+ }
+ 
+diff -ruN ../nakedmudv2.2/src/utils.h src/utils.h
+--- ../nakedmudv2.2/src/utils.h	Thu May 12 17:08:52 2005
++++ src/utils.h	Fri May 27 01:30:58 2005
+@@ -147,9 +147,18 @@
+ //*****************************************************************************
+ 
+ //
++// returns TRUE if ch1 belongs to more user groups than ch2. By "more", we mean
++// that ch2's user groups must be a subset of ch1's
++bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2);
++
++
++//
+ // a function that returns the argument passed into it
+ void *identity_func(void *data);
+ 
++//
++// checks to see if a file exists
++bool file_exists(char *fname);
+ 
+ // iterate across all the elements in a list
+ #define ITERATE_LIST(val, it) \
+diff -ruN ../nakedmudv2.2/src/zone.c src/zone.c
+--- ../nakedmudv2.2/src/zone.c	Thu May 12 17:08:52 2005
++++ src/zone.c	Fri May 27 01:30:58 2005
+@@ -361,9 +361,7 @@
+ //
+ //*****************************************************************************
+ bool canEditZone(ZONE_DATA *zone, CHAR_DATA *ch) {
+-  return (!charIsNPC(ch) && 
+-	  (charGetLevel(ch) >= LEVEL_SCRIPTER || 
+-	   is_keyword(zone->editors, charGetName(ch), FALSE)));
++  return (!charIsNPC(ch) && is_keyword(zone->editors, charGetName(ch), FALSE));
+ }
+ 
+ zone_vnum zoneGetVnum(ZONE_DATA *zone) { 
+diff -ruN ../nakedmudv2.2/lib/pymodules/demo.py lib/pymodules/demo.py
+--- ../nakedmudv2.2/lib/pymodules/demo.py	Wed Dec 31 17:00:00 1969
++++ lib/pymodules/demo.py	Fri May 27 01:31:05 2005
+@@ -0,0 +1,46 @@
++################################################################################
++#
++# demo.py
++#
++# This is a demo module that gives the basics on how to extend the mud via
++# Python modules. Python is primarily used for scripting in NakedMud, but it is
++# only a couple small steps to integrate python and the mud enough to let Python
++# add commands, events, actions, and entirely new systems like combat and magic.
++# 
++# There are pros and cons that come with extending the mud with Python, and
++# extending the mud with C. Python is a much easier language to program in than
++# C, especially when it comes to prototyping new ideas; programming an idea in
++# Python will often take much less time than it will in C. Python code also
++# tends to be much shorter than C code, and is thus easier to maintain. Another
++# beautiful feature of the way Python is integrated into the MUD is that
++# problems in the code will rarely crash the mud. Rather, they'll just throw
++# an error that we can display, and continue working fine.
++#
++# The downside is that Python has extremely limited access to the C code that
++# serves as the foundation for NakedMud. Python can't  call any player commands
++# that are written in C (yet), Python can't add auxiliary data to the different
++# types of data in the mud (yet), and Python doesn't have the capabilities to
++# interact with some of the important C modules and systems (e.g. set_val, 
++# olc, races, bodyparts, character generation, storage sets). These are all 
++# things that will come in time, but at the moment, extending the mud in Python
++# means giving away the ability to do many things that will eventually be 
++# important.
++#
++# You won't be able to do everything with python modules, but you WILL be able
++# to do a hell of a lot... 
++#
++################################################################################
++from mud import add_cmd
++
++#
++# Our first character command added with Python! Like a normal MUD command,
++# this command takes in 4 arguments: the character who performed it, the command
++# name, a subcommand value, and the argument supplied to the command. ch is
++# a Character, cmd is a string, subcmd is an int, and arg is a string
++def cmd_pycmd(ch, cmd, subcmd, arg):
++    ch.send("Hello, " + ch.name + ". This is a demo Python command!")
++
++# let the MUD know it should add a command. This works exactly like add_cmd in 
++# the C source. Good examples of how to use it can be found in interpret.c
++add_cmd('pycmd', None, cmd_pycmd, 0, 'unconcious', 'flying', 'admin', 
++	False, False)

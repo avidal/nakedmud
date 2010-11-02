@@ -103,7 +103,8 @@ void account_ask_name(SOCKET_DATA *sock, char *arg) {
     // check for new account
     if ( (acct = load_account(arg)) == NULL) {
       // check for lockdown
-      if(mudsettingGetInt("lockdown") > 0) {
+      if(*mudsettingGetString("lockdown") &&
+	 !is_keyword(mudsettingGetString("lockdown"), DFLT_USER_GROUP, FALSE)) {
 	text_to_socket(sock, "Sorry, creating new accounts is not allowed at the moment.\r\n");
 	close_socket(sock, FALSE);
 	return;
@@ -229,8 +230,9 @@ void account_load_char(SOCKET_DATA *sock, int ch_num) {
       charSetSocket(ch, sock);
 
       // make sure the mud isn't locked to this person
-      if(charGetLevel(ch) < mudsettingGetInt("lockdown")) {
-	text_to_socket(sock, "Sorry, the mud is currently locked down to anyone of your level and below.\r\n");
+      if(*mudsettingGetString("lockdown") &&
+	 !bitIsSet(charGetUserGroups(ch), mudsettingGetString("lockdown"))) {
+	send_to_char(ch, "You are currently locked out of the mud.\r\n");
 	deleteChar(ch);
 	socketSetChar(sock, NULL);
 	return;
@@ -302,7 +304,8 @@ void account_handle_menu(SOCKET_DATA *sock, char *arg) {
 
   case 'N':
     // make a new character
-    if(mudsettingGetBool("lockdown") > 0) {
+    if(*mudsettingGetString("lockdown") &&
+       !is_keyword(mudsettingGetString("lockdown"), DFLT_USER_GROUP, FALSE)) {
       text_to_buffer(sock, "The MUD is currently locked to new players.\r\n");
       return;
     }

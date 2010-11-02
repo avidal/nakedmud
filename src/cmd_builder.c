@@ -215,6 +215,10 @@ COMMAND(cmd_load) {
 		    ch, NULL, charGetRoom(ch), NULL, NULL, 0);
       }
     }
+
+    // type not found
+    else 
+      send_to_char(ch, "What type of thing did you want to load?\r\n");
   }
 }
 
@@ -225,7 +229,6 @@ COMMAND(cmd_load) {
 //   usage: purge <target>
 //
 COMMAND(cmd_purge) {
-
   // purge everything
   if(!arg || !*arg) {
     LIST_ITERATOR *list_i = newListIterator(roomGetContents(charGetRoom(ch)));
@@ -246,7 +249,6 @@ COMMAND(cmd_purge) {
     ITERATE_LIST(vict, list_i) {
       if(vict == ch || !charIsNPC(vict)) 
 	continue;
-      char_from_room(vict);
       extract_mobile(vict);
     }
     deleteListIterator(list_i);
@@ -263,11 +265,17 @@ COMMAND(cmd_purge) {
 			 FIND_SCOPE_ROOM | FIND_SCOPE_VISIBLE,
 			 FALSE, &found_type);
 
-    // purge  characters
-    if(found_type == FOUND_CHAR) {
-      if(charGetLevel(ch) <= charGetLevel(found))
-	send_to_char(ch, "Erm, you better not try that on %s.\r\n", 
-		     HIMHER(found));
+    // make sure we found something
+    if(found == NULL)
+      send_to_char(ch, "Purge what?\r\n");
+
+    // purge characters
+    else if(found_type == FOUND_CHAR) {
+      // we can only purge him if we have all the same groups as him, and more
+      if(!charHasMoreUserGroups(ch, found))
+	send_to_char(ch, "Erm, you better not try that on %s. %s has "
+		     "just as much priviledges as you.\r\n", 
+		     HIMHER(found), HESHE(found));
       else {
 	send_to_char(ch, "You purge %s.\r\n", charGetName(found));
 	message(ch, found, NULL, NULL, FALSE, TO_NOTVICT | TO_NOTCHAR,

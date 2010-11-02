@@ -72,14 +72,7 @@ STORAGE_SET *edescSetStore(EDESC_SET *edescs) {
 void edescSetCopyTo(EDESC_SET *from, EDESC_SET *to) {
   // delete all of the current entries
   deleteListWith(to->edescs, deleteEdesc);
-  to->edescs = newList();
-
-  // copy all of them over and set their parent to us
-  EDESC_DATA    *entry   = NULL;
-  LIST_ITERATOR *edesc_i = newListIterator(from->edescs);
-  ITERATE_LIST(entry, edesc_i)
-    edescSetPut(to, edescCopy(entry));
-  deleteListIterator(edesc_i);
+  to->edescs = listCopyWith(from->edescs, edescCopy);
 }
 
 

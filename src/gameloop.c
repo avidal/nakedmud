@@ -53,7 +53,6 @@
 #endif
 
 
-
 /* local procedures */
 void game_loop    ( int control );
 bool gameloop_end = FALSE;
@@ -120,9 +119,6 @@ int main(int argc, char **argv)
   /* get the current time */
   current_time = time(NULL);
 
-  // change to the lib directory
-  //log_string("Changing to lib directory.");
-  //chdir("../lib");
 
 
   /************************************************************/
@@ -153,19 +149,21 @@ int main(int argc, char **argv)
   /*        INITIALIZE OUR SETTINGS AND BASIC SYSTEMS         */
   /************************************************************/
 
-  /* initialize our mud settings, such as top character id */
-  log_string("Initializing MUD settings.");
-  init_mud_settings();
-
-  /* set up the stuff for auxiliary data */
-  log_string("Preparing auxiliary data for usage.");
-  init_auxiliaries();
+  // change to the lib directory
+  log_string("Changing to lib directory.");
+  chdir("../lib");
 
   log_string("Initializing bitvectors.");
   init_bitvectors();
 
   log_string("Initializing races and default bodies.");
   init_races();
+
+  log_string("Initializing MUD settings.");
+  init_mud_settings();
+
+  log_string("Preparing auxiliary data for usage.");
+  init_auxiliaries();
 
   log_string("Initializing command table.");
   init_commands();
@@ -200,9 +198,6 @@ int main(int argc, char **argv)
   log_string("Initializing set utility.");
   init_set();
 
-  log_string("Initializing scripts.");
-  init_scripts();
-
 
   
   /**********************************************************************/
@@ -227,6 +222,19 @@ int main(int argc, char **argv)
   log_string("Initializing helpfiles.");
   init_help();
 #endif
+
+
+
+  /**********************************************************************/
+  /*                   SET UP ALL OF OUR PYTHON STUFF                   */
+  /**********************************************************************/
+
+  //
+  // this HAS to be the last module initialized, to allow all the other
+  // modules to add get/setters and methods to the Python incarnations of
+  // our various datatypes.
+  log_string("Initializing scripts.");
+  init_scripts();
 
 
 

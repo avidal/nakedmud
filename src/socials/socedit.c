@@ -188,5 +188,5 @@ COMMAND(cmd_socedit) {
 //*****************************************************************************
 void init_socedit(void) {
   add_cmd("socedit", NULL, cmd_socedit, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, TRUE);
+	  "builder", FALSE, TRUE);
 }

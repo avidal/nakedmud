@@ -28,6 +28,7 @@
 #include "pyroom.h"
 #include "pyobj.h"
 #include "pymud.h"
+#include "pyplugs.h"
 
 // online editor stuff
 #include "../editor/editor.h"
@@ -37,7 +38,7 @@
 
 
 //*****************************************************************************
-// local functions and commands
+// local functions, variables, and commands
 //*****************************************************************************
 
 //
@@ -59,8 +60,8 @@ COMMAND(cmd_scrun) {
       send_to_char(ch, "No script with that vnum exists!\r\n");
     else if(scriptGetType(script) != SCRIPT_TYPE_RUNNABLE)
       send_to_char(ch, "That script is not runnable!\r\n");
-    else if(charGetLevel(ch) < scriptGetNumArg(script))
-      send_to_char(ch, "You are not high enough level to run that script!\r\n");
+    else if(!bitIsSet(charGetUserGroups(ch), mudsettingGetString("lockdown")))
+      send_to_char(ch, "You do not have the priviledges to run that script!\r\n");
     else {
       send_to_char(ch, "Ok.\r\n");
       run_script(scriptGetCode(script), ch, SCRIPTOR_CHAR, NULL, NULL, NULL,
@@ -333,62 +334,6 @@ int script_loop_depth   = 0;
 
 
 //
-// Python makes it overly complicated (IMO) to get traceback information when
-// running in C. I spent some time hunting around, and came across a lovely
-// site that provided me with this function for getting a traceback of an error.
-// The site that provided this piece of code to me is located here:
-//   http://stompstompstomp.com/weblog/technical/2004-03-29
-char* getPythonTraceback()
-{
-    // Python equivilant:
-    // import traceback, sys
-    // return "".join(traceback.format_exception(sys.exc_type, 
-    //    sys.exc_value, sys.exc_traceback))
-
-    PyObject *type, *value, *traceback;
-    PyObject *tracebackModule;
-    char *chrRetval;
-
-    PyErr_Fetch(&type, &value, &traceback);
-
-    tracebackModule = PyImport_ImportModule("traceback");
-    if (tracebackModule != NULL)
-    {
-        PyObject *tbList, *emptyString, *strRetval;
-
-        tbList = PyObject_CallMethod(
-            tracebackModule, 
-            "format_exception", 
-            "OOO",
-            type,
-            value == NULL ? Py_None : value,
-            traceback == NULL ? Py_None : traceback);
-
-        emptyString = PyString_FromString("");
-        strRetval = PyObject_CallMethod(emptyString, "join", 
-            "O", tbList);
-
-        chrRetval = strdup(PyString_AsString(strRetval));
-
-        Py_DECREF(tbList);
-        Py_DECREF(emptyString);
-        Py_DECREF(strRetval);
-        Py_DECREF(tracebackModule);
-    }
-    else
-    {
-        chrRetval = strdup("Unable to import traceback module.");
-    }
-
-    Py_DECREF(type);
-    Py_XDECREF(value);
-    Py_XDECREF(traceback);
-
-    return chrRetval;
-}
-
-
-//
 // Return a new dictionary with all the basic modules imported
 PyObject *newScriptDict() {
   PyObject* dict = PyDict_New();
@@ -463,11 +408,14 @@ void init_scripts() {
   // initialize python
   Py_Initialize();
 
-  // initialize modules
+  // initialize all of our modules written in C
   init_PyChar();
   init_PyRoom();
   init_PyObj();
   init_PyMud();
+
+  // initialize all of our modules written in Python
+  init_pyplugs();
 
 
   // initialize our auxiliary data
@@ -480,9 +428,9 @@ void init_scripts() {
 
   extern COMMAND(cmd_scedit); // define the command
   add_cmd("scedit", NULL, cmd_scedit, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_SCRIPTER, FALSE, TRUE);
+	  "scripter", FALSE, TRUE);
   add_cmd("scrun", NULL, cmd_scrun, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE, FALSE);
+	  "builder", FALSE, FALSE);
 
   init_script_editor();
 }
@@ -558,10 +506,11 @@ void format_script(char **script, int max_len) {
 
 
 //
-// Control we need to highlight
-//
+// statements we need to highlight
 const char *control_table[] = {
+  "import",
   "while",
+  "from",
   "elif",
   "else",
   "def",

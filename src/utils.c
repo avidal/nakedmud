@@ -89,10 +89,8 @@ void extract_mobile(CHAR_DATA *ch) {
   unequip_all(ch);
   // extract everything in the character's inventory
   OBJ_DATA *obj = NULL;
-  while( (obj = listGet(charGetInventory(ch), 0)) != NULL) {
-    obj_from_char(obj);
+  while( (obj = listGet(charGetInventory(ch), 0)) != NULL)
     extract_obj(obj);
-  }
 
   // make sure we're not attached to anything
   if(charGetFurniture(ch))
@@ -136,7 +134,7 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
   }
 
   case COMM_LOG:
-    send_to_level(LEVEL_ADMIN, "[LOG: %s]\r\n", txt);
+    send_to_groups("admin", "[LOG: %s]\r\n", txt);
     break;
   }
 }
@@ -240,8 +238,6 @@ bool  can_see_char          ( CHAR_DATA *ch, CHAR_DATA *target) {
   if(ch == target)
     return TRUE;
   if(poscmp(charGetPos(ch), POS_SLEEPING) <= 0)
-    return FALSE;
-  if(charGetImmInvis(target) > charGetLevel(ch))
     return FALSE;
 
   return TRUE;
@@ -1213,19 +1209,19 @@ void show_list(CHAR_DATA *ch, LIST *list, void *descriptor,
       break;
     else {
       char vnum_buf[20];
-      if(charGetLevel(ch) < LEVEL_BUILDER || vnum_func == NULL)
-	*vnum_buf = '\0';
-      else
+      if(vnum_func != NULL && bitIsOneSet(charGetUserGroups(ch), "builder"))
 	sprintf(vnum_buf, "[%d] ", vnum_func(things[i]));
+      else
+	*vnum_buf = '\0';
 
       if(counts[i] == 1)
-	send_to_char(ch, "%s%s\r\n", vnum_buf, desc_func(things[i]));
+	send_to_char(ch, "{g%s%s\r\n", vnum_buf, desc_func(things[i]));
       else if(multi_desc == NULL || !*multi_desc(things[i]))
-	send_to_char(ch, "%s(%d) %s\r\n", vnum_buf, 
+	send_to_char(ch, "{g%s(%d) %s\r\n", vnum_buf, 
 		     counts[i], desc_func(things[i]));
       else {
 	char fmt[SMALL_BUFFER];
-	sprintf(fmt, "%s%s\r\n", vnum_buf, multi_desc(things[i]));
+	sprintf(fmt, "{g%s%s\r\n", vnum_buf, multi_desc(things[i]));
 	send_to_char(ch, fmt, counts[i]);
       }
     }
@@ -1279,6 +1275,20 @@ void *identity_func(void *data) {
   return data;
 }
 
+bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2) {
+  return (bitIsAllSet(charGetUserGroups(ch1),
+		      bitvectorGetBits(charGetUserGroups(ch2))) &&
+	  !bitIsAllSet(charGetUserGroups(ch2),
+		       bitvectorGetBits(charGetUserGroups(ch1))));
+}
+
+bool file_exists(char *fname) {
+  FILE *fl = fopen(fname, "r");
+  if(fl == NULL) return FALSE;
+  fclose(fl);
+  return TRUE;
+}
+
 void show_prompt(SOCKET_DATA *socket) {
   text_to_buffer(socket, custom_prompt(socketGetChar(socket)));
 }
@@ -1286,7 +1296,7 @@ void show_prompt(SOCKET_DATA *socket) {
 const char *custom_prompt(CHAR_DATA *ch) {
   static char prompt[MAX_BUFFER];
   *prompt = '\0';
-  strcat(prompt, "\r\nprompt> ");    
+  strcat(prompt, "\r\n{nprompt> ");    
   return prompt;
 }
 

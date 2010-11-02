@@ -123,7 +123,7 @@ void init_actions() {
 
   // add in our example delayed action
   add_cmd("dsay", NULL, cmd_dsay, 0, POS_SITTING, POS_FLYING, 
-	  LEVEL_ADMIN, TRUE, FALSE);
+	  "admin", TRUE, FALSE);
 
   // make sure the character does not continue actions after being extracted
   add_extract_mob_func(stop_all_actions);

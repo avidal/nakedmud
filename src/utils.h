@@ -147,9 +147,18 @@ CHAR_DATA  *check_reconnect( const char *player );
 //*****************************************************************************
 
 //
+// returns TRUE if ch1 belongs to more user groups than ch2. By "more", we mean
+// that ch2's user groups must be a subset of ch1's
+bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2);
+
+
+//
 // a function that returns the argument passed into it
 void *identity_func(void *data);
 
+//
+// checks to see if a file exists
+bool file_exists(char *fname);
 
 // iterate across all the elements in a list
 #define ITERATE_LIST(val, it) \

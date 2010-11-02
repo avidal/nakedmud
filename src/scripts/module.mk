@@ -104,13 +104,13 @@
 # Object files we generate
 SRC      += scripts/script_set.c scripts/script.c scripts/pychar.c \
 	    scripts/pyobj.c scripts/pymud.c scripts/pyroom.c \
-	    scripts/script_editor.c scripts/script_edit.c
+	    scripts/script_editor.c scripts/script_edit.c scripts/pyplugs.c
 
-# the top level directory of python
+# the top level directory of python.
 PYTHONTOP = /usr/local/include
 
 # the folder where python headers are located
 C_FLAGS  += -I$(PYTHONTOP)/python2.4
 
-# libraries we have to include
+# libraries we have to include.
 LIBS     += -Xlinker -export-dynamic -lm -ldl -lutil -L/usr/local/lib/python2.4/config -lpython2.4

@@ -85,6 +85,13 @@ void init_bitvectors() {
 
   bitvectorCreate("obj_bits");
   bitvectorAddBit("obj_bits", "notake");
+
+  bitvectorCreate("user_groups");
+  bitvectorAddBit("user_groups", "admin");
+  bitvectorAddBit("user_groups", "scripter");
+  bitvectorAddBit("user_groups", "builder");
+  bitvectorAddBit("user_groups", "player");
+  bitvectorAddBit("user_groups", "playtester");
 }
 
 void bitvectorAddBit(const char *name, const char *bit) {
@@ -191,6 +198,12 @@ void bitSet(BITVECTOR *v, const char *name) {
     SET_BIT(v->bits[val/8], (1 << (val % 8)));
   }
   free(bits);
+}
+
+void bitClear(BITVECTOR *v) {
+  int i;
+  for(i = 1; i <= hashSize(v->data->bitmap); i++)
+    REMOVE_BIT(v->bits[i/8], (1 << (i % 8)));
 }
 
 void bitRemove(BITVECTOR *v, const char *name) {

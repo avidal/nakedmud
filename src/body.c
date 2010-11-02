@@ -480,7 +480,7 @@ LIST *bodyGetAllEq(BODY_DATA *B) {
   BODYPART *part = NULL;
 
   ITERATE_LIST(part, part_i)
-    if(part->equipment)
+    if(part->equipment && !listIn(equipment, part->equipment))
       listPut(equipment, part->equipment);
   deleteListIterator(part_i);
   return equipment;
@@ -492,7 +492,7 @@ LIST *bodyUnequipAll(BODY_DATA *B) {
   BODYPART *part = NULL;
 
   ITERATE_LIST(part, part_i) {
-    if(part->equipment) {
+    if(part->equipment && !listIn(equipment, part->equipment)) {
       listPut(equipment, part->equipment);
       part->equipment = NULL;
     }
