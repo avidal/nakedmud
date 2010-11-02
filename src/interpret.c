@@ -16,26 +16,30 @@
 
 // optional modules
 #ifdef MODULE_FACULTY
-#include "modules/faculty/faculty.h"
+#include "faculty/faculty.h"
 #endif
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
+#include "scripts/script.h"
+#endif
+#ifdef MODULE_ALIAS
+#include "alias/alias.h"
 #endif
 
 
 // our command table list
 LIST   **cmd_table = NULL;
 
-struct cmd_data {
+typedef struct cmd_data {
   char      * cmd_name;
   char      * sort_by;
-  void     (* cmd_funct)(CHAR_DATA *ch, char *arg, int subcmd); // COMMAND()
+  CMD_PTR(cmd_funct);
   int        subcmd;
   int        min_pos;
   int        max_pos;
   int        level;
+  bool       mob_ok;     // can NPCs use this command?
   bool       interrupts; // does it interrupt actions?
-};
+} CMD_DATA;
 
 
 void init_commands() {
@@ -50,190 +54,198 @@ void init_commands() {
   // associated with your module.
   //***********************************************************************
   add_cmd("north", "n", cmd_move,     DIR_NORTH,    POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("east",  "e", cmd_move,     DIR_EAST,     POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("south", "s", cmd_move,     DIR_SOUTH,    POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("west",  "w", cmd_move,     DIR_WEST,     POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("up",    "u", cmd_move,     DIR_UP,       POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("down",  "d", cmd_move,     DIR_DOWN,     POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("northeast", "na", cmd_move,DIR_NORTHEAST,POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("southeast", "sa",  cmd_move,DIR_SOUTHEAST,POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("southwest", "sb", cmd_move,DIR_SOUTHWEST,POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("northwest", "nb", cmd_move,DIR_NORTHWEST,POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("ne",        "ne", cmd_move,DIR_NORTHEAST,POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("se",        "se", cmd_move,DIR_SOUTHEAST,POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("sw",        "sw", cmd_move,DIR_SOUTHWEST,POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("nw",        "nw", cmd_move,DIR_NORTHWEST,POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
 
   // A
-  add_cmd("alias",      NULL, cmd_alias,    0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
   add_cmd("approach",   NULL, cmd_greet,    0, POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("ask",        NULL, cmd_ask,      0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
 
   // B
   add_cmd("back",       NULL, cmd_back,     0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("buildwalk",  NULL, cmd_tog_prf,  SUBCMD_BUILDWALK, 
-	  POS_UNCONCIOUS, POS_FLYING, LEVEL_BUILDER, FALSE);
+	  POS_UNCONCIOUS, POS_FLYING, LEVEL_BUILDER, FALSE, FALSE);
 
   // C
   add_cmd("chat",       NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("clear",      NULL, cmd_clear,    0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("close",      NULL, cmd_close,    0, POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("commands",   NULL, cmd_commands, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("compress",   NULL, cmd_compress, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, FALSE, FALSE);
   add_cmd("copyover",   NULL, cmd_copyover, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_ADMIN,   TRUE);
+	  LEVEL_ADMIN,  FALSE, TRUE);
 
   // D
   add_cmd("delay",      NULL, cmd_delay,    0, POS_SLEEPING, POS_FLYING,
-	  LEVEL_PLAYER,  FALSE);
-  
+	  LEVEL_PLAYER, TRUE,  FALSE);
   add_cmd("dig",        NULL, cmd_dig,      0, POS_STANDING, POS_FLYING,
-	  LEVEL_BUILDER, FALSE);
+	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("dlist",      NULL, cmd_dlist,    0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE );
+	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("drop",       NULL, cmd_drop,     0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
 
   // E
   add_cmd("enter",      NULL, cmd_enter,    0, POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("emote",      NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd(":",          NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("equipment",  NULL, cmd_equipment,0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
 
   // F
   add_cmd("fill",       NULL, cmd_fill,     0, POS_STANDING, POS_FLYING,
-	  LEVEL_BUILDER, TRUE );
+	  LEVEL_BUILDER, FALSE, TRUE );
 
   // G
   add_cmd("gemote",     NULL, cmd_gemote,   0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("give",       NULL, cmd_give,     0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("gossip",     NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd("\"",         NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("greet",      NULL, cmd_greet,    0, POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("get",        NULL, cmd_get,      0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("goto",       NULL, cmd_goto,     0, POS_STANDING, POS_FLYING,
-	  LEVEL_BUILDER, TRUE );
+	  LEVEL_BUILDER, FALSE, TRUE );
 
   // H
   add_cmd("help",       NULL, cmd_help,     0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
 
   // I
   add_cmd("inventory",  NULL, cmd_inventory,0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
 
   // L
   add_cmd("look",       "l",  cmd_look,     0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("lock",       NULL,  cmd_lock,    0, POS_STANDING,  POS_FLYING,
-	  LEVEL_PLAYER, TRUE);
+	  LEVEL_PLAYER, TRUE, TRUE);
   add_cmd("land",       NULL, cmd_stand,    0, POS_FLYING,   POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("load",       NULL, cmd_load,     0, POS_SITTING,  POS_FLYING,
-	  LEVEL_BUILDER, FALSE);
+	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("linkdead",   NULL, cmd_linkdead, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_ADMIN, FALSE);
+	  LEVEL_ADMIN, FALSE, FALSE);
 
   // M
   add_cmd("mlist",      NULL, cmd_mlist,    0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE);
+	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("more",       NULL, cmd_more,     0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
 
   // O
   add_cmd("olist",      NULL, cmd_olist,    0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE);
+	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("open",       NULL, cmd_open,     0, POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
 
   // P
   add_cmd("put",        NULL, cmd_put,      0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER,  TRUE );
+	  LEVEL_PLAYER, TRUE,  TRUE );
   add_cmd("purge",      NULL, cmd_purge,    0, POS_SITTING,  POS_FLYING,
-	  LEVEL_BUILDER, FALSE);
+	  LEVEL_BUILDER, FALSE, FALSE);
   
   // Q
   add_cmd("quit",       NULL, cmd_quit,     0, POS_SLEEPING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, FALSE, TRUE );
 
   // R
   add_cmd("remove",     NULL, cmd_remove,   0, POS_SITTING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("rlist",      NULL, cmd_rlist,    0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE);
+	  LEVEL_BUILDER, FALSE, FALSE);
 
   // S
   add_cmd("say",        NULL, cmd_say,      0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd("'",          NULL, cmd_say,      0, POS_SITTING,  POS_FLYING,
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("save",       NULL, cmd_save,     0, POS_SLEEPING, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
-#ifdef MODULE_SCRIPTS
-  add_cmd("sclist",     NULL, cmd_sclist,   0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE);
-#endif
+	  LEVEL_PLAYER, FALSE, FALSE);
   add_cmd("shutdown",   NULL, cmd_shutdown, 0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_ADMIN, TRUE );
+	  LEVEL_ADMIN, FALSE, TRUE );
   add_cmd("sit",        NULL, cmd_sit,      0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("sleep",      NULL, cmd_sleep,    0, POS_SITTING,  POS_STANDING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("stand",      NULL, cmd_stand,    0, POS_SITTING,  POS_STANDING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
+#ifdef MODULE_SCRIPTS
+  // really, we -should- put this in the scripts module, but there are some
+  // very nice functions in builder.c that cmd_sclist uses to print scripts,
+  // which wouldn't be accessable from outside of builder.c
+  add_cmd("sclist",     NULL, cmd_sclist,   0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
+#endif
 
   // T
   add_cmd("take",       NULL, cmd_get,      0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("tell",       NULL, cmd_tell,     0, POS_SLEEPING, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
 
   // U
   add_cmd("unlock",       NULL,  cmd_unlock,    0, POS_STANDING,  POS_FLYING,
-	  LEVEL_PLAYER, TRUE);
+	  LEVEL_PLAYER, TRUE, TRUE);
 
   // W
   add_cmd("wake",       NULL, cmd_wake,     0, POS_SLEEPING,  POS_SLEEPING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("wear",       NULL, cmd_wear,     0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, TRUE );
+	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("who",        NULL, cmd_who,      0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd("wizhelp",    NULL, cmd_wizhelp,  0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("worn",       NULL, cmd_equipment,0, POS_SITTING,  POS_FLYING,
-	  LEVEL_PLAYER, FALSE);
+	  LEVEL_PLAYER, TRUE, FALSE);
 
   // Z
   add_cmd("zlist",      NULL, cmd_zlist,    0, POS_SITTING,  POS_FLYING,
-	  LEVEL_BUILDER, TRUE);
+	  LEVEL_BUILDER, FALSE, TRUE);
   add_cmd("zreset",     NULL, cmd_zreset,   0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_BUILDER, FALSE);
+	  LEVEL_BUILDER, FALSE, FALSE);
 }
 
 
@@ -244,46 +256,53 @@ int cmdbucket(const char *cmd) {
 }
 
 // compare two command by their sort_by variable
-int cmdsortbycmp(const struct cmd_data *cmd1, const struct cmd_data *cmd2) {
+int cmdsortbycmp(const CMD_DATA *cmd1, const CMD_DATA *cmd2) {
   return strcasecmp(cmd1->sort_by, cmd2->sort_by);
 }
 
 // compare two commands
-int cmdcmp(const struct cmd_data *cmd1, const struct cmd_data *cmd2) {
+int cmdcmp(const CMD_DATA *cmd1, const CMD_DATA *cmd2) {
   return strcasecmp(cmd1->cmd_name, cmd2->cmd_name);
 }
 
 // check if the cmd matches the command's cmd_name up to the length of cmd
-int is_cmd_abbrev(const char *cmd, const struct cmd_data *entry) {
+int is_cmd_abbrev(const char *cmd, const CMD_DATA *entry) {
   return strncasecmp(cmd, entry->cmd_name, strlen(cmd));
 }
 
 // check if the string matches the command's cmd_name
-int is_cmd(const char *cmd, const struct cmd_data *entry) {
+int is_cmd(const char *cmd, const CMD_DATA *entry) {
   return strcasecmp(cmd, entry->cmd_name);
 }
 
 // find a command
-struct cmd_data *find_cmd(const char *cmd, bool abbrev_ok) {
+CMD_DATA *find_cmd(const char *cmd, bool abbrev_ok) {
   if(abbrev_ok)
     return listGetWith(cmd_table[cmdbucket(cmd)], cmd, is_cmd_abbrev);
   else
     return listGetWith(cmd_table[cmdbucket(cmd)], cmd, is_cmd);
 }
 
+//
+// remove (and delete) a command
+//
 void remove_cmd(const char *cmd) {
-  listRemoveWith(cmd_table[cmdbucket(cmd)], cmd, is_cmd);
+  CMD_DATA *removed = listRemoveWith(cmd_table[cmdbucket(cmd)], cmd, is_cmd);
+  if(removed) {
+    if(removed->cmd_name) free(removed->cmd_name);
+    if(removed->sort_by)  free(removed->sort_by);
+    free(removed);
+  }
 }
 
 void add_cmd(const char *cmd, const char *sort_by,
 	     void *func, int subcmd, int min_pos, int max_pos,
-	     int min_level, bool interrupts) {
+	     int min_level, bool mob_ok, bool interrupts) {
   // if we've already got a command named this, remove it
-  if(find_cmd(cmd, FALSE) != NULL)
-    remove_cmd(cmd);
+  remove_cmd(cmd);
 
   // make our new command data
-  struct cmd_data *new_cmd = malloc(sizeof(struct cmd_data));
+  CMD_DATA *new_cmd = malloc(sizeof(CMD_DATA));
   new_cmd->cmd_name   = strdup(cmd);
   new_cmd->sort_by    = strdup(sort_by ? sort_by : cmd);
   new_cmd->cmd_funct  = func;
@@ -291,6 +310,7 @@ void add_cmd(const char *cmd, const char *sort_by,
   new_cmd->min_pos    = min_pos;
   new_cmd->max_pos    = max_pos;
   new_cmd->level      = min_level;
+  new_cmd->mob_ok     = mob_ok;
   new_cmd->interrupts = interrupts;
 
   // and add it in
@@ -299,19 +319,19 @@ void add_cmd(const char *cmd, const char *sort_by,
 
 
 // show the character all of the commands he or she can perform
-void show_commands(CHAR_DATA *ch) {
+void show_commands(CHAR_DATA *ch, int min_lev, int max_lev) {
   BUFFER *buf = buffer_new(MAX_BUFFER);
   int i, col = 0;
 
   // go over all of our buckets
   for(i = 0; i < 26; i++) {
     LIST_ITERATOR *buck_i = newListIterator(cmd_table[i]);
-    struct cmd_data *cmd = NULL;
+    CMD_DATA *cmd = NULL;
 
     ITERATE_LIST(cmd, buck_i) {
-      if(charGetLevel(ch) < cmd->level)
+      if(min_lev > cmd->level || max_lev < cmd->level)
 	continue;
-      bprintf(buf, " %-16.16s", cmd->cmd_name);
+      bprintf(buf, "%-20.20s", cmd->cmd_name);
       if (!(++col % 4))
 	bprintf(buf, "\r\n");      
     }
@@ -396,16 +416,6 @@ bool max_pos_ok(CHAR_DATA *ch, int minpos) {
 }
 
 
-//
-// expand an alias out, replacing all wildcards with arguments passed in
-//
-char *expand_alias(const char *alias, const char *arg) {
-  char *cmd = strdup(alias);
-  replace_string(&cmd, "$*", arg, TRUE);
-  return cmd;
-}
-
-
 void handle_cmd_input(SOCKET_DATA *dsock, char *arg) {
   CHAR_DATA *ch;
   if ((ch = dsock->player) == NULL)
@@ -422,16 +432,30 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
   if(!arg || !*arg)
     return;
 
-  arg = one_arg(arg, command);
+  // if we are leading with a non-character, we are trying to do a short-form
+  // command (e.g. ' for say, " for gossip). Just take the first character
+  // and use the rest as the arg
+  if(isalpha(*arg))
+    arg = one_arg(arg, command);
+  else {
+    *command     = *arg;
+    *(command+1) = '\0';
+    arg++;
+    // and skip all spaces
+    while(isspace(*arg))
+      arg++;
+  }
 
+#ifdef MODULE_ALIAS
   // see if it's an alias
-  if(aliases_ok && charGetAlias(ch, command)) {
-    char *alias_cmd = expand_alias(charGetAlias(ch, command), arg);
+  const char *alias = charGetAlias(ch, command);
+  if(aliases_ok && alias) {
+    char *alias_cmd = expand_alias(alias, arg);
     do_cmd(ch, alias_cmd, scripts_ok, FALSE);
     free(alias_cmd);
     return;
   }
-
+#endif
 
   // check to see if it's a faculty command
 #ifdef MODULE_FACULTY
@@ -450,14 +474,15 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
   // iterate over the commands that would be in our 
   // bucket and find the one that we are trying to use
   LIST_ITERATOR *cmd_i = newListIterator(cmd_table[cmdbucket(command)]);
-  struct cmd_data *cmd = NULL;
+  CMD_DATA *cmd = NULL;
   ITERATE_LIST(cmd, cmd_i) {
     if (cmd->level > charGetLevel(ch))
       continue;
 
     if (is_prefix(command, cmd->cmd_name)) {
       found_cmd = TRUE;
-      if(min_pos_ok(ch, cmd->min_pos) && max_pos_ok(ch,cmd->max_pos)) {
+      if(min_pos_ok(ch, cmd->min_pos) && max_pos_ok(ch,cmd->max_pos) &&
+	 (!charIsNPC(ch) || cmd->mob_ok)) {
 	if(cmd->interrupts) {
 #ifdef MODULE_FACULTY
 	  interrupt_action(ch, FACULTY_ALL);
@@ -465,7 +490,7 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
 	  interrupt_action(ch, 1);
 #endif
 	}
-	(cmd->cmd_funct)(ch, arg, cmd->subcmd);
+	(cmd->cmd_funct)(ch, cmd->cmd_name, cmd->subcmd, arg);
       }
       break;
     }

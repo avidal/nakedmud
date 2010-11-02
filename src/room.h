@@ -4,25 +4,29 @@
 //
 // room.h
 //
-// the interface for working with the room structure.
+// the basic interface for working with the room structure.
+//
+// the basic interface for working with the room data structure. If you plan on
+// adding any other information to rooms, it is strongly suggested you do so
+// through auxiliary data (see auxiliary.h)
+//
+// For a recap, IF YOU PLAN ON ADDING ANY OTHER INFORMATION TO ROOMS, IT
+// IS STRONGLY SUGGESTED YOU DO SO THROUGH AUXILIARY DATA (see auxiliary.h).
 //
 //*****************************************************************************
 
-
-
-#define DIR_NONE       (-1)
-#define DIR_NORTH         0
-#define DIR_EAST          1
-#define DIR_SOUTH         2
-#define DIR_WEST          3
-#define DIR_UP            4
-#define DIR_DOWN          5
-#define DIR_NORTHEAST     6
-#define DIR_SOUTHEAST     7
-#define DIR_SOUTHWEST     8
-#define DIR_NORTHWEST     9
-#define NUM_DIRS         10
-
+#define DIR_NONE             (-1)
+#define DIR_NORTH               0
+#define DIR_EAST                1
+#define DIR_SOUTH               2
+#define DIR_WEST                3
+#define DIR_UP                  4
+#define DIR_DOWN                5
+#define DIR_NORTHEAST           6
+#define DIR_SOUTHEAST           7
+#define DIR_SOUTHWEST           8
+#define DIR_NORTHWEST           9
+#define NUM_DIRS               10
 
 #define TERRAIN_NONE         (-1)
 #define TERRAIN_INDOORS         0	
@@ -35,20 +39,20 @@
 #define TERRAIN_UNDERWATER	7	
 #define TERRAIN_FIELD           8	
 #define TERRAIN_PLAINS          9 
-#define TERRAIN_MEADOW          10
-#define TERRAIN_FOREST          11
-#define TERRAIN_DEEP_FOREST     12 
-#define TERRAIN_HILLS           13
-#define TERRAIN_HIGH_HILLS      14
-#define TERRAIN_MOUNTAIN        15
-#define TERRAIN_SWAMP           16 
-#define TERRAIN_DEEP_SWAMP      17
-#define TERRAIN_SAND            18 
-#define TERRAIN_DESERT          19
-#define TERRAIN_ICE             20
-#define TERRAIN_GLACIER         21
-#define TERRAIN_CAVERN          22
-#define NUM_TERRAINS            23
+#define TERRAIN_MEADOW         10
+#define TERRAIN_FOREST         11
+#define TERRAIN_DEEP_FOREST    12 
+#define TERRAIN_HILLS          13
+#define TERRAIN_HIGH_HILLS     14
+#define TERRAIN_MOUNTAIN       15
+#define TERRAIN_SWAMP          16 
+#define TERRAIN_DEEP_SWAMP     17
+#define TERRAIN_SAND           18 
+#define TERRAIN_DESERT         19
+#define TERRAIN_ICE            20
+#define TERRAIN_GLACIER        21
+#define TERRAIN_CAVERN         22
+#define NUM_TERRAINS           23
 
 
 //

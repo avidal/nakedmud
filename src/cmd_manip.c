@@ -60,8 +60,8 @@ COMMAND(cmd_lock) {
       send_to_char(ch, "You cannot seem to find the key.\r\n");
     else {
       send_to_char(ch, "You lock %s.\r\n", exitGetName(found));
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	      "$n locks %s.", exitGetName(found));
+      send_around_char(ch, TRUE, "%s locks %s.\r\n", 
+		       charGetName(ch), exitGetName(found));
       exitSetLocked(found, TRUE);
     }
   }
@@ -118,8 +118,8 @@ COMMAND(cmd_unlock) {
       send_to_char(ch, "You cannot seem to find the key.\r\n");
     else {
       send_to_char(ch, "You unlock %s.\r\n", exitGetName(found));
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	      "$n unlocks %s.", exitGetName(found));
+      send_around_char(ch, TRUE, "%s unlocks %s.\r\n", 
+		       charGetName(ch), exitGetName(found));
       exitSetLocked(found, FALSE);
     }
   }
@@ -175,10 +175,9 @@ COMMAND(cmd_put) {
 				FIND_SCOPE_INV | FIND_SCOPE_VISIBLE,
 				TRUE, &found_type);
 
-  int cont_type  = FOUND_NONE;
   OBJ_DATA *cont = generic_find(ch, arg,
 				FIND_TYPE_OBJ, FIND_SCOPE_IMMEDIATE,
-				FALSE, &cont_type);
+				FALSE, NULL);
 
   // make sure we've got what we need
   if(!found || !cont) {
@@ -241,12 +240,13 @@ COMMAND(cmd_open) {
       send_to_char(ch, "%s appears to be locked.\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "It"));
     else {
-      exitSetClosed(found, FALSE);
+      char other_buf[SMALL_BUFFER];
+      sprintf(other_buf, "$n opens %s.", (*exitGetName(found) ?
+					  exitGetName(found) : "an exit"));
+      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
       send_to_char(ch, "You open %s.\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	      "$n opens %s.", (*exitGetName(found) ?
-			        exitGetName(found) : "an exit"));
+      exitSetClosed(found, FALSE);
     }
   }
 
@@ -302,12 +302,13 @@ COMMAND(cmd_close) {
       send_to_char(ch, "It is easy to close something when someone "
 		   "has already done it for you!\r\n");
     else {
-      exitSetClosed(found, TRUE);
+      char other_buf[SMALL_BUFFER];
+      sprintf(other_buf, "$n closes %s.", (*exitGetName(found) ?
+					   exitGetName(found) : "an exit"));
+      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
       send_to_char(ch, "You close %s.\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	      "$n closes %s.", (*exitGetName(found) ?
-				exitGetName(found) : "an exit"));
+      exitSetClosed(found, TRUE);
     }
   }
 
@@ -350,11 +351,10 @@ COMMAND(cmd_get) {
   arg = one_arg(arg, name);
 
   // first check to see if we're trying to get from a container
-  int cont_type  = FOUND_NONE;
   OBJ_DATA *cont = NULL;
   if(*arg) {
     cont = generic_find(ch, arg, FIND_TYPE_OBJ, FIND_SCOPE_IMMEDIATE,
-			FALSE, &cont_type);
+			FALSE, NULL);
     // were we trying to get something from a container 
     // but couldn't find the container?
     if(cont == NULL) {
@@ -438,11 +438,10 @@ COMMAND(cmd_give) {
 			     FIND_SCOPE_INV | FIND_SCOPE_VISIBLE, 
 			     TRUE, &found_type);
 
-  int char_type = FOUND_NONE; // redundant, but we need a variable to use
   CHAR_DATA *recv = generic_find(ch, arg,
 				 FIND_TYPE_CHAR,
 				 FIND_SCOPE_ROOM | FIND_SCOPE_VISIBLE,
-				 FALSE, &char_type);
+				 FALSE, NULL);
 
   if(!recv)
     send_to_char(ch, "Whom where you looking for?\r\n");

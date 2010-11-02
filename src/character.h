@@ -4,32 +4,37 @@
 //
 // character.h
 //
-// the structures and functions needed for working with PCs and NPCs
+// Basic implementation of the character datastructure (PCs and NPCs). Includes
+// data for storing room, inventory, body, equipment, and other "essential"
+// information. If you plan on adding any other information to characters, it
+// is strongly suggested you do so through auxiliary data (see auxiliary.h).
+//
+// For a recap, IF YOU PLAN ON ADDING ANY OTHER INFORMATION TO CHARACTERS, IT
+// IS STRONGLY SUGGESTED YOU DO SO THROUGH AUXILIARY DATA (see auxiliary.h).
 //
 //*****************************************************************************
-
-
 
 
 //
 // the difference between newChar and newMobile is that newMobile
 // assigned a new UID whereas newChar does not.
 //
-CHAR_DATA   *newChar           ();
-CHAR_DATA    *newMobile         ();
-void         deleteChar      (CHAR_DATA *mob);
+CHAR_DATA   *newChar          ();
+CHAR_DATA    *newMobile       ();
+void         deleteChar       (CHAR_DATA *mob);
 
-CHAR_DATA    *charRead          (STORAGE_SET *set);
-STORAGE_SET *charStore         (CHAR_DATA *mob);
+CHAR_DATA    *charRead        (STORAGE_SET *set);
+STORAGE_SET *charStore        (CHAR_DATA *mob);
 
-CHAR_DATA    *charCopy          (CHAR_DATA *mob);
-void         charCopyTo        (CHAR_DATA *from, CHAR_DATA *to);
+CHAR_DATA    *charCopy        (CHAR_DATA *mob);
+void         charCopyTo       (CHAR_DATA *from, CHAR_DATA *to);
 
 
-bool         charIsNPC        ( CHAR_DATA *ch);
-bool         charIsName       ( CHAR_DATA *ch, const char *name);
-void         putCharInventory ( CHAR_DATA *ch, OBJ_DATA *obj);
-void         charResetBody    ( CHAR_DATA *ch);
+bool         charIsNPC        (CHAR_DATA *ch);
+bool         charIsName       (CHAR_DATA *ch, const char *name);
+void         putCharInventory (CHAR_DATA *ch, OBJ_DATA *obj);
+void         charResetBody    (CHAR_DATA *ch);
+
 
 //*****************************************************************************
 //
@@ -38,9 +43,11 @@ void         charResetBody    ( CHAR_DATA *ch);
 //*****************************************************************************
 
 /* buffers the output        */
-void  text_to_char        ( CHAR_DATA *dMob, const char *txt );
-void  send_to_char          ( CHAR_DATA *ch, const char *format, ...);
-void  send_to_list          ( LIST *list, const char *format, ...);
+void  text_to_char          (CHAR_DATA *dMob, const char *txt );
+void  send_to_char          (CHAR_DATA *ch, const char *format, ...) 
+__attribute__ ((format (printf, 2, 3)));
+void  send_to_list          (LIST *list, const char *format, ...) 
+__attribute__ ((format (printf, 2, 3)));
 
 
 //*****************************************************************************
@@ -56,7 +63,6 @@ const char  *charGetPassword  ( CHAR_DATA *ch);
 const char  *charGetRdesc     ( CHAR_DATA *ch);
 const char  *charGetMultiRdesc( CHAR_DATA *ch);
 const char  *charGetMultiName ( CHAR_DATA *ch);
-const char  *charGetAlias     ( CHAR_DATA *ch, const char *alias);
 int          charGetLevel     ( CHAR_DATA *ch);
 int          charGetSex       ( CHAR_DATA *ch);
 bitvector_t  charGetBits      ( CHAR_DATA *ch, int field);
@@ -67,11 +73,8 @@ BODY_DATA   *charGetBody      ( CHAR_DATA *ch);
 int          charGetRace      ( CHAR_DATA *ch);
 int          charGetUID       ( CHAR_DATA *ch);
 room_vnum    charGetLoadroom  ( CHAR_DATA *ch);
-HASHTABLE   *charGetVars      ( CHAR_DATA *ch);
-HASHTABLE   *charGetAliases   ( CHAR_DATA *ch);
 OBJ_DATA    *charGetFurniture ( CHAR_DATA *ch);
 int          charGetPos       ( CHAR_DATA *ch);
-int          charGetVarVal    ( CHAR_DATA *ch, const char *var);
 void        *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name);
 
 void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket);
@@ -88,10 +91,8 @@ void         charSetBody      ( CHAR_DATA *ch, BODY_DATA *body);
 void         charSetRace      ( CHAR_DATA *ch, int race);
 void         charSetUID       ( CHAR_DATA *ch, int uid);
 void         charSetLoadroom  ( CHAR_DATA *ch, room_vnum loadroom);
-void         charSetVar       ( CHAR_DATA *ch, const char *var, int val);
 void         charSetFurniture ( CHAR_DATA *ch, OBJ_DATA *furniture);
 void         charSetPos       ( CHAR_DATA *ch, int pos);
-void         charSetAlias     ( CHAR_DATA *ch, const char *alias, const char *cmd);
 
 
 //*****************************************************************************

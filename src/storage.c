@@ -126,6 +126,11 @@ STORAGE_DATA    *new_data_int(int val, const char *key) {
   return new_data_string(str_val, key);
 }
 
+STORAGE_DATA    *new_data_long(long val, const char *key) {
+  char str_val[20]; sprintf(str_val, "%ld", val);
+  return new_data_string(str_val, key);
+}
+
 STORAGE_DATA *new_data_double(double val, const char *key) {
   char str_val[20]; sprintf(str_val, "%lf", val);
   return new_data_string(str_val, key);
@@ -227,10 +232,6 @@ bool list_is_empty(STORAGE_SET_LIST *list) {
 
 
 void write_storage_data(STORAGE_DATA *data, FILE *fl, int key_width,int indent){
-  /*
-  if(data->comment)
-    write_storage_comment(fl, data->comment, indent);
-  */
   // first, we see if we have a string value. If we do, print it
   if(*data->str_val) {
     print_key(fl, data->key, key_width, indent);
@@ -535,9 +536,9 @@ void storage_close(STORAGE_SET *set) {
 
 STORAGE_SET *storage_read(const char *fname) {
   FILE *fl = NULL;
-  // we wanted to open a file, but we couldn't ... abort
+  // we wanted to open a file, but we couldn't ... return an empty set
   if((fl = fopen(fname, "r")) == NULL)
-    return NULL;
+    return NULL;//    return new_storage_set();
   STORAGE_SET *set = parse_storage_set(fl, 0);
   fclose(fl);
   return set;
@@ -600,6 +601,11 @@ void store_int(STORAGE_SET *set, const char *key, int val,
   storage_put(set, new_data_int(val, key));
 }
 
+void store_long(STORAGE_SET *set, const char *key, long val, 
+	       const char *comment) {
+  storage_put(set, new_data_long(val, key));
+}
+
 STORAGE_SET    *read_set(STORAGE_SET *set, const char *key) {
   STORAGE_DATA *data = hashGet(set->entries, key);
   if(data) 
@@ -628,13 +634,8 @@ const char *read_string(STORAGE_SET *set, const char *key) {
 
 double read_double(STORAGE_SET *set, const char *key) {
   STORAGE_DATA *data = hashGet(set->entries, key);
-  if(data) {
-    double dbl = 0;
-    sscanf(data->str_val, "%lf", &dbl);
-    return dbl;
-  }
-  else
-    return 0;
+  if(data) return atof(data->str_val);
+  else     return 0;
 }
 
 int read_int(STORAGE_SET *set, const char *key) {
@@ -643,6 +644,15 @@ int read_int(STORAGE_SET *set, const char *key) {
   else     return 0;
 }
 
+long read_long(STORAGE_SET *set, const char *key) {
+  STORAGE_DATA *data = hashGet(set->entries, key);
+  if(data) return atol(data->str_val);
+  else     return 0;
+}
+
+bool storage_contains(STORAGE_SET *set, const char *key) {
+  return (hashGet(set->entries, key) != NULL);
+}
 
 //
 // make a storage list out of a normal MUD list

@@ -24,6 +24,10 @@
 #define MODULE_OLC
 #define MODULE_TIME
 #define MODULE_SCRIPTS
+#define MODULE_ALIAS
+#define MODULE_CHAR_VARS
+#define MODULE_SOCIALS
+
 
 //
 // Two modules that I am working on... together, they work similar to KaVir's
@@ -221,13 +225,18 @@ struct lookup_data
   char           * buf;     /* the buffer it should be stored in        */
 };
 
-#define COMMAND(name)      void name(CHAR_DATA *ch, char *arg, int subcmd)
+
+#define CMD_PTR(name)      void (* name)(CHAR_DATA *ch, const char *cmd, \
+					 int subcmd, char *arg)
+#define COMMAND(name)      void name(CHAR_DATA *ch, const char *cmd, \
+				     int subcmd, char *arg)
 void init_commands();
-void show_commands(CHAR_DATA *ch);
+void show_commands(CHAR_DATA *ch, int min_lev, int max_lev);
 void remove_cmd   (const char *cmd);
 void add_cmd      (const char *cmd, const char *sort_by, void *func, 
 	           int subcmd, int min_pos, int max_pos,
-	           int min_level, bool interrupts);
+	           int min_level, bool mob_ok, bool interrupts);
+void remove_cmd   (const char *cmd);
 
 
 struct buffer_type
@@ -311,10 +320,11 @@ void  do_cmd                  ( CHAR_DATA *ch, char *arg,
 				bool scripts_ok, bool aliases_ok);
 
 /* io.c */
-void    log_string            ( const char *txt, ... );
-void    bug                   ( const char *txt, ... );
+void    log_string            ( const char *txt, ... ) __attribute__ ((format (printf, 1, 2)));
+void    bug                   ( const char *txt, ... ) __attribute__ ((format (printf, 1, 2)));
 time_t  last_modified         ( char *helpfile );
-char   *read_help_entry       ( const char *helpfile );     /* pointer        */
+char   *read_file             ( const char *file );
+char   *read_help_entry       ( const char *helpfile);
 char   *fread_line            ( FILE *fp );                 /* pointer        */
 char   *fread_string          ( FILE *fp );                 /* allocated data */
 char   *fread_word            ( FILE *fp );                 /* pointer        */
@@ -323,6 +333,7 @@ long    fread_long            ( FILE *fp );                 /* a long integer */
 
 /* strings.c */
 char   *one_arg               ( char *fStr, char *bStr );
+void    arg_num               ( const char *from, char *to, int num); 
 bool    compares              ( const char *aStr, const char *bStr );
 bool    is_prefix             ( const char *aStr, const char *bStr );
 char   *capitalize            ( char *txt );
@@ -331,14 +342,9 @@ BUFFER *__buffer_new          ( int size );
 void    __buffer_strcat       ( BUFFER *buffer, const char *text );
 void    buffer_free           ( BUFFER *buffer );
 void    buffer_clear          ( BUFFER *buffer );
-int     bprintf               ( BUFFER *buffer, char *fmt, ... );
+int     bprintf               ( BUFFER *buffer, char *fmt, ... ) __attribute__ ((format (printf, 2, 3)));
 const char *buffer_string     ( BUFFER *buffer );
 void    buffer_format         ( BUFFER *buffer, bool indent );
-
-/* help_new.c */
-bool  check_help              ( CHAR_DATA *dMob, char *helpfile );
-void  load_helps              ( void );
-void  add_help                ( HELP_DATA *help );
 
 /* mccp.c */
 bool  compressStart     ( SOCKET_DATA *dsock, unsigned char teleopt );
@@ -355,6 +361,8 @@ void  page_string           ( SOCKET_DATA *dsock, const char *string);
 void  page_continue         ( SOCKET_DATA *dsock);
 void  page_back             ( SOCKET_DATA *dsock);
 
+/* help.c */
+bool check_help(CHAR_DATA *dMob, char *helpfile);
 
 /*******************************
  * End of prototype declartion *

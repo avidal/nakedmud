@@ -18,7 +18,7 @@
 
 // option modules
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
+#include "scripts/script.h"
 #endif
 
 
@@ -51,21 +51,24 @@ COMMAND(cmd_ask)
     if(!*arg)
       send_to_char(ch, "What did you want to ask %s?\r\n", name);
     else {
-      int find_type;
       CHAR_DATA *tgt = generic_find(ch, name,
 				    FIND_TYPE_CHAR,
 				    FIND_SCOPE_ROOM | FIND_SCOPE_VISIBLE,
-				    FALSE, &find_type);
+				    FALSE, NULL);
 
-      if(!tgt || find_type != FOUND_CHAR)
+      if(tgt == NULL)
 	send_to_char(ch, "Who were you trying to ask a question?\r\n");
       else if(tgt == ch)
 	send_to_char(ch, "You have a nice conversation with yourself.\r\n");
       else {
-	message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, 
-		"{wYou ask $N%s, '%s'", (ask_about ? " about"  : ""), arg);
-	message(ch, tgt, NULL, NULL, FALSE, TO_VICT, 
-		"{w$n asks you%s, '%s'", (ask_about ? " about" : ""), arg);
+	char other_buf[MAX_BUFFER];
+	sprintf(other_buf, "{w$n asks you%s, '%s'{n",
+		(ask_about ? " about" : ""), arg);
+	message(ch, tgt, NULL, NULL, FALSE, TO_VICT, other_buf);	
+
+	send_to_char(ch, "{wYou ask %s%s, '%s'{n\r\n", 
+		     charGetName(tgt), (ask_about ? " about" : ""), arg);
+
 #ifdef MODULE_SCRIPTS
 	try_speech_script(ch, tgt, arg);
 #endif	
@@ -100,19 +103,17 @@ COMMAND(cmd_tell)
     if(!*arg)
       send_to_char(ch, "What did you want to tell %s?\r\n", name);
     else {
-      int find_type;
       CHAR_DATA *tgt = generic_find(ch, name,
 				    FIND_TYPE_CHAR,
 				    FIND_SCOPE_WORLD | FIND_SCOPE_VISIBLE,
-				    FALSE, &find_type);
+				    FALSE, NULL);
 
-      if(!tgt || find_type != FOUND_CHAR)
+      if(tgt == NULL)
 	send_to_char(ch, "Who were you trying to talk to?\r\n");
       else if(tgt == ch)
 	send_to_char(ch, "You have a nice conversation with yourself.\r\n");
       else {
-	message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, 
-		"{rYou tell $N, '%s'", arg);
+	send_to_char(ch, "{rYou tell %s, '%s'{n\r\n", charGetName(tgt), arg);
 
 	// if we're an NPC, make sure we do colored output
 	char *color_arg = arg;
@@ -122,10 +123,12 @@ COMMAND(cmd_tell)
 	    color_arg = tagResponses(dialog, arg, "{c", "{r");
 	}
 
-	message(ch, tgt, NULL, NULL, FALSE, TO_VICT, 
-		"{r$n tells you, '%s'", arg);
-	  if(color_arg != arg) 
-	    free(color_arg);
+	char other_buf[MAX_BUFFER];
+	sprintf(other_buf, "{r$n tells you, '%s'{n", arg);
+	message(ch, tgt, NULL, NULL, FALSE, TO_VICT, other_buf);
+
+	if(color_arg != arg) 
+	  free(color_arg);
       }
     }
   }
@@ -186,13 +189,12 @@ COMMAND(cmd_greet) {
   if(!arg || !*arg)
     send_to_char(ch, "Whom did you want to greet?\r\n");
   else {
-    int find_type;
     CHAR_DATA *tgt = generic_find(ch, arg,
 				  FIND_TYPE_CHAR,
 				  FIND_SCOPE_ROOM | FIND_SCOPE_VISIBLE,
-				  FALSE, &find_type);
+				  FALSE, NULL);
 
-    if(!tgt || find_type != FOUND_CHAR)
+    if(tgt == NULL)
       send_to_char(ch, "Who were you trying to greet?\r\n");
     else if(tgt == ch)
       send_to_char(ch, 
@@ -215,14 +217,13 @@ COMMAND(cmd_greet) {
 	  char *response = tagResponses(dialog,
 					dialogGetGreet(dialog),
 					"{c", "{p");
-	  message(ch, tgt, NULL, NULL, FALSE, TO_CHAR,
-		  "{p$N responds, '%s'", response);
+	  send_to_char(ch, "{p%s responds, '%s'\r\n",charGetName(tgt),response);
 	  free(response);
 	}
 
 	else
-	  message(ch, tgt, NULL, NULL, TRUE, TO_CHAR,
-		  "{p$N does not have anything to say.");
+	  send_to_char(ch, "{p%s does not have anything to say.\r\n",
+		       charGetName(tgt));
       }
     }
   }
@@ -249,7 +250,7 @@ COMMAND(cmd_emote) {
     // person put his or her name were it's wanted. Otherwise, tag
     // it onto the front of the message
     if(strfind(arg, "$n"))
-      sprintf(buf, arg);
+      strcpy(buf, arg);
     else
       sprintf(buf, "$n %s", arg);
 

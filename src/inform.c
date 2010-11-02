@@ -22,11 +22,12 @@
 #include "handler.h"
 #include "socket.h"
 #include "inform.h"
+#include "log.h"
 
 
 // optional module headers
 #ifdef MODULE_TIME
-#include "modules/time/mudtime.h"
+#include "time/mudtime.h"
 #endif
 
 
@@ -79,7 +80,7 @@ LIST *get_nofurniture_chars(CHAR_DATA *ch, LIST *list,
     // don't show ourself
     if(i == ch && !include_self) continue;
     // check for invis and hidden ...
-    if(!(invis_ok || can_see_person(ch, i)))
+    if(!(invis_ok || can_see_char(ch, i)))
       continue;
     // make sure they're not on furniture
     if(charGetFurniture(i))
@@ -315,6 +316,95 @@ void send_outdoors(const char *format, ...) {
 }
 
 
+void text_to_char(CHAR_DATA *ch, const char *txt) {
+  if (txt && *txt && charGetSocket(ch) && 
+      socketGetState(charGetSocket(ch)) == STATE_PLAYING) {
+    text_to_buffer(charGetSocket(ch), txt);
+    charGetSocket(ch)->bust_prompt = TRUE;
+  }
+
+  // if it's a PC or we are not in game, then
+  // don't send the mesage to us
+  if(!charIsNPC(ch))
+    try_log(charGetName(ch), txt);
+}
+
+
+void send_to_char(CHAR_DATA *ch, const char *format, ...) {
+  if(charGetSocket(ch) && format && *format) {
+    static char buf[MAX_BUFFER];
+    va_list args;
+    va_start(args, format);
+    vsprintf(buf, format, args);
+    va_end(args);
+    text_to_char(ch, buf);
+    return;
+  }
+}
+
+
+void send_around_char(CHAR_DATA *ch, bool hide_nosee, const char *format, ...) {
+  static char buf[MAX_BUFFER];
+  va_list args;
+  va_start(args, format);
+  vsprintf(buf, format, args);
+  va_end(args);
+
+  LIST_ITERATOR *room_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
+  CHAR_DATA       *vict = NULL;
+
+  ITERATE_LIST(vict, room_i) {
+    if(ch == vict)
+      continue;
+    if(hide_nosee && !can_see_char(vict, ch))
+      continue;
+    text_to_char(vict, buf);
+  }
+  deleteListIterator(room_i);
+  return;
+}
+
+
+void send_to_level(int level, const char *format, ...) {
+  static char buf[MAX_BUFFER];
+  va_list args;
+  va_start(args, format);
+  vsprintf(buf, format, args);
+  va_end(args);
+
+  LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+  CHAR_DATA       *ch = NULL;
+
+  ITERATE_LIST(ch, ch_i) {
+    if(!charGetSocket(ch) || charGetLevel(ch) < level)
+      continue;
+    text_to_char(ch, buf);
+  }
+  deleteListIterator(ch_i);
+}
+
+
+void send_to_list(LIST *list, const char *format, ...) {
+  if(format && *format) {
+    // form the message
+    static char buf[MAX_BUFFER];
+    va_list args;
+    va_start(args, format);
+    vsprintf(buf, format, args);
+    va_end(args);
+
+    // send it out to everyone
+    LIST_ITERATOR *list_i = newListIterator(list);
+    CHAR_DATA *ch = NULL;
+    ITERATE_LIST(ch, list_i)
+      text_to_char(ch, buf);
+    deleteListIterator(list_i);
+  }
+};
+
+
+
+
 //*****************************************************************************
 //
 // commands included in inform.c
@@ -460,7 +550,7 @@ COMMAND(cmd_inventory) {
 // show a list of all commands available to the character
 //
 COMMAND(cmd_commands) {
-  show_commands(ch);
+  show_commands(ch, LEVEL_PLAYER, charGetLevel(ch));
 }
 
 
@@ -534,7 +624,6 @@ COMMAND(cmd_help)
 }
 
 
-
 //*****************************************************************************
 //
 // below this line are all of the subfunctions related to the message() 
@@ -583,56 +672,64 @@ void send_message(CHAR_DATA *to,
       switch(str[i]) {
       case 'n':
 	if(!ch) break;
-	sprintf(buf+j, (can_see_person(to, ch)?charGetName(ch):SOMEONE));
+	sprintf(buf+j, see_char_as(to, ch));
 	while(buf[j] != '\0') j++;
 	break;
       case 'N':
 	if(!vict) break;
-	sprintf(buf+j, (can_see_person(to, vict)?charGetName(vict):SOMEONE));
+	sprintf(buf+j, see_char_as(to, vict));
 	while(buf[j] != '\0') j++;
 	break;
       case 'm':
 	if(!ch) break;
-	sprintf(buf+j, (can_see_person(to, ch) ? HIMHER(ch) : SOMEONE));
+	sprintf(buf+j, (can_see_char(to, ch) ? HIMHER(ch) : SOMEONE));
 	while(buf[j] != '\0') j++;
 	break;
       case 'M':
 	if(!vict) break;
-	sprintf(buf+j, (can_see_person(to, vict) ? HIMHER(vict) : SOMEONE));
+	sprintf(buf+j, (can_see_char(to, vict) ? HIMHER(vict) : SOMEONE));
 	while(buf[j] != '\0') j++;
 	break;
       case 's':
 	if(!ch) break;
-	sprintf(buf+j, (can_see_person(to, ch) ? HISHERS(ch) : SOMEONE"s"));
+	sprintf(buf+j, (can_see_char(to, ch) ? HISHERS(ch) :SOMEONE"'s"));
 	while(buf[j] != '\0') j++;
 	break;
       case 'S':
 	if(!vict) break;
-	sprintf(buf+j, (can_see_person(to, vict) ? HISHERS(vict) : SOMEONE"s"));
+	sprintf(buf+j, (can_see_char(to, vict) ? HISHERS(vict) :SOMEONE"'s"));
 	while(buf[j] != '\0') j++;
 	break;
       case 'e':
 	if(!ch) break;
-	sprintf(buf+j, (can_see_person(to, ch) ? HESHE(ch) : SOMEONE));
+	sprintf(buf+j, (can_see_char(to, ch) ? HESHE(ch) : SOMEONE));
 	while(buf[j] != '\0') j++;
 	break;
       case 'E':
 	if(!vict) break;
-	sprintf(buf+j, (can_see_person(to, vict) ? HESHE(vict) : SOMEONE));
+	sprintf(buf+j, (can_see_char(to, vict) ? HESHE(vict) : SOMEONE));
 	while(buf[j] != '\0') j++;
 	break;
       case 'o':
 	if(!obj) break;
-	sprintf(buf+j, (can_see_obj(to, obj) ? objGetName(obj) : SOMETHING));
+	sprintf(buf+j, see_obj_as(to, obj));
 	while(buf[j] != '\0') j++;
 	break;
       case 'O':
 	if(!vobj) break;
-	sprintf(buf+j, (can_see_obj(to, vobj) ? objGetName(vobj) : SOMETHING));
+	sprintf(buf+j, see_obj_as(to, vobj));
 	while(buf[j] != '\0') j++;
 	break;
       case 'a':
+	if(!obj) break;
+	sprintf(buf+j, AN(see_obj_as(to, obj)));
+	while(buf[j] != '\0') j++;
+	break;
       case 'A':
+	if(!vobj) break;
+	sprintf(buf+j, AN(see_obj_as(to, vobj)));
+	while(buf[j] != '\0') j++;
+	break;
       case '$':
 	buf[j] = '$';
 	j++;
@@ -645,37 +742,29 @@ void send_message(CHAR_DATA *to,
 
   //  buf[0] = toupper(buf[0]);
   sprintf(buf+j, "\r\n");
-  send_to_char(to, buf);
+  text_to_char(to, buf);
 }
 
 
 void message(CHAR_DATA *ch,  CHAR_DATA *vict,
 	     OBJ_DATA  *obj, OBJ_DATA  *vobj,
 	     int hide_nosee, bitvector_t range, 
-	     const char *format, ...) {
-  static char buf[MAX_BUFFER];
-  va_list args;
-
-  if(!format || !*format)
+	     const char *mssg) {
+  if(!mssg || !*mssg)
     return;
-
-  va_start(args, format);
-  vsprintf(buf, format, args);
-  va_end(args);
 
   // what's our scope?
   if(IS_SET(range, TO_VICT) &&
      (!hide_nosee ||
       // make sure the vict can the character, or the
       // object if there is no character
-      ((!ch || can_see_person(vict, ch)) &&
+      ((!ch || can_see_char(vict, ch)) &&
        (ch  || (!obj || can_see_obj(vict, obj))))))
-    send_message(vict, buf, ch, vict, obj, vobj);
+    send_message(vict, mssg, ch, vict, obj, vobj);
   // characters can always see themselves. No need to do checks here
   else if(IS_SET(range, TO_CHAR))
-    send_message(ch, buf, ch, vict, obj, vobj);
+    send_message(ch, mssg, ch, vict, obj, vobj);
   else {
-
     LIST *recipients = NULL;
     // check if the scope of this message is everyone in the world
     if(IS_SET(range, TO_WORLD))
@@ -696,9 +785,9 @@ void message(CHAR_DATA *ch,  CHAR_DATA *vict,
 	 (!hide_nosee ||
 	  // make sure the vict can see the character, or the
 	  // object if there is no character
-	  ((!ch || can_see_person(rec, ch)) &&
+	  ((!ch || can_see_char(rec, ch)) &&
 	   (ch  || (!obj || can_see_obj(rec, obj))))))
-      send_message(rec, buf, ch, vict, obj, vobj);
+      send_message(rec, mssg, ch, vict, obj, vobj);
     }
     deleteListIterator(rec_i);
   }

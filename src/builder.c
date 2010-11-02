@@ -26,8 +26,8 @@
 
 // optional modules
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
-#include "modules/scripts/script_set.h"
+#include "scripts/script.h"
+#include "scripts/script_set.h"
 #endif
 
 
@@ -268,19 +268,14 @@ COMMAND(cmd_purge) {
     message(ch, NULL, NULL, NULL, FALSE, TO_NOTCHAR,
 	    "$n raises $s arms, and white flames engulf the entire room.");
 
-    // purge all the objects. We can't use ITERATE_LIST because
-    // we extract the current list element
-    obj = listIteratorCurrent(list_i);
-    while( (obj = listIteratorCurrent(list_i)) != NULL) {
-      listIteratorNext(list_i);
+    // purge all the objects. 
+    ITERATE_LIST(obj, list_i)
       extract_obj(obj);
-    }
     deleteListIterator(list_i);
 
     // and now all of the non-characters
     list_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
-    while( (vict = listIteratorCurrent(list_i)) != NULL) {
-      listIteratorNext(list_i);
+    ITERATE_LIST(vict, list_i) {
       if(vict == ch || !charIsNPC(vict)) 
 	continue;
       char_from_room(vict);
@@ -390,6 +385,7 @@ void do_list(CHAR_DATA *ch,
     }
   }
 }
+
 
 #ifdef MODULE_SCRIPTS
 COMMAND(cmd_sclist) {

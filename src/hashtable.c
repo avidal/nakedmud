@@ -8,7 +8,7 @@
 //*****************************************************************************
 
 #include <stdlib.h>
-#include <strings.h>
+#include <string.h>
 #include "list.h"
 #include "hashtable.h"
 

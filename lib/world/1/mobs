@@ -15,7 +15,29 @@ list:=
   race      : 0
   dialog    : 100
   auxiliary :-
-    script_aux_data:-
+    stat_data        :-
+      health          : 5
+      curr_health     : 5
+      endurance       : 5
+      curr_endurance  : 0
+      power           : 5
+      curr_power      : 0
+      balance         : 5
+      curr_balance    : 0
+      courage         : 5
+      curr_courage    : 0
+      speed           : 5
+      curr_speed      : 0
+      control         : 5
+      curr_control    : 0
+      awareness       : 5
+      curr_awareness  : 0
+      personality     : 5
+      curr_personality: 0
+      luck            : 5
+      curr_luck       : 0
+      -
+    script_aux_data  :-
       scripts:=
         vnum: 140
         -
@@ -38,7 +60,29 @@ list:=
   race      : 0
   dialog    : 101
   auxiliary :-
-    script_aux_data:-
+    stat_data        :-
+      health          : 5
+      curr_health     : 5
+      endurance       : 5
+      curr_endurance  : 0
+      power           : 5
+      curr_power      : 0
+      balance         : 5
+      curr_balance    : 0
+      courage         : 5
+      curr_courage    : 0
+      speed           : 5
+      curr_speed      : 0
+      control         : 5
+      curr_control    : 0
+      awareness       : 5
+      curr_awareness  : 0
+      personality     : 5
+      curr_personality: 0
+      luck            : 5
+      curr_luck       : 0
+      -
+    script_aux_data  :-
       scripts:=
         vnum: 151
         -
@@ -60,6 +104,30 @@ list:=
   sex       : 0
   race      : 0
   dialog    : 102
+  auxiliary :-
+    stat_data        :-
+      health          : 5
+      curr_health     : 5
+      endurance       : 5
+      curr_endurance  : 0
+      power           : 5
+      curr_power      : 0
+      balance         : 5
+      curr_balance    : 0
+      courage         : 5
+      curr_courage    : 0
+      speed           : 5
+      curr_speed      : 0
+      control         : 5
+      curr_control    : 0
+      awareness       : 5
+      curr_awareness  : 0
+      personality     : 5
+      curr_personality: 0
+      luck            : 5
+      curr_luck       : 0
+      -
+    -
   -
   vnum      : 130
   name      : a barfly
@@ -77,5 +145,29 @@ list:=
   sex       : 0
   race      : 0
   dialog    : -1
+  auxiliary :-
+    stat_data        :-
+      health          : 5
+      curr_health     : 5
+      endurance       : 5
+      curr_endurance  : 0
+      power           : 5
+      curr_power      : 0
+      balance         : 5
+      curr_balance    : 0
+      courage         : 5
+      curr_courage    : 0
+      speed           : 5
+      curr_speed      : 0
+      control         : 5
+      curr_control    : 0
+      awareness       : 5
+      curr_awareness  : 0
+      personality     : 5
+      curr_personality: 0
+      luck            : 5
+      curr_luck       : 0
+      -
+    -
   -
 -

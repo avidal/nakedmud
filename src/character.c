@@ -2,15 +2,18 @@
 //
 // character.c
 //
-// implementation of the character datastructure (PCs and NPCs)
+// Basic implementation of the character datastructure (PCs and NPCs). Includes
+// data for storing room, inventory, body, equipment, and other "essential"
+// information. If you plan on adding any other information to characters, it
+// is strongly suggested you do so through auxiliary data (see auxiliary.h).
+//
+// For a recap, IF YOU PLAN ON ADDING ANY OTHER INFORMATION TO CHARACTERS, IT
+// IS STRONGLY SUGGESTED YOU DO SO THROUGH AUXILIARY DATA (see auxiliary.h).
 //
 //*****************************************************************************
-
 #include "mud.h"
-#include "socket.h"
 #include "utils.h"
 #include "body.h"
-#include "log.h"
 #include "races.h"
 #include "handler.h"
 #include "auxiliary.h"
@@ -19,13 +22,10 @@
 #include "character.h"
 
 
-// probably good to increase this if your MUD relies heavily on spec_vars
-#define SPEC_VAR_TABLE_SIZE      10
-
 // mob UIDs (unique IDs) start at a million and go 
 // up by one every time a new NPC is created
-#define START_MOB_UID   (1000000)
-int next_mob_uid  = START_MOB_UID;
+#define START_MOB_UID       1000000
+int next_mob_uid  =   START_MOB_UID;
 
 const char *sex_names[NUM_SEXES] = {
   "male",
@@ -110,8 +110,6 @@ struct char_data {
   int                    position;
 
   LIST                 * inventory;
-  HASHTABLE            * spec_vars;
-  HASHTABLE            * aliases;
   HASHTABLE            * auxiliary_data;
 
   // data for NPCs only
@@ -153,8 +151,6 @@ CHAR_DATA *newChar() {
   ch->dialog        = NOTHING;
   ch->vnum          = NOBODY;
 
-  ch->spec_vars      = newHashtable(SPEC_VAR_TABLE_SIZE);
-  ch->aliases        = newHashtable(10);
   ch->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_CHAR);
 
   return ch;
@@ -167,49 +163,6 @@ CHAR_DATA *newChar() {
 // utility functions
 //
 //*****************************************************************************
-void text_to_char(CHAR_DATA *ch, const char *txt)
-{
-  if (ch->socket && socketGetState(ch->socket) == STATE_PLAYING && txt && *txt){
-    text_to_buffer(ch->socket, txt);
-    ch->socket->bust_prompt = TRUE;
-  }
-
-  // if it's a PC or we are not in game, then
-  // don't send the mesage to us
-  if(!charIsNPC(ch))
-    try_log(charGetName(ch), txt);
-}
-
-void send_to_char(CHAR_DATA *ch, const char *format, ...) {
-  if(ch->socket && format && *format) {
-    static char buf[MAX_BUFFER];
-    va_list args;
-    va_start(args, format);
-    vsprintf(buf, format, args);
-    va_end(args);
-    text_to_char(ch, buf);
-    return;
-  }
-};
-
-void send_to_list(LIST *list, const char *format, ...) {
-  if(format && *format) {
-    // form the message
-    static char buf[MAX_BUFFER];
-    va_list args;
-    va_start(args, format);
-    vsprintf(buf, format, args);
-    va_end(args);
-
-    // send it out to everyone
-    LIST_ITERATOR *list_i = newListIterator(list);
-    CHAR_DATA *ch = NULL;
-    ITERATE_LIST(ch, list_i)
-      text_to_char(ch, buf);
-    deleteListIterator(list_i);
-  }
-};
-
 void charSetRdesc(CHAR_DATA *ch, const char *rdesc) {
   if(ch->rdesc) free(ch->rdesc);
   ch->rdesc =   strdup(rdesc ? rdesc : "");
@@ -340,28 +293,12 @@ room_vnum    charGetLoadroom (CHAR_DATA *ch) {
   return ch->loadroom;
 }
 
-HASHTABLE   *charGetVars  ( CHAR_DATA *ch) {
-  return ch->spec_vars;
-}
-
-HASHTABLE   *charGetAliases  ( CHAR_DATA *ch) {
-  return ch->aliases;
-}
-
-const char   *charGetAlias  ( CHAR_DATA *ch, const char *alias) {
-  return hashGet(ch->aliases, alias);
-}
-
 void *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name) {
   return hashGet(ch->auxiliary_data, name);
 }
 
 OBJ_DATA *charGetFurniture(CHAR_DATA *ch) {
   return ch->furniture;
-}
-
-int          charGetVarVal( CHAR_DATA *ch, const char *var) {
-  return (int)hashGet(ch->spec_vars, var);
 }
 
 void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket) {
@@ -415,16 +352,6 @@ void         charSetUID(CHAR_DATA *ch, int uid) {
   ch->uid = uid;
 }
 
-void         charSetAlias  (CHAR_DATA *ch, const char *alias, const char *cmd){
-  // pull out the last one
-  char *oldcmd = hashRemove(ch->aliases, alias);
-  if(oldcmd != NULL)
-    free(oldcmd);
-  // put in the new one if it exists
-  if(cmd && *cmd)
-    hashPut(ch->aliases, alias, strdup(cmd));
-}
-
 void         charResetBody(CHAR_DATA *ch) {
   charSetBody(ch, raceCreateBody(ch->race));
 }
@@ -437,19 +364,6 @@ void charSetFurniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
   ch->furniture = furniture;
 }
 
-void charSetVar( CHAR_DATA *ch, const char *var, int val) {
-  // make sure the varname has no spaces
-  if(strstr(var, " ") != NULL) {
-    log_string("ERROR: On %s, attempted to edit a variable with a space, '%s'",
-	       charGetName(ch), var);
-    return;
-  }
-
-  if(val == 0)
-    hashRemove(ch->spec_vars, var);
-  else
-    hashPut(ch->spec_vars, var, (void *)val);
-}
 
 
 //*****************************************************************************
@@ -480,77 +394,7 @@ void deleteChar( CHAR_DATA *mob) {
   if(mob->keywords)    free(mob->keywords);
   deleteAuxiliaryData(mob->auxiliary_data);
 
-  if(mob->spec_vars)   deleteHashtable(mob->spec_vars);
-  if(mob->aliases) {
-    HASH_ITERATOR *hash_i = newHashIterator(mob->aliases);
-    const char     *alias = NULL;
-    char             *cmd = NULL;
-    while( (alias = hashIteratorCurrentKey(hash_i)) != NULL) {
-      hashIteratorNext(hash_i);
-      cmd = hashRemove(mob->aliases, alias);
-      free(cmd);
-    }
-    deleteHashIterator(hash_i);
-    deleteHashtable(mob->aliases);
-  }
   free(mob);
-}
-
-STORAGE_SET *aliasStore(HASHTABLE *table) {
-  STORAGE_SET *set       = new_storage_set();
-  HASH_ITERATOR *hash_i  = newHashIterator(table);
-  STORAGE_SET_LIST *list = new_storage_list();
-  const char  *aliasname = NULL;
-
-  store_list(set, "list", list, NULL);
-  while( (aliasname = hashIteratorCurrentKey(hash_i)) != NULL) {
-    STORAGE_SET *aliasset = new_storage_set();
-    store_string(aliasset, "key", aliasname, NULL);
-    store_string(aliasset, "val", hashIteratorCurrentVal(hash_i), NULL);
-    hashIteratorNext(hash_i);
-    storage_list_put(list, aliasset);
-  }
-  deleteHashIterator(hash_i);
-  return set;
-}
-
-HASHTABLE *aliasRead(STORAGE_SET *set) {
-  HASHTABLE *table       = newHashtable(10);
-  STORAGE_SET_LIST *list = read_list(set, "list");
-  STORAGE_SET *var       = NULL;
-
-  while( (var = storage_list_next(list)) != NULL)
-    hashPut(table, read_string(var, "key"), strdup(read_string(var, "val")));
-  return table;
-}
-
-
-STORAGE_SET *variableStore(HASHTABLE *table) {
-  STORAGE_SET *set       = new_storage_set();
-  HASH_ITERATOR *hash_i  = newHashIterator(table);
-  STORAGE_SET_LIST *list = new_storage_list();
-  const char    *varname = NULL;
-
-  store_list(set, "list", list, NULL);
-  while( (varname = hashIteratorCurrentKey(hash_i)) != NULL) {
-    STORAGE_SET *varset = new_storage_set();
-    store_string(varset, "key", varname, NULL);
-    store_int   (varset, "val", (int)hashIteratorCurrentVal(hash_i), NULL);
-    hashIteratorNext(hash_i);
-    storage_list_put(list, varset);
-  }
-  deleteHashIterator(hash_i);
-  return set;
-}
-
-HASHTABLE *variableRead(STORAGE_SET *set) {
-  HASHTABLE *table       = newHashtable(SPEC_VAR_TABLE_SIZE);
-  STORAGE_SET_LIST *list = read_list(set, "list");
-  STORAGE_SET *var       = NULL;
-
-  while( (var = storage_list_next(list)) != NULL)
-    hashPut(table, read_string(var, "key"), (void *)read_int(var, "val"));
-  return table;
 }
 
 
@@ -575,10 +419,6 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
     charSetLoadroom(mob,   read_int   (set, "loadroom"));
     charSetPos(mob,        read_int   (set, "position"));
     mob->prfs = parse_bits(read_string(set, "prfs"));
-    deleteHashtable(mob->spec_vars);
-    mob->spec_vars = variableRead(read_set(set, "variables"));
-    deleteHashtable(mob->aliases);
-    mob->aliases  = aliasRead(read_set(set, "aliases"));
   }
   // and NPC data
   else
@@ -587,6 +427,10 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
   deleteAuxiliaryData(mob->auxiliary_data);
   mob->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
 					  AUXILIARY_TYPE_CHAR);
+
+  // reset our body to the default for our race
+  charResetBody(mob);
+
   return mob;
 }
 
@@ -611,8 +455,6 @@ STORAGE_SET *charStore(CHAR_DATA *mob) {
     store_string(set, "password",   mob->password,                 NULL);
     store_int   (set, "uid",        mob->uid,                      NULL);
     store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)), NULL);
-    store_set   (set, "variables",  variableStore(mob->spec_vars), NULL);
-    store_set   (set, "aliases",    aliasStore(mob->aliases),      NULL);
   }
   // NPC-only data
   else

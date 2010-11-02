@@ -115,7 +115,7 @@ void *listGetWith(struct list *L, const void *cmpto, void *func);
 // TRUE if the item was found and removed. FALSE other wise. Cmpto must
 // be the thing we are compared against in func.
 //
-int listRemoveWith(struct list *L, const void *cmpto, void *func);
+void *listRemoveWith(struct list *L, const void *cmpto, void *func);
 
 
 //

@@ -21,7 +21,7 @@
 
 // optional modules
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
+#include "scripts/script.h"
 #endif
 
 
@@ -370,7 +370,7 @@ bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *poslist) {
 bool try_unequip(CHAR_DATA *ch, OBJ_DATA *obj) {
   if(bodyUnequip(charGetBody(ch), obj)) {
     objSetWearer(obj, NULL);
-     //*******************************
+    //*******************************
     // remove all of the item affects
     //*******************************
     return TRUE;
@@ -481,7 +481,8 @@ void *find_on_char(CHAR_DATA *looker,
     count += count_objs(looker, equipment, at, NOTHING,
 			(IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
-      *found_type = FOUND_OBJ;
+      if(found_type)
+	*found_type = FOUND_OBJ;
       OBJ_DATA *obj = find_obj(looker, equipment, at_count, at, NOTHING, 
 			       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       deleteList(equipment);
@@ -496,7 +497,8 @@ void *find_on_char(CHAR_DATA *looker,
   // FINISH ME
   //***********
 
-  *found_type = FOUND_NONE;
+  if(found_type)
+    *found_type = FOUND_NONE;
   return NULL;
 }
 
@@ -517,7 +519,8 @@ void *find_on_obj(CHAR_DATA *looker,
     count = count_chars(looker, objGetUsers(on), at, NOBODY,
 			(IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
-      *found_type = FOUND_CHAR;
+      if(found_type)
+	*found_type = FOUND_CHAR;
       return find_char(looker, objGetUsers(on), at_count, at, NOBODY,
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
@@ -529,14 +532,16 @@ void *find_on_obj(CHAR_DATA *looker,
   if(IS_SET(find_types, FIND_TYPE_EDESC)) {
     count = (objGetEdesc(on, at) != NULL);
     if(count && at_count == 1) {
-      *found_type = FOUND_EDESC;
+      if(found_type)
+	*found_type = FOUND_EDESC;
       return getEdesc(objGetEdescs(on), at);
     }
     else
       at_count--;
   }
-
-  *found_type = FOUND_NONE;
+ 
+  if(found_type)
+    *found_type = FOUND_NONE;
   return NULL;
 }
 
@@ -551,7 +556,8 @@ void *find_in_obj(CHAR_DATA *looker,
 		  bitvector_t find_types,
 		  bitvector_t find_scope,
 		  int *found_type) {		  
-  *found_type = FOUND_NONE;
+  if(found_type)
+    *found_type = FOUND_NONE;
 
   // see if we're looking on anything
   if(on && *on && on_count > 0) {
@@ -567,7 +573,8 @@ void *find_in_obj(CHAR_DATA *looker,
     int count = count_objs(looker, objGetContents(in), at, NOTHING,
 			    (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
-      *found_type = FOUND_OBJ;
+      if(found_type)
+	*found_type = FOUND_OBJ;
       return find_obj(looker, objGetContents(in), at_count, at, NOTHING,
 		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
@@ -579,7 +586,8 @@ void *find_in_obj(CHAR_DATA *looker,
 
 LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
 	       bitvector_t find_scope, int *found_type) {
-  *found_type = FOUND_LIST;
+  if(found_type)
+    *found_type = FOUND_LIST;
 
   /************************************************************/
   /*                        FIND ALL OBJS                     */
@@ -638,7 +646,8 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
     // if we didn't find anything, return NULL
     if(listSize(obj_list) < 1) {
       deleteList(obj_list);
-      *found_type = FOUND_NONE;
+      if(found_type)
+	*found_type = FOUND_NONE;
       return NULL;
     }
     else
@@ -650,7 +659,8 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
   /*                        FIND ALL CHARS                    */
   /************************************************************/
   else if(find_types == FIND_TYPE_CHAR) {
-    *found_type = FOUND_NONE;
+    if(found_type)
+      *found_type = FOUND_NONE;
     return NULL;
   }
   
@@ -659,7 +669,8 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
   /*                       FIND ALL EDESCS                    */
   /************************************************************/
   else {
-    *found_type = FOUND_NONE;
+    if(found_type)
+      *found_type = FOUND_NONE;
     return NULL;
   }
 }
@@ -682,7 +693,8 @@ void *find_one(CHAR_DATA *looker,
      at_count >= 1 && !strcasecmp(at, "self")) {
     at_count--;
     if(at_count == 0) {
-      *found_type = FOUND_CHAR;
+      if(found_type)
+	*found_type = FOUND_CHAR;
       return looker;
     }
   }
@@ -693,7 +705,8 @@ void *find_one(CHAR_DATA *looker,
     count = count_objs(looker, charGetInventory(looker), at, NOTHING, 
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
-      *found_type = FOUND_OBJ;
+      if(found_type)
+	*found_type = FOUND_OBJ;
       return find_obj(looker, charGetInventory(looker), at_count, at, NOTHING,
 		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
@@ -708,7 +721,8 @@ void *find_one(CHAR_DATA *looker,
     count = count_objs(looker, equipment, at, NOTHING, 
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
-      *found_type = FOUND_OBJ;
+      if(found_type)
+	*found_type = FOUND_OBJ;
       OBJ_DATA *obj = find_obj(looker, equipment, at_count, at, NOTHING, 
 			       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       deleteList(equipment);
@@ -730,7 +744,8 @@ void *find_one(CHAR_DATA *looker,
     count = count_objs(looker, roomGetContents(charGetRoom(looker)), at, 
 		       NOTHING, (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
-      *found_type = FOUND_OBJ;
+      if(found_type)
+	*found_type = FOUND_OBJ;
       return find_obj(looker, roomGetContents(charGetRoom(looker)), at_count,
 		      at, NOTHING, (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
@@ -744,10 +759,11 @@ void *find_one(CHAR_DATA *looker,
     count = count_chars(looker, roomGetCharacters(charGetRoom(looker)), at,
 		       NOBODY, (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
+      if(found_type)
 	*found_type = FOUND_CHAR;
-	return find_char(looker, roomGetCharacters(charGetRoom(looker)), 
-			 at_count, at, NOBODY,
-			 (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+      return find_char(looker, roomGetCharacters(charGetRoom(looker)), 
+		       at_count, at, NOBODY,
+		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
 	at_count -= count;
@@ -778,7 +794,8 @@ void *find_one(CHAR_DATA *looker,
 	  can_see_exit(looker, exit))) {
 	at_count--;
 	if(at_count == 0) {
-	  *found_type = FOUND_EXIT;
+	  if(found_type)
+	    *found_type = FOUND_EXIT;
 	  return exit;
 	}
     }
@@ -802,7 +819,8 @@ void *find_one(CHAR_DATA *looker,
 	  can_see_exit(looker, exit))) {
 	at_count--;
 	if(at_count == 0) {
-	  *found_type = FOUND_EXIT;
+	  if(found_type)
+	    *found_type = FOUND_EXIT;
 	  return exit;
 	}
       }
@@ -822,7 +840,8 @@ void *find_one(CHAR_DATA *looker,
 	  can_see_exit(looker, exit))) {
 	at_count--;
 	if(at_count == 0) {
-	  *found_type = FOUND_EXIT;
+	  if(found_type)
+	    *found_type = FOUND_EXIT;
 	  // don't return it yet... we need to clean up our mess
 	  break;
 	}
@@ -851,8 +870,9 @@ void *find_one(CHAR_DATA *looker,
      IS_SET(find_types, FIND_TYPE_EDESC)) {
     count = (roomGetEdesc(charGetRoom(looker), at) != NULL);
     if(count && at_count == 1) {
+      if(found_type)
 	*found_type = FOUND_EDESC;
-	return getEdesc(roomGetEdescs(charGetRoom(looker)), at);
+      return getEdesc(roomGetEdescs(charGetRoom(looker)), at);
     }
     else
 	at_count--;
@@ -868,9 +888,10 @@ void *find_one(CHAR_DATA *looker,
     count = count_objs(looker, object_list, at, NOTHING, 
 			 (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
+      if(found_type)
 	*found_type = FOUND_OBJ;
-	return find_obj(looker, object_list, at_count, at, NOTHING, 
-			(IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+      return find_obj(looker, object_list, at_count, at, NOTHING, 
+		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
 	at_count -= count;
@@ -882,16 +903,18 @@ void *find_one(CHAR_DATA *looker,
     count = count_chars(looker, mobile_list, at, NOBODY, 
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
+      if(found_type)
 	*found_type = FOUND_CHAR;
-	return find_char(looker, mobile_list, at_count, at, NOBODY,
-			 (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+      return find_char(looker, mobile_list, at_count, at, NOBODY,
+		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
 	at_count -= count;
   }
 
   // we didn't find anything!
-  *found_type = FOUND_NONE;
+  if(found_type)
+    *found_type = FOUND_NONE;
   return NULL;
 }
 
@@ -964,7 +987,8 @@ void *find_specific(CHAR_DATA *looker,
   get_count(in, in, &in_count);
   get_count(on, on, &on_count);
 
-  *found_type = FOUND_NONE;
+  if(found_type)
+    *found_type = FOUND_NONE;
 
 
   // are we trying to find all of something?
@@ -998,13 +1022,15 @@ void *find_specific(CHAR_DATA *looker,
 	return NULL;
       // return what we found
       else {
-	*found_type = FOUND_IN_OBJ;
+	if(found_type)
+	  *found_type = FOUND_IN_OBJ;
 	return tgt;
       }
     }
     // we're just not looking for anything
     else {
-      *found_type = FOUND_NONE;
+      if(found_type)
+	*found_type = FOUND_NONE;
       return NULL;
     }
   }

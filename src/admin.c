@@ -19,11 +19,6 @@
 #include "action.h"
 #include "storage.h"
 
-// optional modules
-#ifdef MODULE_FACULTY
-#include "modules/faculty/faculty.h"
-#endif
-
 
 //
 // BOOM! Shut down the MUD
@@ -94,8 +89,7 @@ COMMAND(cmd_goto) {
 //
 // Perform a copyover
 //
-COMMAND(cmd_copyover)
-{ 
+COMMAND(cmd_copyover) { 
   FILE *fp;
   SOCKET_DATA *dsock;
   char buf[100];
@@ -149,8 +143,7 @@ COMMAND(cmd_copyover)
 //
 // show a list of all the PCs who are linkdead
 //
-COMMAND(cmd_linkdead)
-{
+COMMAND(cmd_linkdead) {
   CHAR_DATA *xMob;
   char buf[MAX_BUFFER];
   bool found = FALSE;
@@ -167,4 +160,12 @@ COMMAND(cmd_linkdead)
 
   if (!found)
     text_to_char(ch, "Noone is currently linkdead.\n\r");
+}
+
+
+//
+// List all of the non-player commands the character has access to
+//
+COMMAND(cmd_wizhelp) {
+  show_commands(ch, LEVEL_BUILDER, charGetLevel(ch));
 }

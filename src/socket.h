@@ -56,7 +56,7 @@ bool  read_from_socket      ( SOCKET_DATA *dsock );
 
 /* sends the output directly */
 bool  text_to_socket        ( SOCKET_DATA *dsock, const char *txt );
-void  send_to_socket        ( SOCKET_DATA *dsock, const char *format, ...);
+void  send_to_socket        ( SOCKET_DATA *dsock, const char *format, ...) __attribute__ ((format (printf, 2, 3)));
 
 /* buffers the output        */
 void  text_to_buffer        ( SOCKET_DATA *dsock, const char *txt );

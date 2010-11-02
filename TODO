@@ -3,22 +3,24 @@ GEOFF'S TO DO LIST
 
 
 +-- NOT COMPLETE
+  * remove the EXIT_DATA parameter from the script functions
+  * write helpfiles, create a better helpfile system, and do hedit
+  * condense normal and special exits in rooms
+  * soft-code chat channels
   * random dungeon generator
   * spellchecking in the text editor
   * mounts and vehicles
   * being able to stream music would be cool...
-  * clean up and document resedit in modules/olc
-  * write helpfiles, create a better helpfile system, and do hedit
-  * Document all of the modules
-  * Finish cleaning up all of the module stuff
+  * clean up and document resedit in the olc module
   * tracking and path following
   * shops (for mobiles and players)
   * customized prompts
   * DOCUMENT DOCUMENT DOCUMENT!! Most of the major headers need full
     documentation still.
-  * soft-code chat channels
   * character positions and changing of positions is a bit of a hack.
-    it could really do with some cleaning up.
+    it could really do with some cleaning up. Move their defines to mud.h
+    too, so that modules wanting to add new commands don't need to include
+    character.h
   * Mysty's Dialog
     * Betta
     * Oren
@@ -30,8 +32,6 @@ GEOFF'S TO DO LIST
 
 
 +-- NEEDS DEBUGGING
-  * check all of our ITERATE_NEXT and make sure that we're not using
-    it in any cases where we might remove the current element we're on
   * containers
   * room reset
   * Make sure extract obj/char is catching everything, and is running well

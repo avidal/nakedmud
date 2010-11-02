@@ -14,17 +14,19 @@ nicely.
 
 I will not provide very explicit directions on how to implement new modules
 (really, I think they're flexible enough that you can do whatever you want with
-a little bit of imagination), but I will give some basic directions and a couple
-examples to help you going.
+a little bit of imagination, and the concept is simple enough that anyone with
+a smidge of programming experience will grasp it), but I will give some basic
+directions and a couple examples to help you going.
 
 
 BASIC DIRECTIONS - INSTALLING A NEW MODULE
 
 There are 5 basic steps to setting up a module
 
-1) make a directory and makefile for it in src/modules. A template makefile
-   is provided in src/modules/example
-2) add its directory to the bottom of the Makefile in the main src directory
+1) make a directory and module.mk file for it in the src directory. A template 
+   module.mk is provided in src/example_module
+2) add its directory to the MODULES variable in the top of the Makefile within 
+   the main src directory
 3) write all of you code
 4) put a define in mud.h to let the rest of the MUD know it is installed, incase
    other modules will need to interact with yours in the future
@@ -33,14 +35,18 @@ There are 5 basic steps to setting up a module
 I think all of these are completely straightforward except for 3. That one's the
 (slightly) tricky part. I've provided a few example modules with the normal
 distribution that I suggest you look over. The best one to get a basic 
-understanding from is probably the time module (src/modules/time). It has
-some straightforward examples of how to get modules to create new commands,
-add new data to a datastructure without editing the datastructure directly,
-how to set up a new event loop without having to edit the gameloop, and a bunch
-of other really useful information. There are two other modules that come stock
-with NakedMud - the OLC module (src/modules/olc) and the scripts module
-(src/modules/scripts), but the time module is by far the best one as as an
-examplar of how I thought modules should work.
+understanding from is probably the time module (src/time). It has some 
+straightforward examples of how to get modules to create new commands, add new 
+data to a datastructure without editing the datastructure directly, how to set 
+up a new event loop without having to edit the gameloop, and a bunch of other 
+really useful information. Many other modules come default with the core of
+NakedMud, and they might be worth your time to look over (e.g. the socials
+module would be a good intro to how modules can add/remove commands to the MUD,
+and the OLC may be useful in getting ideas of how to design a large-scale
+module without touching any of the core code. The scripts module may also be
+worth your time looking over - especially if you ever intend on extending
+scripts). However, the time module is by far the best one as as an examplar of 
+how I thought modules should work.
 
 
 THINGS TO CONSIDER WHEN IMPLEMENTING MODULES

@@ -44,25 +44,44 @@
 void message(CHAR_DATA *ch,  CHAR_DATA *vict,
 	     OBJ_DATA  *obj, OBJ_DATA  *vobj,
 	     int hide_nosee, bitvector_t range, 
-	     const char *format, ...);
+	     const char *mssg);
 
 
 //
 // send a message to everyone outdoors
 //
-void  send_outdoors(const char *format, ...);
+void  send_outdoors(const char *format, ...)  
+__attribute__ ((format (printf, 1, 2)));
 
 
 //
 // send a message to a list of characters
 //
-void  send_to_list (LIST *list, const char *format, ...);
+void  send_to_list (LIST *list, const char *format, ...) 
+__attribute__ ((format (printf, 2, 3)));
 
 
 //
 // send a message to a specific character
 //
-void  send_to_char (CHAR_DATA *ch, const char *format, ...);
+void  send_to_char (CHAR_DATA *ch, const char *format, ...) 
+__attribute__ ((format (printf, 2, 3)));
+
+
+//
+// send a message to everyone at or above the specified level
+//
+void send_to_level(int level, const char *format, ...) 
+__attribute__ ((format (printf, 2, 3)));
+
+
+//
+// send a message to everyone in the same room as the character,
+// but not the character himself. If hide_nosee is TRUE, then the message
+// is not sent to people who cannot see the character.
+//
+void send_around_char(CHAR_DATA *ch, bool hide_nosee, const char *format, ...) 
+__attribute__ ((format (printf, 3, 4)));
 
 
 //
@@ -122,5 +141,6 @@ void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj);
 // Show a body to the character
 //
 void show_body(CHAR_DATA *ch, BODY_DATA *body);
+
 
 #endif // __INFORM_H

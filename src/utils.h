@@ -42,13 +42,19 @@ const char *numth(int num);
 #define HESHE(ch)             (charGetSex(ch) == SEX_MALE ? "he" : \
 			       (charGetSex(ch) == SEX_FEMALE ? "she" : "it"))
 
-
-bool  can_see_person      ( CHAR_DATA *ch, CHAR_DATA *target);
+bool  can_see_char      ( CHAR_DATA *ch, CHAR_DATA *target);
 bool  can_see_obj         ( CHAR_DATA *ch, OBJ_DATA  *target);
 bool  can_see_exit        ( CHAR_DATA *ch, EXIT_DATA *exit);
 bool  try_enter_game      ( CHAR_DATA *ch);
 int   can_see_hidden      ( CHAR_DATA *ch);
 int   can_see_invis       ( CHAR_DATA *ch);
+
+//
+// returns the target's name if the ch can see the target,
+// and returns SOMEONE/SOMETHING otherwise.
+//
+const char *see_char_as (CHAR_DATA *ch, CHAR_DATA *target);
+const char *see_obj_as  (CHAR_DATA *ch, OBJ_DATA  *target);
 
 bool  try_dialog          (CHAR_DATA *ch, CHAR_DATA *listener,const char *mssg);
 void  try_dialog_all      (CHAR_DATA *ch, LIST *listeners, const char *mssg);
@@ -78,10 +84,14 @@ void        print_bits(bitvector_t bits, const char **names, char *buf);
 //
 //*****************************************************************************
 #define CLEAR_SCREEN      "\033[H\033[J"
+#define AN(string)        (strchr("AEIOU", toupper(*string)) ? "an" : "a")
+
 char **parse_keywords     (const char *keywords, int *num_keywords);
 bool is_keyword           (const char *keywords, const char *word, 
 			   bool abbrev_ok);
 int  find_keyword         (const char *keywords, const char *string);
+void add_keyword          (char **keywords_ptr, const char *word);
+void remove_keyword       (char *keywords, const char *word);
 void trim                 (char *string);
 void strip_word           (char *string, const char *word);
 int  replace_string       (char **string, const char *a, const char *b, 
@@ -121,7 +131,12 @@ CHAR_DATA  *check_reconnect( const char *player );
       hashIteratorNext(it), \
       key = hashIteratorCurrentKey(it), val = hashIteratorCurrentVal(it))
 
-
+// iterate across all of the elements in a map
+#define ITERATE_MAP(key, val, it) \
+  for(key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it); \
+      key != NULL; \
+      mapIteratorNext(it), \
+      key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it))
 
 
 //

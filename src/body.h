@@ -44,6 +44,16 @@
 
 #define NUM_BODYTYPES             2
 
+#define BODYSIZE_NONE            -1
+#define BODYSIZE_DIMINUITIVE      0
+#define BODYSIZE_TINY             1
+#define BODYSIZE_SMALL            2
+#define BODYSIZE_MEDIUM           3
+#define BODYSIZE_LARGE            4
+#define BODYSIZE_HUGE             5
+#define BODYSIZE_GARGANTUAN       6
+#define BODYSIZE_COLLOSAL         7
+#define NUM_BODYSIZES             8
 
 /**
  * Return a list of the postypes for a list of posnames (comma-separated)
@@ -67,6 +77,18 @@ int bodytypeGetNum(const char *bodytype);
  * return the name of the body position type 
  */
 const char *bodyposGetName(int bodypos);
+
+
+/**
+ * return the name of the specified bodysize
+ */
+const char *bodysizeGetName(int size);
+
+
+/**
+ * return the number assocciated with the bodysize
+ */
+int bodysizeGetNum(const char *size);
 
 
 /**
@@ -98,6 +120,12 @@ void deleteBody(BODY_DATA *B);
  * Copy the body (minus equipment)
  */
 BODY_DATA *bodyCopy(const BODY_DATA *B);
+
+
+/**
+ * Return the size of the body
+ */
+int bodyGetSize(const BODY_DATA *B);
 
 
 /**

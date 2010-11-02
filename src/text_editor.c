@@ -16,10 +16,10 @@
 
 // optional modules
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
+#include "scripts/script.h"
 #endif
 #ifdef MODULE_OLC
-#include "modules/olc/olc.h"
+#include "olc/olc.h"
 #endif
 
 

@@ -35,5 +35,4 @@ COMMAND(cmd_load);
 //
 bool try_buildwalk(CHAR_DATA *ch, int dir);
 
-
 #endif // __BUILDER_H

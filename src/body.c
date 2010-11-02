@@ -22,7 +22,8 @@ struct bodypart_data {
 typedef struct bodypart_data   BODYPART;
 
 struct body_data {
-  LIST *parts;               // a list of all the parts on the body
+  LIST   *parts;             // a list of all the parts on the body
+  int      size;             // how big is our body?
 };
 
 
@@ -60,6 +61,18 @@ const char *bodytype_list[NUM_BODYTYPES] = {
   "humanoid",
   "dragon",
 };
+
+const char *bodysize_list[NUM_BODYSIZES] = {
+  "diminuitive",
+  "tiny",
+  "small",
+  "medium",
+  "large",
+  "huge",
+  "gargantuan",
+  "collosal"
+};
+
 
 /**
  * Create a new bodypart_data
@@ -100,6 +113,7 @@ BODYPART *bodypartCopy(BODYPART *P) {
  */
 BODY_DATA *newDragonBody() {
   BODY_DATA *body = newBody();
+  body->size = BODYSIZE_COLLOSAL;
   bodyAddPosition(body, "left hind claw",          BODYPOS_CLAW,          1);
   bodyAddPosition(body, "right hind claw",         BODYPOS_CLAW,          1);
   bodyAddPosition(body, "left front claw",         BODYPOS_CLAW,          1);
@@ -126,6 +140,7 @@ BODY_DATA *newDragonBody() {
  */
 BODY_DATA *newHumanoidBody() {
   BODY_DATA *body = newBody();
+  body->size = BODYSIZE_MEDIUM;
   bodyAddPosition(body, "right grip",              BODYPOS_HELD,          0);
   bodyAddPosition(body, "left grip",               BODYPOS_HELD,          0);
   bodyAddPosition(body, "right foot",              BODYPOS_RIGHT_FOOT,    2);
@@ -193,6 +208,18 @@ int bodytypeGetNum(const char *bodytype) {
   return BODYTYPE_NONE;
 }
 
+const char *bodysizeGetName(int size) {
+  return bodysize_list[size];
+}
+
+int bodysizeGetNum(const char *size) {
+  int i;
+  for(i = 0; i < NUM_BODYSIZES; i++)
+    if(!strcasecmp(size, bodysize_list[i]))
+      return i;
+  return BODYSIZE_NONE;
+}
+
 const char *bodyposGetName(int bodypos) {
   return bodypos_list[bodypos];
 }
@@ -232,8 +259,13 @@ BODY_DATA *bodyCopy(const BODY_DATA *B) {
   BODY_DATA *Bnew = newBody();
   deleteListWith(Bnew->parts, deleteBodypart);
   Bnew->parts = listCopyWith(B->parts, bodypartCopy);
+  Bnew->size  = B->size;
 
   return Bnew;
+}
+
+int bodyGetSize(const BODY_DATA *B) {
+  return B->size;
 }
 
 //

@@ -16,6 +16,7 @@
 /* include main header file */
 #include "mud.h"
 #include "character.h"
+#include "help.h"
 
 HELP_DATA   *   help_list = NULL; /* the linked list of help files     */
 char        *   greeting;         /* the welcome greeting              */
@@ -123,11 +124,6 @@ void load_helps()
     new_help->text       =  strdup(s);
     new_help->load_time  =  time(NULL);
     add_help(new_help);
-
-    if (compares("GREETING", new_help->keyword))
-      greeting = new_help->text;
-    else if (compares("MOTD", new_help->keyword))
-      motd = new_help->text;
   }
   closedir(directory);
 }

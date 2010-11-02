@@ -4,12 +4,15 @@
 //
 // object.h
 //
-// this is the main interface for working with objects (swords, staves, etc..)
-// contains all of the functions for interacting with the datastructure.
+// Contains the basic interface for working with the object data structure, and
+// the functions needed to interact with it. If you plan on adding any other
+// information to objects, it is strongly suggested you do so through auxiliary
+// data (see auxiliary.h).
+//
+// For a recap, IF YOU PLAN ON ADDING ANY OTHER INFORMATION TO OBJECTS, IT
+// IS STRONGLY SUGGESTED YOU DO SO THROUGH AUXILIARY DATA (see auxiliary.h).
 //
 //*****************************************************************************
-
-
 
 OBJ_DATA    *newObj         ();
 void         deleteObj      (OBJ_DATA *obj);
@@ -81,6 +84,7 @@ bool         objIsBitSet      (OBJ_DATA *obj, int field, int bit);
 void         objPrintBits     (OBJ_DATA *obj, int field, char *buf);
 const char  *objBitGetName    (int field, int bit);
 
+
 //*****************************************************************************
 //
 // Bitfields and their bits
@@ -95,7 +99,5 @@ const char  *objBitGetName    (int field, int bit);
 
 #define BITFIELD_WORN             2
 #define NUM_WORN_BITS             0
-
-
 
 #endif // __OBJECT_H

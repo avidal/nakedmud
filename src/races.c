@@ -21,7 +21,7 @@ struct race_data {
 const struct race_data race_info[NUM_RACES] = {
   { "human", "hum",  BODYTYPE_HUMANOID, TRUE  },
   { "elf",   "elf",  BODYTYPE_HUMANOID, TRUE  },
-  { "dragon", "drg", BODYTYPE_DRAGON,  FALSE  }
+  { "dragon","drg",  BODYTYPE_DRAGON,  FALSE  }
 };
 
 bool raceIsForPC(int race) {

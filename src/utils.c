@@ -22,22 +22,17 @@
 #include "save.h"
 #include "handler.h"
 #include "inform.h"
-#include "help.h"
 #include "dialog.h"
 #include "event.h"
 #include "action.h"
+#include "help.h"
 
 
 // optional modules
-#ifdef MODULE_FACULTY
-#include "modules/faculty/faculty.h"
-#endif
-#ifdef MODULE_COMBAT
-#include "modules/combat/combat.h"
-#endif
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
+#include "scripts/script.h"
 #endif
+
 
 /*
  * Check to see if a given name is
@@ -96,9 +91,9 @@ void extract_mobile(CHAR_DATA *ch) {
 #endif
   interrupt_events_involving(ch);
 
-#ifdef MODULE_COMBAT
+#ifdef MODULE_FIGHT
   stop_all_targetting(ch);
-  stop_combat(ch);
+  stop_fight(ch);
 #endif
 
   // unequip everything the character is wearing
@@ -133,32 +128,30 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
   default:
     bug("Communicate: Bad Range %d.", range);
     return;
-  case COMM_LOCAL:  /* everyone in the same room */
+
+  case COMM_LOCAL: {  /* everyone in the same room */
+    char other_buf[MAX_BUFFER];
+    sprintf(other_buf, "{y$n says, '%s'{n", txt);
     send_to_char(dMob, "{yYou say, '%s'{n\r\n", txt);
-    message(dMob, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	    "{y$n says, '%s'", txt);
+    message(dMob, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
     try_dialog_all(dMob, roomGetCharacters(charGetRoom(dMob)), txt);
 #ifdef MODULE_SCRIPTS
     try_speech_script(dMob, NULL, txt);
 #endif
     break;
+  }
 
-  case COMM_GLOBAL: /* everyone in the world */
+  case COMM_GLOBAL: { /* everyone in the world */
+    char other_buf[MAX_BUFFER];
+    sprintf(other_buf, "{c$n chats, '%s'{n", txt);
     send_to_char(dMob, "{cYou chat, '%s'{n\r\n", txt);
-    message(dMob, NULL, NULL, NULL, FALSE, TO_WORLD | TO_NOTCHAR,
-	    "{c$n chats, '%s'", txt);
-    break;
-
-  case COMM_LOG: {
-    CHAR_DATA *xMob;
-    LIST_ITERATOR *mob_i = newListIterator(mobile_list);
-    ITERATE_LIST(xMob, mob_i) {
-      if (!IS_ADMIN(xMob)) continue;
-      send_to_char(xMob, "[LOG: %s]\r\n", txt);
-    }
-    deleteListIterator(mob_i);
+    message(dMob, NULL, NULL, NULL, FALSE, TO_WORLD | TO_NOTCHAR, other_buf);
     break;
   }
+
+  case COMM_LOG:
+    send_to_level(LEVEL_ADMIN, "[LOG: %s]\r\n", txt);
+    break;
   }
 }
 
@@ -166,8 +159,7 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
 /*
  * Loading of help files, areas, etc, at boot time.
  */
-void load_muddata(bool fCopyOver)
-{  
+void load_muddata(bool fCopyOver) {  
   load_helps();
   gameworld = worldLoad(WORLD_PATH);
   if(gameworld == NULL) {
@@ -175,10 +167,14 @@ void load_muddata(bool fCopyOver)
     abort();
   }
 
+  greeting = read_file("../lib/txt/greeting");
+  motd     = read_file("../lib/txt/motd");
+
   /* copyover */
   if (fCopyOver)
     copyover_recover();
 }
+
 
 char *get_time()
 {
@@ -329,7 +325,7 @@ int   can_see_invis           ( CHAR_DATA *ch) {
   return 0;
 }
 
-bool  can_see_person          ( CHAR_DATA *ch, CHAR_DATA *target) {
+bool  can_see_char          ( CHAR_DATA *ch, CHAR_DATA *target) {
   if(ch == target)
     return TRUE;
   if(poscmp(charGetPos(ch), POS_SLEEPING) <= 0)
@@ -353,6 +349,17 @@ bool  can_see_exit         ( CHAR_DATA *ch, EXIT_DATA *exit) {
   return TRUE;
 }
 
+const char *see_char_as (CHAR_DATA *ch, CHAR_DATA *target) {
+  if(can_see_char(ch, target))
+    return charGetName(target);
+  return SOMEONE;
+}
+
+const char *see_obj_as  (CHAR_DATA *ch, OBJ_DATA  *target) {
+  if(can_see_obj(ch, target))
+    return objGetName(target);
+  return SOMETHING;
+}
 
 int count_objs(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
 	       bool must_see) {
@@ -382,7 +389,7 @@ int count_chars(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
   int count = 0;
 
   ITERATE_LIST(ch, char_i) {
-    if(must_see && !can_see_person(looker, ch))
+    if(must_see && !can_see_char(looker, ch))
       continue;
     // if we have a name, search by it
     if(name && *name && charIsName(ch, name))
@@ -410,7 +417,7 @@ CHAR_DATA *find_char(CHAR_DATA *looker, LIST *list, int num, const char *name,
   CHAR_DATA *ch;
 
   ITERATE_LIST(ch, char_i) {
-    if(must_see && !can_see_person(looker, ch))
+    if(must_see && !can_see_char(looker, ch))
       continue;
     // if we have a name, search by name
     if(name && *name && charIsName(ch, name))
@@ -466,7 +473,7 @@ LIST *find_all_chars(CHAR_DATA *looker, LIST *list, const char *name,
   CHAR_DATA *ch;
 
   ITERATE_LIST(ch, char_i) {
-    if(must_see && !can_see_person(looker, ch))
+    if(must_see && !can_see_char(looker, ch))
       continue;
     if(name && (!*name || charIsName(ch, name)))
       listPut(char_list, ch);
@@ -716,8 +723,12 @@ bool is_keyword(const char *keywords, const char *word, bool abbrev_ok) {
     // skip all spaces and commas
     while(isspace(*keywords) || *keywords == ',')
       keywords = keywords+1;
+    // figure out the length of the current keyword
+    int keyword_len = next_letter_in(keywords, ',');
+
     // see if we compare to the current keyword
-    if(!abbrev_ok && !strncasecmp(keywords, word,next_letter_in(keywords, ',')))
+    if(!abbrev_ok && !strncasecmp(keywords, word, keyword_len) &&
+       keyword_len == word_len)
       return TRUE;
     if(abbrev_ok && !strncasecmp(keywords, word, word_len))
       return TRUE;
@@ -797,6 +808,51 @@ char **parse_keywords(const char *keywords, int *num_keywords) {
   trim(keyword_names[*num_keywords - 1]);
 
   return keyword_names;
+}
+
+
+//
+// If the keyword does not already exist, add it to the keyword list
+// keywords may be freed and re-built in the process, to make room
+//
+void add_keyword(char **keywords_ptr, const char *word) {
+  // if it's already a keyword, do nothing
+  if(!is_keyword(*keywords_ptr, word, FALSE)) {
+    char buf[MAX_BUFFER];
+    // copy everything over
+    strcpy(buf, *keywords_ptr);
+    // print the new word
+    strcat(buf, ", ");
+    strcat(buf, word);
+    // free the old string
+    free(*keywords_ptr);
+    // copy the new one
+    *keywords_ptr = strdup(buf);
+  }
+}
+
+
+//
+// go through the keywords and if word is found, remove it
+//
+void remove_keyword(char *keywords, const char *word) {
+  int i, key_i = 0, num_keywords = 0;
+  char **words = parse_keywords(keywords, &num_keywords);
+
+  // clear the current list... we will rebuild it
+  *keywords = '\0';
+
+  // go through and add them all back into keywords. If we
+  // ever encounter word, then leave it out
+  for(i = 0; i < num_keywords; i++) {
+    if(strcasecmp(words[i], word) != 0) {
+      key_i += sprintf(keywords+key_i, "%s", words[i]);
+      if(i < num_keywords-1 && strcasecmp(words[i+1], word) != 0)
+	key_i += sprintf(keywords+key_i, ", ");
+    }
+    free(words[i]);
+  }
+  free(words);
 }
 
 
@@ -1020,8 +1076,7 @@ bool  try_dialog(CHAR_DATA *ch, CHAR_DATA *listener, const char *mssg) {
       char *response = tagResponses(dialog,
 				    responseGetMessage(resp),
 				    "{c", "{p");
-      message(ch, listener, NULL, NULL, FALSE, TO_CHAR,
-	      "{p$N replies, '%s'", response);
+      send_to_char(ch, "{p%s replies, '%s'\r\n", charGetName(listener), response);
       free(response);
       return TRUE;
     }
@@ -1205,25 +1260,11 @@ bool has_obj(CHAR_DATA *ch, int vnum) {
   return ret_val;
 }
 
+
 const char *custom_prompt(CHAR_DATA *ch) {
   static char prompt[MAX_BUFFER];
   *prompt = '\0';
-
-#ifdef MODULE_COMBAT
-  CHAR_DATA *tgt = get_target(ch);
-  if(tgt != NULL) {
-    sprintf(prompt, 
-	    "{bMind %d, Left %d, Right %d, Feet %d, dam %d | %s :: dam %d > {n",
-	    get_action_points(ch, FACULTY_MIND),
-	    get_action_points(ch, FACULTY_LEFT_HAND),
-	    get_action_points(ch, FACULTY_RIGHT_HAND),
-	    get_action_points(ch, FACULTY_FEET),
-	    get_damage(ch),
-	    charGetName(tgt), get_damage(tgt));
-  }
-  else
-#endif
-    strcat(prompt, "\r\nprompt> ");
-
+  strcat(prompt, "\r\nprompt> ");
+    
   return prompt;
 }

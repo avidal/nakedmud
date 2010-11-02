@@ -1,6 +1,6 @@
 If you are having problems installing scripts, you will want to read the 
-documentation in src/modules/scripts/Makefile. This file is an explanation of
-how to interact with scripts.
+documentation in src/scripts/module.mk. The file you are currently reading is 
+an explanation of how to interact with scripts.
 
 Scripting is a powerful method for adding character to your MUD. It essentially
 allows you to edit (simple) code that will modify the way rooms, players, and
@@ -60,7 +60,7 @@ ch.setvar('varname', value)
 example: ch.setvar('blackjack_winnings', 100)
 Allows you to store information on a character, regarding stuff that happened
 during the script. These variables save over reboots and crashes. The only
-restriction is that the variables must be integer values.
+restriction is that the variables must be numeric values, or strings.
 
 RETRIEVING SCRIPT DATA
 ch.getvar('varname')

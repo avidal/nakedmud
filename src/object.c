@@ -2,8 +2,13 @@
 //
 // object.c
 //
-// this contains the implementation of object_data, and all of the functions
-// needed to interact with it.
+// this contains the basic implementation of the object data structure, and all
+// of the functions needed to interact with it. If you plan on adding any other
+// information to objects, it is strongly suggested you do so through auxiliary
+// data (see auxiliary.h).
+//
+// For a recap, IF YOU PLAN ON ADDING ANY OTHER INFORMATION TO OBJECTS, IT
+// IS STRONGLY SUGGESTED YOU DO SO THROUGH AUXILIARY DATA (see auxiliary.h).
 //
 //*****************************************************************************
 #include "mud.h"

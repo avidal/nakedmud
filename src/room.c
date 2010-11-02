@@ -1,9 +1,13 @@
 //*****************************************************************************
 //
-// room.h
+// room.c
 //
-// the implementation of the room data structure, and its corresponding 
-// functions
+// the basic implementation of the room data structure. If you plan on adding
+// any other information to rooms, it is strongly suggested you do so through
+// auxiliary data (see auxiliary.h)
+//
+// For a recap, IF YOU PLAN ON ADDING ANY OTHER INFORMATION TO ROOMS, IT
+// IS STRONGLY SUGGESTED YOU DO SO THROUGH AUXILIARY DATA (see auxiliary.h).
 //
 //*****************************************************************************
 
@@ -20,7 +24,7 @@
 
 
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
+#include "scripts/script.h"
 #endif
 
 
@@ -32,9 +36,9 @@
 struct room_data {
   room_vnum   vnum;              // what vnum are we?
 
-  int   terrain;                 // what kind of terrain do we have?
-  char *name;                    // what is the name of our room?
-  char *desc;                    // our description
+  int         terrain;           // what kind of terrain do we have?
+  char       *name;              // what is the name of our room?
+  char       *desc;              // our description
 
   EDESC_SET  *edescs;            // the extra descriptions in the room
   EXIT_DATA **exits;             // the normal exists
@@ -110,7 +114,6 @@ void deleteRoom(ROOM_DATA *room) {
     deleteHashtable(room->special_exits);
     deleteHashIterator(hash_i);
   }
-
 
   // delete strings
   if(room->name)        free(room->name);

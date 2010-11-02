@@ -33,35 +33,6 @@ COMMAND(cmd_tog_prf) {
 
 
 //
-// Set or delete an alias. If no argument is supplied, all aliases are listed.
-//
-COMMAND(cmd_alias) {
-  // list off all of the aliases
-  if(!arg || !*arg) {
-    send_to_char(ch, "Current aliases:\r\n");
-    if(hashSize(charGetAliases(ch)) == 0)
-      send_to_char(ch, "none\r\n");
-    else {
-      HASH_ITERATOR *alias_i = newHashIterator(charGetAliases(ch));
-      const char      *alias = NULL;
-      while( (alias = hashIteratorCurrentKey(alias_i)) != NULL) {
-	send_to_char(ch, "%-20s %s\r\n", alias, hashIteratorCurrentVal(alias_i));
-	hashIteratorNext(alias_i);
-      }
-      deleteHashIterator(alias_i);
-    }
-  }
-  // otherwise, modify a specific one
-  else {
-    char alias[SMALL_BUFFER];
-    arg = one_arg(arg, alias);
-    charSetAlias(ch, alias, arg);
-    send_to_char(ch, "Alias %s.\r\n", (arg && *arg ? "set" : "deleted"));
-  }
-}
-
-
-//
 // clear the screen
 //
 COMMAND(cmd_clear) {

@@ -162,6 +162,18 @@ list:=
     if obj != None and ch.on == None and obj.vnum == 130:
       me.act("delay 1 say what can I get for you? If you'd like to know what we have on tap, please ask")
   -
+  vnum: 196
+  type: 1
+  narg: 0
+  name: depth check
+  args: check
+  code:~
+    # Scripts will sometimes trigger off of eachother, sending us into an
+    # infinite loop. As of version 1.1, we have added a "depth check" in to
+    # prevent such problems from arising. This is just a check to make sure
+    # that the depth check is working properly
+    me.act("say check")
+  -
   vnum: 197
   type: 4
   narg: 0

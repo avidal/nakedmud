@@ -15,7 +15,7 @@
 #include "socket.h"
 
 #ifdef MODULE_OLC
-#include "modules/olc/olc.h"
+#include "olc/olc.h"
 #endif
 
 
@@ -742,11 +742,9 @@ void recycle_sockets()
   SOCKET_DATA *dsock;
   LIST_ITERATOR *sock_i = newListIterator(socket_list);
 
-  // can't use ITERATE_LIST, because we might be 
-  // removing the current element from the list
-  while ( (dsock = (SOCKET_DATA *)listIteratorCurrent(sock_i)) != NULL) {
-    listIteratorNext(sock_i);
-    if (dsock->lookup_status != TSTATE_CLOSED) continue;
+  ITERATE_LIST(dsock, sock_i) {
+    if (dsock->lookup_status != TSTATE_CLOSED) 
+      continue;
 
     /* remove the socket from the main list */
     listRemove(socket_list, dsock);

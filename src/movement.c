@@ -21,7 +21,7 @@
 
 // optional modules
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
+#include "scripts/script.h"
 #endif
 
 
@@ -39,11 +39,10 @@ bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
       message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
 	      exitGetSpecLeave(exit));
     else if(dir != DIR_NONE)
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	      "$n leaves %s.", dirGetName(dir));
+      send_around_char(ch, TRUE, "%s leaves %s.\r\n",
+		       charGetName(ch), dirGetName(dir));
     else
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	      "$n leaves.");
+      send_around_char(ch, TRUE, "%s leaves.\r\n", charGetName(ch));
 
     char_from_room(ch);
     char_to_room(ch, to);
@@ -53,11 +52,10 @@ bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
       message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
 	      exitGetSpecEnter(exit));
     else if(dir != DIR_NONE)
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	      "$n arrives from the %s.", dirGetName(dirGetOpposite(dir)));
+      send_around_char(ch, TRUE, "%s arrives from the %s.\r\n",
+		       charGetName(ch), dirGetName(dirGetOpposite(dir)));
     else
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	      "$n has arrived.");
+      send_around_char(ch, TRUE, "%s has arrived.\r\n", charGetName(ch));
 
     return TRUE;
   }
@@ -175,9 +173,9 @@ bool try_change_pos(CHAR_DATA *ch, int pos) {
   }
   else {
     send_to_char(ch, "You %s.\r\n", posGetActionSelf(pos));
+    send_around_char(ch, TRUE, "%s %s.\r\n", 
+		     charGetName(ch), posGetActionOther(pos));
     charSetPos(ch, pos);
-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	    "$n %s.", posGetActionOther(pos));
     return TRUE;
   }
 }
@@ -188,13 +186,12 @@ bool try_use_furniture(CHAR_DATA *ch, char *arg, int pos) {
   strip_word(arg, "at");
   strip_word(arg, "on");
 
-  int furniture_type  = FOUND_NONE;
   OBJ_DATA *furniture = generic_find(ch, arg,
 				     FIND_TYPE_OBJ, 
 				     FIND_SCOPE_ROOM | FIND_SCOPE_VISIBLE,
-				     FALSE, &furniture_type);
+				     FALSE, NULL);
   
-  if(!furniture || furniture_type != FOUND_OBJ)
+  if(furniture == NULL)
     send_to_char(ch, "Where did you want to %s?\r\n", posGetActionSelf(pos));
   else if(objGetType(furniture) != ITEM_FURNITURE)
     send_to_char(ch, "But that's not furniture!\r\n");
@@ -216,16 +213,20 @@ bool try_use_furniture(CHAR_DATA *ch, char *arg, int pos) {
 	      "$n stands up from $o.");
       char_from_furniture(ch);
     }
-    
-    // now sit down on the new thing
+
+    // send out messages
+    char other_buf[SMALL_BUFFER];
+    sprintf(other_buf, "$n %s %s $o.",	
+	    posGetActionOther(pos),
+	    (objGetSubtype(furniture) == FURNITURE_ON ? "on" : "at"));
+    message(ch, NULL, furniture, NULL, TRUE, TO_ROOM | TO_NOTCHAR, other_buf);
+
     send_to_char(ch, "You %s %s %s.\r\n",
 		 posGetActionSelf(pos),
 		 (objGetSubtype(furniture) == FURNITURE_ON ? "on" : "at"),
 		 objGetName(furniture));
-    message(ch, NULL, furniture, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	    "$n %s %s $o.",
-	    posGetActionOther(pos),
-	    (objGetSubtype(furniture) == FURNITURE_ON ? "on" : "at"));
+
+    // now sit down on the new thing
     char_to_furniture(ch, furniture);
     charSetPos(ch, pos);
     return TRUE;
@@ -251,8 +252,7 @@ COMMAND(cmd_sleep) {
 COMMAND(cmd_stand) {
   if(charGetPos(ch) == POS_FLYING) {
     send_to_char(ch, "You stop flying.\r\n");
-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	    "$n stops flying.");
+    send_around_char(ch, TRUE, "%s stops flying.\r\n", charGetName(ch));
     charSetPos(ch, POS_STANDING);
   }
   else {
@@ -263,7 +263,7 @@ COMMAND(cmd_stand) {
 
 COMMAND(cmd_wake) {
   send_to_char(ch, "You stop sleeping and sit up.\r\n");
-  message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	  "$n stops sleeping and sits up.");
+  send_around_char(ch, TRUE, "%s stops sleeping and sits up.\r\n",
+		   charGetName(ch));
   charSetPos(ch, POS_SITTING);
 }

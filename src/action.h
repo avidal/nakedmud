@@ -36,6 +36,13 @@ void interrupt_action(void *ch, bitvector_t where);
 
 
 //
+// Returns TRUE if the character is performing an action with "where". If
+// the faculty module is not installed, "where" should be 1.
+//
+bool is_acting(void *ch, bitvector_t where);
+
+
+//
 // Start a character performing an action. If the delay reaches 0, on_complete
 // is run. If the action is terminated prematurely, on_interrupt is run.
 //

@@ -109,7 +109,7 @@ void init_events() {
 
   // add our proof of concept command
   add_cmd("devent", NULL, cmd_devent, 0, POS_SLEEPING, POS_FLYING,
-	  LEVEL_ADMIN, FALSE);
+	  LEVEL_ADMIN, TRUE, FALSE);
 }
 
 void interrupt_event(EVENT_DATA *event) {
@@ -120,12 +120,7 @@ void interrupt_events_involving(void *thing) {
   LIST_ITERATOR *ev_i = newListIterator(events);
   EVENT_DATA   *event = NULL;
 
-  // we can't use ITERATE_LIST here, because there are times
-  // where we will remove our current element  from the list, 
-  // making it kinda hard to go onto the next one afterwards ;)
-  while( (event = listIteratorCurrent(ev_i)) != NULL) {
-    listIteratorNext(ev_i);
-
+  ITERATE_LIST(event, ev_i) {
     // if we've found involvement, pop it on out
     if(event->owner == thing ||
        (event->check_involvement != NULL && 
@@ -154,9 +149,7 @@ void pulse_events(int time) {
   // we can't use ITERATE_LIST here, because there are times
   // where we will remove our current element  from the list, 
   // making it kinda hard to go onto the next one afterwards ;)
-  while( (event = listIteratorCurrent(ev_i)) != NULL) {
-    listIteratorNext(ev_i);
-
+  ITERATE_LIST(event, ev_i) {
     // decrement the delay
     event->delay -= time;
     // pop the character from the list, and run the event

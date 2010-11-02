@@ -25,7 +25,7 @@
 #include "world.h"
 
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
+#include "scripts/script.h"
 #endif
 
 

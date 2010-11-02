@@ -111,7 +111,29 @@ void init_actions() {
 
   // add in our example delayed action
   add_cmd("dsay", NULL, cmd_dsay, 0, POS_SITTING, POS_FLYING, 
-	  LEVEL_ADMIN, FALSE);
+	  LEVEL_ADMIN, TRUE, FALSE);
+}
+
+bool is_acting(void *ch, bitvector_t where) {
+  LIST *actions = mapGet(actors, ch);
+  if(actions == NULL || listSize(actions) == 0)
+    return FALSE;
+
+  bool action_found    = FALSE;
+  LIST_ITERATOR *act_i = newListIterator(actions);
+  ACTION_DATA  *action = NULL;
+
+  // iterate across all of our current actions and see if any
+  // involve the faculties of "where"
+  ITERATE_LIST(action, act_i) {
+    if(IS_SET(action->where, where)) {
+      action_found = TRUE;
+      break;
+    }
+  }
+  deleteListIterator(act_i);
+
+  return action_found;
 }
 
 void interrupt_action(void *ch, bitvector_t where) {
@@ -125,14 +147,9 @@ void interrupt_action(void *ch, bitvector_t where) {
     LIST_ITERATOR *act_i = newListIterator(actions);
     ACTION_DATA *action  = NULL;
 
-    // we can't use ITERATE_LIST here because we are possibly
-    // removing the current element while we are on it, which
-    // makes it kinda hard to move onto the next element afterwards ;)
-    while((action = listIteratorCurrent(act_i)) != NULL) {
-      listIteratorNext(act_i);
-
+    ITERATE_LIST(action, act_i) {
       // check to see if we've found an action that needs interruption
-      if(IS_SET(where, action->where)) {
+      if(IS_SET(action->where, where)) {
 	if(action->on_interrupt)
 	  action->on_interrupt(ch, action->data, action->where, action->arg);
 	listRemove(actions, action);
@@ -186,11 +203,7 @@ void pulse_actions(int time) {
     if(listSize(actions) > 0) {
       act_i = newListIterator(actions);
 
-      // we can't use ITERATE_LIST here because we are possibly
-      // removing the current element while we are on it, which
-      // makes it kinda hard to move onto the next element afterwards ;)
-      while((action = listIteratorCurrent(act_i)) != NULL) {
-	listIteratorNext(act_i);
+      ITERATE_LIST(action, act_i) {
 	// decrement the delay
 	action->delay -= time;
 	// pop the action from the list, and run it

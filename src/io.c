@@ -98,6 +98,24 @@ time_t last_modified(char *helpfile)
   return mTime;
 }
 
+char *read_file(const char *file) {
+  FILE *fl;
+  static char contents[MAX_BUFFER];
+  int i;
+
+  if((fl = fopen(file, "r")) == NULL)
+    return NULL;
+
+  i = 0;
+  while((contents[i] = getc(fl)) != EOF)
+    i++;
+
+  contents[i] = '\0';
+  fclose(fl);
+  return strdup(contents);
+}
+
+
 char *read_help_entry(const char *helpfile)
 {
   FILE *fp;

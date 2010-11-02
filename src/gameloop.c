@@ -25,21 +25,28 @@
 
 
 // optional modules
-#ifdef MODULE_FACULTY
-#include "modules/faculty/faculty.h"
-#endif
-#ifdef MODULE_COMBAT
-#include "modules/combat/combat.h"
-#endif
 #ifdef MODULE_TIME
-#include "modules/time/mudtime.h"
+#include "time/mudtime.h"
 #endif
 #ifdef MODULE_SCRIPTS
-#include "modules/scripts/script.h"
+#include "scripts/script.h"
 #endif
 #ifdef MODULE_OLC
-#include "modules/olc/olc.h"
+#include "olc/olc.h"
 #endif
+#ifdef MODULE_ALIAS
+#include "alias/alias.h"
+#endif
+#ifdef MODULE_CHAR_VARS
+#include "char_vars/char_vars.h"
+#endif
+#ifdef MODULE_SOCIALS
+#include "socials/socials.h"
+#endif
+#ifdef MODULE_HELP
+#include "help/help.h"
+#endif
+
 
 
 /* mccp support */
@@ -66,6 +73,9 @@ LIST * socket_free = NULL;      /*  the list of free sockets */
 LIST * mobile_list = NULL;      /*  the list of existing mobiles */
 PROPERTY_TABLE *mob_table = NULL;/* a table of mobs by UID, for quick lookup */
 PROPERTY_TABLE *obj_table = NULL;
+
+char        *   greeting = NULL;
+char        *   motd     = NULL;
 
 
 /*
@@ -170,15 +180,24 @@ int main(int argc, char **argv)
 #endif
 
   /* initialize faculties */
-#ifdef MODULE_FACULTY
-  log_string("Initializing faculties.");
-  init_faculties();
+#ifdef MODULE_CHAR_VARS
+  log_string("Initializing character variables.");
+  init_char_vars();
 #endif
 
-  /* initialize combat if we have faculties */
-#ifdef MODULE_COMBAT
-  log_string("Initializing combat.");
-  init_combat();
+#ifdef MODULE_ALIAS
+  log_string("Initializing aliases.");
+  init_aliases();
+#endif
+
+#ifdef MODULE_SOCIALS
+  log_string("Initializing socials.");
+  init_socials();
+#endif
+
+#ifdef MODULE_HELP
+  log_string("Initializing helpfiles.");
+  init_help();
 #endif
 
   /* initialize the socket */
@@ -264,6 +283,7 @@ void game_loop(int control)
   /* copyover recovery */
   ITERATE_LIST(dsock, sock_i)
     FD_SET(dsock->control, &fSet);
+  deleteListIterator(sock_i);
 
   /* do this untill the program is shutdown */
   while (!shut_down)
@@ -291,15 +311,10 @@ void game_loop(int control)
     }
 
     /* poll sockets in the socket list */
-    listIteratorReset(sock_i);
+    //    listIteratorReset(sock_i);
+    sock_i = newListIterator(socket_list);
 
-    // We cannot use ITERATE_LIST, because there is a chance we
-    // will remove the current element we are on from the list,
-    // making it impossible to carry on in the iterator.
-    //    ITERATE_LIST(dsock, sock_i) {
-    while( (dsock = listIteratorCurrent(sock_i)) != NULL) {
-      listIteratorNext(sock_i);
-
+    ITERATE_LIST(dsock, sock_i) {
       /*
        * Close sockects we are unable to read from.
        */
@@ -354,6 +369,7 @@ void game_loop(int control)
       if (!flush_output(dsock))
         close_socket(dsock, FALSE);
     }
+    deleteListIterator(sock_i);
 
     /* call the top-level update handler */
     update_handler();

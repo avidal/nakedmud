@@ -69,6 +69,8 @@ void store_double(STORAGE_SET *set, const char *key, double val,
 		  const char *comment);
 void    store_int(STORAGE_SET *set, const char *key, int val,
 		  const char *comment);
+void   store_long(STORAGE_SET *set, const char *key, long val,
+		  const char *comment);
 
 
 //
@@ -79,6 +81,17 @@ STORAGE_SET_LIST   *read_list(STORAGE_SET *set, const char *key);
 const char       *read_string(STORAGE_SET *set, const char *key);
 double            read_double(STORAGE_SET *set, const char *key);
 int                  read_int(STORAGE_SET *set, const char *key);
+long                read_long(STORAGE_SET *set, const char *key);
+
+
+//
+// returns TRUE if the key exists in the set, and false if it
+// doesn't. Note that you can read key values even if the key
+// doesn't exist; the values will just have a default value
+// (0 for doubles and ints, "\0" for strings, an empty list
+// for lists).
+//
+bool storage_contains(STORAGE_SET *set, const char *key);
 
 
 //

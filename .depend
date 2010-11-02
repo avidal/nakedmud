@@ -1,0 +1,182 @@
+gameloop.o: gameloop.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h socket.h world.h character.h object.h utils.h text_editor.h \
+  save.h handler.h inform.h log.h races.h action.h event.h auxiliary.h \
+  storage.h time/mudtime.h scripts/script.h olc/olc.h alias/alias.h \
+  char_vars/char_vars.h socials/socials.h fight/fight.h
+mud.o: mud.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h storage.h
+utils.o: utils.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h character.h object.h world.h zone.h room.h exit.h socket.h \
+  utils.h text_editor.h save.h handler.h inform.h dialog.h event.h \
+  action.h help.h fight/stats.h fight/fight.h scripts/script.h
+interpret.o: interpret.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h character.h socket.h room.h \
+  movement.h commands.h action.h scripts/script.h alias/alias.h
+handler.o: handler.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h handler.h room.h exit.h extra_descs.h character.h object.h \
+  utils.h text_editor.h body.h items.h inform.h scripts/script.h
+inform.o: inform.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h character.h object.h world.h room.h exit.h extra_descs.h \
+  utils.h text_editor.h body.h races.h items.h handler.h socket.h \
+  inform.h log.h time/mudtime.h
+movement.o: movement.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h character.h world.h room.h exit.h movement.h handler.h \
+  inform.h builder.h utils.h text_editor.h items.h object.h \
+  scripts/script.h
+action.o: action.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h character.h action.h
+mccp.o: mccp.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h socket.h utils.h text_editor.h
+save.o: save.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h character.h world.h utils.h text_editor.h handler.h body.h \
+  object.h room.h storage.h
+socket.o: socket.c wrapsock.h mud.h property_table.h list.h hashmap.h \
+  hashtable.h character.h utils.h text_editor.h socket.h olc/olc.h
+io.o: io.c mud.h wrapsock.h property_table.h list.h hashmap.h hashtable.h \
+  utils.h text_editor.h
+strings.o: strings.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h
+event.o: event.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h character.h event.h
+cmd_comm.o: cmd_comm.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h handler.h inform.h character.h \
+  world.h dialog.h scripts/script.h
+cmd_manip.o: cmd_manip.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h handler.h inform.h \
+  character.h items.h exit.h world.h room.h extra_descs.h object.h
+cmd_misc.o: cmd_misc.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h character.h socket.h utils.h text_editor.h save.h event.h \
+  handler.h
+text_editor.o: text_editor.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h socket.h text_editor.h utils.h scripts/script.h \
+  olc/olc.h
+builder.o: builder.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h world.h zone.h room.h exit.h movement.h builder.h \
+  character.h object.h handler.h inform.h utils.h text_editor.h races.h \
+  items.h dialog.h scripts/script.h scripts/script_set.h
+admin.o: admin.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h world.h inform.h character.h handler.h utils.h \
+  text_editor.h log.h socket.h save.h event.h action.h storage.h
+help.o: help.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h character.h help.h
+items.o: items.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h object.h items.h
+races.o: races.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h races.h body.h utils.h text_editor.h
+log.o: log.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h character.h storage.h log.h
+auxiliary.o: auxiliary.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h storage.h auxiliary.h
+world.o: world.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h zone.h room.h character.h object.h dialog.h utils.h \
+  text_editor.h storage.h world.h scripts/script.h
+character.o: character.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h body.h races.h handler.h \
+  auxiliary.h storage.h room.h character.h
+room.o: room.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h exit.h extra_descs.h utils.h text_editor.h handler.h \
+  character.h auxiliary.h storage.h room_reset.h room.h scripts/script.h
+exit.o: exit.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h storage.h exit.h
+extra_descs.o: extra_descs.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h storage.h extra_descs.h
+object.o: object.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h extra_descs.h utils.h text_editor.h items.h body.h \
+  handler.h storage.h auxiliary.h object.h
+body.o: body.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h body.h utils.h text_editor.h
+zone.o: zone.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h storage.h object.h character.h room.h zone.h utils.h \
+  text_editor.h dialog.h scripts/script.h
+dialog.o: dialog.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h dialog.h storage.h
+room_reset.o: room_reset.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h storage.h room.h world.h \
+  character.h body.h object.h exit.h handler.h items.h room_reset.h
+list.o: list.c list.h
+property_table.o: property_table.c mud.h wrapsock.h property_table.h \
+  list.h hashmap.h hashtable.h utils.h text_editor.h
+hashtable.o: hashtable.c list.h hashtable.h
+hashmap.o: hashmap.c list.h hashmap.h
+storage.o: storage.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h storage.h
+time.o: time/time.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h inform.h character.h room.h event.h \
+  storage.h auxiliary.h time/mudtime.h
+alias.o: alias/alias.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h auxiliary.h storage.h character.h \
+  alias/alias.h
+char_vars.o: char_vars/char_vars.c mud.h wrapsock.h property_table.h \
+  list.h hashmap.h hashtable.h utils.h text_editor.h character.h \
+  storage.h auxiliary.h char_vars/char_vars.h
+socials.o: socials/socials.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h storage.h handler.h \
+  inform.h character.h socials/socials.h
+dedit.o: olc/dedit.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h socket.h utils.h text_editor.h dialog.h olc/olc.h
+edesc_edit.o: olc/edesc_edit.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h socket.h utils.h text_editor.h extra_descs.h \
+  olc/olc.h
+exedit.o: olc/exedit.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h exit.h socket.h utils.h text_editor.h olc/olc.h
+medit.o: olc/medit.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h world.h character.h socket.h utils.h text_editor.h races.h \
+  dialog.h olc/olc.h scripts/script_set.h scripts/script.h
+oedit.o: olc/oedit.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h world.h object.h extra_descs.h socket.h utils.h \
+  text_editor.h body.h items.h olc/olc.h scripts/script_set.h \
+  scripts/script.h
+redit.o: olc/redit.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h world.h room.h exit.h room_reset.h extra_descs.h socket.h \
+  utils.h text_editor.h olc/olc.h scripts/script_set.h scripts/script.h \
+  time/mudtime.h
+zedit.o: olc/zedit.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h world.h zone.h socket.h utils.h text_editor.h olc/olc.h
+ssedit.o: olc/ssedit.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h socket.h world.h utils.h text_editor.h olc/olc.h \
+  scripts/script.h scripts/script_set.h
+scedit.o: olc/scedit.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h socket.h utils.h text_editor.h olc/olc.h scripts/script.h
+resedit.o: olc/resedit.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h socket.h utils.h text_editor.h world.h object.h \
+  character.h room_reset.h olc/olc.h
+socedit.o: olc/socedit.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h socket.h utils.h text_editor.h character.h \
+  socials/socials.h olc/olc.h
+olc.o: olc/olc.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h socket.h object.h character.h world.h zone.h room.h \
+  room_reset.h exit.h extra_descs.h dialog.h olc/olc.h scripts/script.h \
+  scripts/script_set.h socials/socials.h
+script_set.o: scripts/script_set.c mud.h wrapsock.h property_table.h \
+  list.h hashmap.h hashtable.h utils.h text_editor.h world.h \
+  scripts/script_set.h scripts/script.h
+script.o: scripts/script.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h socket.h character.h room.h \
+  object.h storage.h auxiliary.h scripts/script.h scripts/script_set.h \
+  scripts/pychar.h scripts/pyroom.h scripts/pyobj.h scripts/pymud.h
+pychar.o: scripts/pychar.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h world.h room.h character.h object.h items.h \
+  races.h handler.h utils.h text_editor.h scripts/script.h \
+  scripts/pychar.h scripts/pyroom.h scripts/pyobj.h char_vars/char_vars.h
+pyobj.o: scripts/pyobj.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h world.h room.h character.h object.h races.h \
+  handler.h utils.h text_editor.h scripts/script.h scripts/pychar.h \
+  scripts/pyroom.h scripts/pyobj.h
+pymud.o: scripts/pymud.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h scripts/script.h scripts/pyroom.h \
+  scripts/pychar.h scripts/pyobj.h
+pyroom.o: scripts/pyroom.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h world.h room.h exit.h character.h races.h \
+  handler.h utils.h text_editor.h scripts/script.h scripts/pyroom.h \
+  scripts/pychar.h scripts/pyobj.h
+stats.o: fight/stats.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h character.h storage.h auxiliary.h \
+  handler.h event.h fight/stats.h fight/fight.h
+fight.o: fight/fight.c mud.h wrapsock.h property_table.h list.h hashmap.h \
+  hashtable.h utils.h text_editor.h world.h handler.h character.h \
+  inform.h event.h action.h body.h fight/fight.h fight/stats.h
+cmd_fight.o: fight/cmd_fight.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h handler.h inform.h \
+  character.h body.h object.h fight/stats.h fight/fight.h
+mob_fight.o: fight/mob_fight.c mud.h wrapsock.h property_table.h list.h \
+  hashmap.h hashtable.h utils.h text_editor.h fight/fight.h fight/stats.h

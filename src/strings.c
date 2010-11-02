@@ -87,6 +87,29 @@ char *one_arg(char *fStr, char *bStr)
   return fStr;
 }
 
+
+//
+// pull out the argument of the specified number
+//
+void arg_num(const char *from, char *to, int num) {
+  int count = 1;
+
+  while(count < num && *from != '\0') {
+    if(isspace(*from))
+      count++;
+    from++;
+  }
+
+  int i;
+  // copy up to the first space
+  for(i = 0; !isspace(from[i]) && from[i] != '\0'; i++)
+    to[i] = from[i];
+
+  // now cap our string
+  to[i] = '\0';
+}
+
+
 char *capitalize(char *txt)
 {
   static char buf[MAX_BUFFER];

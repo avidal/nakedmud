@@ -1,51 +1,49 @@
 ###############################################################################
-#Makefile for nakedmud
+# Makefile for nakedmud
+#
+# Many thanks go out to Tyche for suggesting I read "Recursive Make Considered
+# Harmful" by Peter Miller. Many of the make conventions used in this makefile
+# were taken from Miller's article. The reference is:
+# 
+# Miller, P.A. (1998). Recursive Make Considered Harmful,
+#    AUUGN Journal of AUUG Inc., 19(1), pp. 14-25.
+#
 ###############################################################################
 
 # compiler to use
 CC = gcc
 
-
-################################################################################
-#
-# Libraries and compile-time flags
-#
-################################################################################
+# the modules we have installed
+MODULES := time alias char_vars socials olc scripts
 
 # flags to use during compilation
-C_FLAGS = -Wall -g -ggdb -O2
+C_FLAGS := -Wall -g -ggdb -O2
 
-# libraries
-L_FLAGS = -lz -lpthread
+# extra libraries if required
+LIBS    := -lz -lpthread -lcrypt
 
-# linking requirements for the python scripting module. See
-# src/modules/scripts/makefile
-L_PY     = -u __dummy -u _PyMac_Error -framework Python -framework System \
-	   -framework CoreServices -framework Foundation
+# each module will add to this from its module.mk file
+SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c movement.c \
+	   action.c mccp.c save.c socket.c io.c strings.c event.c \
+	   \
+	   cmd_comm.c cmd_manip.c cmd_misc.c \
+	   \
+	   text_editor.c builder.c admin.c help.c \
+	   \
+	   items.c races.c log.c auxiliary.c \
+	   \
+	   world.c character.c room.c exit.c extra_descs.c object.c body.c \
+	   zone.c dialog.c room_reset.c \
+	   \
+	   list.c property_table.c hashtable.c hashmap.c storage.c
 
-# the location of the Python .a file, if it is needed. See 
-# src/modules/scripts/Makefile
-PY_LIB   =
 
+# include the description for each module. These will add to SRC
+# C_FLAGS, LIBS, etc...
+include $(patsubst %,%/module.mk, $(MODULES))
 
-################################################################################
-#
-# object files, and source files for python extentions
-#
-################################################################################
-O_FILES = gameloop.o mud.o utils.o interpret.o handler.o inform.o movement.o \
-	  action.o mccp.o save.o socket.o io.o strings.o event.o \
-	  \
-	  cmd_comm.o cmd_manip.o cmd_misc.o \
-	  \
-	  text_editor.o builder.o admin.o \
-	  \
-	  items.o races.o log.o help.o auxiliary.o \
-	  \
-	  world.o character.o room.o exit.o extra_descs.o object.o body.o \
-	  zone.o dialog.o room_reset.o \
-	  \
-	  list.o property_table.o hashtable.o hashmap.o storage.o
+# determine the object files
+O_FILES := $(patsubst %.c,%.o, $(filter %.c, $(SRC)))
 
 
 
@@ -55,52 +53,28 @@ O_FILES = gameloop.o mud.o utils.o interpret.o handler.o inform.o movement.o \
 #
 ################################################################################
 all: $(O_FILES)
-	make module
-	rm -f NakedMud
-	$(CC) -o NakedMud *.o $(PY_LIB) $(L_FLAGS) $(L_PY)
+	$(CC) -o NakedMud $(O_FILES) $(LIBS)
 
-# make the object files
+# make the object files. The modules are sort of annoying, in that 
+# if we do not use -o, the object files will be compiled in this directory,
+# and then every time we re-make, the module .o files will be recompiled
+# because they are not in their home directory. So... we have to explicitly
+# say where the .o files need to go
 .c.o: all
-	$(CC) -c $(C_FLAGS) $<
+	$(CC) -c $(C_FLAGS) -o $(patsubst %.c,%.o, $<) $<
+#	$(CC) -c $(C_FLAGS) $<
+
 
 # make dependancies for all of the files
 depend:
-	$(CC) -MM *.c > .depend
-	make moduledepend
+	$(CC) -MM $(filter %.c, $(SRC)) > .depend
 
+# clear all of the .o files and all of the save files that emacs makes
 clean:
-	rm -f *.o
-	rm -f *.o
-	make moduleclean
 	rm -f NakedMud
-	rm -f *.*~
-
+	rm -f *.o
+	rm -f */*.o
+	rm -f *~
+	rm -f */*~
 
 include .depend
-
-
-################################################################################
-#
-# when installing new modules, you will need to add the name of your module
-# to the MODULES list
-#
-################################################################################
-MODULES = time olc scripts
-
-# compile all of the modules we have installed
-module:
-	for dir in $(MODULES); do             \
-	  (cd modules/$$dir; $(MAKE) all);    \
-	done
-
-# clean all of our modules out
-moduleclean:
-	for dir in $(MODULES); do             \
-	  (cd modules/$$dir; $(MAKE) clean);  \
-	done
-
-# make dependancies for all of our modules
-moduledepend:
-	for dir in $(MODULES); do             \
-	  (cd modules/$$dir; $(MAKE) depend); \
-	done
