@@ -29,6 +29,82 @@
 
 
 
+//*****************************************************************************
+// local functions
+//*****************************************************************************
+
+//
+// used by open, close, lock, and unlock. When an exit is manipulated on one
+// side, it is the case that we'll want to do an identical manipulation on the
+// other side. That's what we do here. Note: Can only do close OR lock with
+// one call to this function. Cannot handle both at the same time!
+void try_manip_other_exit(ROOM_DATA *room, EXIT_DATA *exit,
+			  bool closed, bool locked) {
+  // see if there's a room on the other side
+  ROOM_DATA         *to = worldGetRoom(gameworld, exitGetTo(exit));
+  EXIT_DATA *other_exit = NULL;
+  if(to == NULL)
+    return;
+
+  // check to see if we've specified the return direction
+  if(*exitGetOpposite(exit)) { 
+    int ex_dir_num = dirGetNum(exitGetOpposite(exit));
+    if(ex_dir_num == DIR_NONE)
+      other_exit = roomGetExitSpecial(to, exitGetOpposite(exit));
+    else
+      other_exit = roomGetExit(to, ex_dir_num);
+  }
+  // manually look it up...
+  else {
+    int ex_dir_num = roomGetExitDir(room, exit);
+    // normal exit
+    if(ex_dir_num != DIR_NONE)
+      other_exit = roomGetExit(to, dirGetOpposite(ex_dir_num));
+  }
+
+  // did we find another exit?
+  if(other_exit != NULL) {
+    // are we changing the close state?
+    if(exitIsClosed(other_exit) != closed) {
+      // first, make sure it's not locked
+      if(!exitIsLocked(other_exit)) {
+	// only send messages if we're changing the state
+	if(exitIsClosed(other_exit) != closed) {
+	  exitSetClosed(other_exit, closed);
+	  send_to_list(roomGetCharacters(to),
+		       "%s %s from the other side.\r\n",
+		       (*exitGetName(other_exit)?exitGetName(other_exit):
+			"An exit"),
+		       (closed ? "closes" : "opens"));
+	}
+      }
+    }
+
+    // are we changing the lock state?
+    if(exitIsLocked(other_exit) != locked) {
+      // first make sure it's closed
+      if(exitIsClosed(other_exit)) {
+	// only send messages if we're changing the state
+	if(exitIsLocked(other_exit) != locked) {
+	  exitSetLocked(other_exit, locked);
+	  send_to_list(roomGetCharacters(to),
+		       "%s %s from the other side.\r\n",
+		       (*exitGetName(other_exit)?exitGetName(other_exit):
+			"An exit"),
+		       (locked ? "locks" : "unlocks"));
+	}
+      }
+    }
+  }
+}
+
+
+
+//*****************************************************************************
+// player commands
+//*****************************************************************************
+
+
 //
 // try to lock an exit or container. The container can be anything in our
 // immediate visible range (room, inventory, body). do_lock automatically
@@ -70,6 +146,10 @@ COMMAND(cmd_lock) {
       send_around_char(ch, TRUE, "%s locks %s.\r\n", 
 		       charGetName(ch), exitGetName(found));
       exitSetLocked(found, TRUE);
+
+      // and try the other side
+      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found),
+			   TRUE);
     }
   }
 
@@ -127,6 +207,10 @@ COMMAND(cmd_unlock) {
       send_around_char(ch, TRUE, "%s unlocks %s.\r\n", 
 		       charGetName(ch), exitGetName(found));
       exitSetLocked(found, FALSE);
+
+      // and try the other side
+      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found),
+			   FALSE);
     }
   }
 
@@ -220,7 +304,6 @@ COMMAND(cmd_put) {
 //    open 2.bag              open your second bag
 //    open east               open the east exit
 //    open backpack on self   open a backpack you are wearing
-//
 COMMAND(cmd_open) {
   if(!arg || !*arg) {
     send_to_char(ch, "What did you want to open?\r\n");
@@ -245,13 +328,14 @@ COMMAND(cmd_open) {
       send_to_char(ch, "%s appears to be locked.\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "It"));
     else {
-      char other_buf[SMALL_BUFFER];
-      sprintf(other_buf, "$n opens %s.", (*exitGetName(found) ?
-					  exitGetName(found) : "an exit"));
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, other_buf);
+      mssgprintf(ch, NULL, NULL, NULL, FALSE, TO_ROOM, "$n opens %s.", 
+		 (*exitGetName(found) ? exitGetName(found) : "an exit"));
       send_to_char(ch, "You open %s.\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
       exitSetClosed(found, FALSE);
+
+      // try opening the other side
+      try_manip_other_exit(charGetRoom(ch), found, FALSE, exitIsLocked(found));
     }
   }
 
@@ -313,6 +397,9 @@ COMMAND(cmd_close) {
       send_to_char(ch, "You close %s.\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
       exitSetClosed(found, TRUE);
+
+      // try opening the other side
+      try_manip_other_exit(charGetRoom(ch), found, TRUE, exitIsLocked(found));
     }
   }
 

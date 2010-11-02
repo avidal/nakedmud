@@ -500,8 +500,8 @@ PyMODINIT_FUNC init_PyStorage(void) {
 
   // make sure the storage class is ready to be made
   if (!(PyType_Ready(&PyStorageSet_Type) < 0)) {
-    PyTypeObject *type = &PyStorageSet_Type;
     // add our two classes
+    PyTypeObject *type = &PyStorageSet_Type;
     Py_INCREF(&PyStorageSet_Type);
     PyModule_AddObject(module, "StorageSet", (PyObject *)type);
   }

@@ -279,13 +279,16 @@ LIST *worldGetZones(WORLD_DATA *world) {
 ZONE_DATA  *worldGetZone(WORLD_DATA *world, int vnum) {
   LIST_ITERATOR *zone_i = newListIterator(world->zones);
   ZONE_DATA *zone = NULL;
+  bool zone_found = FALSE;
 
-  ITERATE_LIST(zone, zone_i)
-    if(zoneGetVnum(zone) == vnum)
+  ITERATE_LIST(zone, zone_i) {
+    if(zoneGetVnum(zone) == vnum) {
+      zone_found = TRUE;
       break;
-  deleteListIterator(zone_i);
+    }
+  } deleteListIterator(zone_i);
 
-  return zone;
+  return (zone_found ? zone : NULL);
 };
 
 

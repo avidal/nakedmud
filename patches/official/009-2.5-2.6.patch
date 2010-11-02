@@ -1,0 +1,1776 @@
+diff -ruN ../nakedmudv2.5/src/alias/alias.c src/alias/alias.c
+--- ../nakedmudv2.5/src/alias/alias.c	Sat Jun 18 14:46:43 2005
++++ src/alias/alias.c	Wed Jul  6 02:52:19 2005
+@@ -12,6 +12,8 @@
+ #include "../auxiliary.h"
+ #include "../storage.h"
+ #include "../character.h"
++#include "../socket.h"
++#include "../action.h"
+ 
+ #include "alias.h"
+ 
+@@ -22,6 +24,7 @@
+ //*****************************************************************************
+ typedef struct alias_aux_data {
+   HASHTABLE *aliases;
++  int    alias_queue;
+ } ALIAS_AUX_DATA;
+ 
+ 
+@@ -35,6 +38,7 @@
+   //  data->aliases        = newHashtable();
+   //
+   data->aliases        = NULL;
++  data->alias_queue    = 0;
+   return data;
+ }
+ 
+@@ -113,25 +117,9 @@
+ }
+ 
+ 
+-void init_aliases() {
+-  // install aliases on the character datastructure
+-  auxiliariesInstall("alias_aux_data",
+-		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR,
+-				       newAliasAuxData, deleteAliasAuxData,
+-				       aliasAuxDataCopyTo, aliasAuxDataCopy,
+-				       aliasAuxDataStore, aliasAuxDataRead));
+-
+-  // allow people to view their aliases
+-  add_cmd("alias", NULL, cmd_alias, 0, POS_UNCONCIOUS, POS_FLYING, 
+-	  "player", FALSE, TRUE);
+-}
+-
+-
+ 
+ //*****************************************************************************
+-//
+ // functions for interacting with character aliases
+-//
+ //*****************************************************************************
+ const char *charGetAlias(CHAR_DATA *ch, const char *alias) {
+   ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
+@@ -156,29 +144,94 @@
+     hashPut(data->aliases, alias, strdup(cmd));
+ }
+ 
++int charGetAliasesQueued(CHAR_DATA *ch) {
++  ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
++  return data->alias_queue;
++}
+ 
+-char *expand_alias(const char *alias, const char *arg) {
+-  char *cmd = strdup(alias);
++void charSetAliasesQueued(CHAR_DATA *ch, int amnt) {
++  ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
++  data->alias_queue = amnt;
++}
+ 
+-  // first, we replace all occurances of the numeric parameters
++BUFFER *expand_alias(CHAR_DATA *ch, const char *alias, const char *arg) {
++  static int func_depth      = 0;
++  static int MAX_ALIAS_DEPTH = 10;
++  BUFFER *cmd = newBuffer(SMALL_BUFFER);
++  func_depth++;
++
++  BUFFER *filled_alias = newBuffer(1);
++  bufferCat(filled_alias, alias);
++  // now, replace all of our parameters 
+   int i;
+   for(i = 1; i < 10; i++) {
+     char param[3];
+     char one_arg[SMALL_BUFFER];
+     sprintf(param, "$%d", i);
+     arg_num(arg, one_arg, i);
+-    replace_string(&cmd, param, one_arg, TRUE);
++    bufferReplace(filled_alias, param, one_arg, TRUE);
+   }
+ 
+   // then we replace the wildcard
+-  replace_string(&cmd, "$*", arg, TRUE);
++  bufferReplace(filled_alias, "$*", arg, TRUE);
++  alias = bufferString(filled_alias);
++
++  if(func_depth <= MAX_ALIAS_DEPTH) {
++    for(i = 0; alias[i] != '\0'; i++) {
++      // do we have an embedded alias or not?
++      if(alias[i] != '[')
++	bprintf(cmd, "%c", alias[i]);
++
++      else {
++	// figure out the start and end of the embedded alias
++	int start = i;
++	int depth = 1;
++	for(i++; alias[i] != '\0' && depth > 0; i++) {
++	  if(alias[i] == '[')
++	    depth++;
++	  else if(alias[i] == ']')
++	    depth--;
++	}
++
++	// only cat something if we closed the alias off
++	if(depth == 0) {
++	  // make a copy of it, minus the opening and closing braces
++	  char *newstring = strdup(alias+start+1);
++	  newstring[i-start-2] = '\0';
++	  char newcmd[SMALL_BUFFER];
++	  char *newarg = one_arg(newstring, newcmd);
++	  const char *format = charGetAlias(ch, newcmd);
++	  
++	  // do we have a format? if so, expand the new alias and cat it in
++	  if(format != NULL) {
++	    BUFFER *newbuf = expand_alias(ch, format, newarg);
++	    bufferCat(cmd, bufferString(newbuf));
++	    deleteBuffer(newbuf);
++	  }
++
++	  // clean up our mess
++	  free(newstring);
++	}
++
++	// because we'll be incrementing on the next go around the loop
++	i--;
++      }
++    }
++  }
++
++  func_depth--;
++  deleteBuffer(filled_alias);
+   return cmd;
+ }
+ 
+ 
++
++//*****************************************************************************
++// character commands
++//*****************************************************************************
++
+ //
+ // Set or delete an alias. If no argument is supplied, all aliases are listed.
+-//
+ COMMAND(cmd_alias) {
+   // list off all of the aliases
+   if(!arg || !*arg) {
+@@ -215,6 +268,73 @@
+     else {
+       charSetAlias(ch, alias, arg);
+       send_to_char(ch, "Alias set.\r\n");
++    }
++  }
++}
++
++
++
++//*****************************************************************************
++// implementation of alias.h
++//*****************************************************************************
++void init_aliases() {
++  // install aliases on the character datastructure
++  auxiliariesInstall("alias_aux_data",
++		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR,
++				       newAliasAuxData, deleteAliasAuxData,
++				       aliasAuxDataCopyTo, aliasAuxDataCopy,
++				       aliasAuxDataStore, aliasAuxDataRead));
++
++  // allow people to view their aliases
++  add_cmd("alias", NULL, cmd_alias, 0, POS_UNCONCIOUS, POS_FLYING, 
++	  "player", FALSE, TRUE);
++}
++
++
++bool try_alias(CHAR_DATA *ch, char *command, char *arg, bool scripts_ok) {
++  // is this command from an alias that executes multi commands?
++  // if it is, don't let it trigger any further aliases, or else we might
++  // get stuck in an infinite loop
++  bool    aliases_ok = TRUE;
++  int aliases_queued = charGetAliasesQueued(ch);
++  if(aliases_queued > 0) {
++    // this command came from an alias. ergo, there is going to be no echo
++    // of the command. send the socket a newline so we don't print on the
++    // person's prompt
++    send_to_char(ch, "\r\n");
++    aliases_ok = FALSE;
++  }
++
++  // make sure it didn't come from another alias
++  if(!aliases_ok)
++    return FALSE;
++  else {
++    const char *alias = charGetAlias(ch, command);
++    // see if the alias exists
++    if(alias == NULL)
++      return FALSE;
++    else {
++      BUFFER     *buf = expand_alias(ch, alias, arg);
++      int i, num_cmds = 0;
++      // break the buffer contents up into multiple commands, if there are any
++      char     **cmds = parse_strings(bufferString(buf), ';', &num_cmds);
++      
++      // queue all of our commands after the first onto the command list
++      if(charGetSocket(ch) && num_cmds > 1) {
++	for(i = 1; i < num_cmds; i++)
++	  socketQueueCommand(charGetSocket(ch), cmds[i]);
++	// note how many commands we got out of this alias
++	charSetAliasesQueued(ch, num_cmds);
++      }
++      if(num_cmds > 0)
++	do_cmd(ch, cmds[0], scripts_ok, FALSE);
++      
++      // clean up our mess
++      for(i = 0; i < num_cmds; i++)
++	free(cmds[i]);
++      free(cmds);
++      deleteBuffer(buf);
++      return TRUE;
+     }
+   }
+ }
+diff -ruN ../nakedmudv2.5/src/alias/alias.h src/alias/alias.h
+--- ../nakedmudv2.5/src/alias/alias.h	Sat Jun 18 14:46:43 2005
++++ src/alias/alias.h	Wed Jul  6 02:52:19 2005
+@@ -17,22 +17,16 @@
+ 
+ //
+ // prepare aliases for use
+-//
+ void init_aliases();
+ 
+-const char  *charGetAlias  (CHAR_DATA *ch, const char *alias);
+-void         charSetAlias  (CHAR_DATA *ch, const char *alias, const char *cmd);
+-
+-//
+-// expand an alias's parameters with the arguments provided. Returned
+-// string must be freed after being used.
+ //
+-char *expand_alias(const char *alias, const char *arg);
++// tries to treat the command as an alias. If we succeed, return true. In this
++// case, the function calling this one should terminate
++bool try_alias(CHAR_DATA *ch, char *command, char *arg, bool scripts_ok);
+ 
+ //
+-// list all of a character's aliases to him
+-//
+-COMMAND(cmd_alias);
+-
++// for use by socket.c to see if we need to do anything special w/ aliases
++int charGetAliasesQueued(CHAR_DATA *ch);
++void charSetAliasesQueued(CHAR_DATA *ch, int amnt);
+ 
+ #endif // __ALIAS_H
+diff -ruN ../nakedmudv2.5/src/buffer.c src/buffer.c
+--- ../nakedmudv2.5/src/buffer.c	Sat Jun 18 14:46:43 2005
++++ src/buffer.c	Wed Jul  6 02:52:19 2005
+@@ -110,8 +110,10 @@
+     int to_replace = (all ? 
+ 		      count_occurences(buf->data, a) : 
+ 		      strstr(buf->data, a) != NULL);
++
+     // if we don't have any to replace, do nothing
+-    if(to_replace == 0) return 0;
++    if(to_replace == 0)
++      return 0;
+ 
+     // if we won't have enough room, do the expansion
+     if(to_replace * (b_len - a_len) + buf->len > buf->maxlen)
+diff -ruN ../nakedmudv2.5/src/character.c src/character.c
+--- ../nakedmudv2.5/src/character.c	Sat Jun 18 14:46:43 2005
++++ src/character.c	Wed Jul  6 02:52:19 2005
+@@ -423,7 +423,8 @@
+   if(!charIsNPC(mob)) {
+     store_int   (set, "position",   mob->position);
+     store_int   (set, "uid",        mob->uid);
+-    store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)));
++    store_int   (set, "loadroom",   (mob->room ? 
++				     roomGetVnum(mob->room) : mob->loadroom));
+   }
+   // NPC-only data
+   else
+diff -ruN ../nakedmudv2.5/src/cmd_manip.c src/cmd_manip.c
+--- ../nakedmudv2.5/src/cmd_manip.c	Sat Jun 18 14:46:43 2005
++++ src/cmd_manip.c	Wed Jul  6 02:52:19 2005
+@@ -29,6 +29,82 @@
+ 
+ 
+ 
++//*****************************************************************************
++// local functions
++//*****************************************************************************
++
++//
++// used by open, close, lock, and unlock. When an exit is manipulated on one
++// side, it is the case that we'll want to do an identical manipulation on the
++// other side. That's what we do here. Note: Can only do close OR lock with
++// one call to this function. Cannot handle both at the same time!
++void try_manip_other_exit(ROOM_DATA *room, EXIT_DATA *exit,
++			  bool closed, bool locked) {
++  // see if there's a room on the other side
++  ROOM_DATA         *to = worldGetRoom(gameworld, exitGetTo(exit));
++  EXIT_DATA *other_exit = NULL;
++  if(to == NULL)
++    return;
++
++  // check to see if we've specified the return direction
++  if(*exitGetOpposite(exit)) { 
++    int ex_dir_num = dirGetNum(exitGetOpposite(exit));
++    if(ex_dir_num == DIR_NONE)
++      other_exit = roomGetExitSpecial(to, exitGetOpposite(exit));
++    else
++      other_exit = roomGetExit(to, ex_dir_num);
++  }
++  // manually look it up...
++  else {
++    int ex_dir_num = roomGetExitDir(room, exit);
++    // normal exit
++    if(ex_dir_num != DIR_NONE)
++      other_exit = roomGetExit(to, dirGetOpposite(ex_dir_num));
++  }
++
++  // did we find another exit?
++  if(other_exit != NULL) {
++    // are we changing the close state?
++    if(exitIsClosed(other_exit) != closed) {
++      // first, make sure it's not locked
++      if(!exitIsLocked(other_exit)) {
++	// only send messages if we're changing the state
++	if(exitIsClosed(other_exit) != closed) {
++	  exitSetClosed(other_exit, closed);
++	  send_to_list(roomGetCharacters(to),
++		       "%s %s from the other side.\r\n",
++		       (*exitGetName(other_exit)?exitGetName(other_exit):
++			"An exit"),
++		       (closed ? "closes" : "opens"));
++	}
++      }
++    }
++
++    // are we changing the lock state?
++    if(exitIsLocked(other_exit) != locked) {
++      // first make sure it's closed
++      if(exitIsClosed(other_exit)) {
++	// only send messages if we're changing the state
++	if(exitIsLocked(other_exit) != locked) {
++	  exitSetLocked(other_exit, locked);
++	  send_to_list(roomGetCharacters(to),
++		       "%s %s from the other side.\r\n",
++		       (*exitGetName(other_exit)?exitGetName(other_exit):
++			"An exit"),
++		       (locked ? "locks" : "unlocks"));
++	}
++      }
++    }
++  }
++}
++
++
++
++//*****************************************************************************
++// player commands
++//*****************************************************************************
++
++
+ //
+ // try to lock an exit or container. The container can be anything in our
+ // immediate visible range (room, inventory, body). do_lock automatically
+@@ -70,6 +146,10 @@
+       send_around_char(ch, TRUE, "%s locks %s.\r\n", 
+ 		       charGetName(ch), exitGetName(found));
+       exitSetLocked(found, TRUE);
++
++      // and try the other side
++      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found),
++			   TRUE);
+     }
+   }
+ 
+@@ -127,6 +207,10 @@
+       send_around_char(ch, TRUE, "%s unlocks %s.\r\n", 
+ 		       charGetName(ch), exitGetName(found));
+       exitSetLocked(found, FALSE);
++
++      // and try the other side
++      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found),
++			   FALSE);
+     }
+   }
+ 
+@@ -220,7 +304,6 @@
+ //    open 2.bag              open your second bag
+ //    open east               open the east exit
+ //    open backpack on self   open a backpack you are wearing
+-//
+ COMMAND(cmd_open) {
+   if(!arg || !*arg) {
+     send_to_char(ch, "What did you want to open?\r\n");
+@@ -245,13 +328,14 @@
+       send_to_char(ch, "%s appears to be locked.\r\n",
+ 		   (*exitGetName(found) ? exitGetName(found) : "It"));
+     else {
+-      char other_buf[SMALL_BUFFER];
+-      sprintf(other_buf, "$n opens %s.", (*exitGetName(found) ?
+-					  exitGetName(found) : "an exit"));
+-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, other_buf);
++      mssgprintf(ch, NULL, NULL, NULL, FALSE, TO_ROOM, "$n opens %s.", 
++		 (*exitGetName(found) ? exitGetName(found) : "an exit"));
+       send_to_char(ch, "You open %s.\r\n",
+ 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
+       exitSetClosed(found, FALSE);
++
++      // try opening the other side
++      try_manip_other_exit(charGetRoom(ch), found, FALSE, exitIsLocked(found));
+     }
+   }
+ 
+@@ -313,6 +397,9 @@
+       send_to_char(ch, "You close %s.\r\n",
+ 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
+       exitSetClosed(found, TRUE);
++
++      // try opening the other side
++      try_manip_other_exit(charGetRoom(ch), found, TRUE, exitIsLocked(found));
+     }
+   }
+ 
+diff -ruN ../nakedmudv2.5/src/exit.c src/exit.c
+--- ../nakedmudv2.5/src/exit.c	Sat Jun 18 14:46:43 2005
++++ src/exit.c	Wed Jul  6 02:52:19 2005
+@@ -19,6 +19,7 @@
+ struct exit_data {
+   char *name;              // what is the name of our door for descriptions?
+   char *keywords;          // what keywords can the door be referenced by?
++  char *opposite;          // what is our opposite direction, if any?
+   BUFFER *desc;            // what does a person see when they look at us?
+ 
+   char *spec_enter;        // the message when we enter from this exit
+@@ -40,6 +41,7 @@
+   EXIT_DATA *exit = malloc(sizeof(EXIT_DATA));
+   exit->name        = strdup("");
+   exit->keywords    = strdup("");
++  exit->opposite    = strdup("");
+   exit->spec_enter  = strdup("");
+   exit->spec_leave  = strdup("");
+   exit->desc        = newBuffer(1);
+@@ -58,6 +60,7 @@
+   if(exit->spec_enter)  free(exit->spec_enter);
+   if(exit->spec_leave)  free(exit->spec_leave);
+   if(exit->keywords)    free(exit->keywords);
++  if(exit->opposite)    free(exit->opposite);
+   if(exit->desc)        deleteBuffer(exit->desc);
+ 
+   free(exit);
+@@ -77,6 +80,7 @@
+   exitSetClosable (to, exitIsClosable(from));
+   exitSetSpecEnter(to, exitGetSpecEnter(from));
+   exitSetSpecLeave(to, exitGetSpecLeave(from));
++  exitSetOpposite (to, exitGetOpposite(from));
+ }
+ 
+ 
+@@ -90,6 +94,7 @@
+   EXIT_DATA *exit = newExit();
+   exitSetName(exit,      read_string(set, "name"));
+   exitSetKeywords(exit,  read_string(set, "keywords"));
++  exitSetOpposite(exit,  read_string(set, "opposite"));
+   exitSetDesc(exit,      read_string(set, "desc"));
+   exitSetSpecEnter(exit, read_string(set, "enter"));
+   exitSetSpecLeave(exit, read_string(set, "leave"));
+@@ -105,6 +110,7 @@
+   STORAGE_SET *set = new_storage_set();
+   store_string(set, "name",       exit->name);
+   store_string(set, "keywords",   exit->keywords);
++  store_string(set, "opposite",   exit->opposite);
+   store_string(set, "desc",       bufferString(exit->desc));
+   store_string(set, "enter",      exit->spec_enter);
+   store_string(set, "leave",      exit->spec_leave);
+@@ -165,6 +171,10 @@
+   return exit->keywords;
+ };
+ 
++const char *exitGetOpposite(const EXIT_DATA *exit) {
++  return exit->opposite;
++}
++
+ const char *exitGetDesc(const EXIT_DATA *exit) {
+   return bufferString(exit->desc);
+ };
+@@ -222,6 +232,11 @@
+   if(keywords)       exit->keywords = strdup(keywords);
+   else               exit->keywords = strdup("");
+ };
++
++void        exitSetOpposite(EXIT_DATA *exit, const char *opposite) {
++  if(exit->opposite) free(exit->opposite);
++  exit->opposite   = strdupsafe(opposite);
++}
+ 
+ void        exitSetDesc(EXIT_DATA *exit, const char *desc) {
+   bufferClear(exit->desc);
+diff -ruN ../nakedmudv2.5/src/exit.h src/exit.h
+--- ../nakedmudv2.5/src/exit.h	Sat Jun 18 14:46:43 2005
++++ src/exit.h	Wed Jul  6 02:52:19 2005
+@@ -58,10 +58,11 @@
+ 
+ int         exitGetHidden      (const EXIT_DATA *exit);
+ int         exitGetPickLev     (const EXIT_DATA *exit);
+-int    exitGetKey         (const EXIT_DATA *exit);
+-int   exitGetTo          (const EXIT_DATA *exit);
++int         exitGetKey         (const EXIT_DATA *exit);
++int         exitGetTo          (const EXIT_DATA *exit);
+ const char *exitGetName        (const EXIT_DATA *exit);
+ const char *exitGetKeywords    (const EXIT_DATA *exit);
++const char *exitGetOpposite    (const EXIT_DATA *exit);
+ const char *exitGetDesc        (const EXIT_DATA *exit);
+ const char *exitGetSpecLeave   (const EXIT_DATA *exit);
+ const char *exitGetSpecEnter   (const EXIT_DATA *exit);
+@@ -75,6 +76,7 @@
+ void        exitSetPickLev     (EXIT_DATA *exit, int pick_lev);
+ void        exitSetTo          (EXIT_DATA *exit, int room);
+ void        exitSetName        (EXIT_DATA *exit, const char *name);
++void        exitSetOpposite    (EXIT_DATA *exit, const char *opposite);
+ void        exitSetKeywords    (EXIT_DATA *exit, const char *keywords);
+ void        exitSetDesc        (EXIT_DATA *exit, const char *desc);
+ void        exitSetSpecLeave   (EXIT_DATA *exit, const char *leave);
+diff -ruN ../nakedmudv2.5/src/help/help.c src/help/help.c
+--- ../nakedmudv2.5/src/help/help.c	Sat Jun 18 14:46:43 2005
++++ src/help/help.c	Wed Jul  6 02:52:19 2005
+@@ -236,77 +236,14 @@
+ //   help <topic>
+ //
+ COMMAND(cmd_help) {
+-  static char buf[MAX_BUFFER];
+-  
+-  // no argument. Show a list of all our help topics
+-  if(!arg || !*arg) {
+-    int count, i, buf_i = 0;
+-    buf_i = snprintf(buf, MAX_BUFFER, 
+-		     "Help is available on the following topics:\r\n");
+-    for(i = 0, count = 0; i < HELP_TABLE_BUCKETS; i++) {
+-      LIST_ITERATOR *buck_i = newListIterator(help_table[i]);
+-      HELP_ENTRY     *entry = NULL;
+-      ITERATE_LIST(entry, buck_i) {
+-	buf_i += snprintf(buf+buf_i, MAX_BUFFER-buf_i, "%-20s", entry->keyword);
+-	count++;
+-	// only 4 entries per row
+-	if((count % 4) == 0) 
+-	  buf_i += snprintf(buf+buf_i, MAX_BUFFER-buf_i, "\r\n");
+-      }
+-      deleteListIterator(buck_i);
+-    }
+-
+-    // make sure we add a newline to the end
+-    if((count % 4) != 0)
+-      buf_i += snprintf(buf+buf_i, MAX_BUFFER-buf_i, "\r\n");
+-
++  BUFFER *buf = build_help(arg);
++  if(buf == NULL)
++    send_to_char(ch, "No help exists on that topic.\r\n");
++  else {
+     // send this to the character
+     if(charGetSocket(ch))
+-      page_string(charGetSocket(ch), buf);
+-  }
+-
+-
+-  // pull out the helpfile
+-  else {
+-    // because we replace underscores with spaces in hlink,
+-    // we should do the same thing here for consistancy's sake
+-    char *ptr;
+-    for(ptr = arg; *ptr; ptr++)
+-      if(*ptr == '_') *ptr = ' ';
+-
+-    LIST *matches = help_matches(arg);
+-    HELP_ENTRY *entry = NULL;
+-    // no matches found
+-    if(listSize(matches) == 0)
+-      send_to_char(ch, "No help exists on that topic.\r\n");
+-    // one match found
+-    else if(listSize(matches) == 1) {
+-      if(charGetSocket(ch)) {
+-	entry = listPop(matches);
+-	// the character has a socket... let's page the helpfile to him
+-	if(charGetSocket(ch)) {
+-	  char header[128]; // +2 for \r\n, +1 for \0
+-	  center_string(header, entry->keyword, 80, 128, TRUE);
+-	  sprintf(buf, "%s{wBy: %-36s%40s\r\n\r\n{n%s",
+-		  header, entry->help->editor, entry->help->timestamp,
+-		  entry->help->info);
+-	  page_string(charGetSocket(ch), buf);
+-	}
+-      }
+-    }
+-
+-    // more than one match found. Tell person to narrow search
+-    else {
+-      send_to_char(ch, "More than one entry matched your query: \r\n");
+-      LIST_ITERATOR *match_i = newListIterator(matches);
+-      ITERATE_LIST(entry, match_i)
+-	send_to_char(ch, "{c%s ", entry->keyword);
+-      deleteListIterator(match_i);
+-      send_to_char(ch, "\r\n");
+-    }
+-    
+-    // delete the list of matches we found
+-    deleteList(matches);
++      page_string(charGetSocket(ch), bufferString(buf));
++    deleteBuffer(buf);
+   }
+ }
+ 
+@@ -471,9 +408,73 @@
+   storage_close(set);
+ }
+ 
+-const char *get_help(const char *keyword) {
+-  HELP_DATA *data = get_help_data(keyword, FALSE);
+-  return(data ? data->info : NULL);
++BUFFER *build_help(const char *keyword) {
++  // we have to edit the keyword... dup it
++  char   *arg = strdup(keyword);
++  BUFFER *buf = newBuffer(MAX_BUFFER);
++  // no argument. Show a list of all our help topics
++  if(!*arg) {
++    int count, i;
++    bprintf(buf, "Help is available on the following topics:\r\n");
++    for(i = 0, count = 0; i < HELP_TABLE_BUCKETS; i++) {
++      LIST_ITERATOR *buck_i = newListIterator(help_table[i]);
++      HELP_ENTRY     *entry = NULL;
++      ITERATE_LIST(entry, buck_i) {
++	bprintf(buf, "%-16s", entry->keyword);
++	count++;
++	// only 4 entries per row
++	if((count % 5) == 0) 
++	  bufferCat(buf, "\r\n");
++      } deleteListIterator(buck_i);
++    }
++
++    // make sure we add a newline to the end
++    if((count % 5) != 0)
++      bufferCat(buf, "\r\n");
++  }
++
++  // pull out the helpfile
++  else {
++    // because we replace underscores with spaces in hlink,
++    // we should do the same thing here for consistancy's sake
++    char *ptr;
++    for(ptr = arg; *ptr; ptr++)
++      if(*ptr == '_') *ptr = ' ';
++
++    LIST *matches = help_matches(arg);
++    HELP_ENTRY *entry = NULL;
++    // no matches found
++    if(listSize(matches) == 0)
++      bprintf(buf, "No help exists for %s.\r\n", arg);
++    // one match found
++    else if(listSize(matches) == 1) {
++      entry = listPop(matches);
++      char header[128]; // +2 for \r\n, +1 for \0
++      center_string(header, entry->keyword, 80, 128, TRUE);
++      bprintf(buf, "%s{wBy: %-36s%40s\r\n\r\n{n%s",
++	      header, entry->help->editor, entry->help->timestamp,
++	      entry->help->info);
++    }
++
++    // more than one match found. Tell person to narrow search
++    else {
++      bprintf(buf, "More than one entry matched your query: \r\n");
++      LIST_ITERATOR *match_i = newListIterator(matches);
++      ITERATE_LIST(entry, match_i) {
++	bprintf(buf, "{c%s ", entry->keyword);
++      } deleteListIterator(match_i);
++      bufferCat(buf, "{n\r\n");
++    }
++    
++    // delete the list of matches we found
++    deleteList(matches);
++  }
++
++  // clean up our mess
++  free(arg);
++
++  // return whatever we created
++  return buf;
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.5/src/help/help.h src/help/help.h
+--- ../nakedmudv2.5/src/help/help.h	Sat Jun 18 14:46:43 2005
++++ src/help/help.h	Wed Jul  6 02:52:19 2005
+@@ -31,9 +31,9 @@
+ 
+ 
+ //
+-// Get the content of the helpfile. Return NULL if none exists.
+-//
+-const char *get_help(const char *keyword);
++// Builds the output of the help query. If no help exists on the topic, NULL
++// is returned. Returned buffer must be deleted after use.
++BUFFER *build_help(const char *keyword);
+ 
+ 
+ //
+diff -ruN ../nakedmudv2.5/src/inform.c src/inform.c
+--- ../nakedmudv2.5/src/inform.c	Sat Jun 18 14:46:43 2005
++++ src/inform.c	Wed Jul  6 02:52:19 2005
+@@ -319,7 +319,8 @@
+ 
+ void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
+   if(bitIsOneSet(charGetUserGroups(ch), "builder"))
+-    send_to_char(ch, "{c[%d] ", roomGetVnum(room));
++    send_to_char(ch, "{c[%d] [%s] ", roomGetVnum(room), 
++		 terrainGetName(roomGetTerrain(room)));
+ 
+   send_to_char(ch, "{c%s\r\n", roomGetName(room));
+ 
+diff -ruN ../nakedmudv2.5/src/interpret.c src/interpret.c
+--- ../nakedmudv2.5/src/interpret.c	Sat Jun 18 14:46:43 2005
++++ src/interpret.c	Wed Jul  6 02:52:19 2005
+@@ -367,14 +367,14 @@
+     ITERATE_LIST(cmd, buck_i) {
+       if(!is_keyword(user_groups, cmd->user_group, FALSE))
+ 	continue;
+-      bprintf(buf, "%-20.20s", cmd->cmd_name);
+-      if (!(++col % 4))
++      bprintf(buf, "%-13.13s", cmd->cmd_name);
++      if (!(++col % 6))
+ 	bufferCat(buf, "\r\n");
+     }
+     deleteListIterator(buck_i);
+   }
+ 
+-  if (col % 4) bprintf(buf, "\r\n");
++  if (col % 6) bprintf(buf, "\r\n");
+   text_to_char(ch, bufferString(buf));
+   deleteBuffer(buf);
+ }
+@@ -483,14 +483,8 @@
+   }
+ 
+ #ifdef MODULE_ALIAS
+-  // see if it's an alias
+-  const char *alias = charGetAlias(ch, command);
+-  if(aliases_ok && alias) {
+-    char *alias_cmd = expand_alias(alias, arg);
+-    do_cmd(ch, alias_cmd, scripts_ok, FALSE);
+-    free(alias_cmd);
++  if(aliases_ok && try_alias(ch, command, arg, scripts_ok))
+     return;
+-  }
+ #endif
+ 
+   // check to see if it's a faculty command
+@@ -504,6 +498,20 @@
+   if(scripts_ok && try_command_script(ch, command, arg))
+     return;
+ 
++  // check to see if we have a special exit. These over-ride normal commands
++  if(roomGetExitSpecial(charGetRoom(ch), command)) {
++    if(min_pos_ok(ch, POS_STANDING)) {
++#ifdef MODULE_FACULTY
++      interrupt_action(ch, FACULTY_ALL);
++#else
++      interrupt_action(ch, 1);
++#endif
++      try_move(ch, DIR_NONE, command);
++    }
++    // don't follow through with normal commands... we had a special exit
++    return;
++  }
++
+   // get the groups we belong to for seeing if we can use the command
+   const char *user_groups = bitvectorGetBits(charGetUserGroups(ch));
+ 
+@@ -534,22 +542,6 @@
+   }
+   deleteListIterator(cmd_i);
+ 
+-
+-
+-  if (!found_cmd) {
+-    // check to see if the character is trying to use
+-    // a special exit command for the room
+-    if(roomGetExitSpecial(charGetRoom(ch), command)) {
+-      if(min_pos_ok(ch, POS_STANDING)) {
+-#ifdef MODULE_FACULTY
+-	interrupt_action(ch, FACULTY_ALL);
+-#else
+-	interrupt_action(ch, 1);
+-#endif
+-	try_move(ch, DIR_NONE, command);
+-      }
+-    }
+-    else
+-      text_to_char(ch, "No such command.\n\r");
+-  }
++  if (!found_cmd)
++    text_to_char(ch, "No such command.\n\r");
+ }
+diff -ruN ../nakedmudv2.5/src/movement.c src/movement.c
+--- ../nakedmudv2.5/src/movement.c	Sat Jun 18 14:46:43 2005
++++ src/movement.c	Wed Jul  6 02:52:19 2005
+@@ -85,6 +85,7 @@
+       char desc[MAX_BUFFER];
+       ROOM_DATA *new_room = newRoom();
+       roomSetVnum(new_room, vnum);
++      roomSetTerrain(new_room, roomGetTerrain(charGetRoom(ch)));
+ 
+       roomSetName(new_room, "A New Buildwalk Room");
+       sprintf(desc, "This room was created by %s.\r\n", charGetName(ch));
+diff -ruN ../nakedmudv2.5/src/mud.h src/mud.h
+--- ../nakedmudv2.5/src/mud.h	Sat Jun 18 15:33:28 2005
++++ src/mud.h	Wed Jul  6 02:52:19 2005
+@@ -48,6 +48,7 @@
+ typedef struct datatable                  DATATABLE;
+ typedef struct storage_set                STORAGE_SET;
+ typedef struct storage_set_list           STORAGE_SET_LIST;
++typedef struct prototype_data             PROTO_DATA;
+ 
+ typedef struct script_set_data            SCRIPT_SET;
+ typedef struct edesc_data                 EDESC_DATA;
+@@ -275,9 +276,14 @@
+ bool  compressEnd       ( SOCKET_DATA *dsock, unsigned char teleopt, bool forced );
+ 
+ /* socket.c */
+-#define NUM_LINES_PER_PAGE  22
++#define NUM_LINES_PER_PAGE  21
+ void  page_string           ( SOCKET_DATA *dsock, const char *string);
+ void  page_continue         ( SOCKET_DATA *dsock);
+ void  page_back             ( SOCKET_DATA *dsock);
++
++//
++// adds a new input handler onto the stack that allows a person to read 
++// long pages of text (e.g. helpfiles in OLC)
++void  start_reader          ( SOCKET_DATA *dsock, const char *text);
+ 
+ #endif  /* MUD_H */
+diff -ruN ../nakedmudv2.5/src/olc2/esedit.c src/olc2/esedit.c
+--- ../nakedmudv2.5/src/olc2/esedit.c	Sat Jun 18 14:46:43 2005
++++ src/olc2/esedit.c	Wed Jul  6 02:52:19 2005
+@@ -107,12 +107,17 @@
+ 		       const char *arg) {
+   switch(choice) {
+   case ESEDIT_EDIT: {
+-    EDESC_DATA *edesc = edescSetGetNum(set, atoi(arg));
+-    if(edesc == NULL)
+-      return FALSE;
+-    do_olc(sock, edesc_menu, edesc_chooser, edesc_parser, NULL, NULL, NULL,
+-	   NULL, edesc);
+-    return TRUE;
++    int num = atoi(arg);
++    if(num == NOTHING)
++      return TRUE;
++    else {
++      EDESC_DATA *edesc = edescSetGetNum(set, num);
++      if(edesc == NULL)
++	return FALSE;
++      do_olc(sock, edesc_menu, edesc_chooser, edesc_parser, NULL, NULL, NULL,
++	     NULL, edesc);
++      return TRUE;
++    }
+   }
+   case ESEDIT_DELETE: {
+     EDESC_DATA *edesc = edescSetGetNum(set, atoi(arg));
+diff -ruN ../nakedmudv2.5/src/olc2/olc.c src/olc2/olc.c
+--- ../nakedmudv2.5/src/olc2/olc.c	Sat Jun 18 14:46:43 2005
++++ src/olc2/olc.c	Wed Jul  6 03:07:05 2005
+@@ -22,6 +22,15 @@
+ 
+ 
+ //*****************************************************************************
++// optional modules
++//*****************************************************************************
++#ifdef MODULE_HELP
++#include "../help/help.h"
++#endif
++
++
++
++//*****************************************************************************
+ //
+ // local data structures, defines, and functions
+ //
+@@ -109,7 +118,11 @@
+   if(olc->cmd == MENU_NOCHOICE) {
+     text_to_buffer(sock, CLEAR_SCREEN);
+     olc->menu(sock, olc->working_copy);
++#ifdef MODULE_HELP
++    text_to_buffer(sock, "\r\n{gEnter choice, ? [topic] for help, or Q to quit: ");
++#else
+     text_to_buffer(sock, "\r\n{gEnter choice, or Q to quit: ");
++#endif
+   }
+ }
+ 
+@@ -199,6 +212,23 @@
+ 	olc_exit(sock, TRUE);
+       }
+       break;
++
++#ifdef MODULE_HELP
++    case '?': {
++      while(*arg == '?' || isspace(*arg))
++	arg++;
++      BUFFER *buf = build_help(arg);
++      if(buf == NULL)
++	text_to_buffer(sock, "No help available.\r\nTry again: ");
++      // we've (tried to) switched handlers... no menu display
++      else {
++	olc->cmd = MENU_NOCHOICE;
++	start_reader(sock, bufferString(buf));
++	deleteBuffer(buf);
++      }
++      break;
++    }
++#endif
+ 
+     default: {
+       int cmd = olc->chooser(sock, olc->working_copy, arg);
+diff -ruN ../nakedmudv2.5/src/olc2/redit.c src/olc2/redit.c
+--- ../nakedmudv2.5/src/olc2/redit.c	Sat Jun 18 14:46:43 2005
++++ src/olc2/redit.c	Wed Jul  6 02:52:19 2005
+@@ -377,6 +377,7 @@
+ #define EXEDIT_PICK        6
+ #define EXEDIT_SPOT        7
+ #define EXEDIT_NAME        8
++#define EXEDIT_OPPOSITE    9
+ 
+ void exedit_menu(SOCKET_DATA *sock, EXIT_DATA *exit) {
+   send_to_socket(sock,
+@@ -390,11 +391,12 @@
+ 		 "{c%s\r\n"
+ 		 "{g5) Description\r\n"
+ 		 "{c%s\r\n"
+-		 "{g6) Exits to:   {y[{c%6d{y]\r\n"
+-		 "{g7) Closable:   {y[{c%6s{y]\r\n"
+-		 "{g8) Key vnum:   {y[{c%6d{y]\r\n"
+-		 "{g9) Pick diff:  {y[{c%6d{y]\r\n"
+-		 "{g0) Spot diff:  {y[{c%6d{y]\r\n",
++		 "{g6) Exits to    : {y[{c%6d{y]\r\n"
++		 "{g7) Closable    : {y[{c%6s{y]\r\n"
++		 "{g8) Key vnum    : {y[{c%6d{y]\r\n"
++		 "{g9) Pick diff   : {y[{c%6d{y]\r\n"
++		 "{g0) Spot diff   : {y[{c%6d{y]\r\n"
++		 "{gO) Opposite dir: {c%s{n\r\n",
+ 		 (*exitGetName(exit) ? exitGetName(exit) : "<NONE>"),
+ 		 (*exitGetKeywords(exit) ? exitGetKeywords(exit) : "<NONE>"),
+ 		 (*exitGetSpecLeave(exit) ? exitGetSpecLeave(exit):"<DEFAULT>"),
+@@ -404,7 +406,8 @@
+ 		 (exitIsClosable(exit) ? "Yes" : "No" ),
+ 		 exitGetKey(exit),
+ 		 exitGetPickLev(exit),
+-		 exitGetHidden(exit)
++		 exitGetHidden(exit),
++		 (*exitGetOpposite(exit) ? exitGetOpposite(exit) : "<DEFAULT>")
+ 		 );
+ }
+ 
+@@ -440,6 +443,9 @@
+   case '0':
+     text_to_buffer(sock, "Enter a new spot difficulty: ");
+     return EXEDIT_SPOT;
++  case 'O':
++    text_to_buffer(sock, "What is this exit's opposite direction: ");
++    return EXEDIT_OPPOSITE;
+   default:
+     return MENU_CHOICE_INVALID;
+   }
+@@ -453,6 +459,9 @@
+     return TRUE;
+   case EXEDIT_KEYWORDS:
+     exitSetKeywords(exit, arg);
++    return TRUE;
++  case EXEDIT_OPPOSITE:
++    exitSetOpposite(exit, arg);
+     return TRUE;
+   case EXEDIT_LEAVE:
+     exitSetSpecLeave(exit, arg);
+diff -ruN ../nakedmudv2.5/src/olc2/zedit.c src/olc2/zedit.c
+--- ../nakedmudv2.5/src/olc2/zedit.c	Sat Jun 18 14:46:43 2005
++++ src/olc2/zedit.c	Wed Jul  6 02:52:19 2005
+@@ -126,8 +126,7 @@
+       send_to_char(ch, "You are not authorized to edit this zone.\r\n");  
+     else {
+       do_olc(charGetSocket(ch), zedit_menu, zedit_chooser, zedit_parser,
+-	     zoneCopy, zoneCopyTo, deleteZone, save_world,
+-	     worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch))));
++	     zoneCopy, zoneCopyTo, deleteZone, save_world, zone);
+     }
+   }
+ }
+diff -ruN ../nakedmudv2.5/src/room.c src/room.c
+--- ../nakedmudv2.5/src/room.c	Sat Jun 18 14:46:43 2005
++++ src/room.c	Wed Jul  6 02:52:19 2005
+@@ -132,7 +132,7 @@
+   store_string(set, "name",    room->name);
+   store_string(set, "desc",    bufferString(room->desc));
+   store_int   (set, "vnum",    room->vnum);
+-  store_int   (set, "terrain", room->terrain);
++  store_string(set, "terrain", terrainGetName(room->terrain));
+   store_set   (set, "edescs",  edescSetStore(room->edescs));
+ 
+   STORAGE_SET_LIST *exits = new_storage_list();
+@@ -166,12 +166,11 @@
+ 
+ ROOM_DATA *roomRead(STORAGE_SET *set) {
+   ROOM_DATA *room = newRoom();
+-
+-  roomSetVnum(room,              read_int   (set, "vnum"));
+-  roomSetName(room,              read_string(set, "name"));
+-  roomSetDesc(room,              read_string(set, "desc"));
+-  roomSetTerrain(room,           read_int   (set, "terrain"));
+-  roomSetEdescs(room,  edescSetRead(read_set(set, "edescs")));
++  roomSetVnum(room,                  read_int   (set, "vnum"));
++  roomSetName(room,                  read_string(set, "name"));
++  roomSetDesc(room,                  read_string(set, "desc"));
++  roomSetTerrain(room,               read_int   (set, "terrain"));
++  roomSetEdescs(room,   edescSetRead(read_set   (set, "edescs")));
+ 
+   STORAGE_SET_LIST *exits = read_list(set, "exits");
+   STORAGE_SET       *exit = NULL;
+@@ -359,6 +358,28 @@
+ EXIT_DATA  *roomGetExitSpecial (const ROOM_DATA *room, const char *dir) {
+   return hashGet(room->special_exits, dir);
+ };
++
++int roomGetExitDir(const ROOM_DATA *room, EXIT_DATA *exit) {
++  int i;
++  for(i = 0; i < NUM_DIRS; i++)
++    if(room->exits[i] == exit)
++      return i;
++  return DIR_NONE;
++}
++
++const char *roomGetExitDirSpecial(const ROOM_DATA *room, EXIT_DATA *exit) {
++  HASH_ITERATOR *ex_i = newHashIterator(room->special_exits);
++  const char  *exname = NULL;
++  EXIT_DATA      *val = NULL;
++  bool       ex_found = FALSE;
++  ITERATE_HASH(exname, val, ex_i) {
++    if(val == exit) {
++      ex_found = TRUE;
++      break;
++    }
++  } deleteHashIterator(ex_i);
++  return (ex_found ? exname : NULL);
++}
+ 
+ const char      **roomGetExitNames   (const ROOM_DATA *room, int *num) {
+   int i;
+diff -ruN ../nakedmudv2.5/src/room.h src/room.h
+--- ../nakedmudv2.5/src/room.h	Sat Jun 18 14:46:43 2005
++++ src/room.h	Wed Jul  6 02:52:19 2005
+@@ -120,6 +120,8 @@
+ int         roomGetTerrain     (const ROOM_DATA *room);
+ BUFFER     *roomGetDescBuffer  (const ROOM_DATA *room);
+ 
++int         roomGetExitDir      (const ROOM_DATA *room, EXIT_DATA *exit);
++const char *roomGetExitDirSpecial(const ROOM_DATA *room, EXIT_DATA *exit);
+ EXIT_DATA  *roomGetExit         (const ROOM_DATA *room, int dir);
+ EXIT_DATA  *roomGetExitSpecial  (const ROOM_DATA *room, const char *dir);
+ const char **roomGetExitNames   (const ROOM_DATA *room, int *num);
+diff -ruN ../nakedmudv2.5/src/scripts/pychar.c src/scripts/pychar.c
+--- ../nakedmudv2.5/src/scripts/pychar.c	Sat Jun 18 15:28:32 2005
++++ src/scripts/pychar.c	Wed Jul  6 02:52:19 2005
+@@ -497,6 +497,30 @@
+ //*****************************************************************************
+ 
+ //
++// pages a length of text to the character
++PyObject *PyChar_page(PyChar *self, PyObject *value) {
++  char *mssg = NULL;
++  if (!PyArg_ParseTuple(value, "s", &mssg)) {
++    PyErr_Format(PyExc_TypeError, "Characters may only be paged strings");
++    return NULL;
++  }
++
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) {
++    if(charGetSocket(ch))
++      page_string(charGetSocket(ch), mssg);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++                    "Tried to page message to nonexistant character, %d.", 
++		    self->uid);
++    return NULL;
++  }
++}
++
++
++//
+ // sends a newline-tagged message to the character
+ PyObject *PyChar_send(PyChar *self, PyObject *value) {
+   char *mssg = NULL;
+@@ -1271,6 +1295,8 @@
+ 		   "detach an old script from the character.");
+   PyChar_addMethod("send", PyChar_send, METH_VARARGS,
+ 		   "send a message to the character.");
++  PyChar_addMethod("page", PyChar_page, METH_VARARGS,
++		   "page a bunch of text to the character.");
+   PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
+ 		   "send a message to everyone around the character.");
+   PyChar_addMethod("act", PyChar_act, METH_VARARGS,
+diff -ruN ../nakedmudv2.5/src/scripts/pystorage.c src/scripts/pystorage.c
+--- ../nakedmudv2.5/src/scripts/pystorage.c	Sat Jun 18 15:30:08 2005
++++ src/scripts/pystorage.c	Wed Jul  6 02:52:19 2005
+@@ -500,8 +500,8 @@
+ 
+   // make sure the storage class is ready to be made
+   if (!(PyType_Ready(&PyStorageSet_Type) < 0)) {
+-    PyTypeObject *type = &PyStorageSet_Type;
+     // add our two classes
++    PyTypeObject *type = &PyStorageSet_Type;
+     Py_INCREF(&PyStorageSet_Type);
+     PyModule_AddObject(module, "StorageSet", (PyObject *)type);
+   }
+diff -ruN ../nakedmudv2.5/src/scripts/script.c src/scripts/script.c
+--- ../nakedmudv2.5/src/scripts/script.c	Sat Jun 18 14:46:43 2005
++++ src/scripts/script.c	Wed Jul  6 02:52:19 2005
+@@ -73,6 +73,36 @@
+ }
+ 
+ 
++//
++// displays info on a script to a person
++COMMAND(cmd_scstat) {
++  if(!isdigit(*arg))
++    send_to_char(ch, "Which script would you like to stat?\r\n");
++  else if(!charGetSocket(ch))
++    return;
++  else {
++    int vnum = atoi(arg);
++    SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++    if(script == NULL)
++      send_to_char(ch, "No script exists with that vnum.\r\n");
++    else {
++      send_to_socket(charGetSocket(ch),
++		     "--------------------------------------------------------------------------------\r\n"
++		     "Name         : %s\r\n"
++		     "Script type  : %s\r\n"
++		     "Arguments    : %s\r\n"
++		     "Num. Argument: %d\r\n"
++		     "--------------------------------------------------------------------------------\r\n",
++		     scriptGetName(script), 
++		     scriptTypeName(scriptGetType(script)),
++		     (*scriptGetArgs(script)?scriptGetArgs(script):"<NONE>"),
++		     scriptGetNumArg(script));
++      script_display(charGetSocket(ch), scriptGetCode(script), FALSE);
++    }
++  }
++}
++
++
+ 
+ //*****************************************************************************
+ // Auxiliary script data that we need to install into players, objects and
+@@ -438,6 +468,8 @@
+   add_cmd("scedit", NULL, cmd_scedit, 0, POS_UNCONCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, TRUE);
+   add_cmd("scrun", NULL, cmd_scrun, 0, POS_UNCONCIOUS, POS_FLYING,
++	  "builder", FALSE, FALSE);
++  add_cmd("scstat", NULL, cmd_scstat, 0, POS_UNCONCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+ 
+   init_script_editor();
+diff -ruN ../nakedmudv2.5/src/set_val/set_val.c src/set_val/set_val.c
+--- ../nakedmudv2.5/src/set_val/set_val.c	Sat Jun 18 14:46:43 2005
++++ src/set_val/set_val.c	Wed Jul  6 02:52:19 2005
+@@ -22,6 +22,7 @@
+ #include "../room.h"
+ #include "../races.h"
+ #include "../handler.h"
++#include "../save.h"
+ 
+ #include "set_val.h"
+ 
+@@ -130,6 +131,14 @@
+ COMMAND(cmd_set) {
+   char name [SMALL_BUFFER];
+   char field[SMALL_BUFFER];
++  bool  file = FALSE;
++
++  // are we trying to modify a character on disk?
++  if(!strncasecmp(arg, "file ", 5)) {
++    file = TRUE;
++    arg += 5;
++  }
++
+   const char *val = two_args(arg, name, field);
+ 
+   // check to see if we're trying to set from our notepad. Also, make sure
+@@ -145,6 +154,29 @@
+ 
+   if(!*val || !*name || !*field)
+     send_to_char(ch, "Set which value on what?\r\n");
++
++  // we're trying to set something on someone's pfile
++  else if(file == TRUE) {
++    // make sure the player isn't online, currently
++    CHAR_DATA *tgt = generic_find(ch, name, FIND_TYPE_CHAR, FIND_SCOPE_ALL, 
++				  FALSE, NULL);
++    if(tgt != NULL)
++      send_to_char(ch, "%s is currently logged on. No need to touch the pfile.\r\n", charGetName(tgt));
++    else {
++      tgt = load_player(name);
++      if(tgt == NULL)
++	send_to_char(ch, "No pfile for %s exists!\r\n", name);
++      else if(!charHasMoreUserGroups(ch, tgt))
++	send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
++		     HESHE(tgt));
++      else {
++	try_set(ch, tgt, char_set_table, field, val);
++	save_player(tgt);
++	deleteChar(tgt);
++      }
++    }
++  }
++
+   // are we trying to set a field on a room?
+   else if(!strcasecmp("room", name)) {
+     if(!canEditZone(worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch))),
+@@ -153,12 +185,16 @@
+     else
+       try_set(ch, charGetRoom(ch), room_set_table, field, val);
+   }
++
++  // are we trying to set a field on a room, by vnum>
+   else if(isdigit(*name) && worldGetRoom(gameworld, atoi(name))) {
+     if(!canEditZone(worldZoneBounding(gameworld, atoi(name)), ch))
+       send_to_char(ch, "You are not authorized to edit this zone.\r\n");
+     else
+       try_set(ch, worldGetRoom(gameworld, atoi(name)),room_set_table,field,val);
+   }
++
++  // are we setting a field on an object or character in game?
+   else {
+     int found = FOUND_NONE;
+     void *tgt = NULL;
+@@ -166,9 +202,9 @@
+ 		       FIND_SCOPE_ALL | FIND_SCOPE_VISIBLE, FALSE, &found);
+ 
+     if(found == FOUND_CHAR) {
+-      if(!charHasMoreUserGroups(ch, tgt))
++      if(ch != tgt && !charHasMoreUserGroups(ch, tgt))
+ 	send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
+-		     see_char_as(ch, tgt));
++		     HESHE(tgt));
+       else
+ 	try_set(ch, tgt, char_set_table, field, val);
+     }
+diff -ruN ../nakedmudv2.5/src/socket.c src/socket.c
+--- ../nakedmudv2.5/src/socket.c	Sat Jun 18 14:46:43 2005
++++ src/socket.c	Wed Jul  6 02:52:19 2005
+@@ -1,15 +1,16 @@
+-/*
+- * This file contains the socket code, used for accepting
+- * new connections as well as reading and writing to
+- * sockets, and closing down unused sockets.
+- */
+-
++//*****************************************************************************
++//
++// socket.c
++//
++// This file contains the socket code, used for accepting new connections as 
++// well as reading and writing to sockets, and closing down unused sockets.
++//
++//*****************************************************************************
+ #include "wrapsock.h"
+ #include <netdb.h>
+ #include <sys/ioctl.h>
+ #include <arpa/inet.h> 
+ 
+-/* including main header file */
+ #include "mud.h"
+ #include "character.h"
+ #include "account.h"
+@@ -19,6 +20,16 @@
+ #include "auxiliary.h"
+ 
+ 
++
++//*****************************************************************************
++// optional modules
++//*****************************************************************************
++#ifdef MODULE_ALIAS
++#include "alias/alias.h"
++#endif
++
++
++
+ //
+ // Here it is... the big ol' datastructure for sockets. Yum.
+ struct socket_data {
+@@ -42,6 +53,7 @@
+   BUFFER        * text_editor;   // where we do our actual work
+ 
+   LIST          * input_handlers;// a stack of our input handlers and prompts
++  LIST          * input;         // lines of input we have received
+ 
+   unsigned char   compressing;                 /* MCCP support */
+   z_stream      * out_compress;                /* MCCP support */
+@@ -610,81 +622,81 @@
+ }
+ 
+ 
+-void next_cmd_from_buffer(SOCKET_DATA *dsock)
+-{
+-  int size = 0, i = 0, j = 0, telopt = 0;
+-
+-  /* if theres already a command ready, we return */
+-  if (dsock->next_command[0] != '\0')
+-    return;
+-
+-  /* if there is nothing pending, then return */
+-  if (dsock->inbuf[0] == '\0')
+-    return;
+-
+-  /* check how long the next command is */
+-  while (dsock->inbuf[size] != '\0' && dsock->inbuf[size] != '\n' && dsock->inbuf[size] != '\r')
+-    size++;
+-
+-  /* we only deal with real commands */
+-  if (dsock->inbuf[size] == '\0')
+-    return;
+-
+-  /* copy the next command into next_command */
+-  for ( ; i < size; i++)
+-  {
+-    if (dsock->inbuf[i] == (signed char) IAC)
+-    {
+-      telopt = 1;
+-    }
+-    else if (telopt == 1 && (dsock->inbuf[i] == (signed char) DO || dsock->inbuf[i] == (signed char) DONT))
+-    {
+-      telopt = 2;
+-    }
+-    else if (telopt == 2)
+-    {
+-      telopt = 0;
++void next_cmd_from_buffer(SOCKET_DATA *dsock) {
++  // do we have stuff in our input list? If so, use that instead of inbuf
++  if(listSize(dsock->input) > 0) {
++    char *cmd = listPop(dsock->input);
++    strncpy(dsock->next_command, cmd, MAX_BUFFER);
++    dsock->cmd_read    = TRUE;
++    dsock->bust_prompt = TRUE;
++    free(cmd);
++  }
++  else {
++    int size = 0, i = 0, j = 0, telopt = 0;
+ 
+-      if (dsock->inbuf[i] == (signed char) TELOPT_COMPRESS)         /* check for version 1 */
+-      {
+-        if (dsock->inbuf[i-1] == (signed char) DO)                  /* start compressing   */
+-          compressStart(dsock, TELOPT_COMPRESS);
+-        else if (dsock->inbuf[i-1] == (signed char) DONT)           /* stop compressing    */
+-          compressEnd(dsock, TELOPT_COMPRESS, FALSE);
++    // if theres already a command ready, we return
++    if(dsock->next_command[0] != '\0')
++      return;
++
++    // if there is nothing pending, then return
++    if(dsock->inbuf[0] == '\0')
++      return;
++
++    // check how long the next command is
++    while(dsock->inbuf[size] != '\0' && 
++	  dsock->inbuf[size] != '\n' && dsock->inbuf[size] != '\r')
++      size++;
++
++    /* we only deal with real commands */
++    if(dsock->inbuf[size] == '\0')
++      return;
++
++    // copy the next command into next_command
++    for(; i < size; i++) {
++      if(dsock->inbuf[i] == (signed char) IAC)
++	telopt = 1;
++      else if(telopt == 1 && (dsock->inbuf[i] == (signed char) DO || 
++			      dsock->inbuf[i] == (signed char) DONT))
++	telopt = 2;
++
++      // check for compression format
++      else if(telopt == 2) {
++	unsigned char compress_opt = dsock->inbuf[i];
++	telopt = 0;
++	
++	// check if we're using a valid compression
++	if(compress_opt == TELOPT_COMPRESS || compress_opt == TELOPT_COMPRESS2){
++	  // start compressing
++	  if(dsock->inbuf[i-1] == (signed char) DO)                  
++	    compressStart(dsock, compress_opt);
++	  // stop compressing
++	  else if(dsock->inbuf[i-1] == (signed char) DONT)
++	    compressEnd(dsock, compress_opt, FALSE);
++	}
+       }
+-      else if (dsock->inbuf[i] == (signed char) TELOPT_COMPRESS2)   /* check for version 2 */
+-      {
+-        if (dsock->inbuf[i-1] == (signed char) DO)                  /* start compressing   */
+-          compressStart(dsock, TELOPT_COMPRESS2);
+-        else if (dsock->inbuf[i-1] == (signed char) DONT)           /* stop compressing    */
+-          compressEnd(dsock, TELOPT_COMPRESS2, FALSE);
++      else if(isprint(dsock->inbuf[i]) && isascii(dsock->inbuf[i])) {
++	dsock->next_command[j++] = dsock->inbuf[i];
+       }
+     }
+-    else if (isprint(dsock->inbuf[i]) && isascii(dsock->inbuf[i]))
+-    {
+-      dsock->next_command[j++] = dsock->inbuf[i];
+-    }
+-  }
+-  dsock->next_command[j] = '\0';
+-
+-  /* skip forward to the next line */
+-  while (dsock->inbuf[size] == '\n' || dsock->inbuf[size] == '\r')
+-  {
+-    dsock->cmd_read = TRUE;
+-    dsock->bust_prompt = TRUE;   /* seems like a good place to check */
+-    size++;
+-  }
++    dsock->next_command[j] = '\0';
+ 
+-  /* use i as a static pointer */
+-  i = size;
++    // skip forward to the next line
++    while(dsock->inbuf[size] == '\n' || dsock->inbuf[size] == '\r') {
++      dsock->cmd_read = TRUE;
++      dsock->bust_prompt = TRUE;   // seems like a good place to check
++      size++;
++    }
+ 
+-  /* move the context of inbuf down */
+-  while (dsock->inbuf[size] != '\0')
+-  {
+-    dsock->inbuf[size - i] = dsock->inbuf[size];
+-    size++;
++    // use i as a static pointer
++    i = size;
++    
++    // move the context of inbuf down
++    while(dsock->inbuf[size] != '\0') {
++      dsock->inbuf[size - i] = dsock->inbuf[size];
++      size++;
++    }
++    dsock->inbuf[size - i] = '\0';
+   }
+-  dsock->inbuf[size - i] = '\0';
+ }
+ 
+ 
+@@ -734,6 +746,7 @@
+   if(sock->page_string)    free(sock->page_string);
+   if(sock->text_editor)    deleteBuffer(sock->text_editor);
+   if(sock->input_handlers) deleteListWith(sock->input_handlers, free);
++  if(sock->input)          deleteListWith(sock->input, free);
+   if(sock->auxiliary)      deleteAuxiliaryData(sock->auxiliary);
+   free(sock);
+ }
+@@ -744,10 +757,12 @@
+   if(sock_new->text_editor)    deleteBuffer(sock_new->text_editor);
+   if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, free);
+   if(sock_new->auxiliary)      deleteAuxiliaryData(sock_new->auxiliary);
++  if(sock_new->input)          deleteListWith(sock_new->input, free);
+ 
+   bzero(sock_new, sizeof(*sock_new));
+   sock_new->auxiliary = newAuxiliaryData(AUXILIARY_TYPE_SOCKET);
+   sock_new->input_handlers = newList();
++  sock_new->input          = newList();
+   socketPushInputHandler(sock_new, handle_new_connections, NULL);
+   sock_new->control        = sock;
+   sock_new->lookup_status  = TSTATE_LOOKUP;
+@@ -939,6 +954,18 @@
+       sock->next_command[0] = '\0';
+       sock->cmd_read = FALSE;
+     }
++
++#ifdef MODULE_ALIAS
++    // ACK!! this is so yucky, but I can't think of a better way to do it...
++    // if this command was put in place by an alias, decrement the alias_queue
++    // counter by one. This counter is in place mainly so aliases do not end
++    // up calling eachother and making us get stuck in an infinite loop.
++    if(sock->player) {
++      int alias_queue = charGetAliasesQueued(sock->player);
++      if(alias_queue > 0)
++	charSetAliasesQueued(sock->player, --alias_queue);
++    }
++#endif
+     
+     /* if the player quits or get's disconnected */
+     if(sock->closed)
+@@ -1035,6 +1062,38 @@
+   }
+ }
+ 
++
++//
++// the command handler for the reader
++void read_handler(SOCKET_DATA *sock, char *input) {
++  if(!strncasecmp(input, "more", strlen(input)))
++    page_continue(sock);
++  else if(!strncasecmp(input, "back", strlen(input)))
++    page_back(sock);
++  else if(!strncasecmp(input, "quit", strlen(input)))
++    socketPopInputHandler(sock);
++  else
++    text_to_buffer(sock, "Invalid choice!\r\n");
++}
++
++
++//
++// the prompt for reading text
++void read_prompt(SOCKET_DATA *sock) {
++  text_to_buffer(sock, "\r\nQ to stop reading> ");
++}
++
++//
++// a new handler that allows people to read long bits of text
++void  start_reader(SOCKET_DATA *dsock, const char *text) {
++  // add a new input handler to control the reading
++  socketPushInputHandler(dsock, read_handler, read_prompt);
++  
++  // page the string
++  page_string(dsock, text);
++}
++
++
+ void do_copyover(CHAR_DATA *ch) {
+   LIST_ITERATOR *sock_i = newListIterator(socket_list);
+   SOCKET_DATA     *sock = NULL;
+@@ -1136,6 +1195,10 @@
+     return NULL;
+   IH_PAIR *pair = listGet(socket->input_handlers, 0);
+   return (pair ? pair->handler : NULL);
++}
++
++void socketQueueCommand( SOCKET_DATA *sock, const char *cmd) {
++  listQueue(sock->input, strdup(cmd));
+ }
+ 
+ void socketShowPrompt( SOCKET_DATA *sock) {
+diff -ruN ../nakedmudv2.5/src/socket.h src/socket.h
+--- ../nakedmudv2.5/src/socket.h	Sat Jun 18 14:46:43 2005
++++ src/socket.h	Wed Jul  6 02:52:19 2005
+@@ -1,11 +1,9 @@
+ #ifndef SOCKET_H
+ #define SOCKET_H
+ //*****************************************************************************
+-//
+ // socket.h
+ //
+ // all of the functions needed for working with character sockets
+-//
+ //*****************************************************************************
+ 
+ int   init_socket           ( void );
+@@ -30,10 +28,9 @@
+ void *lookup_address        ( void *arg );
+ 
+ 
++
+ //*****************************************************************************
+-//
+ // set and get functions
+-//
+ //*****************************************************************************
+ sh_int socketGetDNSLookupStatus( SOCKET_DATA *sock);
+ 
+@@ -55,6 +52,7 @@
+ void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name);
+ const char *socketGetHostname ( SOCKET_DATA *sock);
+ BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock);
++void socketQueueCommand       ( SOCKET_DATA *sock, const char *cmd);
+ 
+ void socketBustPrompt         ( SOCKET_DATA *sock);
+ 
+diff -ruN ../nakedmudv2.5/src/utils.c src/utils.c
+--- ../nakedmudv2.5/src/utils.c	Sat Jun 18 14:52:16 2005
++++ src/utils.c	Wed Jul  6 02:52:19 2005
+@@ -472,7 +472,7 @@
+ //
+ // Calculates how many characters until we hit the next space
+ //
+-int next_space_in(char *string) {
++int next_space_in(const char *string) {
+   return next_letter_in(string, ' ');
+ }
+ 
+@@ -623,9 +623,9 @@
+ int count_occurences(const char *string, const char *word) {
+   int count = 0, i = 0, word_len = strlen(word);
+   for(; string[i] != '\0'; i++) {
+-    if(!strncmp(string, word, word_len)) {
++    if(!strncmp(string+i, word, word_len)) {
+       count++;
+-      i += word_len - 1;
++      i += word_len;
+     }
+   }
+   return count;
+@@ -737,19 +737,17 @@
+ 
+ 
+ //
+-// return a list of all the unique keywords found in the keywords string
+-// keywords can be more than one word long (e.g. blue flame) and each
+-// keyword must be separated by a comma
+-//
+-char **parse_keywords(const char *keywords, int *num_keywords) {
++// Return a list of all the strings in this list. String are separated by the
++// delimeter.
++char **parse_strings(const char *string, char delimeter, int *num_strings) {
+   // we assume none to start off with
+-  *num_keywords = 0;
++  *num_strings = 0;
+ 
+-  // first, we check if the keywords have any non-spaces
++  // first, we check if the string have any non-spaces
+   int i;
+   bool nonspace_found = FALSE;
+-  for(i = 0; keywords[i] != '\0'; i++) {
+-    if(!isspace(keywords[i])) {
++  for(i = 0; string[i] != '\0'; i++) {
++    if(!isspace(string[i])) {
+       nonspace_found = TRUE;
+       break;
+     }
+@@ -759,32 +757,42 @@
+   if(!nonspace_found)
+     return NULL;
+ 
+-  *num_keywords = count_letters(keywords, ',', strlen(keywords)) + 1;
+-  if(*num_keywords == 0)
++  *num_strings = count_letters(string, delimeter, strlen(string)) + 1;
++  if(*num_strings == 0)
+     return NULL;
+ 
+-  char **keyword_names = malloc(sizeof(char *) * *num_keywords);
++  char **string_names = malloc(sizeof(char *) * *num_strings);
+ 
+-  int keyword_count = 0;
+-  while(keyword_count < *num_keywords - 1) {
++  int string_count = 0;
++  while(string_count < *num_strings - 1) {
+     i = 0;
+     // find the endpoint
+-    while(keywords[i] != ',')
++    while(string[i] != delimeter)
+       i++;
+ 
+     char buf[i+1];
+-    strncpy(buf, keywords, i); buf[i] = '\0';
++    strncpy(buf, string, i); buf[i] = '\0';
+     trim(buf); // skip all whitespaces
+-    keyword_names[keyword_count] = strdup(buf);
++    string_names[string_count] = strdup(buf);
+     // skip everything we just copied
+-    keywords = &keywords[i+1];
+-    keyword_count++;
++    string = &string[i+1];
++    string_count++;
+   }
+   // get the last one, and trim it
+-  keyword_names[*num_keywords - 1] = strdup(keywords);
+-  trim(keyword_names[*num_keywords - 1]);
++  string_names[*num_strings - 1] = strdup(string);
++  trim(string_names[*num_strings - 1]);
++
++  return string_names;
++}
+ 
+-  return keyword_names;
++
++//
++// return a list of all the unique keywords found in the keywords string
++// keywords can be more than one word long (e.g. blue flame) and each
++// keyword must be separated by a comma
++//
++char **parse_keywords(const char *keywords, int *num_keywords) {
++  return parse_strings(keywords, ',', num_keywords);
+ }
+ 
+ 
+@@ -1338,3 +1346,4 @@
+   strcat(prompt, "\r\n{nprompt> ");    
+   return prompt;
+ }
++
+diff -ruN ../nakedmudv2.5/src/utils.h src/utils.h
+--- ../nakedmudv2.5/src/utils.h	Sat Jun 18 14:46:43 2005
++++ src/utils.h	Wed Jul  6 02:52:19 2005
+@@ -106,6 +106,7 @@
+ #define AN(string)         (strchr("AEIOU", toupper(*string)) ? "an" : "a")
+ #define strdupsafe(string) strdup(string ? string : "")
+ 
++char **parse_strings      (const char *string, char delimeter,int *num_strings);
+ char **parse_keywords     (const char *keywords, int *num_keywords);
+ bool is_keyword           (const char *keywords, const char *word, 
+ 			   bool abbrev_ok);
+@@ -126,7 +127,7 @@
+ int  fgetline             (FILE *file, char *p, int maxlen);
+ void center_string        (char *buf, const char *string, int linelen, 
+ 			   int buflen, bool border);
+-int next_space_in         (char *string);
++int next_space_in         (const char *string);
+ int next_letter_in        (const char *string, char marker);
+ int string_hash           (const char *key);
+ bool endswith             (const char *string, const char *end);
+diff -ruN ../nakedmudv2.5/src/world.c src/world.c
+--- ../nakedmudv2.5/src/world.c	Sat Jun 18 14:46:43 2005
++++ src/world.c	Wed Jul  6 02:52:19 2005
+@@ -279,13 +279,16 @@
+ ZONE_DATA  *worldGetZone(WORLD_DATA *world, int vnum) {
+   LIST_ITERATOR *zone_i = newListIterator(world->zones);
+   ZONE_DATA *zone = NULL;
++  bool zone_found = FALSE;
+ 
+-  ITERATE_LIST(zone, zone_i)
+-    if(zoneGetVnum(zone) == vnum)
++  ITERATE_LIST(zone, zone_i) {
++    if(zoneGetVnum(zone) == vnum) {
++      zone_found = TRUE;
+       break;
+-  deleteListIterator(zone_i);
++    }
++  } deleteListIterator(zone_i);
+ 
+-  return zone;
++  return (zone_found ? zone : NULL);
+ };
+ 
+ 
+diff -ruN ../nakedmudv2.5/src/zone.c src/zone.c
+--- ../nakedmudv2.5/src/zone.c	Sat Jun 18 14:46:43 2005
++++ src/zone.c	Wed Jul  6 02:52:19 2005
+@@ -251,22 +251,27 @@
+   set = zoneStoreData(zone, zoneGetRoom, roomStore);
+   sprintf(fname, "%s/rooms", dirpath);
+   storage_write(set, fname);
++  storage_close(set);
+ 
+   set = zoneStoreData(zone, zoneGetObj, objStore);
+   sprintf(fname, "%s/objs", dirpath);
+   storage_write(set, fname);
++  storage_close(set);
+ 
+   set = zoneStoreData(zone, zoneGetMob, charStore);
+   sprintf(fname, "%s/mobs", dirpath);
+   storage_write(set, fname);
++  storage_close(set);
+ 
+   set = zoneStoreData(zone, zoneGetDialog, dialogStore);
+   sprintf(fname, "%s/dialogs", dirpath);
+   storage_write(set, fname);
++  storage_close(set);
+ 
+   set = zoneStoreData(zone, zoneGetScript, scriptStore);
+   sprintf(fname, "%s/scripts", dirpath);
+   storage_write(set, fname);
++  storage_close(set);
+ 
+   return TRUE;
+ }

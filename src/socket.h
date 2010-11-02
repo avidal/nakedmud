@@ -1,11 +1,9 @@
 #ifndef SOCKET_H
 #define SOCKET_H
 //*****************************************************************************
-//
 // socket.h
 //
 // all of the functions needed for working with character sockets
-//
 //*****************************************************************************
 
 int   init_socket           ( void );
@@ -30,10 +28,9 @@ void  recycle_sockets       ( void );
 void *lookup_address        ( void *arg );
 
 
+
 //*****************************************************************************
-//
 // set and get functions
-//
 //*****************************************************************************
 sh_int socketGetDNSLookupStatus( SOCKET_DATA *sock);
 
@@ -55,6 +52,7 @@ void socketShowPrompt         ( SOCKET_DATA *sock);
 void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name);
 const char *socketGetHostname ( SOCKET_DATA *sock);
 BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock);
+void socketQueueCommand       ( SOCKET_DATA *sock, const char *cmd);
 
 void socketBustPrompt         ( SOCKET_DATA *sock);
 

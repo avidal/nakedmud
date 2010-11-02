@@ -251,22 +251,27 @@ bool zoneSave(ZONE_DATA *zone, const char *dirpath) {
   set = zoneStoreData(zone, zoneGetRoom, roomStore);
   sprintf(fname, "%s/rooms", dirpath);
   storage_write(set, fname);
+  storage_close(set);
 
   set = zoneStoreData(zone, zoneGetObj, objStore);
   sprintf(fname, "%s/objs", dirpath);
   storage_write(set, fname);
+  storage_close(set);
 
   set = zoneStoreData(zone, zoneGetMob, charStore);
   sprintf(fname, "%s/mobs", dirpath);
   storage_write(set, fname);
+  storage_close(set);
 
   set = zoneStoreData(zone, zoneGetDialog, dialogStore);
   sprintf(fname, "%s/dialogs", dirpath);
   storage_write(set, fname);
+  storage_close(set);
 
   set = zoneStoreData(zone, zoneGetScript, scriptStore);
   sprintf(fname, "%s/scripts", dirpath);
   storage_write(set, fname);
+  storage_close(set);
 
   return TRUE;
 }

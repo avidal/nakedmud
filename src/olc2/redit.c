@@ -377,6 +377,7 @@ bool rrledit_parser(SOCKET_DATA *sock, LIST *list, int choice, const char *arg){
 #define EXEDIT_PICK        6
 #define EXEDIT_SPOT        7
 #define EXEDIT_NAME        8
+#define EXEDIT_OPPOSITE    9
 
 void exedit_menu(SOCKET_DATA *sock, EXIT_DATA *exit) {
   send_to_socket(sock,
@@ -390,11 +391,12 @@ void exedit_menu(SOCKET_DATA *sock, EXIT_DATA *exit) {
 		 "{c%s\r\n"
 		 "{g5) Description\r\n"
 		 "{c%s\r\n"
-		 "{g6) Exits to:   {y[{c%6d{y]\r\n"
-		 "{g7) Closable:   {y[{c%6s{y]\r\n"
-		 "{g8) Key vnum:   {y[{c%6d{y]\r\n"
-		 "{g9) Pick diff:  {y[{c%6d{y]\r\n"
-		 "{g0) Spot diff:  {y[{c%6d{y]\r\n",
+		 "{g6) Exits to    : {y[{c%6d{y]\r\n"
+		 "{g7) Closable    : {y[{c%6s{y]\r\n"
+		 "{g8) Key vnum    : {y[{c%6d{y]\r\n"
+		 "{g9) Pick diff   : {y[{c%6d{y]\r\n"
+		 "{g0) Spot diff   : {y[{c%6d{y]\r\n"
+		 "{gO) Opposite dir: {c%s{n\r\n",
 		 (*exitGetName(exit) ? exitGetName(exit) : "<NONE>"),
 		 (*exitGetKeywords(exit) ? exitGetKeywords(exit) : "<NONE>"),
 		 (*exitGetSpecLeave(exit) ? exitGetSpecLeave(exit):"<DEFAULT>"),
@@ -404,7 +406,8 @@ void exedit_menu(SOCKET_DATA *sock, EXIT_DATA *exit) {
 		 (exitIsClosable(exit) ? "Yes" : "No" ),
 		 exitGetKey(exit),
 		 exitGetPickLev(exit),
-		 exitGetHidden(exit)
+		 exitGetHidden(exit),
+		 (*exitGetOpposite(exit) ? exitGetOpposite(exit) : "<DEFAULT>")
 		 );
 }
 
@@ -440,6 +443,9 @@ int exedit_chooser(SOCKET_DATA *sock, EXIT_DATA *exit, const char *option) {
   case '0':
     text_to_buffer(sock, "Enter a new spot difficulty: ");
     return EXEDIT_SPOT;
+  case 'O':
+    text_to_buffer(sock, "What is this exit's opposite direction: ");
+    return EXEDIT_OPPOSITE;
   default:
     return MENU_CHOICE_INVALID;
   }
@@ -453,6 +459,9 @@ bool exedit_parser(SOCKET_DATA *sock, EXIT_DATA *exit, int choice,
     return TRUE;
   case EXEDIT_KEYWORDS:
     exitSetKeywords(exit, arg);
+    return TRUE;
+  case EXEDIT_OPPOSITE:
+    exitSetOpposite(exit, arg);
     return TRUE;
   case EXEDIT_LEAVE:
     exitSetSpecLeave(exit, arg);

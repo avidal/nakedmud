@@ -497,6 +497,30 @@ int PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
 //*****************************************************************************
 
 //
+// pages a length of text to the character
+PyObject *PyChar_page(PyChar *self, PyObject *value) {
+  char *mssg = NULL;
+  if (!PyArg_ParseTuple(value, "s", &mssg)) {
+    PyErr_Format(PyExc_TypeError, "Characters may only be paged strings");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) {
+    if(charGetSocket(ch))
+      page_string(charGetSocket(ch), mssg);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+                    "Tried to page message to nonexistant character, %d.", 
+		    self->uid);
+    return NULL;
+  }
+}
+
+
+//
 // sends a newline-tagged message to the character
 PyObject *PyChar_send(PyChar *self, PyObject *value) {
   char *mssg = NULL;
@@ -1271,6 +1295,8 @@ PyMODINIT_FUNC init_PyChar(void) {
 		   "detach an old script from the character.");
   PyChar_addMethod("send", PyChar_send, METH_VARARGS,
 		   "send a message to the character.");
+  PyChar_addMethod("page", PyChar_page, METH_VARARGS,
+		   "page a bunch of text to the character.");
   PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
 		   "send a message to everyone around the character.");
   PyChar_addMethod("act", PyChar_act, METH_VARARGS,

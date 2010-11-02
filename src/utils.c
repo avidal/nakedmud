@@ -472,7 +472,7 @@ int next_letter_in(const char *string, char marker) {
 //
 // Calculates how many characters until we hit the next space
 //
-int next_space_in(char *string) {
+int next_space_in(const char *string) {
   return next_letter_in(string, ' ');
 }
 
@@ -623,9 +623,9 @@ int count_letters(const char *string, const char ch, const int strlen) {
 int count_occurences(const char *string, const char *word) {
   int count = 0, i = 0, word_len = strlen(word);
   for(; string[i] != '\0'; i++) {
-    if(!strncmp(string, word, word_len)) {
+    if(!strncmp(string+i, word, word_len)) {
       count++;
-      i += word_len - 1;
+      i += word_len;
     }
   }
   return count;
@@ -737,19 +737,17 @@ int find_keyword(const char *keywords, const char *string) {
 
 
 //
-// return a list of all the unique keywords found in the keywords string
-// keywords can be more than one word long (e.g. blue flame) and each
-// keyword must be separated by a comma
-//
-char **parse_keywords(const char *keywords, int *num_keywords) {
+// Return a list of all the strings in this list. String are separated by the
+// delimeter.
+char **parse_strings(const char *string, char delimeter, int *num_strings) {
   // we assume none to start off with
-  *num_keywords = 0;
+  *num_strings = 0;
 
-  // first, we check if the keywords have any non-spaces
+  // first, we check if the string have any non-spaces
   int i;
   bool nonspace_found = FALSE;
-  for(i = 0; keywords[i] != '\0'; i++) {
-    if(!isspace(keywords[i])) {
+  for(i = 0; string[i] != '\0'; i++) {
+    if(!isspace(string[i])) {
       nonspace_found = TRUE;
       break;
     }
@@ -759,32 +757,42 @@ char **parse_keywords(const char *keywords, int *num_keywords) {
   if(!nonspace_found)
     return NULL;
 
-  *num_keywords = count_letters(keywords, ',', strlen(keywords)) + 1;
-  if(*num_keywords == 0)
+  *num_strings = count_letters(string, delimeter, strlen(string)) + 1;
+  if(*num_strings == 0)
     return NULL;
 
-  char **keyword_names = malloc(sizeof(char *) * *num_keywords);
+  char **string_names = malloc(sizeof(char *) * *num_strings);
 
-  int keyword_count = 0;
-  while(keyword_count < *num_keywords - 1) {
+  int string_count = 0;
+  while(string_count < *num_strings - 1) {
     i = 0;
     // find the endpoint
-    while(keywords[i] != ',')
+    while(string[i] != delimeter)
       i++;
 
     char buf[i+1];
-    strncpy(buf, keywords, i); buf[i] = '\0';
+    strncpy(buf, string, i); buf[i] = '\0';
     trim(buf); // skip all whitespaces
-    keyword_names[keyword_count] = strdup(buf);
+    string_names[string_count] = strdup(buf);
     // skip everything we just copied
-    keywords = &keywords[i+1];
-    keyword_count++;
+    string = &string[i+1];
+    string_count++;
   }
   // get the last one, and trim it
-  keyword_names[*num_keywords - 1] = strdup(keywords);
-  trim(keyword_names[*num_keywords - 1]);
+  string_names[*num_strings - 1] = strdup(string);
+  trim(string_names[*num_strings - 1]);
 
-  return keyword_names;
+  return string_names;
+}
+
+
+//
+// return a list of all the unique keywords found in the keywords string
+// keywords can be more than one word long (e.g. blue flame) and each
+// keyword must be separated by a comma
+//
+char **parse_keywords(const char *keywords, int *num_keywords) {
+  return parse_strings(keywords, ',', num_keywords);
 }
 
 
@@ -1338,3 +1346,4 @@ const char *custom_prompt(CHAR_DATA *ch) {
   strcat(prompt, "\r\n{nprompt> ");    
   return prompt;
 }
+

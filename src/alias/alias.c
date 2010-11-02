@@ -12,6 +12,8 @@
 #include "../auxiliary.h"
 #include "../storage.h"
 #include "../character.h"
+#include "../socket.h"
+#include "../action.h"
 
 #include "alias.h"
 
@@ -22,6 +24,7 @@
 //*****************************************************************************
 typedef struct alias_aux_data {
   HASHTABLE *aliases;
+  int    alias_queue;
 } ALIAS_AUX_DATA;
 
 
@@ -35,6 +38,7 @@ newAliasAuxData() {
   //  data->aliases        = newHashtable();
   //
   data->aliases        = NULL;
+  data->alias_queue    = 0;
   return data;
 }
 
@@ -113,25 +117,9 @@ ALIAS_AUX_DATA *aliasAuxDataRead(STORAGE_SET *set) {
 }
 
 
-void init_aliases() {
-  // install aliases on the character datastructure
-  auxiliariesInstall("alias_aux_data",
-		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR,
-				       newAliasAuxData, deleteAliasAuxData,
-				       aliasAuxDataCopyTo, aliasAuxDataCopy,
-				       aliasAuxDataStore, aliasAuxDataRead));
-
-  // allow people to view their aliases
-  add_cmd("alias", NULL, cmd_alias, 0, POS_UNCONCIOUS, POS_FLYING, 
-	  "player", FALSE, TRUE);
-}
-
-
 
 //*****************************************************************************
-//
 // functions for interacting with character aliases
-//
 //*****************************************************************************
 const char *charGetAlias(CHAR_DATA *ch, const char *alias) {
   ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
@@ -156,29 +144,94 @@ void charSetAlias(CHAR_DATA *ch, const char *alias, const char *cmd){
     hashPut(data->aliases, alias, strdup(cmd));
 }
 
+int charGetAliasesQueued(CHAR_DATA *ch) {
+  ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
+  return data->alias_queue;
+}
 
-char *expand_alias(const char *alias, const char *arg) {
-  char *cmd = strdup(alias);
+void charSetAliasesQueued(CHAR_DATA *ch, int amnt) {
+  ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
+  data->alias_queue = amnt;
+}
 
-  // first, we replace all occurances of the numeric parameters
+BUFFER *expand_alias(CHAR_DATA *ch, const char *alias, const char *arg) {
+  static int func_depth      = 0;
+  static int MAX_ALIAS_DEPTH = 10;
+  BUFFER *cmd = newBuffer(SMALL_BUFFER);
+  func_depth++;
+
+  BUFFER *filled_alias = newBuffer(1);
+  bufferCat(filled_alias, alias);
+  // now, replace all of our parameters 
   int i;
   for(i = 1; i < 10; i++) {
     char param[3];
     char one_arg[SMALL_BUFFER];
     sprintf(param, "$%d", i);
     arg_num(arg, one_arg, i);
-    replace_string(&cmd, param, one_arg, TRUE);
+    bufferReplace(filled_alias, param, one_arg, TRUE);
   }
 
   // then we replace the wildcard
-  replace_string(&cmd, "$*", arg, TRUE);
+  bufferReplace(filled_alias, "$*", arg, TRUE);
+  alias = bufferString(filled_alias);
+
+  if(func_depth <= MAX_ALIAS_DEPTH) {
+    for(i = 0; alias[i] != '\0'; i++) {
+      // do we have an embedded alias or not?
+      if(alias[i] != '[')
+	bprintf(cmd, "%c", alias[i]);
+
+      else {
+	// figure out the start and end of the embedded alias
+	int start = i;
+	int depth = 1;
+	for(i++; alias[i] != '\0' && depth > 0; i++) {
+	  if(alias[i] == '[')
+	    depth++;
+	  else if(alias[i] == ']')
+	    depth--;
+	}
+
+	// only cat something if we closed the alias off
+	if(depth == 0) {
+	  // make a copy of it, minus the opening and closing braces
+	  char *newstring = strdup(alias+start+1);
+	  newstring[i-start-2] = '\0';
+	  char newcmd[SMALL_BUFFER];
+	  char *newarg = one_arg(newstring, newcmd);
+	  const char *format = charGetAlias(ch, newcmd);
+	  
+	  // do we have a format? if so, expand the new alias and cat it in
+	  if(format != NULL) {
+	    BUFFER *newbuf = expand_alias(ch, format, newarg);
+	    bufferCat(cmd, bufferString(newbuf));
+	    deleteBuffer(newbuf);
+	  }
+
+	  // clean up our mess
+	  free(newstring);
+	}
+
+	// because we'll be incrementing on the next go around the loop
+	i--;
+      }
+    }
+  }
+
+  func_depth--;
+  deleteBuffer(filled_alias);
   return cmd;
 }
 
 
+
+//*****************************************************************************
+// character commands
+//*****************************************************************************
+
 //
 // Set or delete an alias. If no argument is supplied, all aliases are listed.
-//
 COMMAND(cmd_alias) {
   // list off all of the aliases
   if(!arg || !*arg) {
@@ -215,6 +268,73 @@ COMMAND(cmd_alias) {
     else {
       charSetAlias(ch, alias, arg);
       send_to_char(ch, "Alias set.\r\n");
+    }
+  }
+}
+
+
+
+//*****************************************************************************
+// implementation of alias.h
+//*****************************************************************************
+void init_aliases() {
+  // install aliases on the character datastructure
+  auxiliariesInstall("alias_aux_data",
+		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR,
+				       newAliasAuxData, deleteAliasAuxData,
+				       aliasAuxDataCopyTo, aliasAuxDataCopy,
+				       aliasAuxDataStore, aliasAuxDataRead));
+
+  // allow people to view their aliases
+  add_cmd("alias", NULL, cmd_alias, 0, POS_UNCONCIOUS, POS_FLYING, 
+	  "player", FALSE, TRUE);
+}
+
+
+bool try_alias(CHAR_DATA *ch, char *command, char *arg, bool scripts_ok) {
+  // is this command from an alias that executes multi commands?
+  // if it is, don't let it trigger any further aliases, or else we might
+  // get stuck in an infinite loop
+  bool    aliases_ok = TRUE;
+  int aliases_queued = charGetAliasesQueued(ch);
+  if(aliases_queued > 0) {
+    // this command came from an alias. ergo, there is going to be no echo
+    // of the command. send the socket a newline so we don't print on the
+    // person's prompt
+    send_to_char(ch, "\r\n");
+    aliases_ok = FALSE;
+  }
+
+  // make sure it didn't come from another alias
+  if(!aliases_ok)
+    return FALSE;
+  else {
+    const char *alias = charGetAlias(ch, command);
+    // see if the alias exists
+    if(alias == NULL)
+      return FALSE;
+    else {
+      BUFFER     *buf = expand_alias(ch, alias, arg);
+      int i, num_cmds = 0;
+      // break the buffer contents up into multiple commands, if there are any
+      char     **cmds = parse_strings(bufferString(buf), ';', &num_cmds);
+      
+      // queue all of our commands after the first onto the command list
+      if(charGetSocket(ch) && num_cmds > 1) {
+	for(i = 1; i < num_cmds; i++)
+	  socketQueueCommand(charGetSocket(ch), cmds[i]);
+	// note how many commands we got out of this alias
+	charSetAliasesQueued(ch, num_cmds);
+      }
+      if(num_cmds > 0)
+	do_cmd(ch, cmds[0], scripts_ok, FALSE);
+      
+      // clean up our mess
+      for(i = 0; i < num_cmds; i++)
+	free(cmds[i]);
+      free(cmds);
+      deleteBuffer(buf);
+      return TRUE;
     }
   }
 }

@@ -106,6 +106,7 @@ void        print_bits(bitvector_t bits, const char **names, char *buf);
 #define AN(string)         (strchr("AEIOU", toupper(*string)) ? "an" : "a")
 #define strdupsafe(string) strdup(string ? string : "")
 
+char **parse_strings      (const char *string, char delimeter,int *num_strings);
 char **parse_keywords     (const char *keywords, int *num_keywords);
 bool is_keyword           (const char *keywords, const char *word, 
 			   bool abbrev_ok);
@@ -126,7 +127,7 @@ char *line_start          (char *string, int line);
 int  fgetline             (FILE *file, char *p, int maxlen);
 void center_string        (char *buf, const char *string, int linelen, 
 			   int buflen, bool border);
-int next_space_in         (char *string);
+int next_space_in         (const char *string);
 int next_letter_in        (const char *string, char marker);
 int string_hash           (const char *key);
 bool endswith             (const char *string, const char *end);

@@ -19,6 +19,7 @@
 struct exit_data {
   char *name;              // what is the name of our door for descriptions?
   char *keywords;          // what keywords can the door be referenced by?
+  char *opposite;          // what is our opposite direction, if any?
   BUFFER *desc;            // what does a person see when they look at us?
 
   char *spec_enter;        // the message when we enter from this exit
@@ -40,6 +41,7 @@ EXIT_DATA *newExit() {
   EXIT_DATA *exit = malloc(sizeof(EXIT_DATA));
   exit->name        = strdup("");
   exit->keywords    = strdup("");
+  exit->opposite    = strdup("");
   exit->spec_enter  = strdup("");
   exit->spec_leave  = strdup("");
   exit->desc        = newBuffer(1);
@@ -58,6 +60,7 @@ void deleteExit(EXIT_DATA *exit) {
   if(exit->spec_enter)  free(exit->spec_enter);
   if(exit->spec_leave)  free(exit->spec_leave);
   if(exit->keywords)    free(exit->keywords);
+  if(exit->opposite)    free(exit->opposite);
   if(exit->desc)        deleteBuffer(exit->desc);
 
   free(exit);
@@ -77,6 +80,7 @@ void exitCopyTo(const EXIT_DATA *from, EXIT_DATA *to) {
   exitSetClosable (to, exitIsClosable(from));
   exitSetSpecEnter(to, exitGetSpecEnter(from));
   exitSetSpecLeave(to, exitGetSpecLeave(from));
+  exitSetOpposite (to, exitGetOpposite(from));
 }
 
 
@@ -90,6 +94,7 @@ EXIT_DATA *exitRead(STORAGE_SET *set) {
   EXIT_DATA *exit = newExit();
   exitSetName(exit,      read_string(set, "name"));
   exitSetKeywords(exit,  read_string(set, "keywords"));
+  exitSetOpposite(exit,  read_string(set, "opposite"));
   exitSetDesc(exit,      read_string(set, "desc"));
   exitSetSpecEnter(exit, read_string(set, "enter"));
   exitSetSpecLeave(exit, read_string(set, "leave"));
@@ -105,6 +110,7 @@ STORAGE_SET *exitStore(EXIT_DATA *exit) {
   STORAGE_SET *set = new_storage_set();
   store_string(set, "name",       exit->name);
   store_string(set, "keywords",   exit->keywords);
+  store_string(set, "opposite",   exit->opposite);
   store_string(set, "desc",       bufferString(exit->desc));
   store_string(set, "enter",      exit->spec_enter);
   store_string(set, "leave",      exit->spec_leave);
@@ -165,6 +171,10 @@ const char *exitGetKeywords(const EXIT_DATA *exit) {
   return exit->keywords;
 };
 
+const char *exitGetOpposite(const EXIT_DATA *exit) {
+  return exit->opposite;
+}
+
 const char *exitGetDesc(const EXIT_DATA *exit) {
   return bufferString(exit->desc);
 };
@@ -222,6 +232,11 @@ void        exitSetKeywords(EXIT_DATA *exit, const char *keywords) {
   if(keywords)       exit->keywords = strdup(keywords);
   else               exit->keywords = strdup("");
 };
+
+void        exitSetOpposite(EXIT_DATA *exit, const char *opposite) {
+  if(exit->opposite) free(exit->opposite);
+  exit->opposite   = strdupsafe(opposite);
+}
 
 void        exitSetDesc(EXIT_DATA *exit, const char *desc) {
   bufferClear(exit->desc);

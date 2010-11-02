@@ -236,77 +236,14 @@ LIST *help_matches(const char *keyword) {
 //   help <topic>
 //
 COMMAND(cmd_help) {
-  static char buf[MAX_BUFFER];
-  
-  // no argument. Show a list of all our help topics
-  if(!arg || !*arg) {
-    int count, i, buf_i = 0;
-    buf_i = snprintf(buf, MAX_BUFFER, 
-		     "Help is available on the following topics:\r\n");
-    for(i = 0, count = 0; i < HELP_TABLE_BUCKETS; i++) {
-      LIST_ITERATOR *buck_i = newListIterator(help_table[i]);
-      HELP_ENTRY     *entry = NULL;
-      ITERATE_LIST(entry, buck_i) {
-	buf_i += snprintf(buf+buf_i, MAX_BUFFER-buf_i, "%-20s", entry->keyword);
-	count++;
-	// only 4 entries per row
-	if((count % 4) == 0) 
-	  buf_i += snprintf(buf+buf_i, MAX_BUFFER-buf_i, "\r\n");
-      }
-      deleteListIterator(buck_i);
-    }
-
-    // make sure we add a newline to the end
-    if((count % 4) != 0)
-      buf_i += snprintf(buf+buf_i, MAX_BUFFER-buf_i, "\r\n");
-
+  BUFFER *buf = build_help(arg);
+  if(buf == NULL)
+    send_to_char(ch, "No help exists on that topic.\r\n");
+  else {
     // send this to the character
     if(charGetSocket(ch))
-      page_string(charGetSocket(ch), buf);
-  }
-
-
-  // pull out the helpfile
-  else {
-    // because we replace underscores with spaces in hlink,
-    // we should do the same thing here for consistancy's sake
-    char *ptr;
-    for(ptr = arg; *ptr; ptr++)
-      if(*ptr == '_') *ptr = ' ';
-
-    LIST *matches = help_matches(arg);
-    HELP_ENTRY *entry = NULL;
-    // no matches found
-    if(listSize(matches) == 0)
-      send_to_char(ch, "No help exists on that topic.\r\n");
-    // one match found
-    else if(listSize(matches) == 1) {
-      if(charGetSocket(ch)) {
-	entry = listPop(matches);
-	// the character has a socket... let's page the helpfile to him
-	if(charGetSocket(ch)) {
-	  char header[128]; // +2 for \r\n, +1 for \0
-	  center_string(header, entry->keyword, 80, 128, TRUE);
-	  sprintf(buf, "%s{wBy: %-36s%40s\r\n\r\n{n%s",
-		  header, entry->help->editor, entry->help->timestamp,
-		  entry->help->info);
-	  page_string(charGetSocket(ch), buf);
-	}
-      }
-    }
-
-    // more than one match found. Tell person to narrow search
-    else {
-      send_to_char(ch, "More than one entry matched your query: \r\n");
-      LIST_ITERATOR *match_i = newListIterator(matches);
-      ITERATE_LIST(entry, match_i)
-	send_to_char(ch, "{c%s ", entry->keyword);
-      deleteListIterator(match_i);
-      send_to_char(ch, "\r\n");
-    }
-    
-    // delete the list of matches we found
-    deleteList(matches);
+      page_string(charGetSocket(ch), bufferString(buf));
+    deleteBuffer(buf);
   }
 }
 
@@ -471,9 +408,73 @@ void init_help() {
   storage_close(set);
 }
 
-const char *get_help(const char *keyword) {
-  HELP_DATA *data = get_help_data(keyword, FALSE);
-  return(data ? data->info : NULL);
+BUFFER *build_help(const char *keyword) {
+  // we have to edit the keyword... dup it
+  char   *arg = strdup(keyword);
+  BUFFER *buf = newBuffer(MAX_BUFFER);
+  // no argument. Show a list of all our help topics
+  if(!*arg) {
+    int count, i;
+    bprintf(buf, "Help is available on the following topics:\r\n");
+    for(i = 0, count = 0; i < HELP_TABLE_BUCKETS; i++) {
+      LIST_ITERATOR *buck_i = newListIterator(help_table[i]);
+      HELP_ENTRY     *entry = NULL;
+      ITERATE_LIST(entry, buck_i) {
+	bprintf(buf, "%-16s", entry->keyword);
+	count++;
+	// only 4 entries per row
+	if((count % 5) == 0) 
+	  bufferCat(buf, "\r\n");
+      } deleteListIterator(buck_i);
+    }
+
+    // make sure we add a newline to the end
+    if((count % 5) != 0)
+      bufferCat(buf, "\r\n");
+  }
+
+  // pull out the helpfile
+  else {
+    // because we replace underscores with spaces in hlink,
+    // we should do the same thing here for consistancy's sake
+    char *ptr;
+    for(ptr = arg; *ptr; ptr++)
+      if(*ptr == '_') *ptr = ' ';
+
+    LIST *matches = help_matches(arg);
+    HELP_ENTRY *entry = NULL;
+    // no matches found
+    if(listSize(matches) == 0)
+      bprintf(buf, "No help exists for %s.\r\n", arg);
+    // one match found
+    else if(listSize(matches) == 1) {
+      entry = listPop(matches);
+      char header[128]; // +2 for \r\n, +1 for \0
+      center_string(header, entry->keyword, 80, 128, TRUE);
+      bprintf(buf, "%s{wBy: %-36s%40s\r\n\r\n{n%s",
+	      header, entry->help->editor, entry->help->timestamp,
+	      entry->help->info);
+    }
+
+    // more than one match found. Tell person to narrow search
+    else {
+      bprintf(buf, "More than one entry matched your query: \r\n");
+      LIST_ITERATOR *match_i = newListIterator(matches);
+      ITERATE_LIST(entry, match_i) {
+	bprintf(buf, "{c%s ", entry->keyword);
+      } deleteListIterator(match_i);
+      bufferCat(buf, "{n\r\n");
+    }
+    
+    // delete the list of matches we found
+    deleteList(matches);
+  }
+
+  // clean up our mess
+  free(arg);
+
+  // return whatever we created
+  return buf;
 }
 
 

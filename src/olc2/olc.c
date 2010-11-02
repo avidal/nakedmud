@@ -22,6 +22,15 @@
 
 
 //*****************************************************************************
+// optional modules
+//*****************************************************************************
+#ifdef MODULE_HELP
+#include "../help/help.h"
+#endif
+
+
+
+//*****************************************************************************
 //
 // local data structures, defines, and functions
 //
@@ -109,7 +118,11 @@ void olc_menu(SOCKET_DATA *sock) {
   if(olc->cmd == MENU_NOCHOICE) {
     text_to_buffer(sock, CLEAR_SCREEN);
     olc->menu(sock, olc->working_copy);
+#ifdef MODULE_HELP
+    text_to_buffer(sock, "\r\n{gEnter choice, ? [topic] for help, or Q to quit: ");
+#else
     text_to_buffer(sock, "\r\n{gEnter choice, or Q to quit: ");
+#endif
   }
 }
 
@@ -199,6 +212,23 @@ void olc_handler(SOCKET_DATA *sock, char *arg) {
 	olc_exit(sock, TRUE);
       }
       break;
+
+#ifdef MODULE_HELP
+    case '?': {
+      while(*arg == '?' || isspace(*arg))
+	arg++;
+      BUFFER *buf = build_help(arg);
+      if(buf == NULL)
+	text_to_buffer(sock, "No help available.\r\nTry again: ");
+      // we've (tried to) switched handlers... no menu display
+      else {
+	olc->cmd = MENU_NOCHOICE;
+	start_reader(sock, bufferString(buf));
+	deleteBuffer(buf);
+      }
+      break;
+    }
+#endif
 
     default: {
       int cmd = olc->chooser(sock, olc->working_copy, arg);

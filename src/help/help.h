@@ -31,9 +31,9 @@ void update_help(const char *editor, const char *keyword, const char *info);
 
 
 //
-// Get the content of the helpfile. Return NULL if none exists.
-//
-const char *get_help(const char *keyword);
+// Builds the output of the help query. If no help exists on the topic, NULL
+// is returned. Returned buffer must be deleted after use.
+BUFFER *build_help(const char *keyword);
 
 
 //

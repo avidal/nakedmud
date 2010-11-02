@@ -107,12 +107,17 @@ bool edesc_set_parser(SOCKET_DATA *sock, EDESC_SET *set, int choice,
 		       const char *arg) {
   switch(choice) {
   case ESEDIT_EDIT: {
-    EDESC_DATA *edesc = edescSetGetNum(set, atoi(arg));
-    if(edesc == NULL)
-      return FALSE;
-    do_olc(sock, edesc_menu, edesc_chooser, edesc_parser, NULL, NULL, NULL,
-	   NULL, edesc);
-    return TRUE;
+    int num = atoi(arg);
+    if(num == NOTHING)
+      return TRUE;
+    else {
+      EDESC_DATA *edesc = edescSetGetNum(set, num);
+      if(edesc == NULL)
+	return FALSE;
+      do_olc(sock, edesc_menu, edesc_chooser, edesc_parser, NULL, NULL, NULL,
+	     NULL, edesc);
+      return TRUE;
+    }
   }
   case ESEDIT_DELETE: {
     EDESC_DATA *edesc = edescSetGetNum(set, atoi(arg));

@@ -22,6 +22,7 @@
 #include "../room.h"
 #include "../races.h"
 #include "../handler.h"
+#include "../save.h"
 
 #include "set_val.h"
 
@@ -130,6 +131,14 @@ void try_set(CHAR_DATA *ch, void *tgt, HASHTABLE *table,
 COMMAND(cmd_set) {
   char name [SMALL_BUFFER];
   char field[SMALL_BUFFER];
+  bool  file = FALSE;
+
+  // are we trying to modify a character on disk?
+  if(!strncasecmp(arg, "file ", 5)) {
+    file = TRUE;
+    arg += 5;
+  }
+
   const char *val = two_args(arg, name, field);
 
   // check to see if we're trying to set from our notepad. Also, make sure
@@ -145,6 +154,29 @@ COMMAND(cmd_set) {
 
   if(!*val || !*name || !*field)
     send_to_char(ch, "Set which value on what?\r\n");
+
+  // we're trying to set something on someone's pfile
+  else if(file == TRUE) {
+    // make sure the player isn't online, currently
+    CHAR_DATA *tgt = generic_find(ch, name, FIND_TYPE_CHAR, FIND_SCOPE_ALL, 
+				  FALSE, NULL);
+    if(tgt != NULL)
+      send_to_char(ch, "%s is currently logged on. No need to touch the pfile.\r\n", charGetName(tgt));
+    else {
+      tgt = load_player(name);
+      if(tgt == NULL)
+	send_to_char(ch, "No pfile for %s exists!\r\n", name);
+      else if(!charHasMoreUserGroups(ch, tgt))
+	send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
+		     HESHE(tgt));
+      else {
+	try_set(ch, tgt, char_set_table, field, val);
+	save_player(tgt);
+	deleteChar(tgt);
+      }
+    }
+  }
+
   // are we trying to set a field on a room?
   else if(!strcasecmp("room", name)) {
     if(!canEditZone(worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch))),
@@ -153,12 +185,16 @@ COMMAND(cmd_set) {
     else
       try_set(ch, charGetRoom(ch), room_set_table, field, val);
   }
+
+  // are we trying to set a field on a room, by vnum>
   else if(isdigit(*name) && worldGetRoom(gameworld, atoi(name))) {
     if(!canEditZone(worldZoneBounding(gameworld, atoi(name)), ch))
       send_to_char(ch, "You are not authorized to edit this zone.\r\n");
     else
       try_set(ch, worldGetRoom(gameworld, atoi(name)),room_set_table,field,val);
   }
+
+  // are we setting a field on an object or character in game?
   else {
     int found = FOUND_NONE;
     void *tgt = NULL;
@@ -166,9 +202,9 @@ COMMAND(cmd_set) {
 		       FIND_SCOPE_ALL | FIND_SCOPE_VISIBLE, FALSE, &found);
 
     if(found == FOUND_CHAR) {
-      if(!charHasMoreUserGroups(ch, tgt))
+      if(ch != tgt && !charHasMoreUserGroups(ch, tgt))
 	send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
-		     see_char_as(ch, tgt));
+		     HESHE(tgt));
       else
 	try_set(ch, tgt, char_set_table, field, val);
     }

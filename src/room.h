@@ -120,6 +120,8 @@ const char *roomGetDesc        (const ROOM_DATA *room);
 int         roomGetTerrain     (const ROOM_DATA *room);
 BUFFER     *roomGetDescBuffer  (const ROOM_DATA *room);
 
+int         roomGetExitDir      (const ROOM_DATA *room, EXIT_DATA *exit);
+const char *roomGetExitDirSpecial(const ROOM_DATA *room, EXIT_DATA *exit);
 EXIT_DATA  *roomGetExit         (const ROOM_DATA *room, int dir);
 EXIT_DATA  *roomGetExitSpecial  (const ROOM_DATA *room, const char *dir);
 const char **roomGetExitNames   (const ROOM_DATA *room, int *num);

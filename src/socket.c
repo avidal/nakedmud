@@ -1,15 +1,16 @@
-/*
- * This file contains the socket code, used for accepting
- * new connections as well as reading and writing to
- * sockets, and closing down unused sockets.
- */
-
+//*****************************************************************************
+//
+// socket.c
+//
+// This file contains the socket code, used for accepting new connections as 
+// well as reading and writing to sockets, and closing down unused sockets.
+//
+//*****************************************************************************
 #include "wrapsock.h"
 #include <netdb.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h> 
 
-/* including main header file */
 #include "mud.h"
 #include "character.h"
 #include "account.h"
@@ -17,6 +18,16 @@
 #include "utils.h"
 #include "socket.h"
 #include "auxiliary.h"
+
+
+
+//*****************************************************************************
+// optional modules
+//*****************************************************************************
+#ifdef MODULE_ALIAS
+#include "alias/alias.h"
+#endif
+
 
 
 //
@@ -42,6 +53,7 @@ struct socket_data {
   BUFFER        * text_editor;   // where we do our actual work
 
   LIST          * input_handlers;// a stack of our input handlers and prompts
+  LIST          * input;         // lines of input we have received
 
   unsigned char   compressing;                 /* MCCP support */
   z_stream      * out_compress;                /* MCCP support */
@@ -610,81 +622,81 @@ void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
 }
 
 
-void next_cmd_from_buffer(SOCKET_DATA *dsock)
-{
-  int size = 0, i = 0, j = 0, telopt = 0;
+void next_cmd_from_buffer(SOCKET_DATA *dsock) {
+  // do we have stuff in our input list? If so, use that instead of inbuf
+  if(listSize(dsock->input) > 0) {
+    char *cmd = listPop(dsock->input);
+    strncpy(dsock->next_command, cmd, MAX_BUFFER);
+    dsock->cmd_read    = TRUE;
+    dsock->bust_prompt = TRUE;
+    free(cmd);
+  }
+  else {
+    int size = 0, i = 0, j = 0, telopt = 0;
 
-  /* if theres already a command ready, we return */
-  if (dsock->next_command[0] != '\0')
-    return;
+    // if theres already a command ready, we return
+    if(dsock->next_command[0] != '\0')
+      return;
 
-  /* if there is nothing pending, then return */
-  if (dsock->inbuf[0] == '\0')
-    return;
+    // if there is nothing pending, then return
+    if(dsock->inbuf[0] == '\0')
+      return;
 
-  /* check how long the next command is */
-  while (dsock->inbuf[size] != '\0' && dsock->inbuf[size] != '\n' && dsock->inbuf[size] != '\r')
-    size++;
+    // check how long the next command is
+    while(dsock->inbuf[size] != '\0' && 
+	  dsock->inbuf[size] != '\n' && dsock->inbuf[size] != '\r')
+      size++;
 
-  /* we only deal with real commands */
-  if (dsock->inbuf[size] == '\0')
-    return;
+    /* we only deal with real commands */
+    if(dsock->inbuf[size] == '\0')
+      return;
 
-  /* copy the next command into next_command */
-  for ( ; i < size; i++)
-  {
-    if (dsock->inbuf[i] == (signed char) IAC)
-    {
-      telopt = 1;
-    }
-    else if (telopt == 1 && (dsock->inbuf[i] == (signed char) DO || dsock->inbuf[i] == (signed char) DONT))
-    {
-      telopt = 2;
-    }
-    else if (telopt == 2)
-    {
-      telopt = 0;
+    // copy the next command into next_command
+    for(; i < size; i++) {
+      if(dsock->inbuf[i] == (signed char) IAC)
+	telopt = 1;
+      else if(telopt == 1 && (dsock->inbuf[i] == (signed char) DO || 
+			      dsock->inbuf[i] == (signed char) DONT))
+	telopt = 2;
 
-      if (dsock->inbuf[i] == (signed char) TELOPT_COMPRESS)         /* check for version 1 */
-      {
-        if (dsock->inbuf[i-1] == (signed char) DO)                  /* start compressing   */
-          compressStart(dsock, TELOPT_COMPRESS);
-        else if (dsock->inbuf[i-1] == (signed char) DONT)           /* stop compressing    */
-          compressEnd(dsock, TELOPT_COMPRESS, FALSE);
+      // check for compression format
+      else if(telopt == 2) {
+	unsigned char compress_opt = dsock->inbuf[i];
+	telopt = 0;
+	
+	// check if we're using a valid compression
+	if(compress_opt == TELOPT_COMPRESS || compress_opt == TELOPT_COMPRESS2){
+	  // start compressing
+	  if(dsock->inbuf[i-1] == (signed char) DO)                  
+	    compressStart(dsock, compress_opt);
+	  // stop compressing
+	  else if(dsock->inbuf[i-1] == (signed char) DONT)
+	    compressEnd(dsock, compress_opt, FALSE);
+	}
       }
-      else if (dsock->inbuf[i] == (signed char) TELOPT_COMPRESS2)   /* check for version 2 */
-      {
-        if (dsock->inbuf[i-1] == (signed char) DO)                  /* start compressing   */
-          compressStart(dsock, TELOPT_COMPRESS2);
-        else if (dsock->inbuf[i-1] == (signed char) DONT)           /* stop compressing    */
-          compressEnd(dsock, TELOPT_COMPRESS2, FALSE);
+      else if(isprint(dsock->inbuf[i]) && isascii(dsock->inbuf[i])) {
+	dsock->next_command[j++] = dsock->inbuf[i];
       }
     }
-    else if (isprint(dsock->inbuf[i]) && isascii(dsock->inbuf[i]))
-    {
-      dsock->next_command[j++] = dsock->inbuf[i];
+    dsock->next_command[j] = '\0';
+
+    // skip forward to the next line
+    while(dsock->inbuf[size] == '\n' || dsock->inbuf[size] == '\r') {
+      dsock->cmd_read = TRUE;
+      dsock->bust_prompt = TRUE;   // seems like a good place to check
+      size++;
     }
-  }
-  dsock->next_command[j] = '\0';
 
-  /* skip forward to the next line */
-  while (dsock->inbuf[size] == '\n' || dsock->inbuf[size] == '\r')
-  {
-    dsock->cmd_read = TRUE;
-    dsock->bust_prompt = TRUE;   /* seems like a good place to check */
-    size++;
+    // use i as a static pointer
+    i = size;
+    
+    // move the context of inbuf down
+    while(dsock->inbuf[size] != '\0') {
+      dsock->inbuf[size - i] = dsock->inbuf[size];
+      size++;
+    }
+    dsock->inbuf[size - i] = '\0';
   }
-
-  /* use i as a static pointer */
-  i = size;
-
-  /* move the context of inbuf down */
-  while (dsock->inbuf[size] != '\0')
-  {
-    dsock->inbuf[size - i] = dsock->inbuf[size];
-    size++;
-  }
-  dsock->inbuf[size - i] = '\0';
 }
 
 
@@ -734,6 +746,7 @@ void deleteSocket(SOCKET_DATA *sock) {
   if(sock->page_string)    free(sock->page_string);
   if(sock->text_editor)    deleteBuffer(sock->text_editor);
   if(sock->input_handlers) deleteListWith(sock->input_handlers, free);
+  if(sock->input)          deleteListWith(sock->input, free);
   if(sock->auxiliary)      deleteAuxiliaryData(sock->auxiliary);
   free(sock);
 }
@@ -744,10 +757,12 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
   if(sock_new->text_editor)    deleteBuffer(sock_new->text_editor);
   if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, free);
   if(sock_new->auxiliary)      deleteAuxiliaryData(sock_new->auxiliary);
+  if(sock_new->input)          deleteListWith(sock_new->input, free);
 
   bzero(sock_new, sizeof(*sock_new));
   sock_new->auxiliary = newAuxiliaryData(AUXILIARY_TYPE_SOCKET);
   sock_new->input_handlers = newList();
+  sock_new->input          = newList();
   socketPushInputHandler(sock_new, handle_new_connections, NULL);
   sock_new->control        = sock;
   sock_new->lookup_status  = TSTATE_LOOKUP;
@@ -939,6 +954,18 @@ void socket_handler() {
       sock->next_command[0] = '\0';
       sock->cmd_read = FALSE;
     }
+
+#ifdef MODULE_ALIAS
+    // ACK!! this is so yucky, but I can't think of a better way to do it...
+    // if this command was put in place by an alias, decrement the alias_queue
+    // counter by one. This counter is in place mainly so aliases do not end
+    // up calling eachother and making us get stuck in an infinite loop.
+    if(sock->player) {
+      int alias_queue = charGetAliasesQueued(sock->player);
+      if(alias_queue > 0)
+	charSetAliasesQueued(sock->player, --alias_queue);
+    }
+#endif
     
     /* if the player quits or get's disconnected */
     if(sock->closed)
@@ -1034,6 +1061,38 @@ void  page_continue(SOCKET_DATA *dsock) {
     text_to_buffer(dsock, "There is no more text in your page buffer.\r\n");
   }
 }
+
+
+//
+// the command handler for the reader
+void read_handler(SOCKET_DATA *sock, char *input) {
+  if(!strncasecmp(input, "more", strlen(input)))
+    page_continue(sock);
+  else if(!strncasecmp(input, "back", strlen(input)))
+    page_back(sock);
+  else if(!strncasecmp(input, "quit", strlen(input)))
+    socketPopInputHandler(sock);
+  else
+    text_to_buffer(sock, "Invalid choice!\r\n");
+}
+
+
+//
+// the prompt for reading text
+void read_prompt(SOCKET_DATA *sock) {
+  text_to_buffer(sock, "\r\nQ to stop reading> ");
+}
+
+//
+// a new handler that allows people to read long bits of text
+void  start_reader(SOCKET_DATA *dsock, const char *text) {
+  // add a new input handler to control the reading
+  socketPushInputHandler(dsock, read_handler, read_prompt);
+  
+  // page the string
+  page_string(dsock, text);
+}
+
 
 void do_copyover(CHAR_DATA *ch) {
   LIST_ITERATOR *sock_i = newListIterator(socket_list);
@@ -1136,6 +1195,10 @@ void (*socketGetInputHandler ( SOCKET_DATA *socket))(SOCKET_DATA *, char *) {
     return NULL;
   IH_PAIR *pair = listGet(socket->input_handlers, 0);
   return (pair ? pair->handler : NULL);
+}
+
+void socketQueueCommand( SOCKET_DATA *sock, const char *cmd) {
+  listQueue(sock->input, strdup(cmd));
 }
 
 void socketShowPrompt( SOCKET_DATA *sock) {

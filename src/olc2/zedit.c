@@ -126,8 +126,7 @@ COMMAND(cmd_zedit) {
       send_to_char(ch, "You are not authorized to edit this zone.\r\n");  
     else {
       do_olc(charGetSocket(ch), zedit_menu, zedit_chooser, zedit_parser,
-	     zoneCopy, zoneCopyTo, deleteZone, save_world,
-	     worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch))));
+	     zoneCopy, zoneCopyTo, deleteZone, save_world, zone);
     }
   }
 }

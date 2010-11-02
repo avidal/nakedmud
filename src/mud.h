@@ -48,6 +48,7 @@ typedef struct char_data                  CHAR_DATA;
 typedef struct datatable                  DATATABLE;
 typedef struct storage_set                STORAGE_SET;
 typedef struct storage_set_list           STORAGE_SET_LIST;
+typedef struct prototype_data             PROTO_DATA;
 
 typedef struct script_set_data            SCRIPT_SET;
 typedef struct edesc_data                 EDESC_DATA;
@@ -275,9 +276,14 @@ bool  compressStart     ( SOCKET_DATA *dsock, unsigned char teleopt );
 bool  compressEnd       ( SOCKET_DATA *dsock, unsigned char teleopt, bool forced );
 
 /* socket.c */
-#define NUM_LINES_PER_PAGE  22
+#define NUM_LINES_PER_PAGE  21
 void  page_string           ( SOCKET_DATA *dsock, const char *string);
 void  page_continue         ( SOCKET_DATA *dsock);
 void  page_back             ( SOCKET_DATA *dsock);
+
+//
+// adds a new input handler onto the stack that allows a person to read 
+// long pages of text (e.g. helpfiles in OLC)
+void  start_reader          ( SOCKET_DATA *dsock, const char *text);
 
 #endif  /* MUD_H */

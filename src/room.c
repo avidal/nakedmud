@@ -132,7 +132,7 @@ STORAGE_SET *roomStore(ROOM_DATA *room) {
   store_string(set, "name",    room->name);
   store_string(set, "desc",    bufferString(room->desc));
   store_int   (set, "vnum",    room->vnum);
-  store_int   (set, "terrain", room->terrain);
+  store_string(set, "terrain", terrainGetName(room->terrain));
   store_set   (set, "edescs",  edescSetStore(room->edescs));
 
   STORAGE_SET_LIST *exits = new_storage_list();
@@ -166,12 +166,11 @@ STORAGE_SET *roomStore(ROOM_DATA *room) {
 
 ROOM_DATA *roomRead(STORAGE_SET *set) {
   ROOM_DATA *room = newRoom();
-
-  roomSetVnum(room,              read_int   (set, "vnum"));
-  roomSetName(room,              read_string(set, "name"));
-  roomSetDesc(room,              read_string(set, "desc"));
-  roomSetTerrain(room,           read_int   (set, "terrain"));
-  roomSetEdescs(room,  edescSetRead(read_set(set, "edescs")));
+  roomSetVnum(room,                  read_int   (set, "vnum"));
+  roomSetName(room,                  read_string(set, "name"));
+  roomSetDesc(room,                  read_string(set, "desc"));
+  roomSetTerrain(room,               read_int   (set, "terrain"));
+  roomSetEdescs(room,   edescSetRead(read_set   (set, "edescs")));
 
   STORAGE_SET_LIST *exits = read_list(set, "exits");
   STORAGE_SET       *exit = NULL;
@@ -359,6 +358,28 @@ EXIT_DATA  *roomGetExit        (const ROOM_DATA *room, int dir) {
 EXIT_DATA  *roomGetExitSpecial (const ROOM_DATA *room, const char *dir) {
   return hashGet(room->special_exits, dir);
 };
+
+int roomGetExitDir(const ROOM_DATA *room, EXIT_DATA *exit) {
+  int i;
+  for(i = 0; i < NUM_DIRS; i++)
+    if(room->exits[i] == exit)
+      return i;
+  return DIR_NONE;
+}
+
+const char *roomGetExitDirSpecial(const ROOM_DATA *room, EXIT_DATA *exit) {
+  HASH_ITERATOR *ex_i = newHashIterator(room->special_exits);
+  const char  *exname = NULL;
+  EXIT_DATA      *val = NULL;
+  bool       ex_found = FALSE;
+  ITERATE_HASH(exname, val, ex_i) {
+    if(val == exit) {
+      ex_found = TRUE;
+      break;
+    }
+  } deleteHashIterator(ex_i);
+  return (ex_found ? exname : NULL);
+}
 
 const char      **roomGetExitNames   (const ROOM_DATA *room, int *num) {
   int i;

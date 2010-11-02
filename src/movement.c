@@ -85,6 +85,7 @@ bool try_buildwalk(CHAR_DATA *ch, int dir) {
       char desc[MAX_BUFFER];
       ROOM_DATA *new_room = newRoom();
       roomSetVnum(new_room, vnum);
+      roomSetTerrain(new_room, roomGetTerrain(charGetRoom(ch)));
 
       roomSetName(new_room, "A New Buildwalk Room");
       sprintf(desc, "This room was created by %s.\r\n", charGetName(ch));

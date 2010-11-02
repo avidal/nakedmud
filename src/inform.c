@@ -319,7 +319,8 @@ void look_at_char(CHAR_DATA *ch, CHAR_DATA *vict) {
 
 void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
   if(bitIsOneSet(charGetUserGroups(ch), "builder"))
-    send_to_char(ch, "{c[%d] ", roomGetVnum(room));
+    send_to_char(ch, "{c[%d] [%s] ", roomGetVnum(room), 
+		 terrainGetName(roomGetTerrain(room)));
 
   send_to_char(ch, "{c%s\r\n", roomGetName(room));
 

@@ -110,8 +110,10 @@ int bufferReplace(BUFFER *buf, const char *a, const char *b, int all) {
     int to_replace = (all ? 
 		      count_occurences(buf->data, a) : 
 		      strstr(buf->data, a) != NULL);
+
     // if we don't have any to replace, do nothing
-    if(to_replace == 0) return 0;
+    if(to_replace == 0)
+      return 0;
 
     // if we won't have enough room, do the expansion
     if(to_replace * (b_len - a_len) + buf->len > buf->maxlen)

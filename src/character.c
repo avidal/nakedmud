@@ -423,7 +423,8 @@ STORAGE_SET *charStore(CHAR_DATA *mob) {
   if(!charIsNPC(mob)) {
     store_int   (set, "position",   mob->position);
     store_int   (set, "uid",        mob->uid);
-    store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)));
+    store_int   (set, "loadroom",   (mob->room ? 
+				     roomGetVnum(mob->room) : mob->loadroom));
   }
   // NPC-only data
   else

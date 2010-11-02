@@ -73,6 +73,36 @@ COMMAND(cmd_scrun) {
 }
 
 
+//
+// displays info on a script to a person
+COMMAND(cmd_scstat) {
+  if(!isdigit(*arg))
+    send_to_char(ch, "Which script would you like to stat?\r\n");
+  else if(!charGetSocket(ch))
+    return;
+  else {
+    int vnum = atoi(arg);
+    SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+    if(script == NULL)
+      send_to_char(ch, "No script exists with that vnum.\r\n");
+    else {
+      send_to_socket(charGetSocket(ch),
+		     "--------------------------------------------------------------------------------\r\n"
+		     "Name         : %s\r\n"
+		     "Script type  : %s\r\n"
+		     "Arguments    : %s\r\n"
+		     "Num. Argument: %d\r\n"
+		     "--------------------------------------------------------------------------------\r\n",
+		     scriptGetName(script), 
+		     scriptTypeName(scriptGetType(script)),
+		     (*scriptGetArgs(script)?scriptGetArgs(script):"<NONE>"),
+		     scriptGetNumArg(script));
+      script_display(charGetSocket(ch), scriptGetCode(script), FALSE);
+    }
+  }
+}
+
+
 
 //*****************************************************************************
 // Auxiliary script data that we need to install into players, objects and
@@ -438,6 +468,8 @@ void init_scripts() {
   add_cmd("scedit", NULL, cmd_scedit, 0, POS_UNCONCIOUS, POS_FLYING,
 	  "scripter", FALSE, TRUE);
   add_cmd("scrun", NULL, cmd_scrun, 0, POS_UNCONCIOUS, POS_FLYING,
+	  "builder", FALSE, FALSE);
+  add_cmd("scstat", NULL, cmd_scstat, 0, POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
 
   init_script_editor();

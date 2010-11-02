@@ -367,14 +367,14 @@ void show_commands(CHAR_DATA *ch, const char *user_groups) {
     ITERATE_LIST(cmd, buck_i) {
       if(!is_keyword(user_groups, cmd->user_group, FALSE))
 	continue;
-      bprintf(buf, "%-20.20s", cmd->cmd_name);
-      if (!(++col % 4))
+      bprintf(buf, "%-13.13s", cmd->cmd_name);
+      if (!(++col % 6))
 	bufferCat(buf, "\r\n");
     }
     deleteListIterator(buck_i);
   }
 
-  if (col % 4) bprintf(buf, "\r\n");
+  if (col % 6) bprintf(buf, "\r\n");
   text_to_char(ch, bufferString(buf));
   deleteBuffer(buf);
 }
@@ -483,14 +483,8 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
   }
 
 #ifdef MODULE_ALIAS
-  // see if it's an alias
-  const char *alias = charGetAlias(ch, command);
-  if(aliases_ok && alias) {
-    char *alias_cmd = expand_alias(alias, arg);
-    do_cmd(ch, alias_cmd, scripts_ok, FALSE);
-    free(alias_cmd);
+  if(aliases_ok && try_alias(ch, command, arg, scripts_ok))
     return;
-  }
 #endif
 
   // check to see if it's a faculty command
@@ -503,6 +497,20 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
   // to follow through with our normal command, return out
   if(scripts_ok && try_command_script(ch, command, arg))
     return;
+
+  // check to see if we have a special exit. These over-ride normal commands
+  if(roomGetExitSpecial(charGetRoom(ch), command)) {
+    if(min_pos_ok(ch, POS_STANDING)) {
+#ifdef MODULE_FACULTY
+      interrupt_action(ch, FACULTY_ALL);
+#else
+      interrupt_action(ch, 1);
+#endif
+      try_move(ch, DIR_NONE, command);
+    }
+    // don't follow through with normal commands... we had a special exit
+    return;
+  }
 
   // get the groups we belong to for seeing if we can use the command
   const char *user_groups = bitvectorGetBits(charGetUserGroups(ch));
@@ -534,22 +542,6 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
   }
   deleteListIterator(cmd_i);
 
-
-
-  if (!found_cmd) {
-    // check to see if the character is trying to use
-    // a special exit command for the room
-    if(roomGetExitSpecial(charGetRoom(ch), command)) {
-      if(min_pos_ok(ch, POS_STANDING)) {
-#ifdef MODULE_FACULTY
-	interrupt_action(ch, FACULTY_ALL);
-#else
-	interrupt_action(ch, 1);
-#endif
-	try_move(ch, DIR_NONE, command);
-      }
-    }
-    else
-      text_to_char(ch, "No such command.\n\r");
-  }
+  if (!found_cmd)
+    text_to_char(ch, "No such command.\n\r");
 }

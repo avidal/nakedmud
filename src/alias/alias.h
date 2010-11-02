@@ -17,22 +17,16 @@
 
 //
 // prepare aliases for use
-//
 void init_aliases();
 
-const char  *charGetAlias  (CHAR_DATA *ch, const char *alias);
-void         charSetAlias  (CHAR_DATA *ch, const char *alias, const char *cmd);
+//
+// tries to treat the command as an alias. If we succeed, return true. In this
+// case, the function calling this one should terminate
+bool try_alias(CHAR_DATA *ch, char *command, char *arg, bool scripts_ok);
 
 //
-// expand an alias's parameters with the arguments provided. Returned
-// string must be freed after being used.
-//
-char *expand_alias(const char *alias, const char *arg);
-
-//
-// list all of a character's aliases to him
-//
-COMMAND(cmd_alias);
-
+// for use by socket.c to see if we need to do anything special w/ aliases
+int charGetAliasesQueued(CHAR_DATA *ch);
+void charSetAliasesQueued(CHAR_DATA *ch, int amnt);
 
 #endif // __ALIAS_H
