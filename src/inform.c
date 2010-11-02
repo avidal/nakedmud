@@ -624,9 +624,9 @@ COMMAND(cmd_commands) {
 
 
 //
-// show the player all of the people who are currently playing
-COMMAND(cmd_who)
-{
+// builds a buffer that lists all of the people online. 
+// Buffer must be deleted after it is used
+BUFFER *build_who(void) {
   CHAR_DATA *plr;
   SOCKET_DATA *dsock;
   BUFFER *buf = newBuffer(MAX_BUFFER);
@@ -656,6 +656,14 @@ COMMAND(cmd_who)
   // send out info about the number of sockets and players logged on
   bprintf(buf, "\r\n{g%d socket%s connected. %d playing.\r\n",
 	  socket_count, (socket_count == 1 ? "" : "s"), playing_count);
+  return buf;
+}
+
+
+//
+// show the player all of the people who are currently playing
+COMMAND(cmd_who) {
+  BUFFER *buf = build_who();
   page_string(charGetSocket(ch), bufferString(buf));
   deleteBuffer(buf);
 }

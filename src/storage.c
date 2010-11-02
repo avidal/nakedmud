@@ -673,7 +673,7 @@ LIST *gen_read_list(STORAGE_SET_LIST *list, void *reader) {
 
   STORAGE_SET *elem = NULL;
   while( (elem = storage_list_next(list)) != NULL)
-    listPut(newlist, read_func(elem));
+    listQueue(newlist, read_func(elem));
 
   return newlist;
 }

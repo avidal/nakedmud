@@ -144,8 +144,8 @@ COMMAND(cmd_set) {
   // check to see if we're trying to set from our notepad. Also, make sure
   // we have a socket and CAN access our notepad.
   if(subcmd == SET_SUBCMD_SETPAD) {
-    if(charGetSocket(ch) && *socketGetNotepad(charGetSocket(ch)))
-      val = socketGetNotepad(charGetSocket(ch));
+    if(charGetSocket(ch) && bufferLength(socketGetNotepad(charGetSocket(ch))))
+      val = bufferString(socketGetNotepad(charGetSocket(ch)));
     else {
       send_to_char(ch, "Your notepad currently has no contents.\r\n");
       return;

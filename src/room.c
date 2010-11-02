@@ -28,6 +28,7 @@
 // mandatory modules
 //*****************************************************************************
 #include "scripts/script.h"
+#include "scripts/script_set.h"
 
 
 
@@ -37,7 +38,7 @@
 
 
 struct room_data {
-  int   vnum;              // what vnum are we?
+  int         vnum;              // what vnum are we?
 
   int         terrain;           // what kind of terrain do we have?
   char       *name;              // what is the name of our room?
@@ -46,6 +47,7 @@ struct room_data {
   EDESC_SET  *edescs;            // the extra descriptions in the room
   EXIT_DATA **exits;             // the normal exists
   HASHTABLE  *special_exits;     // what other special exits do we have?
+  BITVECTOR  *bits;              // the bits we have turned on
 
   LIST       *contents;          // what objects do we contain in the room?
   LIST       *characters;        // who is in our room?
@@ -77,6 +79,7 @@ ROOM_DATA *newRoom() {
   for(i = 0; i < NUM_DIRS; i++)
     room->exits[i] = NULL;
 
+  room->bits           = bitvectorInstanceOf("room_bits");
   room->special_exits  = newHashtableSize(SPECIAL_EXIT_BUCKETS);
   room->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_ROOM);
 
@@ -91,14 +94,36 @@ ROOM_DATA *newRoom() {
 
 void deleteRoom(ROOM_DATA *room) {
   int i;
+  LIST_ITERATOR *cont_i = NULL;
+  void         *content = NULL;
 
+  // Extract all of our contents. Afterwards, delete the lists.
+  cont_i = newListIterator(room->contents);
+  ITERATE_LIST(content, cont_i)
+    extract_obj(content);
+  deleteListIterator(cont_i);
+
+  cont_i = newListIterator(room->characters);
+  ITERATE_LIST(content, cont_i)
+    extract_mobile(content);
+  deleteListIterator(cont_i);
+  
   // delete contents
-  deleteListWith(room->contents,   extract_obj);
-  deleteListWith(room->characters, extract_mobile);
-  deleteListWith(room->reset,      deleteReset);
+  // oops! This ain't cool... we can't delete these things with calls to
+  // extract() because those extract remove the objs/chars from the room. If
+  // we try removing when we're in the process of deleting lists, bad things
+  // happen. So now we extract first, and THEN delete the room lists.
+  //  deleteListWith(room->contents,   extract_obj);
+  //  deleteListWith(room->characters, extract_mobile);
+  deleteList(room->contents);
+  deleteList(room->characters);
+  deleteListWith(room->reset, deleteReset);
 
   // delete extra descriptions
   if(room->edescs) deleteEdescSet(room->edescs);
+
+  // delete bits
+  if(room->bits) deleteBitvector(room->bits);
 
   // delete the normal exits
   for(i = 0; i < NUM_DIRS; i++)
@@ -166,11 +191,12 @@ STORAGE_SET *roomStore(ROOM_DATA *room) {
 
 ROOM_DATA *roomRead(STORAGE_SET *set) {
   ROOM_DATA *room = newRoom();
-  roomSetVnum(room,                  read_int   (set, "vnum"));
-  roomSetName(room,                  read_string(set, "name"));
-  roomSetDesc(room,                  read_string(set, "desc"));
-  roomSetTerrain(room,               read_int   (set, "terrain"));
+  roomSetVnum(room,     read_int   (set, "vnum"));
+  roomSetName(room,     read_string(set, "name"));
+  roomSetDesc(room,     read_string(set, "desc"));
+  roomSetTerrain(room,  terrainGetNum(read_string(set,"terrain")));
   roomSetEdescs(room,   edescSetRead(read_set   (set, "edescs")));
+  bitSet(room->bits,    read_string(set, "room_bits"));
 
   STORAGE_SET_LIST *exits = read_list(set, "exits");
   STORAGE_SET       *exit = NULL;
@@ -212,6 +238,7 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
   roomSetName    (to, roomGetName(from));
   roomSetDesc    (to, roomGetDesc(from));
   roomSetTerrain (to, roomGetTerrain(from));
+  bitvectorCopyTo(from->bits, to->bits);
 
   // set our edescs
   roomSetEdescs(to, edescSetCopy(from->edescs));
@@ -272,6 +299,18 @@ void roomDigExitSpecial (ROOM_DATA *room, const char *dir, int to) {
     EXIT_DATA *exit = newExit();
     exitSetTo(exit, to);
     roomSetExitSpecial(room, dir, exit);
+  }
+}
+
+bool roomIsResettable(ROOM_DATA *room) {
+  // we're resettable if we have reset commands or init scripts
+  if(listSize(room->reset) > 0)
+    return TRUE;
+  else {
+    LIST *init_scripts = scriptSetList(roomGetScripts(room), SCRIPT_TYPE_INIT);
+    bool    resettable = (listSize(init_scripts) > 0);
+    deleteList(init_scripts);
+    return resettable;
   }
 }
 
@@ -445,6 +484,9 @@ void roomSetExitSpecial (ROOM_DATA *room,const char *dir, EXIT_DATA *exit) {
     hashPut(room->special_exits, dir, exit);
 };
 
+BITVECTOR *roomGetBits(const ROOM_DATA *room) {
+  return room->bits;
+}
 
 
 

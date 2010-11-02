@@ -112,6 +112,59 @@ COMMAND(cmd_repeat) {
 
 
 //
+// tries to force the person to do something
+void try_force(CHAR_DATA *ch, CHAR_DATA *vict, char *cmd) {
+  if(ch == vict)
+    send_to_char(ch, "Why don't you just try doing it?\r\n");
+  else if(!charHasMoreUserGroups(ch, vict))
+    send_to_char(ch, "But %s has just as many priviledges as you!\r\n",
+		 charGetName(vict));
+  else {
+    send_to_char(ch,   "You force %s to '%s'\r\n", charGetName(vict), cmd);
+    send_to_char(vict, "%s forces you to '%s'\r\n",
+		 see_char_as(vict, ch), cmd);
+    do_cmd(vict, cmd, TRUE, TRUE);
+  }
+}
+
+
+//
+// force someone to execute a command
+COMMAND(cmd_force) {
+  char name[SMALL_BUFFER];
+  arg = one_arg(arg, name);
+  
+  if(!*name || !*arg)
+    send_to_char(ch, "Force who to do what?\r\n");
+  else {
+    int type    = FOUND_NONE;
+    void *found = generic_find(ch, name, FIND_TYPE_CHAR, FIND_SCOPE_ALL,
+			       TRUE, &type);
+
+    // did we find a list of characters?
+    if(found == NULL)
+      send_to_char(ch, "No targets found!\r\n");
+    else if(type == FOUND_LIST) {
+      if(listSize(found) == 0)
+	send_to_char(ch, "No targets found.\r\n");
+      else {
+	LIST_ITERATOR *ch_i = newListIterator(found);
+	CHAR_DATA   *one_ch = NULL;
+	ITERATE_LIST(one_ch, ch_i) {
+	  if(ch != one_ch)
+	    try_force(ch, one_ch, arg);
+	} deleteListIterator(ch_i);
+	deleteList(found);
+      }
+    }
+    // a single character...
+    else
+      try_force(ch, found, arg);
+  }
+}
+
+
+//
 // Perform a command at another room or person
 COMMAND(cmd_at) {
   if(!arg || !*arg) {
@@ -224,11 +277,13 @@ COMMAND(cmd_transfer) {
 			     FIND_SCOPE_WORLD | FIND_SCOPE_VISIBLE,
 			     FALSE, NULL);
 
-    if(ch == tgt)
+    if(tgt == NULL)
+      send_to_char(ch, "Who are you looking for?\r\n");
+    else if(ch == tgt)
       send_to_char(ch, "You're already here, boss.\r\n");
     else if(charGetRoom(ch) == charGetRoom(tgt))
       send_to_char(ch, "They're already here.\r\n");
-    else if(tgt != NULL) {
+    else {
       message(ch, tgt, NULL, NULL, TRUE, TO_VICT,
 	      "$n has transferred you!");
       message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
@@ -239,8 +294,6 @@ COMMAND(cmd_transfer) {
       message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
 	      "$n arrives in a puff of smoke.");
     }
-    else
-      send_to_char(ch, "Who were you trying to transfer?\r\n");
   }
 }
 

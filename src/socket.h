@@ -32,7 +32,7 @@ void *lookup_address        ( void *arg );
 //*****************************************************************************
 // set and get functions
 //*****************************************************************************
-sh_int socketGetDNSLookupStatus( SOCKET_DATA *sock);
+int socketGetDNSLookupStatus( SOCKET_DATA *sock);
 
 CHAR_DATA *socketGetChar      ( SOCKET_DATA *dsock);
 void       socketSetChar      ( SOCKET_DATA *dsock, CHAR_DATA *ch);

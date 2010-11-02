@@ -238,10 +238,11 @@ void *objGetTypeData(OBJ_DATA *obj, const char *type) {
 
 void objSetType(OBJ_DATA *obj, const char *type) {
   ITEM_FUNC_DATA *funcs = hashGet(type_table, type);
-  ITEM_DATA *data       = objGetAuxiliaryData(obj, "type_data");
-  void *old_item_data   = hashGet(data->item_table, type);
-  if(old_item_data) return;
-  else hashPut(data->item_table, type, funcs->new());
+  ITEM_DATA       *data = objGetAuxiliaryData(obj, "type_data");
+  void   *old_item_data = hashGet(data->item_table, type);
+  // if the type exists and we're not already of the type, set it on us
+  if(funcs != NULL && old_item_data == NULL) 
+    hashPut(data->item_table, type, funcs->new());
 }
 
 void objDeleteType(OBJ_DATA *obj, const char *type) {

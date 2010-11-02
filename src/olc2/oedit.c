@@ -146,6 +146,11 @@ bool oedit_parser(SOCKET_DATA *sock, OBJ_DATA *obj, int choice,
   }
 }
 
+// saves an object to disk
+void save_object(OBJ_DATA *obj) {
+  worldSaveObj(gameworld, obj);
+}
+
 COMMAND(cmd_oedit) {
   OBJ_DATA *obj;
 
@@ -193,7 +198,7 @@ COMMAND(cmd_oedit) {
       }
 
       do_olc(charGetSocket(ch), oedit_menu, oedit_chooser, oedit_parser,
-	     objCopy, objCopyTo, deleteObj, save_world, obj);
+	     objCopy, objCopyTo, deleteObj, save_object, obj);
     }
   }
 }

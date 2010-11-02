@@ -72,6 +72,7 @@ void deleteRoom(ROOM_DATA *room);
 // run the room's reset scripts
 //
 void roomReset(ROOM_DATA *room);
+bool roomIsResettable(ROOM_DATA *room);
 
 
 //
@@ -128,9 +129,9 @@ const char **roomGetExitNames   (const ROOM_DATA *room, int *num);
 EDESC_SET  *roomGetEdescs       (const ROOM_DATA *room);
 const char *roomGetEdesc        (const ROOM_DATA *room, const char *keyword);
 void       *roomGetAuxiliaryData(const ROOM_DATA *room, const char *name);
-
-LIST       *roomGetCharacters  (const ROOM_DATA *room);
-LIST       *roomGetContents    (const ROOM_DATA *room);
+LIST       *roomGetCharacters   (const ROOM_DATA *room);
+LIST       *roomGetContents     (const ROOM_DATA *room);
+BITVECTOR  *roomGetBits         (const ROOM_DATA *room);
 
 LIST       *roomGetResets      (const ROOM_DATA *room);
 void        roomRemoveReset    (ROOM_DATA *room, RESET_DATA *reset);

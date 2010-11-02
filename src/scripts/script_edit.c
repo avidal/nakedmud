@@ -222,6 +222,13 @@ bool scedit_parser (SOCKET_DATA *sock, SCRIPT_DATA *script, int choice,
 }
 
 
+//
+// saves a script to disk
+void save_script(SCRIPT_DATA *script) {
+  worldSaveScript(gameworld, script);
+}
+
+
 COMMAND(cmd_scedit) {
   ZONE_DATA *zone;
   SCRIPT_DATA *script;
@@ -253,7 +260,7 @@ COMMAND(cmd_scedit) {
       }
 
       do_olc(charGetSocket(ch), scedit_menu, scedit_chooser, scedit_parser,
-	     scriptCopy, scriptCopyTo, deleteScript, save_world, script);
+	     scriptCopy, scriptCopyTo, deleteScript, save_script, script);
     }
   }
 }

@@ -22,13 +22,15 @@
 // auxiliary data and functions
 //*****************************************************************************
 typedef struct script_editor_aux_data {
-  int indent; // how far are we indented for our next line of code?
+  int      indent; // how far are we indented for our next line of code?
+  bool autoindent; // do we autoindent after encountering a colon?
 } SCRIPT_EDITOR_AUX_DATA;
 
 SCRIPT_EDITOR_AUX_DATA *
 newScriptEditorAuxData() {
   SCRIPT_EDITOR_AUX_DATA *data = malloc(sizeof(SCRIPT_EDITOR_AUX_DATA));
-  data->indent = 0;
+  data->autoindent = TRUE;
+  data->indent     = 0;
   return data;
 }
 
@@ -39,6 +41,16 @@ newScriptEditorAuxData() {
 //*****************************************************************************
 EDITOR *script_editor = NULL;
 
+
+//
+// toggle the socket's autoindent in script editning
+void scriptEditorToggleAutoindent(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
+  SCRIPT_EDITOR_AUX_DATA *data = 
+    socketGetAuxiliaryData(sock, "script_editor_aux_data");
+  data->autoindent = (data->autoindent + 1) % 2;
+  send_to_socket(sock, "Autoindent %s.\r\n", 
+		 (data->autoindent ? "enabled" : "supressed"));
+}
 
 //
 // increase the indentation in our script by 2
@@ -69,20 +81,24 @@ int socketGetScriptEditorIndent(SOCKET_DATA *sock) {
 // append new text to the script editor. Make sure we add the appropriate amount
 // of spaces before the addition, and increment/decrement our indent as needed
 void scriptEditorAppend(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
-  // if we're playing with else/elif/case, take down the input a notch
-  if(!strncmp(arg, "except:", 7) ||
-     !strncmp(arg, "except ", 7) ||
-     !strncmp(arg, "else:",   5) ||
-     !strncmp(arg, "elif ",   5) ||
-     !strncmp(arg, "case ",   5))
-    scriptEditorUndent(sock, NULL, NULL);
+  SCRIPT_EDITOR_AUX_DATA *data = 
+    socketGetAuxiliaryData(sock, "script_editor_aux_data");
 
-  // add in our indents if neccessary
-  int indent = socketGetScriptEditorIndent(sock);
-  if(indent > 0) {
-    char fmt[20];
-    sprintf(fmt, "%%%ds", indent);
-    bprintf(buf, fmt, " ");
+  // if we're playing with else/elif/case, take down the input a notch
+  if(data->autoindent) {
+    if(!strncmp(arg, "except:", 7) ||
+       !strncmp(arg, "except ", 7) ||
+       !strncmp(arg, "else:",   5) ||
+       !strncmp(arg, "elif ",   5) ||
+       !strncmp(arg, "case ",   5))
+      scriptEditorUndent(sock, NULL, NULL);
+
+    // add in our indents if neccessary
+    if(data->indent > 0) {
+      char fmt[20];
+      sprintf(fmt, "%%%ds", data->indent);
+      bprintf(buf, fmt, " ");
+    }
   }
 
   // cat the new line of code
@@ -90,18 +106,18 @@ void scriptEditorAppend(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   bufferCat(buf, "\n");
 
   // see if we need to change our indent
-  int len = strlen(arg);
-  if(len > 0 && arg[len-1] == ':')
-    scriptEditorIndent(sock, NULL, NULL);
+  if(data->autoindent) {
+    int len = strlen(arg);
+    if(len > 0 && arg[len-1] == ':')
+      scriptEditorIndent(sock, NULL, NULL);
+  }
 }
-
 
 //
 // list the script buffer to the socket, but do all of our syntax highlighting
 void scriptEditorList(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   script_display(sock, bufferString(buf), TRUE);
 }
-
 
 //
 // \r really screws up python; this function makes sure they're all stripped out
@@ -145,6 +161,8 @@ void init_script_editor() {
 		   scriptEditorUndent);
   editorAddCommand(script_editor, "^", "        Indent up the script editor",
 		   scriptEditorIndent);
+  editorAddCommand(script_editor, "-", "        Toggle auto-indenting",
+		   scriptEditorToggleAutoindent);
   editorAddCommand(script_editor, "l", "        List the current buffer contents",
 		   scriptEditorList);
   editorAddCommand(script_editor, "f", "        Strips all bad characters out of the script",

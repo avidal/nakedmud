@@ -26,10 +26,10 @@ void init_editor();
 
 // sets up a little notepad that the character can write/post stuff from.
 // Notepads are erased when the socket disconnects.
-void init_notepad();
-const char *socketGetNotepad(SOCKET_DATA *sock);
-void socketSetNotepad(SOCKET_DATA *sock, const char *txt);
-void socketStartNotepad(SOCKET_DATA *sock);
+void        init_notepad();
+BUFFER *socketGetNotepad(SOCKET_DATA *sock);
+void    socketSetNotepad(SOCKET_DATA *sock, const char *txt);
+void  socketStartNotepad(SOCKET_DATA *sock, EDITOR *editor);
 
 
 // editors are intended to be permenant and, thus, have no delete function.

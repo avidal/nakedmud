@@ -7,6 +7,8 @@
 //
 //*****************************************************************************
 
+#include <sys/stat.h>
+
 #include "../mud.h"
 #include "../utils.h"
 #include "../socket.h"
@@ -79,6 +81,11 @@ bool zedit_parser(SOCKET_DATA *sock, ZONE_DATA *zone, int choice,
   }
 }
 
+// saves a zone to disk
+void save_zone(ZONE_DATA *zone) {
+  zoneSave(zone);
+}
+
 
 COMMAND(cmd_zedit) {
   // we want to create a new zone?
@@ -94,8 +101,8 @@ COMMAND(cmd_zedit) {
     else if(worldZoneBounding(gameworld, min) || worldZoneBounding(gameworld, max))
       send_to_char(ch, "There is already a zone bounding that vnum range.\r\n");
     else {
-      ZONE_DATA *zone = newZone(vnum, min, max);
       char buf[MAX_BUFFER];
+      ZONE_DATA *zone = newZone(vnum, min, max);
       sprintf(buf, "%s's zone", charGetName(ch));
       zoneSetName(zone, buf);
       sprintf(buf, "A new zone created by %s\r\n", charGetName(ch));
@@ -104,9 +111,6 @@ COMMAND(cmd_zedit) {
 
       worldPutZone(gameworld, zone);
       send_to_char(ch, "You create a new zone (vnum %d).\r\n", vnum);
-
-      // save the changes... this will get costly as our world gets bigger.
-      // But that should be alright once we make zone saving a bit smarter
       worldSave(gameworld, WORLD_PATH);
     }
   }
@@ -126,7 +130,7 @@ COMMAND(cmd_zedit) {
       send_to_char(ch, "You are not authorized to edit this zone.\r\n");  
     else {
       do_olc(charGetSocket(ch), zedit_menu, zedit_chooser, zedit_parser,
-	     zoneCopy, zoneCopyTo, deleteZone, save_world, zone);
+	     zoneCopy, zoneCopyTo, deleteZone, save_zone, zone);
     }
   }
 }

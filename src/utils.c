@@ -1,7 +1,11 @@
-/*
- * This file contains all sorts of utility functions used
- * all sorts of places in the code.
- */
+//*****************************************************************************
+//
+// utils.c
+//
+// This file contains all sorts of utility functions used
+// all sorts of places in the code.
+//
+//*****************************************************************************
 #include <string.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -10,7 +14,7 @@
 #include <unistd.h>
 #include <dirent.h> 
 
-/* include main header file */
+// include main header file
 #include "mud.h"
 #include "character.h"
 #include "object.h"
@@ -44,6 +48,11 @@ void  add_extract_mob_func (void (* func)(CHAR_DATA *)) {
   listQueue(extract_mob_funcs, func);
 }
 
+void  extract_obj_final(OBJ_DATA *obj) {
+  obj_from_game(obj);
+  deleteObj(obj);
+}
+
 void extract_obj(OBJ_DATA *obj) {
   // go through all of our extraction functions
   LIST_ITERATOR *ex_i = newListIterator(extract_obj_funcs);
@@ -58,10 +67,8 @@ void extract_obj(OBJ_DATA *obj) {
     char_from_furniture(sitter);
 
   OBJ_DATA *content = NULL;
-  while( (content = listGet(objGetContents(obj), 0)) != NULL) {
-    obj_from_obj(content);
+  while( (content = listGet(objGetContents(obj), 0)) != NULL)
     extract_obj(content);
-  }
 
   if(objGetRoom(obj))
     obj_from_room(obj);
@@ -72,10 +79,14 @@ void extract_obj(OBJ_DATA *obj) {
   if(objGetContainer(obj))
     obj_from_obj(obj);
 
-  obj_from_game(obj);
-  deleteObj(obj);
+  if(!listIn(objs_to_delete, obj))
+    listPut(objs_to_delete, obj);
 }
 
+void extract_mobile_final(CHAR_DATA *ch) {
+  char_from_game(ch);
+  deleteChar(ch);
+}
 
 void extract_mobile(CHAR_DATA *ch) {
   // go through all of our extraction functions
@@ -105,8 +116,8 @@ void extract_mobile(CHAR_DATA *ch) {
     charSetSocket(ch, NULL);
   }
 
-  char_from_game(ch);
-  deleteChar(ch);
+  if(!listIn(mobs_to_delete, ch))
+    listPut(mobs_to_delete, ch);
 }
 
 void communicate(CHAR_DATA *dMob, char *txt, int range)
@@ -149,6 +160,15 @@ void load_muddata() {
   if(gameworld == NULL) {
     log_string("ERROR: Could not boot game world.");
     abort();
+  }
+  else {
+    // see if any of our zones are in old formats and need to be converted
+    ZONE_DATA       *zone = NULL;
+    LIST_ITERATOR *zone_i = newListIterator(worldGetZones(gameworld));
+    ITERATE_LIST(zone, zone_i) {
+      if(zoneIsOldFormat(gameworld, zoneGetVnum(zone)))
+	zoneConvertFormat(zone);
+    } deleteListIterator(zone_i);
   }
 
   greeting = read_file("../lib/txt/greeting");
@@ -428,7 +448,7 @@ void get_count(const char *buf, char *target, int *count) {
     sscanf(buf, "all.%s", target);
     *count = COUNT_ALL;
   }
-  else if(!strncasecmp(buf, "all", 3)) {
+  else if(!strcasecmp(buf, "all")) {
     *target = '\0';
     *count = COUNT_ALL;
   }

@@ -301,10 +301,6 @@ void do_olc(SOCKET_DATA *sock,
     socketPushInputHandler(sock, olc_handler, olc_menu);
 }
 
-void save_world(void *olc_data) {
-  worldSave(gameworld, WORLD_PATH);
-}
-
 void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
 		       int num_vals, int num_cols) {
   int i, print_room;

@@ -16,7 +16,7 @@
 
 
 //*****************************************************************************
-// if you've installed a newmodule, you  need to put a define in here to let
+// if you've installed a new module, you  need to put a define in here to let
 // the rest of the MUD know that you've installed the module.
 //*****************************************************************************
 
@@ -67,19 +67,15 @@ typedef struct body_data                  BODY_DATA;
 typedef struct reset_data                 RESET_DATA;
 
 typedef long                              bitvector_t;
+typedef unsigned char                     bool;
 
-// define simple types
-#ifndef __cplusplus
-typedef  unsigned char     bool;
-#endif
-typedef  short int         sh_int;
-typedef  unsigned char     byte;
 
 
 // these appear in so many places, we might as well just add 'em to our header
 // here so we don't have to include them everywhere else. Only catch is we
 // have to include them after all of our typedefs so the header files can use
 // the typedefs.
+#include "numbers.h"
 #include "property_table.h"
 #include "list.h"
 #include "map.h"
@@ -202,11 +198,12 @@ extern  PROPERTY_TABLE *obj_table;      /* same contents as object_list, but
 					   arranged by uid (unique ID)        */
 extern  LIST           *socket_list;
 extern  LIST           *mobile_list;
+extern  LIST           *mobs_to_delete;    // mobs/objs that have had extraction
+extern  LIST           *objs_to_delete;    // and now need extract_final
 extern  LIST           *extract_obj_funcs; // functions called on obj extraction
 extern  LIST           *extract_mob_funcs; // functions called on mob extraction
 extern  PROPERTY_TABLE *mob_table;      /* same contents as mobile_list, but
 					   arranged by uid (unique ID)        */
-extern  const struct    typCmd tabCmd[];/* the command table                  */
 extern  bool            shut_down;      /* used for shutdown                  */
 extern  int             mudport;        /* What port are we running on?       */
 extern  char        *   greeting;       /* the welcome greeting               */

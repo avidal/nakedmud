@@ -235,31 +235,26 @@ bool scedit_parser (SOCKET_DATA *sock, SCRIPT_DATA *script, int choice,
 
 //
 // initialize the scripting system
-//
 void init_scripts();
 
 //
 // Shut scripts down
-//
 void finalize_scripts();
 
 
 //
 // start up a script
-//
 void run_script(const char *script, void *me, int me_type,
 		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room,
 		const char *cmd, const char *arg, int narg);
 
 //
 // format a string so that it is a viable script
-//
 void format_script(char **script, int max_len);
 
 
 //
 // Show a script to the socket
-//
 void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums);
 
 
@@ -267,25 +262,21 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums);
 // See if a speech script needs to be triggered. If listener == NULL,
 // everyone in the room is checked. If a listener is provided, then 
 // only the listener is checked
-//
 void try_speech_script(CHAR_DATA *ch, CHAR_DATA *listener, char *speech);
 
 
 //
 // Try enterance scripts in the given room (the room itself, and mobs)
-//
 void try_enterance_script(CHAR_DATA *ch, ROOM_DATA *room, const char *dirname);
 
 //
 // Try exit scripts in the given room (the room itself, and mobs)
-//
 void try_exit_script(CHAR_DATA *ch, ROOM_DATA *room, const char *dirname);
 
 //
 // Searches for command scripts in the room. If the actual command should
 // be followed through with, returns 0. If the actual command should be
 // prevented, returns 1.
-//
 int  try_command_script(CHAR_DATA *ch, const char *cmd, const char *arg);
 
 //
@@ -294,7 +285,6 @@ int  try_command_script(CHAR_DATA *ch, const char *cmd, const char *arg);
 // the script needs to be halted (e.g. if it is a command script, the command
 // parser should not continue checking for a normal command in the command list,
 // if the character is giving an object, the give should not complete, etc...)
-//
 int try_scripts(int script_type,
 		void *me, int me_type,
 		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room,

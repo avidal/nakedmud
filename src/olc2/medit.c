@@ -39,6 +39,8 @@
 #define MEDIT_SEX           7
 #define MEDIT_DIALOG        8
 
+
+
 void medit_menu(SOCKET_DATA *sock, CHAR_DATA *mob) {
   send_to_socket(sock,
 		 "{g[{c%d{g]\r\n"
@@ -158,6 +160,11 @@ bool medit_parser(SOCKET_DATA *sock, CHAR_DATA *mob, int choice,
   }
 }
 
+// saves a mobile to disk
+void save_mobile(CHAR_DATA *ch) {
+  worldSaveMob(gameworld, ch);
+}
+
 COMMAND(cmd_medit) {
   CHAR_DATA *mob;
 
@@ -204,7 +211,7 @@ COMMAND(cmd_medit) {
       }
 
       do_olc(charGetSocket(ch), medit_menu, medit_chooser, medit_parser,
-	     charCopy, charCopyTo, deleteChar, save_world, mob);
+	     charCopy, charCopyTo, deleteChar, save_mobile, mob);
     }
   }
 }

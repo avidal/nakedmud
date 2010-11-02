@@ -84,7 +84,7 @@ void edesc_set_menu(SOCKET_DATA *sock, EDESC_SET *set) {
 int  edesc_set_chooser(SOCKET_DATA *sock, EDESC_SET *set, const char *option) {
   switch(toupper(*option)) {
   case 'E':
-    text_to_buffer(sock, "Enter the number of the edesc to edit: ");
+    text_to_buffer(sock, "Enter the number of the edesc to edit (-1 for none): ");
     return ESEDIT_EDIT;
   case 'N': {
     // create a new edesc

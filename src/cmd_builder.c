@@ -110,9 +110,8 @@ COMMAND(cmd_dig) {
     send_to_char(ch, "You dig %s to %s.\r\n", 
 		 dirGetName(dir), roomGetName(worldGetRoom(gameworld, to)));
 
-    // save the changes... this will get costly as our world gets bigger.
-    // But that should be alright once we make zone saving a bit smarter
-    worldSave(gameworld, WORLD_PATH);
+    worldSaveRoom(gameworld, to_room);
+    worldSaveRoom(gameworld, charGetRoom(ch));
   }
 }
 
@@ -151,16 +150,15 @@ COMMAND(cmd_fill) {
 
     // see if the room we're filling leads back to us... if so, fill it in
     if(exit_back &&
-       exitGetTo(exit_back) == roomGetVnum(charGetRoom(ch)))
+       exitGetTo(exit_back) == roomGetVnum(charGetRoom(ch))) {
       roomSetExit(exit_to, dirGetOpposite(dir), NULL);
+      worldSaveRoom(gameworld, exit_to);
+    }
 
     // delete the exit
     roomSetExit(charGetRoom(ch), dir, NULL);
     send_to_char(ch, "You fill in the exit to the %s.\r\n", dirGetName(dir));
-
-    // save the changes... this will get costly as our world gets bigger.
-    // But that should be alright once we make zone saving a bit smarter
-    worldSave(gameworld, WORLD_PATH);
+    worldSaveRoom(gameworld, charGetRoom(ch));
   }
 }
 

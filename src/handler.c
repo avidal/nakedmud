@@ -600,7 +600,8 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
 				     (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       OBJ_DATA *obj = NULL;
       while( (obj = listPop(inv_objs)) != NULL)
-	listPut(obj_list, obj);
+	if(!listIn(obj_list, obj))
+	  listPut(obj_list, obj);
       deleteList(inv_objs);
     }
 
@@ -612,7 +613,8 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
 				     (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       OBJ_DATA *obj = NULL;
       while( (obj = listPop(room_objs)) != NULL)
-	listPut(obj_list, obj);
+	if(!listIn(obj_list, obj))
+	  listPut(obj_list, obj);
       deleteList(room_objs);
     }
 
@@ -627,7 +629,8 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
       deleteList(equipment);
       OBJ_DATA *obj = NULL;
       while( (obj = listPop(eq_objs)) != NULL)
-	listPut(obj_list, obj);
+	if(!listIn(obj_list, obj))
+	  listPut(obj_list, obj);
       deleteList(eq_objs);
     }
 
@@ -638,7 +641,8 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
 				     (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       OBJ_DATA *obj = NULL;
       while( (obj = listPop(wld_objs)) != NULL)
-	listPut(obj_list, obj);
+	if(!listIn(obj_list, obj))
+	  listPut(obj_list, obj);
       deleteList(wld_objs);
     }
 
@@ -658,9 +662,43 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
   /*                        FIND ALL CHARS                    */
   /************************************************************/
   else if(find_types == FIND_TYPE_CHAR) {
-    if(found_type)
-      *found_type = FOUND_NONE;
-    return NULL;
+    LIST *char_list = newList();
+
+    // find everyone in the room
+    if(IS_SET(find_scope, FIND_SCOPE_ROOM)) {
+      LIST *room_chars =find_all_chars(looker, 
+				       roomGetCharacters(charGetRoom(looker)),
+				       at, NOTHING,
+				       (IS_SET(find_scope,FIND_SCOPE_VISIBLE)));
+      CHAR_DATA *ch = NULL;
+      while( (ch = listPop(room_chars)) != NULL)
+	if(!listIn(char_list, ch))
+	  listPut(char_list, ch);
+      deleteList(room_chars);
+    }
+
+    // find everyone in the world
+    if(IS_SET(find_scope, FIND_SCOPE_WORLD)) {
+      LIST *wld_chars = find_all_chars(looker, 
+				       mobile_list,
+				       at, NOTHING,
+				       (IS_SET(find_scope,FIND_SCOPE_VISIBLE)));
+      CHAR_DATA *ch = NULL;
+      while( (ch = listPop(wld_chars)) != NULL)
+	if(!listIn(char_list, ch))
+	  listPut(char_list, ch);
+      deleteList(wld_chars);
+    }
+
+    // if we didn't find anything, return NULL
+    if(listSize(char_list) < 1) {
+      deleteList(char_list);
+      if(found_type)
+	*found_type = FOUND_NONE;
+      return NULL;
+    }
+    else
+      return char_list;
   }
   
 

@@ -19,6 +19,13 @@
 
 
 //*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../scripts/script_editor.h"
+
+
+
+//*****************************************************************************
 // auxiliary data for sockets
 //*****************************************************************************
 typedef struct notepad_data {
@@ -41,9 +48,9 @@ void deleteNotepadData(NOTEPAD_DATA *data) {
 //*****************************************************************************
 // local datastructures, functions, and commands for players
 //*****************************************************************************
-void socketStartNotepad(SOCKET_DATA *sock) {
+void socketStartNotepad(SOCKET_DATA *sock, EDITOR *editor) {
   NOTEPAD_DATA *data = socketGetAuxiliaryData(sock, "notepad_data");
-  socketStartEditor(sock, text_editor, data->notepad);
+  socketStartEditor(sock, editor, data->notepad);
 }
 
 COMMAND(cmd_write) {
@@ -52,7 +59,10 @@ COMMAND(cmd_write) {
   else {
     message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, 
 	    "$n pulls out a pen and begins jotting notes down.");
-    socketStartNotepad(charGetSocket(ch));
+    if(!strcasecmp(arg, "script"))
+      socketStartNotepad(charGetSocket(ch), script_editor);
+    else
+      socketStartNotepad(charGetSocket(ch), text_editor);
   }
 }
 
@@ -69,9 +79,9 @@ COMMAND(cmd_notepad) {
   }
 }
 
-const char *socketGetNotepad(SOCKET_DATA *sock) {
+BUFFER *socketGetNotepad(SOCKET_DATA *sock) {
   NOTEPAD_DATA *data = socketGetAuxiliaryData(sock, "notepad_data");
-  return bufferString(data->notepad);
+  return data->notepad;
 }
 
 void socketSetNotepad(SOCKET_DATA *sock, const char *txt) {

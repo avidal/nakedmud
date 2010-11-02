@@ -1,0 +1,2926 @@
+diff -ruN ../nakedmudv2.6/src/Makefile src/Makefile
+--- ../nakedmudv2.6/src/Makefile	Wed Jul  6 03:01:44 2005
++++ src/Makefile	Sun Jul 31 17:17:07 2005
+@@ -51,7 +51,7 @@
+ 	   zone.c dialog.c room_reset.c account.c \
+ 	   \
+ 	   list.c property_table.c hashtable.c map.c storage.c set.c \
+-	   buffer.c bitvector.c
++	   buffer.c bitvector.c numbers.c
+ 
+ 
+ # include the description for each module. These will add to SRC
+diff -ruN ../nakedmudv2.6/src/bitvector.c src/bitvector.c
+--- ../nakedmudv2.6/src/bitvector.c	Wed Jul  6 02:52:19 2005
++++ src/bitvector.c	Sun Jul 31 17:13:52 2005
+@@ -86,6 +86,8 @@
+   bitvectorCreate("obj_bits");
+   bitvectorAddBit("obj_bits", "notake");
+ 
++  bitvectorCreate("room_bits");
++
+   bitvectorCreate("user_groups");
+   bitvectorAddBit("user_groups", "admin");
+   bitvectorAddBit("user_groups", "scripter");
+diff -ruN ../nakedmudv2.6/src/cmd_admin.c src/cmd_admin.c
+--- ../nakedmudv2.6/src/cmd_admin.c	Wed Jul  6 02:52:19 2005
++++ src/cmd_admin.c	Sun Jul 31 17:13:52 2005
+@@ -112,6 +112,59 @@
+ 
+ 
+ //
++// tries to force the person to do something
++void try_force(CHAR_DATA *ch, CHAR_DATA *vict, char *cmd) {
++  if(ch == vict)
++    send_to_char(ch, "Why don't you just try doing it?\r\n");
++  else if(!charHasMoreUserGroups(ch, vict))
++    send_to_char(ch, "But %s has just as many priviledges as you!\r\n",
++		 charGetName(vict));
++  else {
++    send_to_char(ch,   "You force %s to '%s'\r\n", charGetName(vict), cmd);
++    send_to_char(vict, "%s forces you to '%s'\r\n",
++		 see_char_as(vict, ch), cmd);
++    do_cmd(vict, cmd, TRUE, TRUE);
++  }
++}
++
++
++//
++// force someone to execute a command
++COMMAND(cmd_force) {
++  char name[SMALL_BUFFER];
++  arg = one_arg(arg, name);
++  
++  if(!*name || !*arg)
++    send_to_char(ch, "Force who to do what?\r\n");
++  else {
++    int type    = FOUND_NONE;
++    void *found = generic_find(ch, name, FIND_TYPE_CHAR, FIND_SCOPE_ALL,
++			       TRUE, &type);
++
++    // did we find a list of characters?
++    if(found == NULL)
++      send_to_char(ch, "No targets found!\r\n");
++    else if(type == FOUND_LIST) {
++      if(listSize(found) == 0)
++	send_to_char(ch, "No targets found.\r\n");
++      else {
++	LIST_ITERATOR *ch_i = newListIterator(found);
++	CHAR_DATA   *one_ch = NULL;
++	ITERATE_LIST(one_ch, ch_i) {
++	  if(ch != one_ch)
++	    try_force(ch, one_ch, arg);
++	} deleteListIterator(ch_i);
++	deleteList(found);
++      }
++    }
++    // a single character...
++    else
++      try_force(ch, found, arg);
++  }
++}
++
++
++//
+ // Perform a command at another room or person
+ COMMAND(cmd_at) {
+   if(!arg || !*arg) {
+@@ -224,11 +277,13 @@
+ 			     FIND_SCOPE_WORLD | FIND_SCOPE_VISIBLE,
+ 			     FALSE, NULL);
+ 
+-    if(ch == tgt)
++    if(tgt == NULL)
++      send_to_char(ch, "Who are you looking for?\r\n");
++    else if(ch == tgt)
+       send_to_char(ch, "You're already here, boss.\r\n");
+     else if(charGetRoom(ch) == charGetRoom(tgt))
+       send_to_char(ch, "They're already here.\r\n");
+-    else if(tgt != NULL) {
++    else {
+       message(ch, tgt, NULL, NULL, TRUE, TO_VICT,
+ 	      "$n has transferred you!");
+       message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
+@@ -239,8 +294,6 @@
+       message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
+ 	      "$n arrives in a puff of smoke.");
+     }
+-    else
+-      send_to_char(ch, "Who were you trying to transfer?\r\n");
+   }
+ }
+ 
+diff -ruN ../nakedmudv2.6/src/cmd_builder.c src/cmd_builder.c
+--- ../nakedmudv2.6/src/cmd_builder.c	Wed Jul  6 02:52:19 2005
++++ src/cmd_builder.c	Sun Jul 31 19:00:32 2005
+@@ -110,9 +110,8 @@
+     send_to_char(ch, "You dig %s to %s.\r\n", 
+ 		 dirGetName(dir), roomGetName(worldGetRoom(gameworld, to)));
+ 
+-    // save the changes... this will get costly as our world gets bigger.
+-    // But that should be alright once we make zone saving a bit smarter
+-    worldSave(gameworld, WORLD_PATH);
++    worldSaveRoom(gameworld, to_room);
++    worldSaveRoom(gameworld, charGetRoom(ch));
+   }
+ }
+ 
+@@ -151,16 +150,15 @@
+ 
+     // see if the room we're filling leads back to us... if so, fill it in
+     if(exit_back &&
+-       exitGetTo(exit_back) == roomGetVnum(charGetRoom(ch)))
++       exitGetTo(exit_back) == roomGetVnum(charGetRoom(ch))) {
+       roomSetExit(exit_to, dirGetOpposite(dir), NULL);
++      worldSaveRoom(gameworld, exit_to);
++    }
+ 
+     // delete the exit
+     roomSetExit(charGetRoom(ch), dir, NULL);
+     send_to_char(ch, "You fill in the exit to the %s.\r\n", dirGetName(dir));
+-
+-    // save the changes... this will get costly as our world gets bigger.
+-    // But that should be alright once we make zone saving a bit smarter
+-    worldSave(gameworld, WORLD_PATH);
++    worldSaveRoom(gameworld, charGetRoom(ch));
+   }
+ }
+ 
+diff -ruN ../nakedmudv2.6/src/commands.h src/commands.h
+--- ../nakedmudv2.6/src/commands.h	Wed Jul  6 02:52:19 2005
++++ src/commands.h	Sun Jul 31 17:13:52 2005
+@@ -17,6 +17,7 @@
+ COMMAND(cmd_repeat);
+ COMMAND(cmd_at);
+ COMMAND(cmd_lockdown);
++COMMAND(cmd_force);
+ 
+ 
+ /* cmd_builder.c */
+diff -ruN ../nakedmudv2.6/src/editor/editor.h src/editor/editor.h
+--- ../nakedmudv2.6/src/editor/editor.h	Wed Jul  6 02:52:19 2005
++++ src/editor/editor.h	Sun Jul 31 17:13:52 2005
+@@ -26,10 +26,10 @@
+ 
+ // sets up a little notepad that the character can write/post stuff from.
+ // Notepads are erased when the socket disconnects.
+-void init_notepad();
+-const char *socketGetNotepad(SOCKET_DATA *sock);
+-void socketSetNotepad(SOCKET_DATA *sock, const char *txt);
+-void socketStartNotepad(SOCKET_DATA *sock);
++void        init_notepad();
++BUFFER *socketGetNotepad(SOCKET_DATA *sock);
++void    socketSetNotepad(SOCKET_DATA *sock, const char *txt);
++void  socketStartNotepad(SOCKET_DATA *sock, EDITOR *editor);
+ 
+ 
+ // editors are intended to be permenant and, thus, have no delete function.
+diff -ruN ../nakedmudv2.6/src/editor/notepad.c src/editor/notepad.c
+--- ../nakedmudv2.6/src/editor/notepad.c	Wed Jul  6 02:52:19 2005
++++ src/editor/notepad.c	Sun Jul 31 17:13:52 2005
+@@ -19,6 +19,13 @@
+ 
+ 
+ //*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../scripts/script_editor.h"
++
++
++
++//*****************************************************************************
+ // auxiliary data for sockets
+ //*****************************************************************************
+ typedef struct notepad_data {
+@@ -41,9 +48,9 @@
+ //*****************************************************************************
+ // local datastructures, functions, and commands for players
+ //*****************************************************************************
+-void socketStartNotepad(SOCKET_DATA *sock) {
++void socketStartNotepad(SOCKET_DATA *sock, EDITOR *editor) {
+   NOTEPAD_DATA *data = socketGetAuxiliaryData(sock, "notepad_data");
+-  socketStartEditor(sock, text_editor, data->notepad);
++  socketStartEditor(sock, editor, data->notepad);
+ }
+ 
+ COMMAND(cmd_write) {
+@@ -52,7 +59,10 @@
+   else {
+     message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, 
+ 	    "$n pulls out a pen and begins jotting notes down.");
+-    socketStartNotepad(charGetSocket(ch));
++    if(!strcasecmp(arg, "script"))
++      socketStartNotepad(charGetSocket(ch), script_editor);
++    else
++      socketStartNotepad(charGetSocket(ch), text_editor);
+   }
+ }
+ 
+@@ -69,9 +79,9 @@
+   }
+ }
+ 
+-const char *socketGetNotepad(SOCKET_DATA *sock) {
++BUFFER *socketGetNotepad(SOCKET_DATA *sock) {
+   NOTEPAD_DATA *data = socketGetAuxiliaryData(sock, "notepad_data");
+-  return bufferString(data->notepad);
++  return data->notepad;
+ }
+ 
+ void socketSetNotepad(SOCKET_DATA *sock, const char *txt) {
+diff -ruN ../nakedmudv2.6/src/gameloop.c src/gameloop.c
+--- ../nakedmudv2.6/src/gameloop.c	Wed Jul  6 02:52:19 2005
++++ src/gameloop.c	Sun Jul 31 17:13:52 2005
+@@ -65,13 +65,15 @@
+ int mudport       = -1;
+ 
+ /* global variables */
+-WORLD_DATA *gameworld = NULL;   /*  the gameworld, and ll the prototypes */
+-LIST * object_list = NULL;      /*  the list of all existing objects */
+-LIST * socket_list = NULL;      /*  the list of active sockets */
+-LIST * mobile_list = NULL;      /*  the list of existing mobiles */
+-LIST * extract_obj_funcs = NULL;/*  functions called when an obj is extracted */
+-LIST * extract_mob_funcs = NULL;/*  functions called when a char is extracted */
+-PROPERTY_TABLE *mob_table = NULL;/* a table of mobs by UID, for quick lookup */
++WORLD_DATA *gameworld = NULL;    // the gameworld, and ll the prototypes
++LIST * object_list = NULL;       // the list of all existing objects
++LIST * socket_list = NULL;       // the list of active sockets
++LIST * mobile_list = NULL;       // the list of existing mobiles
++LIST * mobs_to_delete = NULL;    // mobs pending final extraction
++LIST * objs_to_delete = NULL;    // objs pending final extraction
++LIST * extract_obj_funcs = NULL; // functions called when an obj is extracted
++LIST * extract_mob_funcs = NULL; // functions called when a char is extracted
++PROPERTY_TABLE *mob_table = NULL;// a table of mobs by UID, for quick lookup
+ PROPERTY_TABLE *obj_table = NULL;
+ 
+ char        *   greeting = NULL;
+@@ -127,9 +129,11 @@
+ 
+   // lists for storing objects, sockets, and mobiles that are
+   // currently loaded into the game
+-  object_list = newList();
+-  socket_list = newList();
+-  mobile_list = newList();
++  object_list    = newList();
++  socket_list    = newList();
++  mobile_list    = newList();
++  mobs_to_delete = newList();
++  objs_to_delete = newList();
+ 
+   // tables for quick lookup of mobiles and objects by UID.
+   // For optimal speed, the table sizes should be roughly
+@@ -310,6 +314,14 @@
+   // We want to be on a schedule that updates every minute or so.
+   if((num_updates % (1 MINUTE)) == 0)
+     worldPulse(gameworld);
++
++  // if we have final extractions pending, do them
++  CHAR_DATA *ch = NULL;
++  while((ch = listPop(mobs_to_delete)) != NULL)
++    extract_mobile_final(ch);
++  OBJ_DATA *obj = NULL;
++  while((obj = listPop(objs_to_delete)) != NULL)
++    extract_obj_final(obj);
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.6/src/handler.c src/handler.c
+--- ../nakedmudv2.6/src/handler.c	Wed Jul  6 02:52:19 2005
++++ src/handler.c	Sun Jul 31 17:13:52 2005
+@@ -600,7 +600,8 @@
+ 				     (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+       OBJ_DATA *obj = NULL;
+       while( (obj = listPop(inv_objs)) != NULL)
+-	listPut(obj_list, obj);
++	if(!listIn(obj_list, obj))
++	  listPut(obj_list, obj);
+       deleteList(inv_objs);
+     }
+ 
+@@ -612,7 +613,8 @@
+ 				     (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+       OBJ_DATA *obj = NULL;
+       while( (obj = listPop(room_objs)) != NULL)
+-	listPut(obj_list, obj);
++	if(!listIn(obj_list, obj))
++	  listPut(obj_list, obj);
+       deleteList(room_objs);
+     }
+ 
+@@ -627,7 +629,8 @@
+       deleteList(equipment);
+       OBJ_DATA *obj = NULL;
+       while( (obj = listPop(eq_objs)) != NULL)
+-	listPut(obj_list, obj);
++	if(!listIn(obj_list, obj))
++	  listPut(obj_list, obj);
+       deleteList(eq_objs);
+     }
+ 
+@@ -638,7 +641,8 @@
+ 				     (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+       OBJ_DATA *obj = NULL;
+       while( (obj = listPop(wld_objs)) != NULL)
+-	listPut(obj_list, obj);
++	if(!listIn(obj_list, obj))
++	  listPut(obj_list, obj);
+       deleteList(wld_objs);
+     }
+ 
+@@ -658,9 +662,43 @@
+   /*                        FIND ALL CHARS                    */
+   /************************************************************/
+   else if(find_types == FIND_TYPE_CHAR) {
+-    if(found_type)
+-      *found_type = FOUND_NONE;
+-    return NULL;
++    LIST *char_list = newList();
++
++    // find everyone in the room
++    if(IS_SET(find_scope, FIND_SCOPE_ROOM)) {
++      LIST *room_chars =find_all_chars(looker, 
++				       roomGetCharacters(charGetRoom(looker)),
++				       at, NOTHING,
++				       (IS_SET(find_scope,FIND_SCOPE_VISIBLE)));
++      CHAR_DATA *ch = NULL;
++      while( (ch = listPop(room_chars)) != NULL)
++	if(!listIn(char_list, ch))
++	  listPut(char_list, ch);
++      deleteList(room_chars);
++    }
++
++    // find everyone in the world
++    if(IS_SET(find_scope, FIND_SCOPE_WORLD)) {
++      LIST *wld_chars = find_all_chars(looker, 
++				       mobile_list,
++				       at, NOTHING,
++				       (IS_SET(find_scope,FIND_SCOPE_VISIBLE)));
++      CHAR_DATA *ch = NULL;
++      while( (ch = listPop(wld_chars)) != NULL)
++	if(!listIn(char_list, ch))
++	  listPut(char_list, ch);
++      deleteList(wld_chars);
++    }
++
++    // if we didn't find anything, return NULL
++    if(listSize(char_list) < 1) {
++      deleteList(char_list);
++      if(found_type)
++	*found_type = FOUND_NONE;
++      return NULL;
++    }
++    else
++      return char_list;
+   }
+   
+ 
+diff -ruN ../nakedmudv2.6/src/help/help.c src/help/help.c
+--- ../nakedmudv2.6/src/help/help.c	Wed Jul  6 02:52:19 2005
++++ src/help/help.c	Sun Jul 31 17:13:52 2005
+@@ -270,7 +270,7 @@
+   HELP_DATA *data = get_help_data(arg, FALSE);
+ 
+   socketSetNotepad(charGetSocket(ch), (data ? data->info : ""));
+-  socketStartNotepad(charGetSocket(ch));
++  socketStartNotepad(charGetSocket(ch), text_editor);
+ }
+ 
+ 
+@@ -282,7 +282,7 @@
+     send_to_char(ch, "Which helpfile were you trying to update?\r\n");
+     return;
+   }
+-  if(!charGetSocket(ch) || !*socketGetNotepad(charGetSocket(ch))) {
++  if(!charGetSocket(ch) || !bufferLength(socketGetNotepad(charGetSocket(ch)))) {
+     send_to_char(ch, "You have nothing in your notepad! Try writing something.\r\n");
+     return;
+   }
+@@ -293,7 +293,8 @@
+   for(ptr = arg; *ptr; ptr++)
+     if(*ptr == '_') *ptr = ' ';
+ 
+-  update_help(charGetName(ch), arg, socketGetNotepad(charGetSocket(ch)));
++  update_help(charGetName(ch), arg, 
++	      bufferString(socketGetNotepad(charGetSocket(ch))));
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.6/src/inform.c src/inform.c
+--- ../nakedmudv2.6/src/inform.c	Wed Jul  6 02:52:19 2005
++++ src/inform.c	Sun Jul 31 17:13:52 2005
+@@ -624,9 +624,9 @@
+ 
+ 
+ //
+-// show the player all of the people who are currently playing
+-COMMAND(cmd_who)
+-{
++// builds a buffer that lists all of the people online. 
++// Buffer must be deleted after it is used
++BUFFER *build_who(void) {
+   CHAR_DATA *plr;
+   SOCKET_DATA *dsock;
+   BUFFER *buf = newBuffer(MAX_BUFFER);
+@@ -656,6 +656,14 @@
+   // send out info about the number of sockets and players logged on
+   bprintf(buf, "\r\n{g%d socket%s connected. %d playing.\r\n",
+ 	  socket_count, (socket_count == 1 ? "" : "s"), playing_count);
++  return buf;
++}
++
++
++//
++// show the player all of the people who are currently playing
++COMMAND(cmd_who) {
++  BUFFER *buf = build_who();
+   page_string(charGetSocket(ch), bufferString(buf));
+   deleteBuffer(buf);
+ }
+diff -ruN ../nakedmudv2.6/src/inform.h src/inform.h
+--- ../nakedmudv2.6/src/inform.h	Wed Jul  6 02:52:19 2005
++++ src/inform.h	Sun Jul 31 17:13:52 2005
+@@ -146,4 +146,10 @@
+ void show_body(CHAR_DATA *ch, BODY_DATA *body);
+ 
+ 
++//
++// builds a buffer that lists all of the people online. 
++// Buffer must be deleted after it is used
++BUFFER *build_who(void);
++
++
+ #endif // __INFORM_H
+diff -ruN ../nakedmudv2.6/src/interpret.c src/interpret.c
+--- ../nakedmudv2.6/src/interpret.c	Wed Jul  6 02:52:19 2005
++++ src/interpret.c	Sun Jul 31 17:13:52 2005
+@@ -145,6 +145,8 @@
+   // F
+   add_cmd("fill",       NULL, cmd_fill,     0, POS_STANDING, POS_FLYING,
+ 	  "builder", FALSE, TRUE );
++  add_cmd("force",      NULL, cmd_force,    0, POS_STANDING, POS_FLYING,
++	  "admin",   FALSE, FALSE);
+ 
+   // G
+   add_cmd("gemote",     NULL, cmd_gemote,   0, POS_UNCONCIOUS, POS_FLYING,
+@@ -471,7 +473,7 @@
+   // if we are leading with a non-character, we are trying to do a short-form
+   // command (e.g. ' for say, " for gossip). Just take the first character
+   // and use the rest as the arg
+-  if(isalpha(*arg))
++  if(isalpha(*arg) || isdigit(*arg))
+     arg = one_arg(arg, command);
+   else {
+     *command     = *arg;
+diff -ruN ../nakedmudv2.6/src/items/items.c src/items/items.c
+--- ../nakedmudv2.6/src/items/items.c	Wed Jul  6 02:52:19 2005
++++ src/items/items.c	Sun Jul 31 17:13:51 2005
+@@ -238,10 +238,11 @@
+ 
+ void objSetType(OBJ_DATA *obj, const char *type) {
+   ITEM_FUNC_DATA *funcs = hashGet(type_table, type);
+-  ITEM_DATA *data       = objGetAuxiliaryData(obj, "type_data");
+-  void *old_item_data   = hashGet(data->item_table, type);
+-  if(old_item_data) return;
+-  else hashPut(data->item_table, type, funcs->new());
++  ITEM_DATA       *data = objGetAuxiliaryData(obj, "type_data");
++  void   *old_item_data = hashGet(data->item_table, type);
++  // if the type exists and we're not already of the type, set it on us
++  if(funcs != NULL && old_item_data == NULL) 
++    hashPut(data->item_table, type, funcs->new());
+ }
+ 
+ void objDeleteType(OBJ_DATA *obj, const char *type) {
+diff -ruN ../nakedmudv2.6/src/movement.c src/movement.c
+--- ../nakedmudv2.6/src/movement.c	Wed Jul  6 02:52:19 2005
++++ src/movement.c	Sun Jul 31 19:00:40 2005
+@@ -95,12 +95,12 @@
+       roomDigExit(charGetRoom(ch), dir, vnum);
+       roomDigExit(new_room, dirGetOpposite(dir), 
+ 		  roomGetVnum(charGetRoom(ch)));
++
++      worldSaveRoom(gameworld, new_room);
++      worldSaveRoom(gameworld, charGetRoom(ch));
++
+       try_move(ch, dir, NULL);
+       return TRUE;
+-
+-      // save the changes... this will get costly as our world gets bigger.
+-      // But that should be alright once we make zone saving a bit smarter
+-      worldSave(gameworld, WORLD_PATH);
+     }
+   }
+   return FALSE;
+diff -ruN ../nakedmudv2.6/src/mud.h src/mud.h
+--- ../nakedmudv2.6/src/mud.h	Wed Jul  6 02:52:19 2005
++++ src/mud.h	Sun Jul 31 17:13:53 2005
+@@ -16,7 +16,7 @@
+ 
+ 
+ //*****************************************************************************
+-// if you've installed a newmodule, you  need to put a define in here to let
++// if you've installed a new module, you  need to put a define in here to let
+ // the rest of the MUD know that you've installed the module.
+ //*****************************************************************************
+ 
+@@ -67,19 +67,15 @@
+ typedef struct reset_data                 RESET_DATA;
+ 
+ typedef long                              bitvector_t;
++typedef unsigned char                     bool;
+ 
+-// define simple types
+-#ifndef __cplusplus
+-typedef  unsigned char     bool;
+-#endif
+-typedef  short int         sh_int;
+-typedef  unsigned char     byte;
+ 
+ 
+ // these appear in so many places, we might as well just add 'em to our header
+ // here so we don't have to include them everywhere else. Only catch is we
+ // have to include them after all of our typedefs so the header files can use
+ // the typedefs.
++#include "numbers.h"
+ #include "property_table.h"
+ #include "list.h"
+ #include "map.h"
+@@ -202,11 +198,12 @@
+ 					   arranged by uid (unique ID)        */
+ extern  LIST           *socket_list;
+ extern  LIST           *mobile_list;
++extern  LIST           *mobs_to_delete;    // mobs/objs that have had extraction
++extern  LIST           *objs_to_delete;    // and now need extract_final
+ extern  LIST           *extract_obj_funcs; // functions called on obj extraction
+ extern  LIST           *extract_mob_funcs; // functions called on mob extraction
+ extern  PROPERTY_TABLE *mob_table;      /* same contents as mobile_list, but
+ 					   arranged by uid (unique ID)        */
+-extern  const struct    typCmd tabCmd[];/* the command table                  */
+ extern  bool            shut_down;      /* used for shutdown                  */
+ extern  int             mudport;        /* What port are we running on?       */
+ extern  char        *   greeting;       /* the welcome greeting               */
+diff -ruN ../nakedmudv2.6/src/numbers.c src/numbers.c
+--- ../nakedmudv2.6/src/numbers.c	Wed Dec 31 17:00:00 1969
++++ src/numbers.c	Sun Jul 31 17:13:53 2005
+@@ -0,0 +1,107 @@
++//*****************************************************************************
++//
++// numbers.c
++//
++// This provides a wrapper around integers, doubles, and longs so we can pass
++// them around as pointers.
++//
++//*****************************************************************************
++
++#include "mud.h"
++#include "numbers.h"
++
++
++
++//*****************************************************************************
++// integers
++//*****************************************************************************
++struct int_struct {
++  int val;
++};
++
++INTEGER *newInteger(int val) {
++  INTEGER *integer = malloc(sizeof(INTEGER));
++  integer->val = val;
++  return integer;
++}
++
++void deleteInteger(INTEGER *integer) {
++  free(integer);
++}
++
++int integerGetVal(INTEGER *integer) {
++  return integer->val;
++}
++
++int integerCmp(INTEGER *int1, INTEGER *int2) {
++  if(int1->val == int2->val)
++    return 0;
++  else if(int1->val > int2->val)
++    return 1;
++  else
++    return -1;
++}
++
++
++
++//*****************************************************************************
++// doubles
++//*****************************************************************************
++struct double_struct {
++  double val;
++};
++
++DOUBLE *newDouble(double val) {
++  DOUBLE *dbl = malloc(sizeof(DOUBLE));
++  dbl->val = val;
++  return dbl;
++}
++
++void deleteDouble(DOUBLE *dbl) {
++  free(dbl);
++}
++
++double doubleGetVal(DOUBLE *dbl) {
++  return dbl->val;
++}
++
++int doubleCmp(DOUBLE *dbl1, DOUBLE *dbl2) {
++  if(dbl1->val == dbl2->val)
++    return 0;
++  else if(dbl1->val > dbl2->val)
++    return 1;
++  else
++    return -1;
++}
++
++
++
++//*****************************************************************************
++// longs
++//*****************************************************************************
++struct long_struct {
++  long val;
++};
++
++LONG *newLong(long val) {
++  LONG *lng = malloc(sizeof(LONG));
++  lng->val  = val;
++  return lng;
++}
++
++void deleteLong(LONG *lng) {
++  free(lng);
++}
++
++long longGetVal(LONG *lng) {
++  return lng->val;
++}
++
++int longCmp(LONG *lng1, LONG *lng2) {
++  if(lng1->val == lng2->val)
++    return 0;
++  else if(lng1->val > lng2->val)
++    return 1;
++  else
++    return -1;
++}
+diff -ruN ../nakedmudv2.6/src/numbers.h src/numbers.h
+--- ../nakedmudv2.6/src/numbers.h	Wed Dec 31 17:00:00 1969
++++ src/numbers.h	Sun Jul 31 17:13:53 2005
+@@ -0,0 +1,31 @@
++#ifndef NUMBERS_H
++#define NUMBERS_H
++//*****************************************************************************
++//
++// numbers.h
++//
++// This provides a wrapper around integers, doubles, and longs so we can pass
++// them around as pointers.
++//
++//*****************************************************************************
++
++typedef struct int_struct      INTEGER;
++typedef struct double_struct    DOUBLE;
++typedef struct long_struct        LONG;
++
++INTEGER *newInteger(int val);
++void  deleteInteger(INTEGER *integer);
++int   integerGetVal(INTEGER *integer);
++int      integerCmp(INTEGER *int1, INTEGER *int2);
++
++DOUBLE   *newDouble(double val);
++void   deleteDouble(DOUBLE *dbl);
++double doubleGetVal(DOUBLE *dbl);
++int       doubleCmp(DOUBLE *dbl1, DOUBLE *dbl2);
++
++LONG       *newLong(long val);
++void     deleteLong(LONG *lng);
++long     longGetVal(LONG *lng);
++int         longCmp(LONG *lng1, LONG *lng2);
++
++#endif // NUMBERS_H
+diff -ruN ../nakedmudv2.6/src/olc2/accedit.c src/olc2/accedit.c
+--- ../nakedmudv2.6/src/olc2/accedit.c	Wed Jul  6 02:52:19 2005
++++ src/olc2/accedit.c	Sun Jul 31 17:13:51 2005
+@@ -25,6 +25,7 @@
+ #define ACCEDIT_PASSWORD      3
+ 
+ 
++
+ //
+ // Saves the account, updates all of the accounts with this name currently
+ // in use, and deletes the account we're working with from memory.
+diff -ruN ../nakedmudv2.6/src/olc2/dedit.c src/olc2/dedit.c
+--- ../nakedmudv2.6/src/olc2/dedit.c	Wed Jul  6 02:52:19 2005
++++ src/olc2/dedit.c	Sun Jul 31 17:13:50 2005
+@@ -166,6 +166,11 @@
+   }
+ }
+ 
++// saves a dialog
++void save_dialog(DIALOG_DATA *dialog) {
++  worldSaveDialog(gameworld, dialog);
++}
++
+ COMMAND(cmd_dedit) {
+   ZONE_DATA *zone;
+   DIALOG_DATA *dialog;
+@@ -196,7 +201,7 @@
+       }
+       
+       do_olc(charGetSocket(ch), dedit_menu, dedit_chooser, dedit_parser,
+-	     dialogCopy, dialogCopyTo, deleteDialog, save_world, dialog);
++	     dialogCopy, dialogCopyTo, deleteDialog, save_dialog, dialog);
+     }
+   }
+ }
+diff -ruN ../nakedmudv2.6/src/olc2/esedit.c src/olc2/esedit.c
+--- ../nakedmudv2.6/src/olc2/esedit.c	Wed Jul  6 02:52:19 2005
++++ src/olc2/esedit.c	Sun Jul 31 17:13:50 2005
+@@ -84,7 +84,7 @@
+ int  edesc_set_chooser(SOCKET_DATA *sock, EDESC_SET *set, const char *option) {
+   switch(toupper(*option)) {
+   case 'E':
+-    text_to_buffer(sock, "Enter the number of the edesc to edit: ");
++    text_to_buffer(sock, "Enter the number of the edesc to edit (-1 for none): ");
+     return ESEDIT_EDIT;
+   case 'N': {
+     // create a new edesc
+diff -ruN ../nakedmudv2.6/src/olc2/medit.c src/olc2/medit.c
+--- ../nakedmudv2.6/src/olc2/medit.c	Wed Jul  6 02:52:19 2005
++++ src/olc2/medit.c	Sun Jul 31 17:13:50 2005
+@@ -39,6 +39,8 @@
+ #define MEDIT_SEX           7
+ #define MEDIT_DIALOG        8
+ 
++
++
+ void medit_menu(SOCKET_DATA *sock, CHAR_DATA *mob) {
+   send_to_socket(sock,
+ 		 "{g[{c%d{g]\r\n"
+@@ -158,6 +160,11 @@
+   }
+ }
+ 
++// saves a mobile to disk
++void save_mobile(CHAR_DATA *ch) {
++  worldSaveMob(gameworld, ch);
++}
++
+ COMMAND(cmd_medit) {
+   CHAR_DATA *mob;
+ 
+@@ -204,7 +211,7 @@
+       }
+ 
+       do_olc(charGetSocket(ch), medit_menu, medit_chooser, medit_parser,
+-	     charCopy, charCopyTo, deleteChar, save_world, mob);
++	     charCopy, charCopyTo, deleteChar, save_mobile, mob);
+     }
+   }
+ }
+diff -ruN ../nakedmudv2.6/src/olc2/oedit.c src/olc2/oedit.c
+--- ../nakedmudv2.6/src/olc2/oedit.c	Wed Jul  6 02:52:19 2005
++++ src/olc2/oedit.c	Sun Jul 31 17:13:50 2005
+@@ -146,6 +146,11 @@
+   }
+ }
+ 
++// saves an object to disk
++void save_object(OBJ_DATA *obj) {
++  worldSaveObj(gameworld, obj);
++}
++
+ COMMAND(cmd_oedit) {
+   OBJ_DATA *obj;
+ 
+@@ -193,7 +198,7 @@
+       }
+ 
+       do_olc(charGetSocket(ch), oedit_menu, oedit_chooser, oedit_parser,
+-	     objCopy, objCopyTo, deleteObj, save_world, obj);
++	     objCopy, objCopyTo, deleteObj, save_object, obj);
+     }
+   }
+ }
+diff -ruN ../nakedmudv2.6/src/olc2/olc.c src/olc2/olc.c
+--- ../nakedmudv2.6/src/olc2/olc.c	Wed Jul  6 03:07:05 2005
++++ src/olc2/olc.c	Sun Jul 31 17:21:53 2005
+@@ -301,10 +301,6 @@
+     socketPushInputHandler(sock, olc_handler, olc_menu);
+ }
+ 
+-void save_world(void *olc_data) {
+-  worldSave(gameworld, WORLD_PATH);
+-}
+-
+ void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
+ 		       int num_vals, int num_cols) {
+   int i, print_room;
+diff -ruN ../nakedmudv2.6/src/olc2/olc.h src/olc2/olc.h
+--- ../nakedmudv2.6/src/olc2/olc.h	Wed Jul  6 02:52:19 2005
++++ src/olc2/olc.h	Sun Jul 31 17:13:51 2005
+@@ -94,15 +94,6 @@
+ //*****************************************************************************
+ 
+ //
+-// Okay, so I'm lazy. I don't want to write a saver() function for each type of
+-// thing that can be edited in OLC. Here is a function that will save any
+-// change, whether it's to a mob proto, an obj proto, or a room proto. It will
+-// be slow for a large mud, since it basically saves the -entire- world to disk,
+-// but you can work on changing that if your world gets big enough ;)
+-void save_world(void *olc_data);
+-
+-
+-//
+ // Display a bunch of options in a tabular form. The table will have num_vals
+ // elements, and num_cols of those elements will be displayed per row.
+ void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
+diff -ruN ../nakedmudv2.6/src/olc2/redit.c src/olc2/redit.c
+--- ../nakedmudv2.6/src/olc2/redit.c	Wed Jul  6 02:52:19 2005
++++ src/olc2/redit.c	Sun Jul 31 17:13:51 2005
+@@ -497,6 +497,7 @@
+ #define REDIT_TERRAIN    2
+ #define REDIT_EXIT       3
+ #define REDIT_FILL_EXIT  4
++#define REDIT_BITVECTOR  5
+ 
+ 
+ //
+@@ -543,6 +544,7 @@
+ #ifdef MODULE_TIME
+ 		 "{g3) Night description (optional)\r\n{c%s\r\n"
+ #endif
++		 "{gB) Set Bits: {c%s\r\n"
+ 		 "{gT) Terrain type {y[{c%s{y]\r\n"
+ 		 "{gX) Extra descriptions menu\r\n"
+ 		 "{gR) Room reset menu\r\n"
+@@ -554,6 +556,7 @@
+ #ifdef MODULE_TIME
+ 		 roomGetNightDesc(room),
+ #endif
++		 bitvectorGetBits(roomGetBits(room)),
+ 		 terrainGetName(roomGetTerrain(room)));
+   redit_exit_menu(sock, room);
+ }
+@@ -596,7 +599,10 @@
+     do_olc(sock, ssedit_menu, ssedit_chooser, ssedit_parser,
+ 	   NULL, NULL, NULL, NULL, roomGetScripts(room));
+     return MENU_NOCHOICE;
+-    
++  case 'B':
++    do_olc(sock, bedit_menu, bedit_chooser, bedit_parser,
++	   NULL, NULL, NULL, NULL, roomGetBits(room));
++    return MENU_NOCHOICE;
+   default:
+     return MENU_CHOICE_INVALID;
+   }
+@@ -651,6 +657,18 @@
+ }
+ 
+ 
++// saves a room to disk
++void save_room(ROOM_DATA *room) {
++  worldSaveRoom(gameworld, room);
++  // also do some updating for the room if it is resettable
++  ZONE_DATA *zone = worldZoneBounding(gameworld, roomGetVnum(room));
++  if(roomIsResettable(room))
++    zoneAddResettableRoom(zone, roomGetVnum(room));
++  else
++    zoneRemoveResettableRoom(zone, roomGetVnum(room));
++}
++
++
+ COMMAND(cmd_redit) {
+   ZONE_DATA *zone;
+   ROOM_DATA *room;
+@@ -681,6 +699,6 @@
+     }
+ 
+     do_olc(charGetSocket(ch), redit_menu, redit_chooser, redit_parser,
+-	   roomCopy, roomCopyTo, deleteRoom, save_world, room);
++	   roomCopy, roomCopyTo, deleteRoom, save_room, room);
+   }
+ }
+diff -ruN ../nakedmudv2.6/src/olc2/zedit.c src/olc2/zedit.c
+--- ../nakedmudv2.6/src/olc2/zedit.c	Wed Jul  6 02:52:19 2005
++++ src/olc2/zedit.c	Sun Jul 31 19:01:17 2005
+@@ -7,6 +7,8 @@
+ //
+ //*****************************************************************************
+ 
++#include <sys/stat.h>
++
+ #include "../mud.h"
+ #include "../utils.h"
+ #include "../socket.h"
+@@ -79,6 +81,11 @@
+   }
+ }
+ 
++// saves a zone to disk
++void save_zone(ZONE_DATA *zone) {
++  zoneSave(zone);
++}
++
+ 
+ COMMAND(cmd_zedit) {
+   // we want to create a new zone?
+@@ -94,8 +101,8 @@
+     else if(worldZoneBounding(gameworld, min) || worldZoneBounding(gameworld, max))
+       send_to_char(ch, "There is already a zone bounding that vnum range.\r\n");
+     else {
+-      ZONE_DATA *zone = newZone(vnum, min, max);
+       char buf[MAX_BUFFER];
++      ZONE_DATA *zone = newZone(vnum, min, max);
+       sprintf(buf, "%s's zone", charGetName(ch));
+       zoneSetName(zone, buf);
+       sprintf(buf, "A new zone created by %s\r\n", charGetName(ch));
+@@ -104,9 +111,6 @@
+ 
+       worldPutZone(gameworld, zone);
+       send_to_char(ch, "You create a new zone (vnum %d).\r\n", vnum);
+-
+-      // save the changes... this will get costly as our world gets bigger.
+-      // But that should be alright once we make zone saving a bit smarter
+       worldSave(gameworld, WORLD_PATH);
+     }
+   }
+@@ -126,7 +130,7 @@
+       send_to_char(ch, "You are not authorized to edit this zone.\r\n");  
+     else {
+       do_olc(charGetSocket(ch), zedit_menu, zedit_chooser, zedit_parser,
+-	     zoneCopy, zoneCopyTo, deleteZone, save_world, zone);
++	     zoneCopy, zoneCopyTo, deleteZone, save_zone, zone);
+     }
+   }
+ }
+diff -ruN ../nakedmudv2.6/src/room.c src/room.c
+--- ../nakedmudv2.6/src/room.c	Wed Jul  6 02:52:19 2005
++++ src/room.c	Sun Jul 31 17:13:53 2005
+@@ -28,6 +28,7 @@
+ // mandatory modules
+ //*****************************************************************************
+ #include "scripts/script.h"
++#include "scripts/script_set.h"
+ 
+ 
+ 
+@@ -37,7 +38,7 @@
+ 
+ 
+ struct room_data {
+-  int   vnum;              // what vnum are we?
++  int         vnum;              // what vnum are we?
+ 
+   int         terrain;           // what kind of terrain do we have?
+   char       *name;              // what is the name of our room?
+@@ -46,6 +47,7 @@
+   EDESC_SET  *edescs;            // the extra descriptions in the room
+   EXIT_DATA **exits;             // the normal exists
+   HASHTABLE  *special_exits;     // what other special exits do we have?
++  BITVECTOR  *bits;              // the bits we have turned on
+ 
+   LIST       *contents;          // what objects do we contain in the room?
+   LIST       *characters;        // who is in our room?
+@@ -77,6 +79,7 @@
+   for(i = 0; i < NUM_DIRS; i++)
+     room->exits[i] = NULL;
+ 
++  room->bits           = bitvectorInstanceOf("room_bits");
+   room->special_exits  = newHashtableSize(SPECIAL_EXIT_BUCKETS);
+   room->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_ROOM);
+ 
+@@ -91,15 +94,37 @@
+ 
+ void deleteRoom(ROOM_DATA *room) {
+   int i;
++  LIST_ITERATOR *cont_i = NULL;
++  void         *content = NULL;
+ 
++  // Extract all of our contents. Afterwards, delete the lists.
++  cont_i = newListIterator(room->contents);
++  ITERATE_LIST(content, cont_i)
++    extract_obj(content);
++  deleteListIterator(cont_i);
++
++  cont_i = newListIterator(room->characters);
++  ITERATE_LIST(content, cont_i)
++    extract_mobile(content);
++  deleteListIterator(cont_i);
++  
+   // delete contents
+-  deleteListWith(room->contents,   extract_obj);
+-  deleteListWith(room->characters, extract_mobile);
+-  deleteListWith(room->reset,      deleteReset);
++  // oops! This ain't cool... we can't delete these things with calls to
++  // extract() because those extract remove the objs/chars from the room. If
++  // we try removing when we're in the process of deleting lists, bad things
++  // happen. So now we extract first, and THEN delete the room lists.
++  //  deleteListWith(room->contents,   extract_obj);
++  //  deleteListWith(room->characters, extract_mobile);
++  deleteList(room->contents);
++  deleteList(room->characters);
++  deleteListWith(room->reset, deleteReset);
+ 
+   // delete extra descriptions
+   if(room->edescs) deleteEdescSet(room->edescs);
+ 
++  // delete bits
++  if(room->bits) deleteBitvector(room->bits);
++
+   // delete the normal exits
+   for(i = 0; i < NUM_DIRS; i++)
+     if(room->exits[i] != NULL)
+@@ -166,11 +191,12 @@
+ 
+ ROOM_DATA *roomRead(STORAGE_SET *set) {
+   ROOM_DATA *room = newRoom();
+-  roomSetVnum(room,                  read_int   (set, "vnum"));
+-  roomSetName(room,                  read_string(set, "name"));
+-  roomSetDesc(room,                  read_string(set, "desc"));
+-  roomSetTerrain(room,               read_int   (set, "terrain"));
++  roomSetVnum(room,     read_int   (set, "vnum"));
++  roomSetName(room,     read_string(set, "name"));
++  roomSetDesc(room,     read_string(set, "desc"));
++  roomSetTerrain(room,  terrainGetNum(read_string(set,"terrain")));
+   roomSetEdescs(room,   edescSetRead(read_set   (set, "edescs")));
++  bitSet(room->bits,    read_string(set, "room_bits"));
+ 
+   STORAGE_SET_LIST *exits = read_list(set, "exits");
+   STORAGE_SET       *exit = NULL;
+@@ -212,6 +238,7 @@
+   roomSetName    (to, roomGetName(from));
+   roomSetDesc    (to, roomGetDesc(from));
+   roomSetTerrain (to, roomGetTerrain(from));
++  bitvectorCopyTo(from->bits, to->bits);
+ 
+   // set our edescs
+   roomSetEdescs(to, edescSetCopy(from->edescs));
+@@ -275,6 +302,18 @@
+   }
+ }
+ 
++bool roomIsResettable(ROOM_DATA *room) {
++  // we're resettable if we have reset commands or init scripts
++  if(listSize(room->reset) > 0)
++    return TRUE;
++  else {
++    LIST *init_scripts = scriptSetList(roomGetScripts(room), SCRIPT_TYPE_INIT);
++    bool    resettable = (listSize(init_scripts) > 0);
++    deleteList(init_scripts);
++    return resettable;
++  }
++}
++
+ void roomReset(ROOM_DATA *room) {
+   resetRunOn(room->reset, room, INITIATOR_ROOM);
+   try_scripts(SCRIPT_TYPE_INIT,
+@@ -445,6 +484,9 @@
+     hashPut(room->special_exits, dir, exit);
+ };
+ 
++BITVECTOR *roomGetBits(const ROOM_DATA *room) {
++  return room->bits;
++}
+ 
+ 
+ 
+diff -ruN ../nakedmudv2.6/src/room.h src/room.h
+--- ../nakedmudv2.6/src/room.h	Wed Jul  6 02:52:19 2005
++++ src/room.h	Sun Jul 31 17:13:53 2005
+@@ -72,6 +72,7 @@
+ // run the room's reset scripts
+ //
+ void roomReset(ROOM_DATA *room);
++bool roomIsResettable(ROOM_DATA *room);
+ 
+ 
+ //
+@@ -128,9 +129,9 @@
+ EDESC_SET  *roomGetEdescs       (const ROOM_DATA *room);
+ const char *roomGetEdesc        (const ROOM_DATA *room, const char *keyword);
+ void       *roomGetAuxiliaryData(const ROOM_DATA *room, const char *name);
+-
+-LIST       *roomGetCharacters  (const ROOM_DATA *room);
+-LIST       *roomGetContents    (const ROOM_DATA *room);
++LIST       *roomGetCharacters   (const ROOM_DATA *room);
++LIST       *roomGetContents     (const ROOM_DATA *room);
++BITVECTOR  *roomGetBits         (const ROOM_DATA *room);
+ 
+ LIST       *roomGetResets      (const ROOM_DATA *room);
+ void        roomRemoveReset    (ROOM_DATA *room, RESET_DATA *reset);
+diff -ruN ../nakedmudv2.6/src/scripts/pymud.c src/scripts/pymud.c
+--- ../nakedmudv2.6/src/scripts/pymud.c	Wed Jul  6 02:52:19 2005
++++ src/scripts/pymud.c	Sun Jul 31 17:13:52 2005
+@@ -18,6 +18,7 @@
+ #include "../utils.h"
+ #include "../character.h"
+ #include "../inform.h"
++#include "../handler.h"
+ 
+ #include "script.h"
+ #include "pyroom.h"
+@@ -183,6 +184,89 @@
+ }
+ 
+ //
++// a wrapper around NakedMud's generic_find() function
++PyObject *mud_generic_find(PyObject *self, PyObject *args) {
++  PyObject *py_looker = Py_None;     CHAR_DATA *looker = NULL;
++  char      *type_str = NULL;        bitvector_t  type = 0; 
++  char     *scope_str = NULL;        bitvector_t scope = 0;
++  char           *arg = NULL;
++  bool         all_ok = TRUE;
++
++  // parse the arguments
++  if(!PyArg_ParseTuple(args, "Osss|b", &py_looker, &arg, &type_str, &scope_str,
++		       &all_ok)) {
++    PyErr_Format(PyExc_TypeError,
++		 "Invalid arguments supplied to mud.generic_find()");
++    return NULL;
++  }
++
++  // convert the looker
++  if(py_looker != Py_None) {
++    if(!PyChar_Check(py_looker) || (looker = PyChar_AsChar(py_looker)) == NULL){
++      PyErr_Format(PyExc_TypeError, 
++		   "First argument must be an existent character or None!");
++      return NULL;
++    }
++  }
++
++  // convert the scope
++  if(is_keyword(scope_str, "room", FALSE))
++    SET_BIT(scope, FIND_SCOPE_ROOM);
++  if(is_keyword(scope_str, "inv", FALSE))
++    SET_BIT(scope, FIND_SCOPE_INV);
++  if(is_keyword(scope_str, "worn", FALSE))
++    SET_BIT(scope, FIND_SCOPE_WORN);
++  if(is_keyword(scope_str, "world", FALSE))
++    SET_BIT(scope, FIND_SCOPE_WORLD);
++  if(is_keyword(scope_str, "visible", FALSE))
++    SET_BIT(scope, FIND_SCOPE_VISIBLE);
++  if(is_keyword(scope_str, "immediate", FALSE))
++    SET_BIT(scope, FIND_SCOPE_IMMEDIATE);
++  if(is_keyword(scope_str, "all", FALSE))
++    SET_BIT(scope, FIND_SCOPE_ALL);
++
++  // convert the types
++  if(is_keyword(type_str, "obj", FALSE))
++    SET_BIT(type, FIND_TYPE_OBJ);
++  if(is_keyword(type_str, "char", FALSE))
++    SET_BIT(type, FIND_TYPE_CHAR);
++  if(is_keyword(type_str, "in", FALSE))
++    SET_BIT(type, FIND_TYPE_IN_OBJ);
++
++  // do the search
++  int found_type = FOUND_NONE;
++  void    *found = generic_find(looker, arg, type, scope, all_ok, &found_type);
++
++  if(found_type == FOUND_CHAR)
++    return Py_BuildValue("Os", newPyChar(found), "char");
++  else if(found_type == FOUND_OBJ)
++    return Py_BuildValue("Os", newPyObj(found), "obj");
++  else if(found_type == FOUND_IN_OBJ)
++    return Py_BuildValue("Os", newPyObj(found), "in");
++  // now it gets a bit more tricky... we have to see what other bit was set
++  else if(found_type == FOUND_LIST) {
++    PyObject         *list = PyList_New(0);
++    LIST_ITERATOR *found_i = newListIterator(found);
++    void        *one_found = NULL;
++    if(IS_SET(type, FIND_TYPE_CHAR)) {
++      ITERATE_LIST(one_found, found_i)
++	PyList_Append(list, newPyChar(one_found));
++    }
++    else if(IS_SET(type, FIND_TYPE_OBJ | FIND_TYPE_IN_OBJ)) {
++      ITERATE_LIST(one_found, found_i)
++	PyList_Append(list, newPyChar(one_found));
++    }
++    deleteListIterator(found_i);
++    deleteList(found);
++    return Py_BuildValue("Os", list, "list");
++  }
++
++  // nothing was found...
++  return Py_BuildValue("Os", Py_None, Py_None);
++}
++
++
++//
+ // execute message() from inform.h
+ PyObject *mud_message(PyObject *self, PyObject *args) {
+   // the python/C representations of the various variables that message() needs
+@@ -308,9 +392,11 @@
+      "plugs into the message() function from inform.h" },
+     {"format_string", mud_format_string, METH_VARARGS,
+      "format a string to be 80 chars wide and indented. Like a desc."},
++    {"generic_find",  mud_generic_find, METH_VARARGS,
++     "Python wrapper around the generic_find() function"},
+     {"extract", mud_extract, METH_VARARGS,
+     "extracts an object or character from the game. This method is dangerous, "
+-    "sicne the object may still be needed in whichever function called the "
++    "since the object may still be needed in whichever function called the "
+     "script that activated this method" },
+     {NULL, NULL, 0, NULL}        /* Sentinel */
+ };
+diff -ruN ../nakedmudv2.6/src/scripts/script.c src/scripts/script.c
+--- ../nakedmudv2.6/src/scripts/script.c	Wed Jul  6 02:52:19 2005
++++ src/scripts/script.c	Sun Jul 31 17:13:52 2005
+@@ -50,6 +50,34 @@
+   // make sure we at least have a vnum
+   if(!arg || !*arg)
+     send_to_char(ch, "Which script would you like to run?\r\n");
++  // check to see if we're running a script from the notepad. "pad" must be 
++  // only arg, or first arg. Thanks go out to Michael Venzor for writing this
++  // bit of scrun.
++  else if(!strncasecmp(arg, "pad ", (strlen(arg) > 3 ? 4 : 3))) {
++    // make sure we have a socket - we'll need access to its notepad
++    if(!charGetSocket(ch))
++      send_to_char(ch, "Only characters with sockets can execute scripts!\r\n");
++    // make sure notepad is not empty
++    else if(!bufferLength(socketGetNotepad(charGetSocket(ch))))
++      send_to_char(ch, "Your notepad is empty. "
++		   "First, try writing something with {cwrite{n.\r\n");
++    // All's well. Let's exec the script
++    else {
++      BUFFER *notepad = bufferCopy(socketGetNotepad(charGetSocket(ch)));
++      char pad[SMALL_BUFFER]; // to strip off the "pad" part of our arg
++      arg = one_arg(arg, pad);
++
++      // Since pyscript chokes on \r's, which are automatically
++      // appended to text in the notepad editor, we need to ditch 'em!
++      bufferReplace(notepad, "\r", "", TRUE);
++      
++      // call script execution function here
++      run_script(bufferString(notepad), ch, SCRIPTOR_CHAR, NULL, NULL, NULL, 
++		 NULL, arg, 0);
++      deleteBuffer(notepad);
++    }
++  }
++  // we're running a script normally
+   else {
+     char buf[SMALL_BUFFER];
+ 
+@@ -57,6 +85,7 @@
+     arg = one_arg(arg, buf);
+ 
+     SCRIPT_DATA *script = worldGetScript(gameworld, atoi(buf));
++
+     if(script == NULL || !isdigit(*buf))
+       send_to_char(ch, "No script with that vnum exists!\r\n");
+     else if(scriptGetType(script) != SCRIPT_TYPE_RUNNABLE)
+@@ -549,6 +578,7 @@
+ // statements we need to highlight
+ const char *control_table[] = {
+   "import",
++  "return",
+   "except",
+   "while",
+   "from",
+diff -ruN ../nakedmudv2.6/src/scripts/script.h src/scripts/script.h
+--- ../nakedmudv2.6/src/scripts/script.h	Wed Jul  6 02:52:19 2005
++++ src/scripts/script.h	Sun Jul 31 17:13:52 2005
+@@ -235,31 +235,26 @@
+ 
+ //
+ // initialize the scripting system
+-//
+ void init_scripts();
+ 
+ //
+ // Shut scripts down
+-//
+ void finalize_scripts();
+ 
+ 
+ //
+ // start up a script
+-//
+ void run_script(const char *script, void *me, int me_type,
+ 		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room,
+ 		const char *cmd, const char *arg, int narg);
+ 
+ //
+ // format a string so that it is a viable script
+-//
+ void format_script(char **script, int max_len);
+ 
+ 
+ //
+ // Show a script to the socket
+-//
+ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums);
+ 
+ 
+@@ -267,25 +262,21 @@
+ // See if a speech script needs to be triggered. If listener == NULL,
+ // everyone in the room is checked. If a listener is provided, then 
+ // only the listener is checked
+-//
+ void try_speech_script(CHAR_DATA *ch, CHAR_DATA *listener, char *speech);
+ 
+ 
+ //
+ // Try enterance scripts in the given room (the room itself, and mobs)
+-//
+ void try_enterance_script(CHAR_DATA *ch, ROOM_DATA *room, const char *dirname);
+ 
+ //
+ // Try exit scripts in the given room (the room itself, and mobs)
+-//
+ void try_exit_script(CHAR_DATA *ch, ROOM_DATA *room, const char *dirname);
+ 
+ //
+ // Searches for command scripts in the room. If the actual command should
+ // be followed through with, returns 0. If the actual command should be
+ // prevented, returns 1.
+-//
+ int  try_command_script(CHAR_DATA *ch, const char *cmd, const char *arg);
+ 
+ //
+@@ -294,7 +285,6 @@
+ // the script needs to be halted (e.g. if it is a command script, the command
+ // parser should not continue checking for a normal command in the command list,
+ // if the character is giving an object, the give should not complete, etc...)
+-//
+ int try_scripts(int script_type,
+ 		void *me, int me_type,
+ 		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room,
+diff -ruN ../nakedmudv2.6/src/scripts/script_edit.c src/scripts/script_edit.c
+--- ../nakedmudv2.6/src/scripts/script_edit.c	Wed Jul  6 02:52:19 2005
++++ src/scripts/script_edit.c	Sun Jul 31 17:13:52 2005
+@@ -222,6 +222,13 @@
+ }
+ 
+ 
++//
++// saves a script to disk
++void save_script(SCRIPT_DATA *script) {
++  worldSaveScript(gameworld, script);
++}
++
++
+ COMMAND(cmd_scedit) {
+   ZONE_DATA *zone;
+   SCRIPT_DATA *script;
+@@ -253,7 +260,7 @@
+       }
+ 
+       do_olc(charGetSocket(ch), scedit_menu, scedit_chooser, scedit_parser,
+-	     scriptCopy, scriptCopyTo, deleteScript, save_world, script);
++	     scriptCopy, scriptCopyTo, deleteScript, save_script, script);
+     }
+   }
+ }
+diff -ruN ../nakedmudv2.6/src/scripts/script_editor.c src/scripts/script_editor.c
+--- ../nakedmudv2.6/src/scripts/script_editor.c	Wed Jul  6 02:52:19 2005
++++ src/scripts/script_editor.c	Sun Jul 31 17:13:52 2005
+@@ -22,13 +22,15 @@
+ // auxiliary data and functions
+ //*****************************************************************************
+ typedef struct script_editor_aux_data {
+-  int indent; // how far are we indented for our next line of code?
++  int      indent; // how far are we indented for our next line of code?
++  bool autoindent; // do we autoindent after encountering a colon?
+ } SCRIPT_EDITOR_AUX_DATA;
+ 
+ SCRIPT_EDITOR_AUX_DATA *
+ newScriptEditorAuxData() {
+   SCRIPT_EDITOR_AUX_DATA *data = malloc(sizeof(SCRIPT_EDITOR_AUX_DATA));
+-  data->indent = 0;
++  data->autoindent = TRUE;
++  data->indent     = 0;
+   return data;
+ }
+ 
+@@ -41,6 +43,16 @@
+ 
+ 
+ //
++// toggle the socket's autoindent in script editning
++void scriptEditorToggleAutoindent(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
++  SCRIPT_EDITOR_AUX_DATA *data = 
++    socketGetAuxiliaryData(sock, "script_editor_aux_data");
++  data->autoindent = (data->autoindent + 1) % 2;
++  send_to_socket(sock, "Autoindent %s.\r\n", 
++		 (data->autoindent ? "enabled" : "supressed"));
++}
++
++//
+ // increase the indentation in our script by 2
+ void scriptEditorIndent(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
+   SCRIPT_EDITOR_AUX_DATA *data = socketGetAuxiliaryData(sock, "script_editor_aux_data");
+@@ -69,20 +81,24 @@
+ // append new text to the script editor. Make sure we add the appropriate amount
+ // of spaces before the addition, and increment/decrement our indent as needed
+ void scriptEditorAppend(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
++  SCRIPT_EDITOR_AUX_DATA *data = 
++    socketGetAuxiliaryData(sock, "script_editor_aux_data");
++
+   // if we're playing with else/elif/case, take down the input a notch
+-  if(!strncmp(arg, "except:", 7) ||
+-     !strncmp(arg, "except ", 7) ||
+-     !strncmp(arg, "else:",   5) ||
+-     !strncmp(arg, "elif ",   5) ||
+-     !strncmp(arg, "case ",   5))
+-    scriptEditorUndent(sock, NULL, NULL);
+-
+-  // add in our indents if neccessary
+-  int indent = socketGetScriptEditorIndent(sock);
+-  if(indent > 0) {
+-    char fmt[20];
+-    sprintf(fmt, "%%%ds", indent);
+-    bprintf(buf, fmt, " ");
++  if(data->autoindent) {
++    if(!strncmp(arg, "except:", 7) ||
++       !strncmp(arg, "except ", 7) ||
++       !strncmp(arg, "else:",   5) ||
++       !strncmp(arg, "elif ",   5) ||
++       !strncmp(arg, "case ",   5))
++      scriptEditorUndent(sock, NULL, NULL);
++
++    // add in our indents if neccessary
++    if(data->indent > 0) {
++      char fmt[20];
++      sprintf(fmt, "%%%ds", data->indent);
++      bprintf(buf, fmt, " ");
++    }
+   }
+ 
+   // cat the new line of code
+@@ -90,19 +106,19 @@
+   bufferCat(buf, "\n");
+ 
+   // see if we need to change our indent
+-  int len = strlen(arg);
+-  if(len > 0 && arg[len-1] == ':')
+-    scriptEditorIndent(sock, NULL, NULL);
++  if(data->autoindent) {
++    int len = strlen(arg);
++    if(len > 0 && arg[len-1] == ':')
++      scriptEditorIndent(sock, NULL, NULL);
++  }
+ }
+ 
+-
+ //
+ // list the script buffer to the socket, but do all of our syntax highlighting
+ void scriptEditorList(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
+   script_display(sock, bufferString(buf), TRUE);
+ }
+ 
+-
+ //
+ // \r really screws up python; this function makes sure they're all stripped out
+ void scriptEditorFormat(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
+@@ -145,6 +161,8 @@
+ 		   scriptEditorUndent);
+   editorAddCommand(script_editor, "^", "        Indent up the script editor",
+ 		   scriptEditorIndent);
++  editorAddCommand(script_editor, "-", "        Toggle auto-indenting",
++		   scriptEditorToggleAutoindent);
+   editorAddCommand(script_editor, "l", "        List the current buffer contents",
+ 		   scriptEditorList);
+   editorAddCommand(script_editor, "f", "        Strips all bad characters out of the script",
+diff -ruN ../nakedmudv2.6/src/set_val/set_val.c src/set_val/set_val.c
+--- ../nakedmudv2.6/src/set_val/set_val.c	Wed Jul  6 02:52:19 2005
++++ src/set_val/set_val.c	Sun Jul 31 17:13:51 2005
+@@ -144,8 +144,8 @@
+   // check to see if we're trying to set from our notepad. Also, make sure
+   // we have a socket and CAN access our notepad.
+   if(subcmd == SET_SUBCMD_SETPAD) {
+-    if(charGetSocket(ch) && *socketGetNotepad(charGetSocket(ch)))
+-      val = socketGetNotepad(charGetSocket(ch));
++    if(charGetSocket(ch) && bufferLength(socketGetNotepad(charGetSocket(ch))))
++      val = bufferString(socketGetNotepad(charGetSocket(ch)));
+     else {
+       send_to_char(ch, "Your notepad currently has no contents.\r\n");
+       return;
+diff -ruN ../nakedmudv2.6/src/socket.c src/socket.c
+--- ../nakedmudv2.6/src/socket.c	Wed Jul  6 02:52:19 2005
++++ src/socket.c	Sun Jul 31 17:13:53 2005
+@@ -42,9 +42,9 @@
+   bool            cmd_read;
+   bool            bust_prompt;
+   bool            closed;
+-  sh_int          lookup_status;
+-  sh_int          control;
+-  sh_int          top_output;
++  int             lookup_status;
++  int             control;
++  int             top_output;
+ 
+   char          * page_string;   // the string that has been paged to us
+   int             curr_page;     // the current page we're on
+@@ -1213,7 +1213,7 @@
+   return sock->hostname;
+ }
+ 
+-sh_int socketGetDNSLookupStatus(SOCKET_DATA *sock) {
++int socketGetDNSLookupStatus(SOCKET_DATA *sock) {
+   return sock->lookup_status;
+ }
+ 
+@@ -1223,12 +1223,9 @@
+ 
+ 
+ 
+-
+ //*****************************************************************************
+-//
+ // MCCP SUPPORT IS BELOW THIS LINE. NOTHING BUT MCCP SUPPORT SHOULD GO BELOW
+ // THIS LINE.
+-//
+ //*****************************************************************************
+ /*
+  * mccp.c - support functions for the Mud Client Compression Protocol
+@@ -1421,8 +1418,6 @@
+   }
+ }
+ //*****************************************************************************
+-//
+ // IF YOU ARE PUTTING ANYTHING BELOW THIS LINE, YOU ARE PUTTING IT IN THE WRONG
+ // PLACE!! ALL SOCKET-RELATED STUFF SHOULD GO UP ABOVE THE MCCP SUPPORT STUFF!
+-//
+ //*****************************************************************************
+diff -ruN ../nakedmudv2.6/src/socket.h src/socket.h
+--- ../nakedmudv2.6/src/socket.h	Wed Jul  6 02:52:19 2005
++++ src/socket.h	Sun Jul 31 17:13:53 2005
+@@ -32,7 +32,7 @@
+ //*****************************************************************************
+ // set and get functions
+ //*****************************************************************************
+-sh_int socketGetDNSLookupStatus( SOCKET_DATA *sock);
++int socketGetDNSLookupStatus( SOCKET_DATA *sock);
+ 
+ CHAR_DATA *socketGetChar      ( SOCKET_DATA *dsock);
+ void       socketSetChar      ( SOCKET_DATA *dsock, CHAR_DATA *ch);
+diff -ruN ../nakedmudv2.6/src/storage.c src/storage.c
+--- ../nakedmudv2.6/src/storage.c	Wed Jul  6 02:52:19 2005
++++ src/storage.c	Sun Jul 31 17:13:53 2005
+@@ -673,7 +673,7 @@
+ 
+   STORAGE_SET *elem = NULL;
+   while( (elem = storage_list_next(list)) != NULL)
+-    listPut(newlist, read_func(elem));
++    listQueue(newlist, read_func(elem));
+ 
+   return newlist;
+ }
+diff -ruN ../nakedmudv2.6/src/utils.c src/utils.c
+--- ../nakedmudv2.6/src/utils.c	Wed Jul  6 02:52:19 2005
++++ src/utils.c	Sun Jul 31 17:13:54 2005
+@@ -1,7 +1,11 @@
+-/*
+- * This file contains all sorts of utility functions used
+- * all sorts of places in the code.
+- */
++//*****************************************************************************
++//
++// utils.c
++//
++// This file contains all sorts of utility functions used
++// all sorts of places in the code.
++//
++//*****************************************************************************
+ #include <string.h>
+ #include <stdlib.h>
+ #include <sys/types.h>
+@@ -10,7 +14,7 @@
+ #include <unistd.h>
+ #include <dirent.h> 
+ 
+-/* include main header file */
++// include main header file
+ #include "mud.h"
+ #include "character.h"
+ #include "object.h"
+@@ -44,6 +48,11 @@
+   listQueue(extract_mob_funcs, func);
+ }
+ 
++void  extract_obj_final(OBJ_DATA *obj) {
++  obj_from_game(obj);
++  deleteObj(obj);
++}
++
+ void extract_obj(OBJ_DATA *obj) {
+   // go through all of our extraction functions
+   LIST_ITERATOR *ex_i = newListIterator(extract_obj_funcs);
+@@ -58,10 +67,8 @@
+     char_from_furniture(sitter);
+ 
+   OBJ_DATA *content = NULL;
+-  while( (content = listGet(objGetContents(obj), 0)) != NULL) {
+-    obj_from_obj(content);
++  while( (content = listGet(objGetContents(obj), 0)) != NULL)
+     extract_obj(content);
+-  }
+ 
+   if(objGetRoom(obj))
+     obj_from_room(obj);
+@@ -72,10 +79,14 @@
+   if(objGetContainer(obj))
+     obj_from_obj(obj);
+ 
+-  obj_from_game(obj);
+-  deleteObj(obj);
++  if(!listIn(objs_to_delete, obj))
++    listPut(objs_to_delete, obj);
+ }
+ 
++void extract_mobile_final(CHAR_DATA *ch) {
++  char_from_game(ch);
++  deleteChar(ch);
++}
+ 
+ void extract_mobile(CHAR_DATA *ch) {
+   // go through all of our extraction functions
+@@ -105,8 +116,8 @@
+     charSetSocket(ch, NULL);
+   }
+ 
+-  char_from_game(ch);
+-  deleteChar(ch);
++  if(!listIn(mobs_to_delete, ch))
++    listPut(mobs_to_delete, ch);
+ }
+ 
+ void communicate(CHAR_DATA *dMob, char *txt, int range)
+@@ -150,6 +161,15 @@
+     log_string("ERROR: Could not boot game world.");
+     abort();
+   }
++  else {
++    // see if any of our zones are in old formats and need to be converted
++    ZONE_DATA       *zone = NULL;
++    LIST_ITERATOR *zone_i = newListIterator(worldGetZones(gameworld));
++    ITERATE_LIST(zone, zone_i) {
++      if(zoneIsOldFormat(gameworld, zoneGetVnum(zone)))
++	zoneConvertFormat(zone);
++    } deleteListIterator(zone_i);
++  }
+ 
+   greeting = read_file("../lib/txt/greeting");
+   motd     = read_file("../lib/txt/motd");
+@@ -428,7 +448,7 @@
+     sscanf(buf, "all.%s", target);
+     *count = COUNT_ALL;
+   }
+-  else if(!strncasecmp(buf, "all", 3)) {
++  else if(!strcasecmp(buf, "all")) {
+     *target = '\0';
+     *count = COUNT_ALL;
+   }
+diff -ruN ../nakedmudv2.6/src/utils.h src/utils.h
+--- ../nakedmudv2.6/src/utils.h	Wed Jul  6 02:52:19 2005
++++ src/utils.h	Sun Jul 31 17:13:54 2005
+@@ -145,6 +145,11 @@
+ void  add_extract_obj_func ( void (* func)(OBJ_DATA *));
+ void  add_extract_mob_func ( void (* func)(CHAR_DATA *));
+ 
++// don't call these. These are for use by gameloop.c only. Use the non-final
++// versions, please!!
++void  extract_obj_final    ( OBJ_DATA *obj);
++void  extract_mobile_final ( CHAR_DATA *ch);
++
+ char *get_time             ( void );
+ void  communicate          ( CHAR_DATA *dMob, char *txt, int range );
+ void  load_muddata         ( void );
+diff -ruN ../nakedmudv2.6/src/world.c src/world.c
+--- ../nakedmudv2.6/src/world.c	Wed Jul  6 02:52:19 2005
++++ src/world.c	Sun Jul 31 17:13:54 2005
+@@ -6,12 +6,6 @@
+ //
+ //*****************************************************************************
+ 
+-//
+-// NOTES FOR FUTURE DEVELOPMENT:
+-//   * when we remove a room from existence, make sure we clear it
+-//     of all the characters inhabiting it
+-//
+-
+ #include <sys/stat.h>
+ 
+ #include "mud.h"
+@@ -41,10 +35,11 @@
+ 
+ 
+ struct world_data {
+-  PROPERTY_TABLE *rooms;  // this table is a communal table for rooms.
+-                          // each room also has an entry in its corresponding
+-                          // zone, but we also put it into this table for
+-                          // quicker lookup
++  char            *path; // the path to our world directory
++  PROPERTY_TABLE *rooms; // this table is a communal table for rooms.
++                         // each room also has an entry in its corresponding
++                         // zone, but we also put it into this table for
++                         // quicker lookup
+   LIST *zones;
+ };
+ 
+@@ -56,9 +51,10 @@
+ // implementation of world.h
+ //
+ //*****************************************************************************
+-WORLD_DATA *newWorld() {
++WORLD_DATA *newWorld(const char *path) {
+   WORLD_DATA *world = malloc(sizeof(WORLD_DATA));
+ 
++  world->path  = strdup(path);
+   world->zones = newList();
+   world->rooms = newPropertyTable(roomGetVnum, SMALL_WORLD);
+ 
+@@ -77,6 +73,7 @@
+ 
+   deletePropertyTable(world->rooms);
+   deleteList(world->zones);
++  free(world->path);
+ 
+   free(world);
+ };
+@@ -192,11 +189,7 @@
+   // save each zone to its own directory, and also put
+   // its number in the save file for the zone list
+   ITERATE_LIST(zone, zone_i) {
+-    sprintf(buf, "%s/%d", dirpath, zoneGetVnum(zone));
+-    // make sure the directory is made
+-    mkdir(buf, S_IRWXU);
+-
+-    if(zoneSave(zone, buf)) {
++    if(zoneSave(zone)) {
+       STORAGE_SET *zone_set = new_storage_set();
+       store_int(zone_set, "vnum", zoneGetVnum(zone));
+       storage_list_put(list, zone_set);
+@@ -212,7 +205,7 @@
+ 
+ 
+ WORLD_DATA *worldLoad(const char *dirpath) {
+-  WORLD_DATA *world = newWorld();
++  WORLD_DATA      *world = newWorld(dirpath);
+   char buf[MAX_BUFFER];
+   sprintf(buf, "%s/world", dirpath);
+ 
+@@ -221,9 +214,15 @@
+   STORAGE_SET  *zone_set = NULL;
+ 
+   while( (zone_set = storage_list_next(list)) != NULL) {
+-    sprintf(buf, "%s/%d", dirpath, read_int(zone_set, "vnum"));
+-    ZONE_DATA *zone = zoneLoad(buf);
+-    if(zone) worldPutZone(world, zone);
++    ZONE_DATA *zone = NULL;
++    int        vnum = read_int(zone_set, "vnum");
++    if(zoneIsOldFormat(world, vnum))
++      zone = zoneLoadOld(world, vnum);
++    else
++      zone = zoneLoad(world, vnum);
++
++    if(zone != NULL)
++      listPut(world->zones, zone);
+   }
+   storage_close(set);
+ 
+@@ -291,6 +290,11 @@
+   return (zone_found ? zone : NULL);
+ };
+ 
++const char *worldGetZonePath(WORLD_DATA *world, int vnum) {
++  static char buf[SMALL_BUFFER];
++  sprintf(buf, "%s/%d", world->path, vnum);
++  return buf;
++}
+ 
+ //
+ // The generic world "get". getter must be the function that
+@@ -341,6 +345,41 @@
+ };
+ 
+ 
++//
++// generic function for saving something to disk
++bool worldSaveThing(WORLD_DATA *world, void *zone_save_func, void *thing, 
++		    int vnum) {
++  void (* saver)(ZONE_DATA *zone, void *thing) = zone_save_func;
++  ZONE_DATA *zone = worldZoneBounding(world, vnum);
++  if(zone == NULL)
++    return FALSE;
++  else {
++    saver(zone, thing);
++    return TRUE;
++  }
++}
++
++bool worldSaveRoom(WORLD_DATA *world, ROOM_DATA *room) {
++  return worldSaveThing(world, zoneSaveRoom, room, roomGetVnum(room));
++}
++
++bool worldSaveMob(WORLD_DATA *world, CHAR_DATA *ch) {
++  return worldSaveThing(world, zoneSaveMob, ch, charGetVnum(ch));
++}
++
++bool worldSaveObj(WORLD_DATA *world, OBJ_DATA *obj) {
++  return worldSaveThing(world, zoneSaveObj, obj, objGetVnum(obj));
++}
++
++bool worldSaveScript(WORLD_DATA *world, SCRIPT_DATA *script) {
++    return worldSaveThing(world, zoneSaveScript, script, scriptGetVnum(script));
++}
++
++bool worldSaveDialog(WORLD_DATA *world, DIALOG_DATA *dialog) {
++    return worldSaveThing(world, zoneSaveDialog, dialog, dialogGetVnum(dialog));
++}
++
++
+ void worldPutZone(WORLD_DATA *world, ZONE_DATA *zone) {
+   LIST_ITERATOR *zone_i = newListIterator(world->zones);
+   ZONE_DATA *tmpzone = NULL;
+@@ -365,6 +404,20 @@
+   }
+   deleteListIterator(zone_i);
+ 
++  // make our directory and subdirectories
++  char buf[MAX_BUFFER];
++  mkdir(worldGetZonePath(world, zoneGetVnum(zone)), S_IRWXU | S_IRWXG);
++  sprintf(buf, "%s/room", worldGetZonePath(world, zoneGetVnum(zone)));
++  mkdir(buf, S_IRWXU | S_IRWXG);
++  sprintf(buf, "%s/mob", worldGetZonePath(world, zoneGetVnum(zone)));
++  mkdir(buf, S_IRWXU | S_IRWXG);
++  sprintf(buf, "%s/obj", worldGetZonePath(world, zoneGetVnum(zone)));
++  mkdir(buf, S_IRWXU | S_IRWXG);
++  sprintf(buf, "%s/dialog", worldGetZonePath(world, zoneGetVnum(zone)));
++  mkdir(buf, S_IRWXU | S_IRWXG);
++  sprintf(buf, "%s/script", worldGetZonePath(world, zoneGetVnum(zone)));
++  mkdir(buf, S_IRWXU | S_IRWXG);
++
+   listPut(world->zones, zone);
+   zoneSetWorld(zone, world);
+ };
+@@ -403,3 +456,59 @@
+ void worldPutDialog(WORLD_DATA *world, DIALOG_DATA *dialog) {
+   worldPut(world, zoneAddDialog, dialog, dialogGetVnum(dialog));
+ };
++
++bool worldIsThingLoaded(WORLD_DATA *world, 
++			bool (* checker)(ZONE_DATA *, int), int vnum) {
++  ZONE_DATA *zone = worldZoneBounding(world, vnum);
++  if(zone == NULL)
++    return FALSE;
++  else
++    return checker(zone, vnum);
++}
++
++bool worldIsRoomLoaded(WORLD_DATA *world, int vnum) {
++  return worldIsThingLoaded(world, zoneIsRoomLoaded, vnum);
++}
++
++bool worldIsMobLoaded(WORLD_DATA *world, int vnum) {
++  return worldIsThingLoaded(world, zoneIsMobLoaded, vnum);
++}
++
++bool worldIsObjLoaded(WORLD_DATA *world, int vnum) {
++  return worldIsThingLoaded(world, zoneIsObjLoaded, vnum);
++}
++
++bool worldIsScriptLoaded(WORLD_DATA *world, int vnum) {
++  return worldIsThingLoaded(world, zoneIsScriptLoaded, vnum);
++}
++
++bool worldIsDialogLoaded(WORLD_DATA *world, int vnum) {
++  return worldIsThingLoaded(world, zoneIsDialogLoaded, vnum);
++}
++
++void worldUnloadThing(WORLD_DATA *world,
++		      void (* unloader)(ZONE_DATA *, int), int vnum) {
++  ZONE_DATA *zone = worldZoneBounding(world, vnum);
++  if(zone != NULL)
++    unloader(zone, vnum);  
++}
++
++void worldUnloadRoom(WORLD_DATA *world, int vnum) {
++  worldUnloadThing(world, zoneUnloadRoom, vnum);
++}
++
++void worldUnloadMob(WORLD_DATA *world, int vnum) {
++  worldUnloadThing(world, zoneUnloadMob, vnum);
++}
++
++void worldUnloadObj(WORLD_DATA *world, int vnum) {
++  worldUnloadThing(world, zoneUnloadObj, vnum);
++}
++
++void worldUnloadScript(WORLD_DATA *world, int vnum) {
++  worldUnloadThing(world, zoneUnloadScript, vnum);
++}
++
++void worldUnloadDialog(WORLD_DATA *world, int vnum) {
++  worldUnloadThing(world, zoneUnloadDialog, vnum);
++}
+diff -ruN ../nakedmudv2.6/src/world.h src/world.h
+--- ../nakedmudv2.6/src/world.h	Wed Jul  6 02:52:19 2005
++++ src/world.h	Sun Jul 31 17:13:54 2005
+@@ -12,54 +12,66 @@
+ //
+ // Create a new world from the path. The path is the directory the world
+ // data is stored in.
+-//
+-WORLD_DATA *newWorld();
+-
++WORLD_DATA *newWorld(const char *path);
+ 
+ //
+ // Delete the world from memory.
+-//
+ void deleteWorld(WORLD_DATA *world);
+ 
+-
+ //
+ // Removes the room with the ID from the world, and returns it.
+ // returns NULL if the room does not exist.
+-//
+-ROOM_DATA *worldRemoveRoomVnum(WORLD_DATA *world, int vnum);
+-CHAR_DATA  *worldRemoveMobVnum (WORLD_DATA *world, int  vnum);
+-OBJ_DATA  *worldRemoveObjVnum (WORLD_DATA *world, int  vnum);
++ROOM_DATA     *worldRemoveRoomVnum(WORLD_DATA *world, int vnum);
++CHAR_DATA      *worldRemoveMobVnum(WORLD_DATA *world, int  vnum);
++OBJ_DATA       *worldRemoveObjVnum(WORLD_DATA *world, int  vnum);
+ SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, int vnum);
+ DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, int vnum);
+-ZONE_DATA *worldRemoveZoneVnum(WORLD_DATA *world, int vnum);
+-
++ZONE_DATA     *worldRemoveZoneVnum(WORLD_DATA *world, int vnum);
+ 
+ //
+ // Removes (no delete) the thing from the world. Returns true if successful,
+ // and false if it does not exist in the world.
+-//
+-bool worldRemoveRoom(WORLD_DATA *world, ROOM_DATA *room);
+-bool worldRemoveMob (WORLD_DATA *world, CHAR_DATA  *mob);
+-bool worldRemoveObj (WORLD_DATA *world, OBJ_DATA  *obj);
++bool   worldRemoveRoom(WORLD_DATA *world, ROOM_DATA *room);
++bool    worldRemoveMob(WORLD_DATA *world, CHAR_DATA  *mob);
++bool    worldRemoveObj(WORLD_DATA *world, OBJ_DATA  *obj);
+ bool worldRemoveScript(WORLD_DATA *world, SCRIPT_DATA *script);
+ bool worldRemoveDialog(WORLD_DATA *world, DIALOG_DATA *dialog);
+-bool worldRemoveZone(WORLD_DATA *world, ZONE_DATA *zone);
+-
++bool   worldRemoveZone(WORLD_DATA *world, ZONE_DATA *zone);
+ 
+ //
+ // Saves the world to disk at the specified directory path
+-//
+ bool worldSave(WORLD_DATA *world, const char *dirpath);
+ 
++//
++// save individual items to disk
++bool worldSaveRoom  (WORLD_DATA *world, ROOM_DATA   *room);
++bool worldSaveMob   (WORLD_DATA *world, CHAR_DATA   *ch);
++bool worldSaveObj   (WORLD_DATA *world, OBJ_DATA    *obj);
++bool worldSaveScript(WORLD_DATA *world, SCRIPT_DATA *script);
++bool worldSaveDialog(WORLD_DATA *world, DIALOG_DATA *dialog);
++
++//
++// check to see if individual items have been loaded into memory yet
++bool   worldIsRoomLoaded(WORLD_DATA *world, int vnum);
++bool    worldIsMobLoaded(WORLD_DATA *world, int vnum);
++bool    worldIsObjLoaded(WORLD_DATA *world, int vnum);
++bool worldIsScriptLoaded(WORLD_DATA *world, int vnum);
++bool worldIsDialogLoaded(WORLD_DATA *world, int vnum);
++
++//
++// unload the specified thing from memory
++void   worldUnloadRoom(WORLD_DATA *world, int vnum);
++void    worldUnloadMob(WORLD_DATA *world, int vnum);
++void    worldUnloadObj(WORLD_DATA *world, int vnum);
++void worldUnloadScript(WORLD_DATA *world, int vnum);
++void worldUnloadDialog(WORLD_DATA *world, int vnum);
+ 
+ //
+ // Loads a world from disk
+-//
+ WORLD_DATA *worldLoad(const char *dirpath);
+ 
+ //
+ // Pulse all of the zones in the world
+-//
+ void worldPulse(WORLD_DATA *world);
+ void worldForceReset(WORLD_DATA *world);
+ 
+@@ -70,20 +82,21 @@
+ // set and get functions
+ //
+ //*****************************************************************************
+-ZONE_DATA   *worldZoneBounding(WORLD_DATA *world, int vnum);
+-ZONE_DATA   *worldGetZone(WORLD_DATA *world, int vnum);
+-ROOM_DATA   *worldGetRoom(WORLD_DATA *world, int vnum);
+-CHAR_DATA    *worldGetMob (WORLD_DATA *world, int  vnum);
+-OBJ_DATA    *worldGetObj (WORLD_DATA *world, int  vnum);
+-SCRIPT_DATA *worldGetScript(WORLD_DATA *world, int vnum);
+-DIALOG_DATA *worldGetDialog(WORLD_DATA *world, int vnum);
+-LIST        *worldGetZones(WORLD_DATA *world);
+-
+-void        worldPutZone(WORLD_DATA *world, ZONE_DATA *zone);
+-void        worldPutRoom(WORLD_DATA *world, ROOM_DATA *room);
+-void        worldPutMob (WORLD_DATA *world, CHAR_DATA  *mob);
+-void        worldPutObj (WORLD_DATA *world, OBJ_DATA  *obj);
+-void        worldPutScript(WORLD_DATA *world, SCRIPT_DATA *script);
+-void        worldPutDialog(WORLD_DATA *world, DIALOG_DATA *dialog);
++ZONE_DATA *worldZoneBounding(WORLD_DATA *world, int vnum);
++ZONE_DATA      *worldGetZone(WORLD_DATA *world, int vnum);
++const char *worldGetZonePath(WORLD_DATA *world, int vnum);
++ROOM_DATA      *worldGetRoom(WORLD_DATA *world, int vnum);
++CHAR_DATA       *worldGetMob(WORLD_DATA *world, int  vnum);
++OBJ_DATA        *worldGetObj(WORLD_DATA *world, int  vnum);
++SCRIPT_DATA  *worldGetScript(WORLD_DATA *world, int vnum);
++DIALOG_DATA  *worldGetDialog(WORLD_DATA *world, int vnum);
++LIST          *worldGetZones(WORLD_DATA *world);
++
++void   worldPutZone(WORLD_DATA *world, ZONE_DATA *zone);
++void   worldPutRoom(WORLD_DATA *world, ROOM_DATA *room);
++void    worldPutMob(WORLD_DATA *world, CHAR_DATA  *mob);
++void    worldPutObj(WORLD_DATA *world, OBJ_DATA  *obj);
++void worldPutScript(WORLD_DATA *world, SCRIPT_DATA *script);
++void worldPutDialog(WORLD_DATA *world, DIALOG_DATA *dialog);
+ 
+ #endif // __WORLD_H
+diff -ruN ../nakedmudv2.6/src/zone.c src/zone.c
+--- ../nakedmudv2.6/src/zone.c	Wed Jul  6 02:52:19 2005
++++ src/zone.c	Sun Jul 31 17:13:54 2005
+@@ -8,6 +8,8 @@
+ //
+ //*****************************************************************************
+ 
++#include <sys/stat.h>
++
+ #include "mud.h"
+ #include "storage.h"
+ #include "object.h"
+@@ -16,9 +18,11 @@
+ #include "utils.h"
+ #include "auxiliary.h"
+ #include "dialog.h"
++#include "world.h"
+ #include "zone.h"
+ 
+ 
++
+ //*****************************************************************************
+ // mandatory modules
+ //*****************************************************************************
+@@ -36,6 +40,7 @@
+   PROPERTY_TABLE *dialogs;
+   PROPERTY_TABLE *mob_protos;
+   PROPERTY_TABLE *obj_protos;
++  LIST           *resettables;
+ 
+   int vnum;
+   int min;
+@@ -44,28 +49,29 @@
+   int pulse_timer;  // the timer duration
+   int pulse;        // how far down have we gone?
+ 
+-  HASHTABLE            * auxiliary_data; // additional data installed on us
++  HASHTABLE *auxiliary_data; // additional data installed on us
+ };
+ 
+ 
+ ZONE_DATA *newZone(int vnum, int min, int max) {
+-  ZONE_DATA *zone = malloc(sizeof(ZONE_DATA));
+-  zone->name    = strdup("");
+-  zone->desc    = newBuffer(1);
+-  zone->editors = strdup("");
+-  zone->vnum    = vnum;
+-  zone->min     = min;
+-  zone->max     = max;
++  ZONE_DATA *zone   = malloc(sizeof(ZONE_DATA));
++  zone->resettables = newList();
++  zone->name        = strdup("");
++  zone->desc        = newBuffer(1);
++  zone->editors     = strdup("");
++  zone->vnum        = vnum;
++  zone->min         = min;
++  zone->max         = max;
+ 
+   zone->pulse_timer = -1; // never resets
+   zone->pulse       = -1;
+ 
+   zone->world = NULL;
+-  // maximum of about 5 rooms/bucket
++  // maximum of about 5 things/bucket
+   zone->rooms      = newPropertyTable(roomGetVnum,   1 + (max-min)/5);
+   zone->scripts    = newPropertyTable(scriptGetVnum, 1 + (max-min)/5);  
+   zone->dialogs    = newPropertyTable(dialogGetVnum, 1 + (max-min)/5);
+-  zone->mob_protos = newPropertyTable(charGetVnum,    1 + (max-min)/5);
++  zone->mob_protos = newPropertyTable(charGetVnum,   1 + (max-min)/5);
+   zone->obj_protos = newPropertyTable(objGetVnum,    1 + (max-min)/5);
+ 
+   zone->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_ZONE);
+@@ -83,18 +89,19 @@
+   zoneSetName(to, zoneGetName(from));
+   zoneSetDesc(to, zoneGetDesc(from));
+   zoneSetEditors(to, zoneGetEditors(from));
+-  to->vnum = from->vnum;
+-  to->min  = from->min;
+-  to->max  = from->max;
++  to->vnum  = from->vnum;
++  to->min   = from->min;
++  to->max   = from->max;
+   to->pulse_timer = from->pulse_timer;
+   to->pulse = from->pulse;
+   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
+ }
+ 
+ void deleteZone(ZONE_DATA *zone){ 
+-  if(zone->name)    free(zone->name);
+-  if(zone->desc)    deleteBuffer(zone->desc);
+-  if(zone->editors) free(zone->editors);
++  if(zone->name)        free(zone->name);
++  if(zone->desc)        deleteBuffer(zone->desc);
++  if(zone->editors)     free(zone->editors);
++  if(zone->resettables) deleteListWith(zone->resettables, deleteInteger);
+ 
+   deletePropertyTable(zone->rooms);
+   deletePropertyTable(zone->scripts);
+@@ -118,17 +125,20 @@
+ // Pulse a zone. i.e. decrement it's reset timer. When the timer hits 0,
+ // set it back to the max, and reset everything in the zone
+ //
+-void zonePulse(ZONE_DATA *zone){ 
++void zonePulse(ZONE_DATA *zone) { 
+   zone->pulse--;
+   if(zone->pulse == 0) {
+     zone->pulse = zone->pulse_timer;
+ 
+     // do a bunch of resetting, and stuff
+-    int i;
+-    for(i = zone->min; i <= zone->max; i++) {
+-      ROOM_DATA *room = propertyTableGet(zone->rooms, i);
+-      if(room) roomReset(room);
+-    }
++    ROOM_DATA       *room = NULL;
++    INTEGER      *integer = NULL;
++    LIST_ITERATOR *room_i = newListIterator(zone->resettables);
++    ITERATE_LIST(integer, room_i) {
++      room = zoneGetRoom(zone, integerGetVal(integer));
++      if(room != NULL)
++	roomReset(room);
++    } deleteListIterator(room_i);
+   }
+ }
+ 
+@@ -139,11 +149,32 @@
+ 
+ 
+ //
+-// The generic function for reading all of the data for one type of thing
+-// in a zone (e.g. room, object, mobile, etc...). Pulls out the list in
+-// the storage set, and parses each element of the list, adding it to the zone.
++// generic function that loads something up from disk
++void *zoneLoadThing(ZONE_DATA *zone, PROPERTY_TABLE *table, void *reader,
++		   const char *datatype, int vnum) {
++  void *(* read_func)(STORAGE_SET *set) = reader;
++  void *thing = NULL;
++  static char buf[MAX_BUFFER];
++  sprintf(buf, "%s/%s/%d", worldGetZonePath(zone->world, zone->vnum), 
++	  datatype, vnum);
++  STORAGE_SET *set = storage_read(buf);
++  if(set != NULL) {
++    thing = read_func(set);
++    propertyTablePut(table, thing);
++    storage_close(set);
++  }
++  return thing;
++}
++
++
+ //
+-void zoneReadData(ZONE_DATA *zone, STORAGE_SET *set, void *putter,void *reader){
++// The generic function for reading all of the data for one type of thing in a 
++// zone (e.g. room, object, mobile, etc...). Pulls out the list in the storage 
++// set, and parses each element of the list, adding it to the zone. This
++// function is obsolete as of v2.7, but we need to keep it around so we can
++// convert formats.
++void zoneReadDataOld(ZONE_DATA *zone, STORAGE_SET *set, void *putter,
++		     void *reader) {
+   void  *(* put_func)(ZONE_DATA *, void *) = putter;
+   LIST *list = gen_read_list(read_list(set, "list"), reader);
+   void  *elem = NULL;
+@@ -153,17 +184,22 @@
+ }
+ 
+ 
+-ZONE_DATA *zoneLoad(const char *dirpath) {
+-  ZONE_DATA *zone = newZone(0, 0, 1);
++//
++// In v2.7, we redid the way zone contents are stored so it is easier to 
++// implement lazy loading. This is the function that does all of the old loading
++// so we can do format conversions.
++ZONE_DATA *zoneLoadOld(WORLD_DATA *world, int vnum) {
++  ZONE_DATA *zone = newZone(vnum, 0, 1);
+   char fname[SMALL_BUFFER];
++  zone->world = world;
+ 
+   // first, load all of the zone data
+-  sprintf(fname, "%s/zone", dirpath);
+-  STORAGE_SET *set = storage_read(fname);
+-  zone->vnum        = read_int(set, "vnum");
+-  zone->min         = read_int(set, "min");
+-  zone->max         = read_int(set, "max");
+-  zone->pulse_timer = read_int(set, "pulse_timer");
++  sprintf(fname, "%s/zone", worldGetZonePath(world, zone->vnum));
++  STORAGE_SET  *set = storage_read(fname);
++  zone->vnum        = read_int   (set, "vnum");
++  zone->min         = read_int   (set, "min");
++  zone->max         = read_int   (set, "max");
++  zone->pulse_timer = read_int   (set, "pulse_timer");
+   zoneSetName(zone,   read_string(set, "name"));
+   zoneSetDesc(zone,   read_string(set, "desc"));
+   zoneSetEditors(zone,read_string(set, "editors"));
+@@ -171,71 +207,168 @@
+   deleteAuxiliaryData(zone->auxiliary_data);
+   zone->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
+ 					   AUXILIARY_TYPE_ZONE);
+-
+   storage_close(set);
+ 
+-  // now, load all of the content data
+-  sprintf(fname, "%s/rooms", dirpath);
++  // now, load in all of our old contents in the old way
++  sprintf(fname, "%s/rooms", worldGetZonePath(zone->world, zone->vnum));
+   set = storage_read(fname);
+-  zoneReadData(zone, set, zoneAddRoom, roomRead);
++  zoneReadDataOld(zone, set, zoneAddRoom, roomRead);
+   storage_close(set);
+ 
+-  sprintf(fname, "%s/mobs", dirpath);
++  sprintf(fname, "%s/mobs", worldGetZonePath(zone->world, zone->vnum));
+   set = storage_read(fname);
+-  zoneReadData(zone, set, zoneAddMob, charRead);
++  zoneReadDataOld(zone, set, zoneAddMob, charRead);
+   storage_close(set);
+-
+-  sprintf(fname, "%s/objs", dirpath);
++    
++  sprintf(fname, "%s/objs", worldGetZonePath(zone->world, zone->vnum));
+   set = storage_read(fname);
+-  zoneReadData(zone, set, zoneAddObj, objRead);
++  zoneReadDataOld(zone, set, zoneAddObj, objRead);
+   storage_close(set);
+-
+-  sprintf(fname, "%s/dialogs", dirpath);
++    
++  sprintf(fname, "%s/dialogs", worldGetZonePath(zone->world, zone->vnum));
+   set = storage_read(fname);
+-  zoneReadData(zone, set, zoneAddDialog, dialogRead);
++  zoneReadDataOld(zone, set, zoneAddDialog, dialogRead);
+   storage_close(set);
+-
+-  sprintf(fname, "%s/scripts", dirpath);
++    
++  sprintf(fname, "%s/scripts", worldGetZonePath(zone->world, zone->vnum));
+   set = storage_read(fname);
+-  zoneReadData(zone, set, zoneAddScript, scriptRead);
++  zoneReadDataOld(zone, set, zoneAddScript, scriptRead);
+   storage_close(set);
++
+   return zone;
+ }
+ 
+ 
++bool zoneIsOldFormat(WORLD_DATA *world, int vnum) {
++  // check to see if we have the new directory structure...
++  char buf[MAX_BUFFER];
++  sprintf(buf, "%s/room", worldGetZonePath(world, vnum));
++  return (dir_exists(buf) == FALSE);
++}
++
++
+ //
+-// The generic function for storing all of the data contained within a 
+-// zone (e.g. objects, mobiles, rooms, etc...). Goes through each one
+-// and creates a storage set containing a list with all the things.
+-// returns the storage set.
+-//
+-STORAGE_SET *zoneStoreData(ZONE_DATA *zone, void *getter, void *storer) {
+-  void *(* get_func)(ZONE_DATA *, int) = getter;
+-  STORAGE_SET  *(* store_func)(void *) = storer;
+-
+-  STORAGE_SET       *set = new_storage_set();
+-  STORAGE_SET_LIST *list = new_storage_list();
+-  void             *data = NULL;
+-  store_list(set, "list", list);
++// generic function for saving something to disk
++void zoneSaveThing(ZONE_DATA *zone, void *thing, void *storer, int vnum,
++		   const char *type) {
++  STORAGE_SET *(* store_func)(void *) = storer;
++  STORAGE_SET *set = store_func(thing);
++  if(set != NULL) {
++    static char buf[MAX_BUFFER];
++    sprintf(buf, "%s/%s/%d", worldGetZonePath(zone->world, zone->vnum), 
++	    type, vnum);
++    storage_write(set, buf);
++    storage_close(set);
++  }
++}
++
+ 
+-  int i = zoneGetMinBound(zone);
++//
++// saves all of the contents of a table. This is used after we convert a zone
++// from the old format to our new format.
++void zoneSaveTable(ZONE_DATA *zone, PROPERTY_TABLE *table, void *storer,
++		   const char *type) {
++  int      i = zoneGetMinBound(zone);
++  void *data = NULL;
+   for(; i <= zoneGetMaxBound(zone); i++) {
+-    if( (data = get_func(zone, i)) == NULL)
+-	continue;
+-    storage_list_put(list, store_func(data));
++    data = propertyTableGet(table, i);
++    if(data != NULL)
++      zoneSaveThing(zone, data, storer, i, type);
+   }
++}
++
++
++void zoneConvertFormat(ZONE_DATA *zone) {
++  char buf[MAX_BUFFER];
++  // time to do the conversion. First, make all of our new directories
++  sprintf(buf, "%s/room", worldGetZonePath(zone->world, zone->vnum));
++  mkdir(buf, S_IRWXU | S_IRWXG);
++  sprintf(buf, "%s/mob",  worldGetZonePath(zone->world, zone->vnum));
++  mkdir(buf, S_IRWXU | S_IRWXG);
++  sprintf(buf, "%s/obj",  worldGetZonePath(zone->world, zone->vnum));
++  mkdir(buf, S_IRWXU | S_IRWXG);
++  sprintf(buf, "%s/dialog", worldGetZonePath(zone->world, zone->vnum));
++  mkdir(buf, S_IRWXU | S_IRWXG);
++  sprintf(buf, "%s/script", worldGetZonePath(zone->world, zone->vnum));
++  mkdir(buf, S_IRWXU | S_IRWXG);    
++
++  // now, save all of our tables in the new format
++  zoneSaveTable(zone, zone->rooms,      roomStore,   "room");
++  zoneSaveTable(zone, zone->mob_protos, charStore,   "mob");
++  zoneSaveTable(zone, zone->obj_protos, objStore,    "obj");
++  zoneSaveTable(zone, zone->dialogs,    dialogStore, "dialog");
++  zoneSaveTable(zone, zone->scripts,    scriptStore, "script");
++    
++  // go through all of our rooms and figure out which ones have resets, or
++  // initialization/reset scripts
++  int i = 0;
++  for(i = zone->min; i <= zone->max; i++) {
++    ROOM_DATA *room = propertyTableGet(zone->rooms, i);
++    if(room != NULL && roomIsResettable(room))
++      listPut(zone->resettables, newInteger(roomGetVnum(room)));
++  }
++
++  // delete all of our old files
++  //***********
++  // FINISH ME
++  //***********
++  
++  // save all the changes we have made to the zone data file (i.e. resets)
++  zoneSave(zone);
++}
++
++
++//
++// reads a resettable vnum from a storage set
++INTEGER *resettableRead(STORAGE_SET *set) {
++  return newInteger(read_int(set, "vnum"));
++}
++
++
++ZONE_DATA *zoneLoad(WORLD_DATA *world, int vnum) {
++  ZONE_DATA *zone = newZone(vnum, 0, 1);
++  char fname[SMALL_BUFFER];
++  zone->world = world;
++
++  // first, load all of the zone data
++  sprintf(fname, "%s/zone", worldGetZonePath(world, zone->vnum));
++  STORAGE_SET  *set = storage_read(fname);
++  zone->vnum        = read_int   (set, "vnum");
++  zone->min         = read_int   (set, "min");
++  zone->max         = read_int   (set, "max");
++  zone->pulse_timer = read_int   (set, "pulse_timer");
++  zoneSetName(zone,   read_string(set, "name"));
++  zoneSetDesc(zone,   read_string(set, "desc"));
++  zoneSetEditors(zone,read_string(set, "editors"));
++  deleteListWith(zone->resettables, deleteInteger);
++  zone->resettables = gen_read_list(read_list(set, "resettable"), 
++				    resettableRead);
++
++  deleteAuxiliaryData(zone->auxiliary_data);
++  zone->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
++					   AUXILIARY_TYPE_ZONE);
++  storage_close(set);
++
++  return zone;
++}
++
++
++//
++// stores an integer as a set
++STORAGE_SET *resettableStore(INTEGER *integer) {
++  STORAGE_SET *set = new_storage_set();
++  store_int(set, "vnum", integerGetVal(integer));
+   return set;
+ }
+ 
+ 
+ //
+ // the new zone saving function
+-//
+-bool zoneSave(ZONE_DATA *zone, const char *dirpath) {
++bool zoneSave(ZONE_DATA *zone) {
+   char fname[MAX_BUFFER];
+   
+   // first, for our zone data
+-  sprintf(fname, "%s/zone", dirpath);
++  sprintf(fname, "%s/zone", worldGetZonePath(zone->world, zone->vnum));
+   STORAGE_SET *set = new_storage_set();
+   store_int   (set, "vnum",        zone->vnum);
+   store_int   (set, "min",         zone->min);
+@@ -245,42 +378,18 @@
+   store_string(set, "desc",        bufferString(zone->desc));
+   store_string(set, "editors",     zone->editors);
+   store_set   (set, "auxiliary",   auxiliaryDataStore(zone->auxiliary_data));
+-  storage_write(set, fname);
+-  storage_close(set);
+-
+-  set = zoneStoreData(zone, zoneGetRoom, roomStore);
+-  sprintf(fname, "%s/rooms", dirpath);
+-  storage_write(set, fname);
+-  storage_close(set);
+-
+-  set = zoneStoreData(zone, zoneGetObj, objStore);
+-  sprintf(fname, "%s/objs", dirpath);
+-  storage_write(set, fname);
+-  storage_close(set);
+-
+-  set = zoneStoreData(zone, zoneGetMob, charStore);
+-  sprintf(fname, "%s/mobs", dirpath);
+-  storage_write(set, fname);
+-  storage_close(set);
+-
+-  set = zoneStoreData(zone, zoneGetDialog, dialogStore);
+-  sprintf(fname, "%s/dialogs", dirpath);
+-  storage_write(set, fname);
+-  storage_close(set);
++  store_list  (set, "resettable",  
++	       gen_store_list(zone->resettables, resettableStore));
+ 
+-  set = zoneStoreData(zone, zoneGetScript, scriptStore);
+-  sprintf(fname, "%s/scripts", dirpath);
+   storage_write(set, fname);
+   storage_close(set);
+-
+   return TRUE;
+ }
+ 
+ 
++
+ //*****************************************************************************
+-//
+ // add and remove functions
+-//
+ //*****************************************************************************
+ 
+ //
+@@ -325,8 +434,7 @@
+ 
+ //
+ // Generic zone remove function
+-// 
+-void *zoneRemove(ZONE_DATA *zone, PROPERTY_TABLE *table, 
++void *zoneRemove(ZONE_DATA *zone, PROPERTY_TABLE *table, void *reader,
+ 		 const char *datatype, int vnum) {
+   if(vnum < zone->min || vnum > zone->max) {
+     log_string("ERROR: tried to remove %s %d from zone %d - "
+@@ -334,39 +442,123 @@
+ 	       datatype, vnum, zone->vnum);
+     return NULL;
+   }
+-  else
++  else {
++    // if it's not in our property table, we might have to read it in...
++    if(!propertyTableGet(table, vnum))
++      zoneLoadThing(zone, table, reader, datatype, vnum);
++    // unlink it from disk
++    char buf[MAX_BUFFER];
++    sprintf(buf, "%s/%s/%d", worldGetZonePath(zone->world, zone->vnum), 
++	    datatype, vnum);
++    unlink(buf);
++    // return a pointer to whatever we just removed, if anything...
+     return propertyTableRemove(table, vnum);
++  }
+ }
+ 
+-ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, int room){ 
+-  return zoneRemove(zone, zone->rooms, "room", room);
++ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, int room) {
++  zoneRemoveResettableRoom(zone, room);
++  return zoneRemove(zone, zone->rooms, roomRead, "room", room);
+ }
+ 
+ CHAR_DATA *zoneRemoveMob(ZONE_DATA *zone, int mob){ 
+-  return zoneRemove(zone, zone->mob_protos, "mob", mob);
++  return zoneRemove(zone, zone->mob_protos, charRead, "mob", mob);
+ }
+ 
+ OBJ_DATA *zoneRemoveObj(ZONE_DATA *zone, int obj){ 
+-  return zoneRemove(zone, zone->obj_protos, "obj", obj);
++  return zoneRemove(zone, zone->obj_protos, objRead, "obj", obj);
+ }
+ 
+ SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, int script) { 
+-  return zoneRemove(zone, zone->scripts, "script", script);
++  return zoneRemove(zone, zone->scripts, scriptRead, "script", script);
+ }
+ 
+ DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, int dialog) { 
+-  return zoneRemove(zone, zone->dialogs, "dialog", dialog);
++  return zoneRemove(zone, zone->dialogs, dialogRead, "dialog", dialog);
+ }
+ 
++void zoneSaveRoom(ZONE_DATA *zone, ROOM_DATA *room) {
++  zoneSaveThing(zone, room, roomStore, roomGetVnum(room), "room");
++}
+ 
++void zoneSaveMob(ZONE_DATA *zone, CHAR_DATA *ch) {
++  zoneSaveThing(zone, ch, charStore, charGetVnum(ch), "mob");
++}
++
++void zoneSaveObj(ZONE_DATA *zone, OBJ_DATA *obj) {
++  zoneSaveThing(zone, obj, objStore, objGetVnum(obj), "obj");
++}
++
++void zoneSaveScript(ZONE_DATA *zone, SCRIPT_DATA *script) {
++  zoneSaveThing(zone, script, scriptStore, scriptGetVnum(script), "script");
++}
++
++void zoneSaveDialog(ZONE_DATA *zone, DIALOG_DATA *dialog) {
++  zoneSaveThing(zone, dialog, dialogStore, dialogGetVnum(dialog), "dialog");
++}
++
++bool zoneIsRoomLoaded(ZONE_DATA *zone, int vnum) {
++  return (propertyTableGet(zone->rooms, vnum) != NULL);
++}
++
++bool zoneIsMobLoaded(ZONE_DATA *zone, int vnum) {
++  return (propertyTableGet(zone->mob_protos, vnum) != NULL);
++}
++
++bool zoneIsObjLoaded(ZONE_DATA *zone, int vnum) {
++  return (propertyTableGet(zone->obj_protos, vnum) != NULL);
++}
++
++bool zoneIsScriptLoaded(ZONE_DATA *zone, int vnum) {
++  return (propertyTableGet(zone->scripts, vnum) != NULL);
++}
++
++bool zoneIsDialogLoaded(ZONE_DATA *zone, int vnum) {
++  return (propertyTableGet(zone->dialogs, vnum) != NULL);
++}
+ 
+-//*****************************************************************************
+ //
++// generic unload function for zones
++void zoneUnloadThing(ZONE_DATA *zone, PROPERTY_TABLE *table,
++		     void *saver, void *deleter, int vnum) {
++  void *data = propertyTableRemove(table, vnum);
++  if(data != NULL) {
++    void   (* save_func)(ZONE_DATA *, void *) = saver;
++    void (* delete_func)(void *)              = deleter;
++    save_func(zone, data);
++    delete_func(data);
++  }
++}
++
++void zoneUnloadRoom(ZONE_DATA *zone, int vnum) {
++  zoneUnloadThing(zone, zone->rooms, zoneSaveRoom, deleteRoom, vnum);
++}
++
++void zoneUnloadMob(ZONE_DATA *zone, int vnum) {
++  zoneUnloadThing(zone, zone->mob_protos, zoneSaveMob, deleteChar, vnum);
++}
++
++void zoneUnloadObj(ZONE_DATA *zone, int vnum) {
++  zoneUnloadThing(zone, zone->obj_protos, zoneSaveObj, deleteObj, vnum);
++}
++
++void zoneUnloadScript(ZONE_DATA *zone, int vnum) {
++  zoneUnloadThing(zone, zone->scripts, zoneSaveScript, deleteScript, vnum);
++}
++
++void zoneUnloadDialog(ZONE_DATA *zone, int vnum) {
++  zoneUnloadThing(zone, zone->dialogs, zoneSaveDialog, deleteDialog, vnum);
++}
++
++
++
++//*****************************************************************************
+ // get and set functions for zones
+-//
+ //*****************************************************************************
+ bool canEditZone(ZONE_DATA *zone, CHAR_DATA *ch) {
+-  return (!charIsNPC(ch) && is_keyword(zone->editors, charGetName(ch), FALSE));
++  return (!charIsNPC(ch) && 
++	  (is_keyword(zone->editors, charGetName(ch), FALSE) ||
++	   bitIsOneSet(charGetUserGroups(ch), "admin")));
+ }
+ 
+ int zoneGetVnum(ZONE_DATA *zone) { 
+@@ -424,36 +616,41 @@
+ //
+ // Generic get function for zones
+ //
+-void *zoneGet(ZONE_DATA *zone, PROPERTY_TABLE *table, const char *datatype,
+-	      int vnum) {
++void *zoneGet(ZONE_DATA *zone, PROPERTY_TABLE *table, void *reader,
++	      const char *datatype, int vnum) {
+   if(vnum < zone->min || vnum > zone->max) {
+     log_string("ERROR: tried to get %s %d from zone %d - "
+ 	       "vnum out of bounds for zone!",
+ 	       datatype, vnum, zone->vnum);
+     return NULL;
+   }
+-  else
+-    return propertyTableGet(table, vnum);
++  else {
++    void *data = propertyTableGet(table, vnum);
++    // if it's null, try loading it from disk...
++    if(data == NULL)
++      data = zoneLoadThing(zone, table, reader, datatype, vnum);
++    return data;
++  }
+ }
+ 
+ ROOM_DATA *zoneGetRoom(ZONE_DATA *zone, int room) {
+-  return zoneGet(zone, zone->rooms, "room", room);
++  return zoneGet(zone, zone->rooms, roomRead, "room", room);
+ }
+ 
+ CHAR_DATA *zoneGetMob(ZONE_DATA *zone, int mob) {
+-  return zoneGet(zone, zone->mob_protos, "mob", mob);
++  return zoneGet(zone, zone->mob_protos, charRead, "mob", mob);
+ }
+ 
+ OBJ_DATA *zoneGetObj(ZONE_DATA *zone, int obj) {
+-  return zoneGet(zone, zone->obj_protos, "obj", obj);
++  return zoneGet(zone, zone->obj_protos, objRead, "obj", obj);
+ }
+ 
+ SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, int script) {
+-  return zoneGet(zone, zone->scripts, "script", script);
+-};
++  return zoneGet(zone, zone->scripts, scriptRead, "script", script);
++}
+ 
+ DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, int dialog) {
+-  return zoneGet(zone, zone->dialogs, "dialog", dialog);
++  return zoneGet(zone, zone->dialogs, dialogRead, "dialog", dialog);
+ };
+ 
+ void zoneSetVnum(ZONE_DATA *zone, int vnum) { 
+@@ -477,6 +674,35 @@
+ 
+ void zoneSetPulse(ZONE_DATA *zone, int pulse_left) { 
+   zone->pulse = pulse_left;
++}
++
++void zoneAddResettableRoom(ZONE_DATA *zone, int vnum) {
++  ROOM_DATA *room = zoneGetRoom(zone, vnum);
++  if(room != NULL) {
++    // check to see if we already have an entry...
++    INTEGER *integer = newInteger(vnum);
++    INTEGER     *ret = listGetWith(zone->resettables, integer, integerCmp);
++    if(ret != NULL)
++      deleteInteger(integer);
++    else {
++      listPut(zone->resettables, integer);
++      zoneSave(zone);
++    }
++  }
++}
++
++void zoneRemoveResettableRoom(ZONE_DATA *zone, int vnum) {
++  ROOM_DATA *room = zoneGetRoom(zone, vnum);
++  if(room != NULL) {
++    // make something to compare our target against...
++    INTEGER *integer = newInteger(vnum);
++    INTEGER     *ret = listRemoveWith(zone->resettables, integer, integerCmp);
++    deleteInteger(integer);
++    if(ret != NULL) {
++      deleteInteger(ret);
++      zoneSave(zone);
++    }
++  }
+ }
+ 
+ void zoneSetWorld(ZONE_DATA *zone, WORLD_DATA *world) { 
+diff -ruN ../nakedmudv2.6/src/zone.h src/zone.h
+--- ../nakedmudv2.6/src/zone.h	Wed Jul  6 02:52:19 2005
++++ src/zone.h	Sun Jul 31 17:13:54 2005
+@@ -11,13 +11,10 @@
+ //*****************************************************************************
+ 
+ 
+-
+ //
+ // Create a new zone, with vnums bounded between (inclusive) min and max
+-//
+ ZONE_DATA *newZone(int vnum, int min, int max);
+ 
+-
+ //
+ // Delete a zone, plus all of the prototypes contained within.
+ // CONSIDERATION: Should we delete rooms as well, and deposit
+@@ -25,95 +22,132 @@
+ //                we leave rooms as-is? I think we should probably
+ //                delete the rooms, and deposit the players in a
+ //                room that is known to always exist (limbo?)
+-//
+ void deleteZone(ZONE_DATA *zone);
+ 
+-
+ //
+-// Load a zone from disk. The zone directory path must be
+-// supplied.
+-//
+-ZONE_DATA *zoneLoad(const char *dirpath);
++// Load a zone from disk. 
++ZONE_DATA *zoneLoad(WORLD_DATA *world, int vnum);
+ 
++//
++// load a zone from disk. Uses the old storage scheme
++ZONE_DATA *zoneLoadOld(WORLD_DATA *world, int vnum);
++bool   zoneIsOldFormat(WORLD_DATA *world, int vnum);
++void zoneConvertFormat(ZONE_DATA  *zone);
+ 
+ //
+ // Save a zone to the specified directory path
+-//
+-bool zoneSave(ZONE_DATA *zone, const char *dirpath);
+-
++bool zoneSave(ZONE_DATA *zone);
+ 
+ //
+ // Pulse a zone. i.e. decrement it's reset timer. When the timer hits 0,
+ // set it back to the max, and reset everything in the zone
+-//
+-void zonePulse(ZONE_DATA *zone);
++void      zonePulse(ZONE_DATA *zone);
+ void zoneForceReset(ZONE_DATA *zone);
+ 
+-
+ //
+ // Copy zone-specific data, but not contents in the zone (no rooms, mobs
+ // objs, scripts, etc)
+-//
+ ZONE_DATA *zoneCopy(ZONE_DATA *zone);
+-void zoneCopyTo(ZONE_DATA *from, ZONE_DATA *to);
++void     zoneCopyTo(ZONE_DATA *from, ZONE_DATA *to);
++
++
+ 
+ //*****************************************************************************
+-//
+-// add and remove functions
+-//
++// add, remove, and save functions
+ //*****************************************************************************
+-void zoneAddRoom(ZONE_DATA *zone, ROOM_DATA *room);
+-void zoneAddMob(ZONE_DATA *zone, CHAR_DATA *mob);
+-void zoneAddObj(ZONE_DATA *zone, OBJ_DATA *obj);
++
++//
++// add the thing to the zone, but do not save it to disk
++void   zoneAddRoom(ZONE_DATA *zone, ROOM_DATA *room);
++void    zoneAddMob(ZONE_DATA *zone, CHAR_DATA *mob);
++void    zoneAddObj(ZONE_DATA *zone, OBJ_DATA *obj);
+ void zoneAddScript(ZONE_DATA *zone, SCRIPT_DATA *script);
+ void zoneAddDialog(ZONE_DATA *zone, DIALOG_DATA *dialog);
+ 
+-
+-ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, int room);
+-CHAR_DATA  *zoneRemoveMob(ZONE_DATA *zone, int mob);
+-OBJ_DATA  *zoneRemoveObj(ZONE_DATA *zone, int obj);
++//
++// remove the thing from the zone (including removing it from disk)
++ROOM_DATA     *zoneRemoveRoom(ZONE_DATA *zone, int room);
++CHAR_DATA      *zoneRemoveMob(ZONE_DATA *zone, int mob);
++OBJ_DATA       *zoneRemoveObj(ZONE_DATA *zone, int obj);
+ SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, int script);
+ DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, int script);
+ 
++//
++// save the thing to disk
++void   zoneSaveRoom(ZONE_DATA *zone, ROOM_DATA   *room);
++void    zoneSaveMob(ZONE_DATA *zone, CHAR_DATA   *ch);
++void    zoneSaveObj(ZONE_DATA *zone, OBJ_DATA    *obj);
++void zoneSaveScript(ZONE_DATA *zone, SCRIPT_DATA *script);
++void zoneSaveDialog(ZONE_DATA *zone, DIALOG_DATA *dialog);
++
++//
++// return whether or not the thing is loaded in RAM
++bool   zoneIsRoomLoaded(ZONE_DATA *zone, int vnum);
++bool    zoneIsMobLoaded(ZONE_DATA *zone, int vnum);
++bool    zoneIsObjLoaded(ZONE_DATA *zone, int vnum);
++bool zoneIsScriptLoaded(ZONE_DATA *zone, int vnum);
++bool zoneIsDialogLoaded(ZONE_DATA *zone, int vnum);
++
++//
++// unloads something from memory. Assumes it is not being used by anything
++// at the moment (e.g. rooms don't have chars/objects in them)
++void   zoneUnloadRoom(ZONE_DATA *zone, int vnum);
++void    zoneUnloadMob(ZONE_DATA *zone, int vnum);
++void    zoneUnloadObj(ZONE_DATA *zone, int vnum);
++void zoneUnloadScript(ZONE_DATA *zone, int vnum);
++void zoneUnloadDialog(ZONE_DATA *zone, int vnum);
++
+ 
+ 
+ //*****************************************************************************
+-//
+ // get and set functions for zones
+-//
+ //*****************************************************************************
+-int zoneGetVnum(ZONE_DATA *zone);
+-int zoneGetMinBound(ZONE_DATA *zone);
+-int zoneGetMaxBound(ZONE_DATA *zone);
+-int getFreeRoomVnum(ZONE_DATA *zone);
+-int zoneGetPulseTimer(ZONE_DATA *zone);
+-int zoneGetPulse(ZONE_DATA *zone);
+-WORLD_DATA *zoneGetWorld(ZONE_DATA *zone);
+-const char *zoneGetName(ZONE_DATA *zone);
+-const char *zoneGetDesc(ZONE_DATA *zone);
++
++//
++// various get functions for zones
++int            zoneGetVnum(ZONE_DATA *zone);
++int        zoneGetMinBound(ZONE_DATA *zone);
++int        zoneGetMaxBound(ZONE_DATA *zone);
++int        getFreeRoomVnum(ZONE_DATA *zone);
++int      zoneGetPulseTimer(ZONE_DATA *zone);
++int           zoneGetPulse(ZONE_DATA *zone);
++WORLD_DATA   *zoneGetWorld(ZONE_DATA *zone);
++const char    *zoneGetName(ZONE_DATA *zone);
++const char    *zoneGetDesc(ZONE_DATA *zone);
+ const char *zoneGetEditors(ZONE_DATA *zone);
+-BUFFER     *zoneGetDescBuffer(ZONE_DATA *zone);
+-bool        canEditZone(ZONE_DATA *zone, CHAR_DATA *ch);
+-ROOM_DATA  *zoneGetRoom(ZONE_DATA *zone, int room);
+-CHAR_DATA   *zoneGetMob(ZONE_DATA *zone, int room);
+-OBJ_DATA   *zoneGetObj(ZONE_DATA *zone, int obj);
++BUFFER  *zoneGetDescBuffer(ZONE_DATA *zone);
++ROOM_DATA     *zoneGetRoom(ZONE_DATA *zone, int room);
++CHAR_DATA      *zoneGetMob(ZONE_DATA *zone, int room);
++OBJ_DATA       *zoneGetObj(ZONE_DATA *zone, int obj);
+ SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, int script);
+ DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, int dialog);
+-void        *zoneGetAuxiliaryData(const ZONE_DATA *zone, char *name);
++void *zoneGetAuxiliaryData(const ZONE_DATA *zone, char *name);
+ 
+-void zoneSetVnum(ZONE_DATA *zone, int vnum);
+-void zoneSetMinBound(ZONE_DATA *zone, int min);
+-void zoneSetMaxBound(ZONE_DATA *zone, int max);
++//
++// various set functions for zones
++void       zoneSetVnum(ZONE_DATA *zone, int vnum);
++void   zoneSetMinBound(ZONE_DATA *zone, int min);
++void   zoneSetMaxBound(ZONE_DATA *zone, int max);
+ void zoneSetPulseTimer(ZONE_DATA *zone, int timer);
+-void zoneSetPulse(ZONE_DATA *zone, int pulse_left);
+-void zoneSetWorld(ZONE_DATA *zone, WORLD_DATA *world);
+-void zoneSetName(ZONE_DATA *zone, const char *name);
+-void zoneSetDesc(ZONE_DATA *zone, const char *description);
+-void zoneSetEditors(ZONE_DATA *zone, const char *names);
+-//*****************************************************************************
++void      zoneSetPulse(ZONE_DATA *zone, int pulse_left);
++void      zoneSetWorld(ZONE_DATA *zone, WORLD_DATA *world);
++void       zoneSetName(ZONE_DATA *zone, const char *name);
++void       zoneSetDesc(ZONE_DATA *zone, const char *description);
++void    zoneSetEditors(ZONE_DATA *zone, const char *names);
++
+ //
++// set a room as needing to be reset when our zone is pulsed
++void    zoneAddResettableRoom(ZONE_DATA *zone, int vnum);
++void zoneRemoveResettableRoom(ZONE_DATA *zone, int vnum);
++
++
++
++//*****************************************************************************
+ // misc stuff
+-//
+ //*****************************************************************************
++
++//
++// returns true if the char has edit priviledges for the zone
++bool canEditZone(ZONE_DATA *zone, CHAR_DATA *ch);
+ 
+ #endif // __ZONE_H

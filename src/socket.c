@@ -42,9 +42,9 @@ struct socket_data {
   bool            cmd_read;
   bool            bust_prompt;
   bool            closed;
-  sh_int          lookup_status;
-  sh_int          control;
-  sh_int          top_output;
+  int             lookup_status;
+  int             control;
+  int             top_output;
 
   char          * page_string;   // the string that has been paged to us
   int             curr_page;     // the current page we're on
@@ -1213,7 +1213,7 @@ const char *socketGetHostname(SOCKET_DATA *sock) {
   return sock->hostname;
 }
 
-sh_int socketGetDNSLookupStatus(SOCKET_DATA *sock) {
+int socketGetDNSLookupStatus(SOCKET_DATA *sock) {
   return sock->lookup_status;
 }
 
@@ -1223,12 +1223,9 @@ void socketBustPrompt(SOCKET_DATA *sock) {
 
 
 
-
 //*****************************************************************************
-//
 // MCCP SUPPORT IS BELOW THIS LINE. NOTHING BUT MCCP SUPPORT SHOULD GO BELOW
 // THIS LINE.
-//
 //*****************************************************************************
 /*
  * mccp.c - support functions for the Mud Client Compression Protocol
@@ -1421,8 +1418,6 @@ COMMAND(cmd_compress)
   }
 }
 //*****************************************************************************
-//
 // IF YOU ARE PUTTING ANYTHING BELOW THIS LINE, YOU ARE PUTTING IT IN THE WRONG
 // PLACE!! ALL SOCKET-RELATED STUFF SHOULD GO UP ABOVE THE MCCP SUPPORT STUFF!
-//
 //*****************************************************************************

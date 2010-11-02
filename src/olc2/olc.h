@@ -94,15 +94,6 @@ void do_olc(SOCKET_DATA *sock,
 //*****************************************************************************
 
 //
-// Okay, so I'm lazy. I don't want to write a saver() function for each type of
-// thing that can be edited in OLC. Here is a function that will save any
-// change, whether it's to a mob proto, an obj proto, or a room proto. It will
-// be slow for a large mud, since it basically saves the -entire- world to disk,
-// but you can work on changing that if your world gets big enough ;)
-void save_world(void *olc_data);
-
-
-//
 // Display a bunch of options in a tabular form. The table will have num_vals
 // elements, and num_cols of those elements will be displayed per row.
 void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),

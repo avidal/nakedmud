@@ -6,12 +6,6 @@
 //
 //*****************************************************************************
 
-//
-// NOTES FOR FUTURE DEVELOPMENT:
-//   * when we remove a room from existence, make sure we clear it
-//     of all the characters inhabiting it
-//
-
 #include <sys/stat.h>
 
 #include "mud.h"
@@ -41,10 +35,11 @@
 
 
 struct world_data {
-  PROPERTY_TABLE *rooms;  // this table is a communal table for rooms.
-                          // each room also has an entry in its corresponding
-                          // zone, but we also put it into this table for
-                          // quicker lookup
+  char            *path; // the path to our world directory
+  PROPERTY_TABLE *rooms; // this table is a communal table for rooms.
+                         // each room also has an entry in its corresponding
+                         // zone, but we also put it into this table for
+                         // quicker lookup
   LIST *zones;
 };
 
@@ -56,9 +51,10 @@ struct world_data {
 // implementation of world.h
 //
 //*****************************************************************************
-WORLD_DATA *newWorld() {
+WORLD_DATA *newWorld(const char *path) {
   WORLD_DATA *world = malloc(sizeof(WORLD_DATA));
 
+  world->path  = strdup(path);
   world->zones = newList();
   world->rooms = newPropertyTable(roomGetVnum, SMALL_WORLD);
 
@@ -77,6 +73,7 @@ void deleteWorld(WORLD_DATA *world) {
 
   deletePropertyTable(world->rooms);
   deleteList(world->zones);
+  free(world->path);
 
   free(world);
 };
@@ -192,11 +189,7 @@ bool worldSave(WORLD_DATA *world, const char *dirpath) {
   // save each zone to its own directory, and also put
   // its number in the save file for the zone list
   ITERATE_LIST(zone, zone_i) {
-    sprintf(buf, "%s/%d", dirpath, zoneGetVnum(zone));
-    // make sure the directory is made
-    mkdir(buf, S_IRWXU);
-
-    if(zoneSave(zone, buf)) {
+    if(zoneSave(zone)) {
       STORAGE_SET *zone_set = new_storage_set();
       store_int(zone_set, "vnum", zoneGetVnum(zone));
       storage_list_put(list, zone_set);
@@ -212,7 +205,7 @@ bool worldSave(WORLD_DATA *world, const char *dirpath) {
 
 
 WORLD_DATA *worldLoad(const char *dirpath) {
-  WORLD_DATA *world = newWorld();
+  WORLD_DATA      *world = newWorld(dirpath);
   char buf[MAX_BUFFER];
   sprintf(buf, "%s/world", dirpath);
 
@@ -221,9 +214,15 @@ WORLD_DATA *worldLoad(const char *dirpath) {
   STORAGE_SET  *zone_set = NULL;
 
   while( (zone_set = storage_list_next(list)) != NULL) {
-    sprintf(buf, "%s/%d", dirpath, read_int(zone_set, "vnum"));
-    ZONE_DATA *zone = zoneLoad(buf);
-    if(zone) worldPutZone(world, zone);
+    ZONE_DATA *zone = NULL;
+    int        vnum = read_int(zone_set, "vnum");
+    if(zoneIsOldFormat(world, vnum))
+      zone = zoneLoadOld(world, vnum);
+    else
+      zone = zoneLoad(world, vnum);
+
+    if(zone != NULL)
+      listPut(world->zones, zone);
   }
   storage_close(set);
 
@@ -291,6 +290,11 @@ ZONE_DATA  *worldGetZone(WORLD_DATA *world, int vnum) {
   return (zone_found ? zone : NULL);
 };
 
+const char *worldGetZonePath(WORLD_DATA *world, int vnum) {
+  static char buf[SMALL_BUFFER];
+  sprintf(buf, "%s/%d", world->path, vnum);
+  return buf;
+}
 
 //
 // The generic world "get". getter must be the function that
@@ -341,6 +345,41 @@ DIALOG_DATA  *worldGetDialog(WORLD_DATA *world, int vnum) {
 };
 
 
+//
+// generic function for saving something to disk
+bool worldSaveThing(WORLD_DATA *world, void *zone_save_func, void *thing, 
+		    int vnum) {
+  void (* saver)(ZONE_DATA *zone, void *thing) = zone_save_func;
+  ZONE_DATA *zone = worldZoneBounding(world, vnum);
+  if(zone == NULL)
+    return FALSE;
+  else {
+    saver(zone, thing);
+    return TRUE;
+  }
+}
+
+bool worldSaveRoom(WORLD_DATA *world, ROOM_DATA *room) {
+  return worldSaveThing(world, zoneSaveRoom, room, roomGetVnum(room));
+}
+
+bool worldSaveMob(WORLD_DATA *world, CHAR_DATA *ch) {
+  return worldSaveThing(world, zoneSaveMob, ch, charGetVnum(ch));
+}
+
+bool worldSaveObj(WORLD_DATA *world, OBJ_DATA *obj) {
+  return worldSaveThing(world, zoneSaveObj, obj, objGetVnum(obj));
+}
+
+bool worldSaveScript(WORLD_DATA *world, SCRIPT_DATA *script) {
+    return worldSaveThing(world, zoneSaveScript, script, scriptGetVnum(script));
+}
+
+bool worldSaveDialog(WORLD_DATA *world, DIALOG_DATA *dialog) {
+    return worldSaveThing(world, zoneSaveDialog, dialog, dialogGetVnum(dialog));
+}
+
+
 void worldPutZone(WORLD_DATA *world, ZONE_DATA *zone) {
   LIST_ITERATOR *zone_i = newListIterator(world->zones);
   ZONE_DATA *tmpzone = NULL;
@@ -364,6 +403,20 @@ void worldPutZone(WORLD_DATA *world, ZONE_DATA *zone) {
     }
   }
   deleteListIterator(zone_i);
+
+  // make our directory and subdirectories
+  char buf[MAX_BUFFER];
+  mkdir(worldGetZonePath(world, zoneGetVnum(zone)), S_IRWXU | S_IRWXG);
+  sprintf(buf, "%s/room", worldGetZonePath(world, zoneGetVnum(zone)));
+  mkdir(buf, S_IRWXU | S_IRWXG);
+  sprintf(buf, "%s/mob", worldGetZonePath(world, zoneGetVnum(zone)));
+  mkdir(buf, S_IRWXU | S_IRWXG);
+  sprintf(buf, "%s/obj", worldGetZonePath(world, zoneGetVnum(zone)));
+  mkdir(buf, S_IRWXU | S_IRWXG);
+  sprintf(buf, "%s/dialog", worldGetZonePath(world, zoneGetVnum(zone)));
+  mkdir(buf, S_IRWXU | S_IRWXG);
+  sprintf(buf, "%s/script", worldGetZonePath(world, zoneGetVnum(zone)));
+  mkdir(buf, S_IRWXU | S_IRWXG);
 
   listPut(world->zones, zone);
   zoneSetWorld(zone, world);
@@ -403,3 +456,59 @@ void worldPutScript(WORLD_DATA *world, SCRIPT_DATA *script) {
 void worldPutDialog(WORLD_DATA *world, DIALOG_DATA *dialog) {
   worldPut(world, zoneAddDialog, dialog, dialogGetVnum(dialog));
 };
+
+bool worldIsThingLoaded(WORLD_DATA *world, 
+			bool (* checker)(ZONE_DATA *, int), int vnum) {
+  ZONE_DATA *zone = worldZoneBounding(world, vnum);
+  if(zone == NULL)
+    return FALSE;
+  else
+    return checker(zone, vnum);
+}
+
+bool worldIsRoomLoaded(WORLD_DATA *world, int vnum) {
+  return worldIsThingLoaded(world, zoneIsRoomLoaded, vnum);
+}
+
+bool worldIsMobLoaded(WORLD_DATA *world, int vnum) {
+  return worldIsThingLoaded(world, zoneIsMobLoaded, vnum);
+}
+
+bool worldIsObjLoaded(WORLD_DATA *world, int vnum) {
+  return worldIsThingLoaded(world, zoneIsObjLoaded, vnum);
+}
+
+bool worldIsScriptLoaded(WORLD_DATA *world, int vnum) {
+  return worldIsThingLoaded(world, zoneIsScriptLoaded, vnum);
+}
+
+bool worldIsDialogLoaded(WORLD_DATA *world, int vnum) {
+  return worldIsThingLoaded(world, zoneIsDialogLoaded, vnum);
+}
+
+void worldUnloadThing(WORLD_DATA *world,
+		      void (* unloader)(ZONE_DATA *, int), int vnum) {
+  ZONE_DATA *zone = worldZoneBounding(world, vnum);
+  if(zone != NULL)
+    unloader(zone, vnum);  
+}
+
+void worldUnloadRoom(WORLD_DATA *world, int vnum) {
+  worldUnloadThing(world, zoneUnloadRoom, vnum);
+}
+
+void worldUnloadMob(WORLD_DATA *world, int vnum) {
+  worldUnloadThing(world, zoneUnloadMob, vnum);
+}
+
+void worldUnloadObj(WORLD_DATA *world, int vnum) {
+  worldUnloadThing(world, zoneUnloadObj, vnum);
+}
+
+void worldUnloadScript(WORLD_DATA *world, int vnum) {
+  worldUnloadThing(world, zoneUnloadScript, vnum);
+}
+
+void worldUnloadDialog(WORLD_DATA *world, int vnum) {
+  worldUnloadThing(world, zoneUnloadDialog, vnum);
+}

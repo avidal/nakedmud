@@ -86,6 +86,8 @@ void init_bitvectors() {
   bitvectorCreate("obj_bits");
   bitvectorAddBit("obj_bits", "notake");
 
+  bitvectorCreate("room_bits");
+
   bitvectorCreate("user_groups");
   bitvectorAddBit("user_groups", "admin");
   bitvectorAddBit("user_groups", "scripter");

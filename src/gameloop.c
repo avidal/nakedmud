@@ -65,13 +65,15 @@ int  control;
 int mudport       = -1;
 
 /* global variables */
-WORLD_DATA *gameworld = NULL;   /*  the gameworld, and ll the prototypes */
-LIST * object_list = NULL;      /*  the list of all existing objects */
-LIST * socket_list = NULL;      /*  the list of active sockets */
-LIST * mobile_list = NULL;      /*  the list of existing mobiles */
-LIST * extract_obj_funcs = NULL;/*  functions called when an obj is extracted */
-LIST * extract_mob_funcs = NULL;/*  functions called when a char is extracted */
-PROPERTY_TABLE *mob_table = NULL;/* a table of mobs by UID, for quick lookup */
+WORLD_DATA *gameworld = NULL;    // the gameworld, and ll the prototypes
+LIST * object_list = NULL;       // the list of all existing objects
+LIST * socket_list = NULL;       // the list of active sockets
+LIST * mobile_list = NULL;       // the list of existing mobiles
+LIST * mobs_to_delete = NULL;    // mobs pending final extraction
+LIST * objs_to_delete = NULL;    // objs pending final extraction
+LIST * extract_obj_funcs = NULL; // functions called when an obj is extracted
+LIST * extract_mob_funcs = NULL; // functions called when a char is extracted
+PROPERTY_TABLE *mob_table = NULL;// a table of mobs by UID, for quick lookup
 PROPERTY_TABLE *obj_table = NULL;
 
 char        *   greeting = NULL;
@@ -127,9 +129,11 @@ int main(int argc, char **argv)
 
   // lists for storing objects, sockets, and mobiles that are
   // currently loaded into the game
-  object_list = newList();
-  socket_list = newList();
-  mobile_list = newList();
+  object_list    = newList();
+  socket_list    = newList();
+  mobile_list    = newList();
+  mobs_to_delete = newList();
+  objs_to_delete = newList();
 
   // tables for quick lookup of mobiles and objects by UID.
   // For optimal speed, the table sizes should be roughly
@@ -310,6 +314,14 @@ void update_handler()
   // We want to be on a schedule that updates every minute or so.
   if((num_updates % (1 MINUTE)) == 0)
     worldPulse(gameworld);
+
+  // if we have final extractions pending, do them
+  CHAR_DATA *ch = NULL;
+  while((ch = listPop(mobs_to_delete)) != NULL)
+    extract_mobile_final(ch);
+  OBJ_DATA *obj = NULL;
+  while((obj = listPop(objs_to_delete)) != NULL)
+    extract_obj_final(obj);
 }
 
 

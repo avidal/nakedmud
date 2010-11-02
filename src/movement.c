@@ -95,12 +95,12 @@ bool try_buildwalk(CHAR_DATA *ch, int dir) {
       roomDigExit(charGetRoom(ch), dir, vnum);
       roomDigExit(new_room, dirGetOpposite(dir), 
 		  roomGetVnum(charGetRoom(ch)));
+
+      worldSaveRoom(gameworld, new_room);
+      worldSaveRoom(gameworld, charGetRoom(ch));
+
       try_move(ch, dir, NULL);
       return TRUE;
-
-      // save the changes... this will get costly as our world gets bigger.
-      // But that should be alright once we make zone saving a bit smarter
-      worldSave(gameworld, WORLD_PATH);
     }
   }
   return FALSE;

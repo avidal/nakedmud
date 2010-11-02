@@ -17,6 +17,7 @@ COMMAND(cmd_linkdead);
 COMMAND(cmd_repeat);
 COMMAND(cmd_at);
 COMMAND(cmd_lockdown);
+COMMAND(cmd_force);
 
 
 /* cmd_builder.c */

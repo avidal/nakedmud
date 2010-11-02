@@ -270,7 +270,7 @@ COMMAND(cmd_hedit) {
   HELP_DATA *data = get_help_data(arg, FALSE);
 
   socketSetNotepad(charGetSocket(ch), (data ? data->info : ""));
-  socketStartNotepad(charGetSocket(ch));
+  socketStartNotepad(charGetSocket(ch), text_editor);
 }
 
 
@@ -282,7 +282,7 @@ COMMAND(cmd_hupdate) {
     send_to_char(ch, "Which helpfile were you trying to update?\r\n");
     return;
   }
-  if(!charGetSocket(ch) || !*socketGetNotepad(charGetSocket(ch))) {
+  if(!charGetSocket(ch) || !bufferLength(socketGetNotepad(charGetSocket(ch)))) {
     send_to_char(ch, "You have nothing in your notepad! Try writing something.\r\n");
     return;
   }
@@ -293,7 +293,8 @@ COMMAND(cmd_hupdate) {
   for(ptr = arg; *ptr; ptr++)
     if(*ptr == '_') *ptr = ' ';
 
-  update_help(charGetName(ch), arg, socketGetNotepad(charGetSocket(ch)));
+  update_help(charGetName(ch), arg, 
+	      bufferString(socketGetNotepad(charGetSocket(ch))));
 }
 
 

@@ -1,0 +1,14 @@
+--- PATCH INSTRUCTIONS FROM v2.6 TO v2.7
+
+The bulk of the patch from version 2.6 to 2.7 is pretty easy. First, back up 
+your lib and src folders. Next, simply enter your MUD's root directory (the one
+that has the src/ and lib/ and doc/ directories) and then run the patch file:
+  patch -p0 < nakedmudv2.6-to-nakedmudv2.7.patch
+
+You will also have to start and shut down your MUD once for the patch to take
+full effect. In v2.7, we introduced new conventions for storing world data. When
+you start up the MUD for the first time, it will automatically convert all of
+your old world data to meet the new standards. This is especially important if
+you will be patching up to an even newer version (if one is available), because
+it is not gauranteed that the conversion utilities will be present in later
+versions of NakedMud.

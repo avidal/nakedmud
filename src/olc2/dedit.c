@@ -166,6 +166,11 @@ bool dedit_parser(SOCKET_DATA *sock, DIALOG_DATA *dialog, int choice,
   }
 }
 
+// saves a dialog
+void save_dialog(DIALOG_DATA *dialog) {
+  worldSaveDialog(gameworld, dialog);
+}
+
 COMMAND(cmd_dedit) {
   ZONE_DATA *zone;
   DIALOG_DATA *dialog;
@@ -196,7 +201,7 @@ COMMAND(cmd_dedit) {
       }
       
       do_olc(charGetSocket(ch), dedit_menu, dedit_chooser, dedit_parser,
-	     dialogCopy, dialogCopyTo, deleteDialog, save_world, dialog);
+	     dialogCopy, dialogCopyTo, deleteDialog, save_dialog, dialog);
     }
   }
 }

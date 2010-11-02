@@ -51,7 +51,7 @@ SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c movement.c \
 	   zone.c dialog.c room_reset.c account.c \
 	   \
 	   list.c property_table.c hashtable.c map.c storage.c set.c \
-	   buffer.c bitvector.c
+	   buffer.c bitvector.c numbers.c
 
 
 # include the description for each module. These will add to SRC

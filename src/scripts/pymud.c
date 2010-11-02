@@ -18,6 +18,7 @@
 #include "../utils.h"
 #include "../character.h"
 #include "../inform.h"
+#include "../handler.h"
 
 #include "script.h"
 #include "pyroom.h"
@@ -183,6 +184,89 @@ PyObject *mud_format_string(PyObject *self, PyObject *args) {
 }
 
 //
+// a wrapper around NakedMud's generic_find() function
+PyObject *mud_generic_find(PyObject *self, PyObject *args) {
+  PyObject *py_looker = Py_None;     CHAR_DATA *looker = NULL;
+  char      *type_str = NULL;        bitvector_t  type = 0; 
+  char     *scope_str = NULL;        bitvector_t scope = 0;
+  char           *arg = NULL;
+  bool         all_ok = TRUE;
+
+  // parse the arguments
+  if(!PyArg_ParseTuple(args, "Osss|b", &py_looker, &arg, &type_str, &scope_str,
+		       &all_ok)) {
+    PyErr_Format(PyExc_TypeError,
+		 "Invalid arguments supplied to mud.generic_find()");
+    return NULL;
+  }
+
+  // convert the looker
+  if(py_looker != Py_None) {
+    if(!PyChar_Check(py_looker) || (looker = PyChar_AsChar(py_looker)) == NULL){
+      PyErr_Format(PyExc_TypeError, 
+		   "First argument must be an existent character or None!");
+      return NULL;
+    }
+  }
+
+  // convert the scope
+  if(is_keyword(scope_str, "room", FALSE))
+    SET_BIT(scope, FIND_SCOPE_ROOM);
+  if(is_keyword(scope_str, "inv", FALSE))
+    SET_BIT(scope, FIND_SCOPE_INV);
+  if(is_keyword(scope_str, "worn", FALSE))
+    SET_BIT(scope, FIND_SCOPE_WORN);
+  if(is_keyword(scope_str, "world", FALSE))
+    SET_BIT(scope, FIND_SCOPE_WORLD);
+  if(is_keyword(scope_str, "visible", FALSE))
+    SET_BIT(scope, FIND_SCOPE_VISIBLE);
+  if(is_keyword(scope_str, "immediate", FALSE))
+    SET_BIT(scope, FIND_SCOPE_IMMEDIATE);
+  if(is_keyword(scope_str, "all", FALSE))
+    SET_BIT(scope, FIND_SCOPE_ALL);
+
+  // convert the types
+  if(is_keyword(type_str, "obj", FALSE))
+    SET_BIT(type, FIND_TYPE_OBJ);
+  if(is_keyword(type_str, "char", FALSE))
+    SET_BIT(type, FIND_TYPE_CHAR);
+  if(is_keyword(type_str, "in", FALSE))
+    SET_BIT(type, FIND_TYPE_IN_OBJ);
+
+  // do the search
+  int found_type = FOUND_NONE;
+  void    *found = generic_find(looker, arg, type, scope, all_ok, &found_type);
+
+  if(found_type == FOUND_CHAR)
+    return Py_BuildValue("Os", newPyChar(found), "char");
+  else if(found_type == FOUND_OBJ)
+    return Py_BuildValue("Os", newPyObj(found), "obj");
+  else if(found_type == FOUND_IN_OBJ)
+    return Py_BuildValue("Os", newPyObj(found), "in");
+  // now it gets a bit more tricky... we have to see what other bit was set
+  else if(found_type == FOUND_LIST) {
+    PyObject         *list = PyList_New(0);
+    LIST_ITERATOR *found_i = newListIterator(found);
+    void        *one_found = NULL;
+    if(IS_SET(type, FIND_TYPE_CHAR)) {
+      ITERATE_LIST(one_found, found_i)
+	PyList_Append(list, newPyChar(one_found));
+    }
+    else if(IS_SET(type, FIND_TYPE_OBJ | FIND_TYPE_IN_OBJ)) {
+      ITERATE_LIST(one_found, found_i)
+	PyList_Append(list, newPyChar(one_found));
+    }
+    deleteListIterator(found_i);
+    deleteList(found);
+    return Py_BuildValue("Os", list, "list");
+  }
+
+  // nothing was found...
+  return Py_BuildValue("Os", Py_None, Py_None);
+}
+
+
+//
 // execute message() from inform.h
 PyObject *mud_message(PyObject *self, PyObject *args) {
   // the python/C representations of the various variables that message() needs
@@ -308,9 +392,11 @@ PyMethodDef mud_module_methods[] = {
      "plugs into the message() function from inform.h" },
     {"format_string", mud_format_string, METH_VARARGS,
      "format a string to be 80 chars wide and indented. Like a desc."},
+    {"generic_find",  mud_generic_find, METH_VARARGS,
+     "Python wrapper around the generic_find() function"},
     {"extract", mud_extract, METH_VARARGS,
     "extracts an object or character from the game. This method is dangerous, "
-    "sicne the object may still be needed in whichever function called the "
+    "since the object may still be needed in whichever function called the "
     "script that activated this method" },
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };

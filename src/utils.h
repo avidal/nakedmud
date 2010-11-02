@@ -145,6 +145,11 @@ void  extract_mobile       ( CHAR_DATA *ch );
 void  add_extract_obj_func ( void (* func)(OBJ_DATA *));
 void  add_extract_mob_func ( void (* func)(CHAR_DATA *));
 
+// don't call these. These are for use by gameloop.c only. Use the non-final
+// versions, please!!
+void  extract_obj_final    ( OBJ_DATA *obj);
+void  extract_mobile_final ( CHAR_DATA *ch);
+
 char *get_time             ( void );
 void  communicate          ( CHAR_DATA *dMob, char *txt, int range );
 void  load_muddata         ( void );

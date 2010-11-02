@@ -145,6 +145,8 @@ void init_commands() {
   // F
   add_cmd("fill",       NULL, cmd_fill,     0, POS_STANDING, POS_FLYING,
 	  "builder", FALSE, TRUE );
+  add_cmd("force",      NULL, cmd_force,    0, POS_STANDING, POS_FLYING,
+	  "admin",   FALSE, FALSE);
 
   // G
   add_cmd("gemote",     NULL, cmd_gemote,   0, POS_UNCONCIOUS, POS_FLYING,
@@ -471,7 +473,7 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
   // if we are leading with a non-character, we are trying to do a short-form
   // command (e.g. ' for say, " for gossip). Just take the first character
   // and use the rest as the arg
-  if(isalpha(*arg))
+  if(isalpha(*arg) || isdigit(*arg))
     arg = one_arg(arg, command);
   else {
     *command     = *arg;

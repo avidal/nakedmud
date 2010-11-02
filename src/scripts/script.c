@@ -50,6 +50,34 @@ COMMAND(cmd_scrun) {
   // make sure we at least have a vnum
   if(!arg || !*arg)
     send_to_char(ch, "Which script would you like to run?\r\n");
+  // check to see if we're running a script from the notepad. "pad" must be 
+  // only arg, or first arg. Thanks go out to Michael Venzor for writing this
+  // bit of scrun.
+  else if(!strncasecmp(arg, "pad ", (strlen(arg) > 3 ? 4 : 3))) {
+    // make sure we have a socket - we'll need access to its notepad
+    if(!charGetSocket(ch))
+      send_to_char(ch, "Only characters with sockets can execute scripts!\r\n");
+    // make sure notepad is not empty
+    else if(!bufferLength(socketGetNotepad(charGetSocket(ch))))
+      send_to_char(ch, "Your notepad is empty. "
+		   "First, try writing something with {cwrite{n.\r\n");
+    // All's well. Let's exec the script
+    else {
+      BUFFER *notepad = bufferCopy(socketGetNotepad(charGetSocket(ch)));
+      char pad[SMALL_BUFFER]; // to strip off the "pad" part of our arg
+      arg = one_arg(arg, pad);
+
+      // Since pyscript chokes on \r's, which are automatically
+      // appended to text in the notepad editor, we need to ditch 'em!
+      bufferReplace(notepad, "\r", "", TRUE);
+      
+      // call script execution function here
+      run_script(bufferString(notepad), ch, SCRIPTOR_CHAR, NULL, NULL, NULL, 
+		 NULL, arg, 0);
+      deleteBuffer(notepad);
+    }
+  }
+  // we're running a script normally
   else {
     char buf[SMALL_BUFFER];
 
@@ -57,6 +85,7 @@ COMMAND(cmd_scrun) {
     arg = one_arg(arg, buf);
 
     SCRIPT_DATA *script = worldGetScript(gameworld, atoi(buf));
+
     if(script == NULL || !isdigit(*buf))
       send_to_char(ch, "No script with that vnum exists!\r\n");
     else if(scriptGetType(script) != SCRIPT_TYPE_RUNNABLE)
@@ -549,6 +578,7 @@ void format_script(char **script, int max_len) {
 // statements we need to highlight
 const char *control_table[] = {
   "import",
+  "return",
   "except",
   "while",
   "from",

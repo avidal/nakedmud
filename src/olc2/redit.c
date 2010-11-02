@@ -497,6 +497,7 @@ bool exedit_parser(SOCKET_DATA *sock, EXIT_DATA *exit, int choice,
 #define REDIT_TERRAIN    2
 #define REDIT_EXIT       3
 #define REDIT_FILL_EXIT  4
+#define REDIT_BITVECTOR  5
 
 
 //
@@ -543,6 +544,7 @@ void redit_menu(SOCKET_DATA *sock, ROOM_DATA *room) {
 #ifdef MODULE_TIME
 		 "{g3) Night description (optional)\r\n{c%s\r\n"
 #endif
+		 "{gB) Set Bits: {c%s\r\n"
 		 "{gT) Terrain type {y[{c%s{y]\r\n"
 		 "{gX) Extra descriptions menu\r\n"
 		 "{gR) Room reset menu\r\n"
@@ -554,6 +556,7 @@ void redit_menu(SOCKET_DATA *sock, ROOM_DATA *room) {
 #ifdef MODULE_TIME
 		 roomGetNightDesc(room),
 #endif
+		 bitvectorGetBits(roomGetBits(room)),
 		 terrainGetName(roomGetTerrain(room)));
   redit_exit_menu(sock, room);
 }
@@ -596,7 +599,10 @@ int redit_chooser(SOCKET_DATA *sock, ROOM_DATA *room, const char *option) {
     do_olc(sock, ssedit_menu, ssedit_chooser, ssedit_parser,
 	   NULL, NULL, NULL, NULL, roomGetScripts(room));
     return MENU_NOCHOICE;
-    
+  case 'B':
+    do_olc(sock, bedit_menu, bedit_chooser, bedit_parser,
+	   NULL, NULL, NULL, NULL, roomGetBits(room));
+    return MENU_NOCHOICE;
   default:
     return MENU_CHOICE_INVALID;
   }
@@ -651,6 +657,18 @@ bool redit_parser(SOCKET_DATA *sock, ROOM_DATA *room, int choice,
 }
 
 
+// saves a room to disk
+void save_room(ROOM_DATA *room) {
+  worldSaveRoom(gameworld, room);
+  // also do some updating for the room if it is resettable
+  ZONE_DATA *zone = worldZoneBounding(gameworld, roomGetVnum(room));
+  if(roomIsResettable(room))
+    zoneAddResettableRoom(zone, roomGetVnum(room));
+  else
+    zoneRemoveResettableRoom(zone, roomGetVnum(room));
+}
+
+
 COMMAND(cmd_redit) {
   ZONE_DATA *zone;
   ROOM_DATA *room;
@@ -681,6 +699,6 @@ COMMAND(cmd_redit) {
     }
 
     do_olc(charGetSocket(ch), redit_menu, redit_chooser, redit_parser,
-	   roomCopy, roomCopyTo, deleteRoom, save_world, room);
+	   roomCopy, roomCopyTo, deleteRoom, save_room, room);
   }
 }
