@@ -48,7 +48,9 @@ struct socket_data {
   ACCOUNT_DATA  * account;
   char          * hostname;
   char            inbuf[MAX_INPUT_LEN];
-  char            next_command[MAX_BUFFER];
+  BUFFER        * next_command;
+  BUFFER        * iac_sequence;
+  // char            next_command[MAX_BUFFER];
   bool            cmd_read;
   bool            bust_prompt;
   bool            closed;
@@ -440,139 +442,130 @@ void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
   bufferCat(dsock->outbuf, txt);
 }
 
+//
+// read an IAC sequence from the socket's input buffer. When we hit a
+// termination point, send a hook and clear he buffer. Return how many
+// characters to skip ahead in the input handler
+int read_iac_sequence(SOCKET_DATA *dsock, int start) {
+  // are we doing subnegotiation?
+  bool subneg = strchr(bufferString(dsock->iac_sequence), SB) != NULL;
+  int       i = start;
+  bool   done = FALSE;
+
+  for(; dsock->inbuf[i] != '\0'; i++) {
+    // are we looking for IAC?
+    if(bufferLength(dsock->iac_sequence) == 0) {
+      // Oops! Something is broken
+      if(dsock->inbuf[i] != (signed char) IAC)
+	return 0;
+      else
+	bufferCatCh(dsock->iac_sequence, IAC);
+    }
+
+    // are we looking for a command?
+    else if(bufferLength(dsock->iac_sequence) == 1) {
+      // did we find subnegotiation?
+      if(dsock->inbuf[i] == (signed char) SB) {
+	bufferCatCh(dsock->iac_sequence, dsock->inbuf[i]);
+	subneg = TRUE;
+      }
+
+      // basic three-character command
+      else if(dsock->inbuf[i] == (signed char) WILL || 
+	      dsock->inbuf[i] == (signed char) WONT || 
+	      dsock->inbuf[i] == (signed char) DO   || 
+	      dsock->inbuf[i] == (signed char) DONT)
+	bufferCatCh(dsock->iac_sequence, dsock->inbuf[i]);
+
+      // something went wrong
+      else {
+	bufferClear(dsock->iac_sequence);
+	return 2;
+      }
+    }
+    
+    // are we doing subnegotiation?
+    else if(subneg) {
+      int       last_i = bufferLength(dsock->iac_sequence) - 2;
+      signed char last = bufferString(dsock->iac_sequence)[last_i];
+      bufferCatCh(dsock->iac_sequence, dsock->inbuf[i]);
+
+      // have hit the end of the subnegotiation? Break out if so
+      if(last == (signed char) IAC && dsock->inbuf[i] == (signed char) SE) {
+	done = TRUE;
+	break;
+      }
+    }
+
+    // this is the end
+    else {
+      bufferCatCh(dsock->iac_sequence, dsock->inbuf[i]);
+      done = TRUE;
+      break;
+    }
+  }
+  
+  int len = i - start + (dsock->inbuf[i] == '\0' ? 0 : 1);
+
+  // broadcast the message we parsed, and prepare for the next sequence
+  if(done == TRUE) {
+    hookRun("receive_iac", 
+	    hookBuildInfo("sk str", dsock,bufferString(dsock->iac_sequence)));
+    bufferClear(dsock->iac_sequence);
+  }
+  return len;
+}
 
 void next_cmd_from_buffer(SOCKET_DATA *dsock) {
   // do we have stuff in our input list? If so, use that instead of inbuf
   dsock->cmd_read = FALSE;
   if(listSize(dsock->input) > 0) {
     char *cmd = listPop(dsock->input);
-    strncpy(dsock->next_command, cmd, MAX_BUFFER);
+    bufferClear(dsock->next_command);
+    bufferCat(dsock->next_command, cmd);
     dsock->cmd_read    = TRUE;
     dsock->bust_prompt = TRUE;
     free(cmd);
   }
   else {
-    int size = 0, i = 0, j = 0; //, telopt = 0;
-    static char iacopt[MAX_BUFFER];
-    bool found_iac = FALSE;
-    iacopt[0] = '\0';
-    
-    // if theres already a command ready, we return
-    if(dsock->next_command[0] != '\0')
-      return;
-    
-    // if there is nothing pending, then return
-    if(dsock->inbuf[0] == '\0')
-      return;
+    int i = 0, cmd_end = -1;
 
-    // check how long the next command is
-    while(dsock->inbuf[size] != '\0' && 
-	  dsock->inbuf[size] != '\n' && dsock->inbuf[size] != '\r')
-      size++;
+    // are we building an IAC command? Try to continue it
+    if(bufferLength(dsock->iac_sequence) > 0)
+      i += read_iac_sequence(dsock, 0);
 
-    /* we only deal with real commands */
-    // I'm not really sure what this means, or does! -- Geoff
-    if(dsock->inbuf[size] == '\0')
-      return;
-
-    // copy the next command into next_command
-    for(; i < size; i++) {
-      // we have a system command. Try to parse it out
-      if(dsock->inbuf[i] == (signed char) IAC) {
-	int iac_i       = 0;
-	iacopt[iac_i++] = (signed char) dsock->inbuf[i++];
-	
-	// IAC escape sequence: IAC IAC
-	if(dsock->inbuf[i] == (signed char) IAC)
-	  iacopt[iac_i++] = (signed char) dsock->inbuf[i];
-	
-	// subnegotiation, read until the end of the sequence
-	if(dsock->inbuf[i] == (signed char) SB) {
-	  while(dsock->inbuf[i] != (signed char) SE)
-	    iacopt[iac_i++] = (signed char) dsock->inbuf[i++];
-	  iacopt[iac_i++] = (signed char) dsock->inbuf[i];
-	}
-
-	// basic three-character command
-	else if(dsock->inbuf[i] == (signed char) WILL || 
-		dsock->inbuf[i] == (signed char) WONT || 
-		dsock->inbuf[i] == (signed char) DO   || 
-		dsock->inbuf[i] == (signed char) DONT) {
-	  iacopt[iac_i++] = (signed char) dsock->inbuf[i++];
-	  iacopt[iac_i++] = (signed char) dsock->inbuf[i];
-	}
-	
-	// not sure what happened here! Something got busted in transit
-	else {
-	  iacopt[iac_i++] = dsock->inbuf[i];
-	}
-
-	// close off the command
-	iacopt[iac_i++] = '\0';
-
-	// did we find an IAC command? Notify the world!
-	if(*iacopt) {
-	  found_iac = TRUE;
-	  hookRun("receive_iac", hookBuildInfo("sk str", dsock, iacopt));
-	  //*iacopt = '\0';
-	}
+    // copy over characters until we hit a newline, an IAC command, or \0
+    for(; dsock->inbuf[i] != '\0' && cmd_end < 0; i++) {
+      switch(dsock->inbuf[i]) {
+      default:
+	// append us to the command
+	bufferCatCh(dsock->next_command, dsock->inbuf[i]);
+	break;
+      case '\n':
+	// command end found
+	cmd_end = ++i;
+      case '\r':
+	// ignore \r ... only pay attention to \n
+	break;
+      case (signed char) IAC:
+	i += read_iac_sequence(dsock, i) - 1;
+	break;
       }
-      
-      else if(isprint(dsock->inbuf[i]) && isascii(dsock->inbuf[i])) {
-	dsock->next_command[j++] = dsock->inbuf[i];
-      }
-      else {
-	// log_string("BAD CHARACTER %d", (unsigned int)dsock->inbuf[i]); 
-      }
-
-      /*
-       * THE OLD HANDLER
-       *
-      if(dsock->inbuf[i] == (signed char) IAC)
-	telopt = 1;
-      else if(telopt == 1 && (dsock->inbuf[i] == (signed char) DO || 
-			      dsock->inbuf[i] == (signed char) DONT))
-	telopt = 2;
-    
-      // check for compression format
-      else if(telopt == 2) {
-	unsigned char compress_opt = dsock->inbuf[i];
-	telopt = 0;
-	
-	// check if we're using a valid compression
-	if(compress_opt == TELOPT_COMPRESS || compress_opt == TELOPT_COMPRESS2){
-	  // start compressing
-	  if(dsock->inbuf[i-1] == (signed char) DO)                  
-	    compressStart(dsock, compress_opt);
-	  // stop compressing
-	  else if(dsock->inbuf[i-1] == (signed char) DONT)
-	    compressEnd(dsock, compress_opt, FALSE);
-	}
-      }
-      else if(isprint(dsock->inbuf[i]) && isascii(dsock->inbuf[i])) {
-	dsock->next_command[j++] = dsock->inbuf[i];
-      }
-      */
+      if(cmd_end >= 0)
+	break;
     }
+
+    // move the context of inbuf down
+    int begin = 0;
+    while(dsock->inbuf[i] != '\0')
+      dsock->inbuf[begin++] = dsock->inbuf[i++];
+    dsock->inbuf[begin] = '\0';
     
-    dsock->next_command[j] = '\0';
-    
-    // skip forward to the next line
-    while(dsock->inbuf[size] == '\n' || dsock->inbuf[size] == '\r') {
+    // did we find a command?
+    if(cmd_end >= 0) {
       dsock->cmd_read    = TRUE;
       dsock->bust_prompt = TRUE;
-      size++;
     }
-    
-    // use i as a static pointer
-    i = size;
-    
-    // move the context of inbuf down
-    while(dsock->inbuf[size] != '\0') {
-      dsock->inbuf[size - i] = dsock->inbuf[size];
-      size++;
-    }
-    dsock->inbuf[size - i] = '\0';
   }
 }
 
@@ -635,6 +628,8 @@ void deleteSocket(SOCKET_DATA *sock) {
   if(sock->page_string)   free(sock->page_string);
   if(sock->text_editor)   deleteBuffer(sock->text_editor);
   if(sock->outbuf)        deleteBuffer(sock->outbuf);
+  if(sock->next_command)  deleteBuffer(sock->next_command);
+  if(sock->iac_sequence)  deleteBuffer(sock->iac_sequence);
   if(sock->input_handlers)deleteListWith(sock->input_handlers,deleteInputHandler);
   if(sock->input)         deleteListWith(sock->input, free);
   if(sock->command_hist)  deleteListWith(sock->command_hist, free);
@@ -647,6 +642,8 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
   if(sock_new->page_string)    free(sock_new->page_string);
   if(sock_new->text_editor)    deleteBuffer(sock_new->text_editor);
   if(sock_new->outbuf)         deleteBuffer(sock_new->outbuf);
+  if(sock_new->next_command)   deleteBuffer(sock_new->next_command);
+  if(sock_new->iac_sequence)   deleteBuffer(sock_new->iac_sequence);
   if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, deleteInputHandler);
   if(sock_new->auxiliary)      deleteAuxiliaryData(sock_new->auxiliary);
   if(sock_new->input)          deleteListWith(sock_new->input, free);
@@ -663,6 +660,8 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
 
   sock_new->text_editor    = newBuffer(1);
   sock_new->outbuf         = newBuffer(MAX_OUTPUT);
+  sock_new->next_command   = newBuffer(1);
+  sock_new->iac_sequence   = newBuffer(1);
 }
 
 
@@ -864,11 +863,13 @@ void input_handler() {
       IH_PAIR *pair = listGet(sock->input_handlers, 0);
       if(pair->python == FALSE) {
 	void (* handler)(SOCKET_DATA *, char *) = pair->handler;
-	handler(sock, sock->next_command);
+	char *cmddup = strdup(bufferString(sock->next_command));
+	handler(sock, cmddup);
+	free(cmddup);
       }
       else {
 	PyObject *arglist = Py_BuildValue("Os", socketGetPyFormBorrowed(sock),
-					  sock->next_command);
+					  bufferString(sock->next_command));
 	PyObject *retval  = PyEval_CallObject(pair->handler, arglist);
 
 	// check for an error:
@@ -882,10 +883,10 @@ void input_handler() {
 
       // append our last command to the command history. History buffer is
       // 100 commands, so pop off the earliest command if we're going over
-      listPut(sock->command_hist, strdup(sock->next_command));
+      listPut(sock->command_hist, strdup(bufferString(sock->next_command)));
       if(listSize(sock->command_hist) > 100)
 	free(listRemoveNum(sock->command_hist, 100));
-      sock->next_command[0] = '\0';
+      bufferClear(sock->next_command);
 
       // we save whether or not we read a command until our next call to
       // input_handler(), at which time it is reset to FALSE if we didn't read

@@ -1,14 +1,12 @@
-################################################################################
-#
-# cmd_comm.c
-#
-# Various commands used in NakedMud(tm) for communicating with other
-# characters, and NPCs.
-#
-################################################################################
+'''
+cmd_comm.c
+
+Various commands used in NakedMud(tm) for communicating with other
+characters, and NPCs.
+'''
 from mud import *
 from mudsys import add_cmd, add_cmd_check
-import inform, hooks, mudsock, history
+import mudsys, mud, inform, hooks, mudsock, history
 
 
 
@@ -21,15 +19,15 @@ def cmd_ask(ch, cmd, arg):
        as you.
        '''
     try:
-        tgt, question = parse_args(ch, True, cmd, arg,
-                                   "ch.room.noself [about] string(question)")
+        tgt, question =mud.parse_args(ch, True, cmd, arg,
+                                      "ch.room.noself [about] string(question)")
     except: return
 
     question = question.replace("$", "$$")
-    message(ch, tgt, None, None, False, "to_vict",
-            "{w$n asks you, '" + question + "'{n")
-    message(ch, tgt, None, None, False, "to_char",
-            "{wYou ask $N, '" + question + "'{n")
+    mud.message(ch, tgt, None, None, False, "to_vict",
+                "{w$n asks you, '" + question + "'{n")
+    mud.message(ch, tgt, None, None, False, "to_char",
+                "{wYou ask $N, '" + question + "'{n")
 
     # run our ask hooks
     hooks.run("ask", hooks.build_info("ch ch str", (ch, tgt, question)))
@@ -43,17 +41,18 @@ def cmd_tell(ch, cmd, arg):
 
        see also: reply'''
     try:
-        tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string(message)")
+        tgt, mssg = mud.parse_args(ch, True, cmd, arg,
+                                   "ch.world.noself string(message)")
     except: return
 
     mssg   = mssg.replace("$", "$$")
     tovict = "{r$n tells you, '" + mssg + "'{n"
     toch   = "{rYou tell $N, '" + mssg + "'{n"
-    message(ch, tgt, None, None, False, "to_vict", tovict)
-    message(ch, tgt, None, None, False, "to_char", toch)
+    mud.message(ch, tgt, None, None, False, "to_vict", tovict)
+    mud.message(ch, tgt, None, None, False, "to_char", toch)
     history.add_history(ch,   "tell", "{r%-10s: %s{n" % (ch.name, mssg))
     history.add_history(tgt,  "tell", "{r%-10s: %s{n" % (ch.name, mssg))
-    hooks.run("tell", hooks.build_info("ch ch", (ch, tgt)))
+    hooks.run("tell", hooks.build_info("ch ch str", (ch, tgt, mssg)))
 
 def cmd_chat(ch, cmd, arg):
     '''Usage: chat <message>
@@ -65,8 +64,8 @@ def cmd_chat(ch, cmd, arg):
     else:
         arg  = arg.replace("$", "$$")
         mssg = "{y$n chats, '" + arg + "'{n"
-        message(ch, None, None, None, False, "to_world", mssg)
-        message(ch, None, None, None,False,"to_char", "{yyou chat, '"+arg+"'{n")
+        mud.message(ch, None, None, None, False, "to_world", mssg)
+        mud.message(ch, None, None, None,False,"to_char", "{yyou chat, '"+arg+"'{n")
         history.add_history(ch, "chat", "{y%-10s: %s{n" % (ch.name, arg))
 
 def cmd_wiz(ch, cmd, arg):
@@ -87,10 +86,10 @@ def cmd_say(ch, cmd, arg):
         ch.send("Say what?")
     else:
         arg = arg.replace("$", "$$")
-        message(ch, None, None, None, False, "to_room",
-                "{y$n says, '" + arg + "'{n")
-        message(ch, None, None, None, False, "to_char",
-                "{yyou say, '" + arg + "'{n")        
+        mud.message(ch, None, None, None, False, "to_room",
+                    "{y$n says, '" + arg + "'{n")
+        mud.message(ch, None, None, None, False, "to_char",
+                    "{yyou say, '" + arg + "'{n")        
 
         # run say hooks
         hooks.run("say", hooks.build_info("ch str", (ch, arg)))
@@ -101,12 +100,12 @@ def cmd_greet(ch, cmd, arg):
        NPCs with dialogs will often have something to say when you greet or
        approach then. Greeting an NPC is a way to get them talking.'''
     try:
-        tgt, = parse_args(ch, True, cmd, arg, "ch.room.noself")
+        tgt, = mud.parse_args(ch, True, cmd, arg, "ch.room.noself")
     except: return
 
-    message(ch, tgt, None, None, False, "to_char", "You greet $N.")
-    message(ch, tgt, None, None, False, "to_vict", "$n greets you.")
-    message(ch, tgt, None, None, False, "to_room", "$n greets $N.")
+    mud.message(ch, tgt, None, None, False, "to_char", "You greet $N.")
+    mud.message(ch, tgt, None, None, False, "to_vict", "$n greets you.")
+    mud.message(ch, tgt, None, None, False, "to_room", "$n greets $N.")
 
     # run greet hooks
     hooks.run("greet",      hooks.build_info("ch ch", (ch, tgt)))
@@ -131,7 +130,7 @@ def cmd_emote(ch, cmd, arg):
         # front of the message
         if arg.find("$n") == -1:
             arg = "$n " + arg
-        message(ch, None, None, None, False, "to_room, to_char", arg)
+        mud.message(ch, None, None, None, False, "to_room, to_char", arg)
 
 def cmd_gemote(ch, cmd, arg):
     '''Gemote is similar to emote, except that it sends a mud-wide message
@@ -142,8 +141,8 @@ def cmd_gemote(ch, cmd, arg):
         # same as emote, but global
         if arg.find("$n") == -1:
             arg = "$n " + arg
-        message(ch, None, None, None, False, "to_world, to_char",
-                "{bGLOBAL:{c " + arg + "{n")
+        mud.message(ch, None, None, None, False, "to_world, to_char",
+                    "{bGLOBAL:{c " + arg + "{n")
 
 def cmd_page(ch, cmd, arg):
     '''Usage: page <person> <message>
@@ -153,7 +152,8 @@ def cmd_page(ch, cmd, arg):
        anyone in the mud, regardless if you are in the same room as them or not.
        '''
     try:
-        tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string(message)")
+        tgt, mssg = mud.parse_args(ch, True, cmd, arg,
+                                   "ch.world.noself string(message)")
     except: return
     ch.send("\007\007You page " + ch.see_as(tgt))
     tgt.send("\007\007*" + tgt.see_as(ch) + "* " + mssg)
@@ -163,20 +163,20 @@ def cmd_page(ch, cmd, arg):
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("ask",     None, cmd_ask,   "player", False)
-add_cmd("say",     None, cmd_say,   "player", False)
-add_cmd("'",       None, cmd_say,   "player", False)
-add_cmd("tell",    None, cmd_tell,  "player", False)
-add_cmd("chat",    None, cmd_chat,  "player", False)
-add_cmd("wizchat", "wiz",cmd_wiz,   "wizard", False)
-add_cmd("gossip",  None, cmd_chat,  "player", False)
-add_cmd("\"",      None, cmd_chat,  "player", False)
-add_cmd("page",    None, cmd_page,  "player", False)
-add_cmd("greet",   None, cmd_greet, "player", False)
-add_cmd("approach",None, cmd_greet, "player", False)
-add_cmd("emote",   None, cmd_emote, "player", False)
-add_cmd("gemote",  None, cmd_gemote,"player", False)
-add_cmd(":",       None, cmd_emote, "player", False)
+mudsys.add_cmd("ask",     None, cmd_ask,   "player", False)
+mudsys.add_cmd("say",     None, cmd_say,   "player", False)
+mudsys.add_cmd("'",       None, cmd_say,   "player", False)
+mudsys.add_cmd("tell",    None, cmd_tell,  "player", False)
+mudsys.add_cmd("chat",    None, cmd_chat,  "player", False)
+mudsys.add_cmd("wizchat", "wiz",cmd_wiz,   "wizard", False)
+mudsys.add_cmd("gossip",  None, cmd_chat,  "player", False)
+mudsys.add_cmd("\"",      None, cmd_chat,  "player", False)
+mudsys.add_cmd("page",    None, cmd_page,  "player", False)
+mudsys.add_cmd("greet",   None, cmd_greet, "player", False)
+mudsys.add_cmd("approach",None, cmd_greet, "player", False)
+mudsys.add_cmd("emote",   None, cmd_emote, "player", False)
+mudsys.add_cmd("gemote",  None, cmd_gemote,"player", False)
+mudsys.add_cmd(":",       None, cmd_emote, "player", False)
 
 def chk_room_communication(ch, cmd):
     if ch.pos in ("sleeping", "unconscious"):
@@ -184,7 +184,7 @@ def chk_room_communication(ch, cmd):
         return False
 
 for cmd in ["ask", "say", "'", "greet", "approach", "emote", ":"]:
-    add_cmd_check(cmd, chk_room_communication)
+    mudsys.add_cmd_check(cmd, chk_room_communication)
 
 # register our history handling
 history.register_comm_history("chat", lambda ch: "chat")

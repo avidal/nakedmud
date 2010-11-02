@@ -1,14 +1,10 @@
-################################################################################
-#
-# cmd_misc.c
-#
-# a collection of miscellaneous commands that come with NakedMud(tm)
-#
-################################################################################
-from mud import *
-from hooks import *
-from mudsys import add_cmd, add_cmd_check
-import event, mudsys
+'''
+cmd_misc.c
+
+a collection of miscellaneous commands that come with NakedMud(tm)
+'''
+import mudsys, mud, hooks, event, mudsys
+
 
 
 def cmd_stop(ch, cmd, arg):
@@ -38,7 +34,7 @@ def cmd_delay(ch, cmd, arg):
        Will make you say \'hello, world!\' two seconds after entering the
        delayed command.'''
     try:
-        secs, to_delay = parse_args(ch, True, cmd, arg, "double string")
+        secs, to_delay = mud.parse_args(ch, True, cmd, arg, "double string")
     except: return
 
     if secs < 1:
@@ -62,7 +58,7 @@ def cmd_save(ch, cmd, arg):
 
 def cmd_quit(ch, cmd, arg):
     '''Attempts to save and log out of the game.'''
-    log_string(ch.name + " has left the game.")
+    mud.log_string(ch.name + " has left the game.")
     mudsys.do_save(ch)
     mudsys.do_quit(ch)
 
@@ -71,13 +67,13 @@ def cmd_quit(ch, cmd, arg):
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("stop",  None, cmd_stop,  "player", False)
-add_cmd("clear", None, cmd_clear, "player", False)
-add_cmd("delay", None, cmd_delay, "player", False)
-add_cmd("motd",  None, cmd_motd,  "player", False)
-add_cmd("save",  None, cmd_save,  "player", False)
-add_cmd("quit",  None, cmd_quit,  "player", True)
+mudsys.add_cmd("stop",  None, cmd_stop,  "player", False)
+mudsys.add_cmd("clear", None, cmd_clear, "player", False)
+mudsys.add_cmd("delay", None, cmd_delay, "player", False)
+mudsys.add_cmd("motd",  None, cmd_motd,  "player", False)
+mudsys.add_cmd("save",  None, cmd_save,  "player", False)
+mudsys.add_cmd("quit",  None, cmd_quit,  "player", True)
 
 chk_can_save = lambda ch, cmd: not ch.is_npc
-add_cmd_check("save", chk_can_save)
-add_cmd_check("quit", chk_can_save)
+mudsys.add_cmd_check("save", chk_can_save)
+mudsys.add_cmd_check("quit", chk_can_save)

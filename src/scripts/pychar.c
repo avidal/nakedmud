@@ -33,6 +33,7 @@
 #include "pyexit.h"
 #include "pyaccount.h"
 #include "pyauxiliary.h"
+#include "pystorage.h"
 
 
 
@@ -479,6 +480,8 @@ int PyChar_setweight(PyObject *self, PyObject *value, void *closure) {
     charSetWeight(ch, 0.0);
   else if(PyFloat_Check(value))
     charSetWeight(ch, PyFloat_AsDouble(value));
+  else if(PyInt_Check(value))
+    charSetWeight(ch, PyInt_AsLong(value));
   else {
     PyErr_Format(PyExc_TypeError,
 		"Tried to change char %d's weight to an invalid type.",
@@ -734,7 +737,7 @@ PyObject *PyChar_send_raw(PyChar *self, PyObject *value) {
 
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch) {
-    send_to_char(ch, "%s", mssg);
+    text_to_char(ch, mssg);
     return Py_BuildValue("i", 1);
   }
   else {
@@ -746,22 +749,71 @@ PyObject *PyChar_send_raw(PyChar *self, PyObject *value) {
 }
 
 //
-// sends a newline-tagged message to the character
-PyObject *PyChar_send(PyChar *self, PyObject *value) {
-  PyObject *retval = PyChar_send_raw(self, value);
-  if(retval == NULL)
+// Send a message with Python statements potentially embedded in it. For 
+//evaluating 
+PyObject *PyChar_send(PyObject *self, PyObject *args, PyObject *kwds) {
+  static char *kwlist[] = { "mssg", "dict", "newline", NULL };
+  CHAR_DATA  *me = NULL;
+  char     *text = NULL;
+  PyObject *dict = NULL;
+  bool   newline = TRUE;
+
+  if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|Ob", kwlist, 
+				  &text, &dict, &newline)) {
+    PyErr_Format(PyExc_TypeError, "Char.send takes a message, a dictionary, and possibly a newline option.");
     return NULL;
-  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
-  send_to_char(ch, "\r\n");
-  Py_DECREF(retval);
-  return Py_BuildValue("i", 1);
+  }
+
+  // make sure the dictionary is a dictionary
+  if(dict != NULL && !(PyDict_Check(dict) || dict == Py_None)) {
+    PyErr_Format(PyExc_TypeError, "char.send expects second argument to be a dict object.");
+    return NULL;
+  }
+  
+  // make sure we exist
+  if( (me = PyChar_AsChar(self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Tried to send nonexistant character.");
+    return NULL;
+  }
+
+  // the text we are sending
+  BUFFER *buf = newBuffer(1);
+  bprintf(buf, "%s%s", text, (newline ? "\r\n" : ""));
+  
+  // are we sending as-is, or expanding embedded statements?
+  if(dict != NULL) {
+    // build the script dictionary
+    PyObject *script_dict = restricted_script_dict();
+    if(dict != Py_None)
+      PyDict_Update(script_dict, dict);
+    PyDict_SetItemString(script_dict, "me", self);
+
+    // do the expansion
+    expand_dynamic_descs_dict(buf, script_dict, get_script_locale());
+
+    // garbage collection and end
+    Py_XDECREF(script_dict);
+  }
+
+  // send the message
+  text_to_char(me, bufferString(buf));
+
+  // build the return value
+  PyObject *ret = Py_BuildValue("s", bufferString(buf));
+
+  // garbage collection
+  deleteBuffer(buf);
+
+  // return the value
+  return ret;
 }
 
 //
 // Send a newline-tagged message to everyone around the character
 PyObject *PyChar_sendaround(PyChar *self, PyObject *value) {
-  char *mssg = NULL;
-  if (!PyArg_ParseTuple(value, "s", &mssg)) {
+  char   *mssg = NULL;
+  bool newline = TRUE;
+  if (!PyArg_ParseTuple(value, "s|b", &mssg, &newline)) {
     PyErr_Format(PyExc_TypeError, 
                     "Characters may only be sent strings");
     return NULL;
@@ -769,7 +821,7 @@ PyObject *PyChar_sendaround(PyChar *self, PyObject *value) {
 
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch) {
-    send_around_char(ch, FALSE, "%s\r\n", mssg);
+    send_around_char(ch, FALSE, "%s%s", mssg, (newline ? "\r\n" : ""));
     return Py_BuildValue("i", 1);
   }
   else {
@@ -1519,6 +1571,30 @@ PyObject *PyChar_clear_look(PyObject *self, void *closure) {
   }
 }
 
+PyObject *PyChar_store(PyObject *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar(self);
+  if(ch == NULL) {
+    PyErr_Format(PyExc_TypeError, "failed to store nonexistent character.");
+    return NULL;
+  }
+  return newPyStorageSet(charStore(ch));
+}
+
+PyObject *PyChar_copy(PyObject *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar(self);
+  if(ch == NULL) {
+    PyErr_Format(PyExc_TypeError, "failed to copy nonexistent character.");
+    return NULL;
+  }
+  CHAR_DATA *newch = charCopy(ch);
+
+  // we have to put the object in the global tables and list, 
+  // or else Python will not be able to access it
+  char_to_game(newch);
+
+  return charGetPyForm(newch);
+}
+
 
 
 //*****************************************************************************
@@ -1783,6 +1859,22 @@ PyObject *PyChar_all_chars(PyObject *self) {
   return list;
 }
 
+PyObject *PyChar_read(PyObject *self, PyObject *args) {
+  PyObject *pyset = NULL;
+  if(!PyArg_ParseTuple(args, "O", &pyset)) {
+    PyErr_Format(PyExc_TypeError, "failed to read character from storage set.");
+    return NULL;
+  }
+  else if(!PyStorageSet_Check(pyset)) {
+    PyErr_Format(PyExc_TypeError, "storage set must be supplied to read.");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = charRead(PyStorageSet_AsSet(pyset));
+  char_to_game(ch);
+  return Py_BuildValue("O", charGetPyFormBorrowed(ch));
+}
+
 PyObject *PyChar_is_abstract(PyObject *self, PyObject *args) {
   char     *mob_key = NULL;
   if (!PyArg_ParseTuple(args, "s", &mob_key)) {
@@ -1800,18 +1892,33 @@ PyObject *PyChar_is_abstract(PyObject *self, PyObject *args) {
 }
 
 PyMethodDef char_module_methods[] = {
+  { "read",     PyChar_read, METH_VARARGS,
+    "read(storage_set)\n"
+    "\n"
+    "Read and return a character from a storage set." },
   { "char_list", (PyCFunction)PyChar_all_chars, METH_NOARGS,
-    "Return a python list containing an entry for every character in game." },
+    "char_list()\n"
+    "\n"
+    "Return a list of every character in game." },
   { "load_mob", PyChar_load_mob, METH_VARARGS,
-    "load a mobile with the specified prototype to a room." },
+    "load_mob(proto, room, pos = 'standing')\n"
+    "\n"
+    "Generate a new mobile from the specified prototype. Add it to the\n"
+    "given room. Return the created mobile." },
   { "count_mobs", PyChar_count_mobs, METH_VARARGS,
-    "count how many occurances of a mobile there are in the specified scope. "
-    "prototype or name can be used." },
+    "count_mobs(keyword, loc = None)\n"
+    "\n"
+    "count how many occurences of a mobile with the specified keyword, uid,\n"
+    "or prototype exist at a location. If loc is None, search the entire mud.\n"
+    "Loc can be a room, room prototype, or furniture object." },
   { "find_char_key", PyChar_find_char_key, METH_VARARGS,
-    "finds a character (or group of chars) by their prototype. Finding by "
-    "keywords is done with generic_find()" },
+    "Function has been deprecated. Entrypoint for generic_find()\n"
+    "Use mud.parse_args instead."  },
   { "is_abstract",   PyChar_is_abstract, METH_VARARGS,
-    "Returns whether a mob with the specified prototype is abstract." },
+    "is_abstract(proto)\n"
+    "\n"
+    "Returns whether a specified mob prototype is abstract. Also return True\n"
+    "if the prototype does not exist." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -1854,141 +1961,231 @@ PyMODINIT_FUNC init_PyChar(void) {
 
   // add in our setters and getters for the char class
   PyChar_addGetSetter("inv", PyChar_getinv, NULL,
-		      "returns a list of objects in the char's inventory");
+    "An immutable list of objects in the character's inventory.\n"
+    "See obj.Obj.carrier for altering an item's carrier.");
   PyChar_addGetSetter("objs", PyChar_getinv, NULL,
-		      "returns a list of objects in the char's inventory");
+    "An alias for inv to be consistent with how room and object contents are\n"
+    "accessed.");
   PyChar_addGetSetter("eq",   PyChar_geteq,  NULL,
-		      "returns a list of the character's equipment.");
+    "An immutable list of the character's worn equipment.\n"
+    "See equip() and unequip() for altering a characters worn items.");
   PyChar_addGetSetter("bodyparts", PyChar_getbodyparts, NULL,
-		      "Returns a list of the character's bodyparts");
+    "An immutable list naming all of the character's bodyparts.");
   PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
-		      "handle the character's name");
+    "The characer's name, e.g., Grunald the Baker.");
   PyChar_addGetSetter("mname", PyChar_getmname, PyChar_setmname,
-		      "handle the character's multi-name");
+    "The character's name for describing packs, e.g.,\n"
+    "a horde of 9001 mosquitos. The number should be replaced by %d, or not\n"
+    "included.");
   PyChar_addGetSetter("desc", PyChar_getdesc, PyChar_setdesc,
-		      "handle the character's description");
+    "A character's verbose description for e.g., when they are looked at.");
   PyChar_addGetSetter("look_buf", PyChar_getlookbuf, PyChar_setlookbuf,
-		      "handle the character's look buffer");
+    "When characters look at something, the thing's description is copied to\n"
+    "the character's look buffer for processing before being sent.");
   PyChar_addGetSetter("rdesc", PyChar_getrdesc, PyChar_setrdesc,
-		      "handle the character's room description");
+    "The character's description when seen in a room, e.g., \n"
+    "Bob is here, baking a cake.");
   PyChar_addGetSetter("mdesc", PyChar_getmdesc, PyChar_setmdesc,
-		      "handle the character's multi room description");
+    "The equivalent of mname, for room descriptions.");
   PyChar_addGetSetter("keywords", PyChar_getkeywords, PyChar_setkeywords,
-		      "comma-separated list of the character's keywords.");
+    "A comma-separated list of the keywords for referencing the character.");
   PyChar_addGetSetter("sex", PyChar_getsex, PyChar_setsex,
-		      "handle the character's gender");
+    "The character's sex. Can be male, female, or neutral.");
   PyChar_addGetSetter("gender", PyChar_getsex, PyChar_setsex,
-		      "handle the character's gender");
+    "Alias for char.Char.sex");
   PyChar_addGetSetter("race", PyChar_getrace, PyChar_setrace,
-		      "handle the character's race");
+    "The character's race.");
   PyChar_addGetSetter("pos", PyChar_getposition, PyChar_setposition,
-		      "handle the character's position");
+    "Alias for char.Char.position.");
   PyChar_addGetSetter("position", PyChar_getposition, PyChar_setposition,
-		      "handle the character's position");
+    "The character's current position (e.g., standing, sleeping, sitting).");
   PyChar_addGetSetter("room", PyChar_getroom, PyChar_setroom,
-		      "handle the character's room");
+    "The current room a character is in. Can be set by room or room key.");
   PyChar_addGetSetter("last_room", PyChar_getlastroom, NULL,
-		      "the last room the character was in");
+    "The last room a character was in. Immutable. Value is None if character\n"
+    "was not previously in a room.");
   PyChar_addGetSetter("on", PyChar_geton, PyChar_seton,
-   "The furniture the character is sitting on/at. If the character is not "
-   "on furniture, None is returned. To remove a character from furniture, "
-  "then use None");
+   "The furniture the character is sitting on/at. Value is None if character\n"
+   "is not currently on furniture. Set value to None to remove a character\n"
+   "from their furniture.");
   PyChar_addGetSetter("uid", PyChar_getuid, NULL,
-		      "the character's unique identification number");
+    "The character's unique identification number. Immutable.");
   PyChar_addGetSetter("prototypes", PyChar_getprototypes, NULL,
-		      "The prototypes for a mobile");
+   "A comma-separated list of prototypes the mobile inherits from. Immutable.");
   PyChar_addGetSetter("mob_class", PyChar_getclass, NULL,
-		      "The main prototype of the mobile.");
+    "The main prototype the mobile inherits from. Immutable.");
   PyChar_addGetSetter("is_npc", PyChar_getisnpc, NULL,
-		      "Returns 1 if the char is an NPC, and 0 otherwise.");
+    "Value is True if character is an NPC, and False otherwise. Immutable.");
   PyChar_addGetSetter("is_pc", PyChar_getispc, NULL,
-		      "Returns 1 if the char is a PC, and 0 otherwise.");
+    "Value is negation of char.Char.is_npc");
   PyChar_addGetSetter("hisher", PyChar_gethisher, NULL,
-		      "Returns 'his' if the char is male, 'her' if female, and "
-		      "'its' for neuters");
+    "Value is 'his', 'her', or 'its'. Immutable.");
   PyChar_addGetSetter("himher", PyChar_gethimher, NULL,
-		      "Returns 'him' if the char is male, 'her' if female, and "
-		      "'it' for neuters");
+    "Value is 'him', 'her', or 'it'. Immutable.");
   PyChar_addGetSetter("heshe", PyChar_getheshe, NULL,
-		      "Returns 'he' if the char is male, 'she' if female, and "
-		      "'it' for neuters");
+    "Value is 'he', 'she', or 'it'. Immutable.");
   PyChar_addGetSetter("user_groups", PyChar_getusergroups, NULL,
-		      "Returns the character's user groups");
+    "A comma-separated list of user groups the character belongs to.\n"
+    "Use char.Char.isInGroup(group) to check for a specific group. Immutable.");
   PyChar_addGetSetter("socket", PyChar_getsocket, NULL,
-		      "Returns the character's socket if it exists.");
+    "The current socket this character is attached to. Value is None if \n"
+    "socket does not exist. Immutable. Use mudsys.attach_char_socket to \n"
+    "attach a character and socket to each other.");
   PyChar_addGetSetter("sock",   PyChar_getsocket, NULL,
-		      "Returns the character's socket if it exists.");
+    "Alias for char.Char.socket");
   PyChar_addGetSetter("hidden", PyChar_gethidden, PyChar_sethidden,
-		      "integer value representing how hidden the char is.");
+    "Integer value representing how hidden the character is. Default is 0.");
   PyChar_addGetSetter("weight", PyChar_getweight, PyChar_setweight,
-		      "double value representing how heavy we are.");
+    "Floating point value representing how heavy the character is.");
   PyChar_addGetSetter("age", PyChar_getage, NULL,
-		      "how old, in seconds, are we");
+    "Value is the difference between the character's creation time and the\n"
+    "current system time. Immutable.");
   PyChar_addGetSetter("birth", PyChar_getbirth, NULL,
-		      "when were we created");
+    "Value is the character's creation time (system time). Immutable.");
 
   // add in all of our methods for the Char class
   PyChar_addMethod("attach", PyChar_attach, METH_VARARGS,
-		   "attach a new script to the character.");
+    "attach(trigger)\n"
+    "\n"
+    "Attach a trigger to the character by key name.");
   PyChar_addMethod("detach", PyChar_detach, METH_VARARGS,
-		   "detach an old script from the character.");
-  PyChar_addMethod("send", PyChar_send, METH_VARARGS,
-		   "send a message to the character with appended newline.");
+    "detach(trigger)\n"
+    "\n"
+    "Detach a trigger from the character by key name.");
+  PyChar_addMethod("send", PyChar_send, METH_KEYWORDS,
+    "send(mssg, script_dict = None, newline = True)\n"
+    "\n"
+    "Sends message to the character. Messages can have scripts embedded in\n" 
+    "them, using [ and ]. If so, a variable dictionary must be provided. By\n"
+    "default, 'me' references the character being sent the message.");
   PyChar_addMethod("send_raw", PyChar_send_raw, METH_VARARGS,
-		   "send a message to the character.");
+    "send_raw(mssg)\n"
+    "\n"
+    "Sends message to the character with no newline appended.");
   PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
-		   "send a message to everyone around the character.");
+    "sendaround(mssg, newline=True)\n"
+    "\n"
+    "Sends message to everyone else in the same room as the character.");
   PyChar_addMethod("act", PyChar_act, METH_VARARGS,
-		   "make the character perform an action.");
+    "act(command)\n"
+    "\n"
+    "Simulate a character typing in a command.");
   PyChar_addMethod("getvar", PyChar_getvar, METH_VARARGS,
-		   "get the value of a special variable the character has.");
+    "getvar(name)\n"
+    "\n"
+    "Return value of a special variable. Return 0 if no value has been set.");
   PyChar_addMethod("setvar", PyChar_setvar, METH_VARARGS,
-		   "set the value of a special variable the character has.");
+    "setvar(name, val)\n"
+    "\n"
+    "Set value of a special variable for the character. Values must be\n"
+    "strings or numbers. This function is intended to allow scripts and\n"
+    "triggers to open-endedly add variables to characters.");
   PyChar_addMethod("hasvar", PyChar_hasvar, METH_VARARGS,
-		   "return whether or not the character has a given variable.");
+    "hasvar(name)\n"
+    "\n"
+    "Return True if a character has the given special variable. False otherwise.");
   PyChar_addMethod("deletevar", PyChar_deletevar, METH_VARARGS,
-		   "delete a variable from the character's variable table.");
+    "deletevar(name)\n"
+    "\n"
+    "Deletes a special variable from a character if they have one by the\n"
+    "given name.");
   PyChar_addMethod("delvar", PyChar_deletevar, METH_VARARGS,
-		   "delete a variable from the character's variable table.");
+    "Alias for char.Char.deletevar(name)");
   PyChar_addMethod("equip", PyChar_equip, METH_VARARGS,
-		   "equips a character with the given item. Removes the item "
-		   "from whatever it is currently in/on.");
+    "equip(obj, positions=None, forced=False)\n"
+    "\n"
+    "Attempts to equip an object to the character's body. Positions can be a\n"
+    "comma-separated list of position names or position types. If positions\n"
+    "is None and object is of type 'worn', attempt to equip the object to\n"
+    "its default positions. Setting forced to True allows non-worn objects\n"
+    "to be equipped, or worn objects to be equipped to their non-default\n"
+    "positions. Returns success of attempt.");
   PyChar_addMethod("get_equip", PyChar_getequip, METH_VARARGS,
-		   "Returns the person's equipment in the specified slot.");
+    "get_equip(bodypart)\n"
+    "\n"
+    "Returns object currently equipped to the character's bodypart, or None.");
   PyChar_addMethod("get_slots", PyChar_getslots, METH_VARARGS,
-		   "Returns the slots occupied by the piece of equipment.");
+    "get_slots(obj)\n"
+    "\n"
+    "Returns a comma-separated list of bodypart names currently occupied by\n"
+    "the object.");
   PyChar_addMethod("get_slot_types", PyChar_getslottypes, METH_VARARGS,
-		   "Returns the slot types occupied by the equipment.");
+    "get_slot_types(obj)\n"
+    "\n"
+    "Returns a list of the bodypart types currently occupied by the object.\n"
+    "Returns an empty list of the object is not equipped to this character.");
   PyChar_addMethod("get_bodypct", PyChar_getbodypct, METH_VARARGS,
-		   "Returns the percent mass of the character's body taken up "
-		   "by the specified parts.");
+    "get_bodypct(posnames)\n"
+    "\n"
+    "Returns the percent mass of the character's body taken up by the\n"
+    "specified parts. Bodyparts must be a comma-separated list.");
   PyChar_addMethod("isActing", PyChar_is_acting, METH_NOARGS,
-		   "Returns True if the character is currently taking an "
-		   "action, and False otherwise.");
+    "isActing()\n"
+    "\n"
+    "Returns True if the character is currently taking an action, and False\n"
+    "otherwise.");
   PyChar_addMethod("startAction", PyChar_start_action, METH_VARARGS,
-		   "Begins the character starting a new action");
+    "startAction(delay, on_complete, on_interrupt=None, data=None, arg='')\n"
+    "\n"
+    "Begins a new delayed action for the character. Delay is in seconds.\n"
+    "on_complete is a function taking three arguments: the character, the\n"
+    "data, and the argument. Argument must be a string, data can be anything.\n"
+    "on_interrupt takes the same arguments as on_complete, but is instead\n"
+    "called if the character's action is interrupted.");
   PyChar_addMethod("interrupt", PyChar_interrupt_action, METH_NOARGS,
-		   "Interrupts the character's current action.");
+    "interrupt()\n"
+    "\n"
+    "Cancel any action the character is currently taking.");
   PyChar_addMethod("getAuxiliary", PyChar_get_auxiliary, METH_VARARGS,
-		   "get's the specified piece of aux data from the char");
+    "getAuxiliary(name)\n"
+    "\n"
+    "Returns character's auxiliary data of the specified name.");
   PyChar_addMethod("aux", PyChar_get_auxiliary, METH_VARARGS,
-		   "get's the specified piece of aux data from the char");
+    "Alias for char.Char.getAuxiliary(name)");
   PyChar_addMethod("cansee", PyChar_cansee, METH_VARARGS,
-		   "returns whether or not a char can see an obj or mob.");
+    "cansee(thing)\n"
+    "\n"
+    "Returns whether a character can see the specified object, exit, or other\n"
+    "character.");
   PyChar_addMethod("see_as", PyChar_see_as, METH_VARARGS,
-		   "returns what the character sees the thing as.");
+    "see_as(thing)\n"
+    "\n"
+    "Returns the name by which a character sees a specified object, exit, or\n"
+    "other character.");
   PyChar_addMethod("page", PyChar_page, METH_VARARGS,
-		   "page a bunch of text to the character.");
+    "page(text)\n"
+    "\n"
+    "Send text to the character in paginated form e.g., for helpfiles and\n."
+    "other large blocks of text.");
   PyChar_addMethod("isinstance", PyChar_isinstance, METH_VARARGS,
-		   "returns whether or not the char inherits from the proto");
+    "isinstance(prototype)\n"
+    "\n"
+    "returns whether the character inherits from a specified mob prototype.");
   PyChar_addMethod("isInGroup", PyChar_is_in_groups, METH_VARARGS,
-		   "returns whether or not the character belongs to one of the groups");
+    "isInGroup(usergroup)\n"
+    "\n"
+    "Returns whether a character belongs to a specified user group.");
   PyChar_addMethod("hasPrefs", PyChar_hasPreferences, METH_VARARGS,
-		   "Return if the character has the specified preference.");
+    "hasPrefs(char_prefs)\n"
+    "\n"
+    "Return whether character has any of the specified character preferences.\n"
+    "Multiples can be specified as a comma-separated string.");
   PyChar_addMethod("append_look", PyChar_append_look, METH_VARARGS,
-		   "Append text to the character's look buffer.");
+    "append_look(text)\n"
+    "\n"
+    "Adds text to the character's current look buffer.");
   PyChar_addMethod("clear_look",  PyChar_clear_look, METH_VARARGS,
-		   "Clear the character's look buffer.");
+    "clear_look()\n"
+    "\n"
+    "Clear the character's current look buffer.");
+  PyChar_addMethod("store", PyChar_store, METH_NOARGS,
+    "store()\n"
+    "\n"
+    "Return a storage set representing the character.");
+  PyChar_addMethod("copy", PyChar_copy, METH_NOARGS,
+    "copy()\n"
+    "\n"
+    "Returns a copy of the character.");
 
   // add in all the getsetters and methods
   makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);
@@ -2001,7 +2198,8 @@ PyMODINIT_FUNC init_PyChar(void) {
 
   // load the module
   m = Py_InitModule3("char", char_module_methods,
-		     "The char module, for all char/mob-related MUD stuff.");
+    "Contains the Python wrapper for characters, and utilities for searching,\n"
+    "storing, and generating NPCs from mob prototypes.");
   
   // make sure it loaded OK
   if (m == NULL)

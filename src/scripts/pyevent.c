@@ -170,12 +170,19 @@ PyObject *PyEvent_interrupt_event(PyObject *self, PyObject *args) {
 // the all methods that are contained within the event module
 PyMethodDef event_module_methods[] = {
   {"start_event",  PyEvent_start_event, METH_VARARGS,
-   "Add a new python event to the event queue."},
+   "start_event(owner, delay, event_func, data=None, arg='')\n\n"
+   "Queue a new delayed event, to go off after delay seconds. Events are\n"
+   "cancelled when their owner is extracted. Owners can be characters, \n"
+   "objects, rooms, or None. The event function should take three arguments:\n"
+   "the event owner, the event data, and the string argument. Data is an\n"
+   "optional argument that can be of any type. Arg is an optional argument\n"
+   "that must be a string." },
   {"start_update",  PyEvent_start_update, METH_VARARGS,
-   "Add a new python update to the event queue. Like an event, but readds "
-   "itself to the event queue after completion."},
+   "Deprecated. For repeating events, use events that manually re-queue\n"
+   "their selves." },
   {"interrupt_events_involving",  PyEvent_interrupt_event, METH_VARARGS,
-   "Interrupt all of the events involving the given object, room, or char."},
+   "interrupt_events_involving(thing)\n\n"
+   "Interrupt all events involving a given object, room, or character."},
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -185,5 +192,6 @@ PyMethodDef event_module_methods[] = {
 // implementation of pyevent.h
 //*****************************************************************************
 PyMODINIT_FUNC init_PyEvent(void) {
-  Py_InitModule3("event", event_module_methods, "The mud's event handler.");
+  Py_InitModule3("event", event_module_methods, 
+    "The event module handles delayed function calls.");
 }

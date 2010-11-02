@@ -418,6 +418,7 @@ PyObject *PySocket_all_sockets(PyObject *self) {
 
 PyMethodDef socket_module_methods[] = {
   { "socket_list", (PyCFunction)PySocket_all_sockets, METH_NOARGS,
+    "socket_list()\n\n"
     "Returns a list of all sockets currently connected." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
@@ -461,52 +462,70 @@ init_PySocket(void) {
 
     // add all of the basic getsetters
     PySocket_addGetSetter("uid", PySocket_getuid, NULL,
-			   "the socket's uid.");
+      "The socket's uid. Immutable.");
     PySocket_addGetSetter("account", PySocket_getaccount, NULL,
-			   "the socket's account.");
+      "The account currently attached to the socket, or None. Immutable.\n"
+      "see mudsys.attach_account_socket for connecting sockets and accounts.");
     PySocket_addGetSetter("character", PySocket_getchar, NULL,
-			   "the socket's character.");
+      "The character currently attached to the socket, on None. Immutable.\n"
+      "see mudsys.attach_char_socket for connecting characters to account.");
     PySocket_addGetSetter("char", PySocket_getchar, NULL,
-			   "the socket's character.");
+       "Alias for mudsock.Mudsock.character");
     PySocket_addGetSetter("ch",   PySocket_getchar, NULL,
-			   "the socket's character.");
+       "Alias for mudsock.Mudsock.character.");
     PySocket_addGetSetter("has_input", PySocket_getcmdread, NULL,
-			  "Have we read any input this iteration?");
+       "True or False if the socket has any input pending. Immutable.");
     PySocket_addGetSetter("outbound_text",
-			  PySocket_get_outbound_text,PySocket_set_outbound_text,
-			  "the socket's outbound text.");
-    PySocket_addGetSetter("can_use",
-			  PySocket_get_can_use, NULL,
-			  "Returns whether or not the socket is ready for use. "
-			  "Sockets become available after their dns resolves.");
+       PySocket_get_outbound_text, PySocket_set_outbound_text,
+       "The socket's outbound text.");
+    PySocket_addGetSetter("can_use", PySocket_get_can_use, NULL,
+      "True or False if the socket is ready for use. Socket becomes available\n"
+      "after its dns addresss resolves. Immutable.");
     PySocket_addGetSetter("state", PySocket_getstate, NULL,
-			  "Returns the state that the socket is in.");
+      "The state that the socket is in. Immutable. For more on states see\n"
+      "mudsock.Mudsock.push_ih");
     PySocket_addGetSetter("idle_time", PySocket_getidletime, NULL,
-			  "Returns how long (seconds) we've been idle.");
+      "How long (in seconds) the socket's input handler has been idle for. Immutable.");
     PySocket_addGetSetter("hostname", PySocket_gethostname, NULL,
-			  "return where we are connected from.");
+      "The dns address that the socket is connected from. Immutable.");
 
     // add all of the basic methods
     PySocket_addMethod("getAuxiliary", PySocket_get_auxiliary, METH_VARARGS,
-		       "gets the socket auxiliary data with given key.");
+      "getAuxiliary(name)\n\n"
+      "Returns socket's auxiliary data of the specified name.");
     PySocket_addMethod("aux", PySocket_get_auxiliary, METH_VARARGS,
-		       "gets the socket auxiliary data with given key.");
+      "Alias for mudsock.Mudsock.getAuxiliary");
     PySocket_addMethod("send", PySocket_send, METH_VARARGS,
-		       "sends text to the socket with appended newline.");
+      "send(mssg)\n\n"
+      "Sends text to the socket with appended newline.");
     PySocket_addMethod("send_raw", PySocket_send_raw, METH_VARARGS,
-		       "sends text to the socket.");
+      "send_raw(mssg)\n\n"
+      "Sends text to the socket. No appended newline.");
     PySocket_addMethod("pop_ih", PySocket_pop_ih, METH_NOARGS,
-			"Pops the socket's current input handler.");
+      "pop_ih()\n\n"
+      "Pops the socket's current input handler from its input handler stack.");
     PySocket_addMethod("push_ih", PySocket_push_ih, METH_VARARGS,
-			"pushes on a new input handler.");
+      "push_ih(handler_func, prompt_func, state=None)\n\n"
+      "Pushes a new input handler and prompt pair onto the socket's input\n"
+      "handler stack. Optionally, a (String) state value can be supplied.\n"
+      "Input handlers take two arguments: the socket and a string command.\n"
+      "Prompts take one argument: the socket. They should send the relevant\n"
+      "text for the prompt to the socket.");
     PySocket_addMethod("replace_ih", PySocket_replace_ih, METH_VARARGS,
-		       "replaces the socket's input handler.");
+      "repalce_ih(handler_func, prompt_func, state=None)\n\n"
+      "Calls pop_ih, followed by push_ih.");
     PySocket_addMethod("close", PySocket_close, METH_VARARGS,
-		       "closes the socket.");
+      "close()\n\n"
+      "Closes the socket's connection.");
     PySocket_addMethod("bust_prompt", PySocket_bust_prompt, METH_NOARGS,
-		       "busts the socket's prompt so it will be displayed.");
+      "bust_prompt()\n\n"
+      "Busts the socket's prompt so it will be displayed next pulse.");
     PySocket_addMethod("edit_text", PySocket_edit_text, METH_VARARGS, 
-		       "enter the text editor and begin editing something.");
+      "edit_text(dflt_value, on_complete, mode='text')\n\n"
+      "Enter the text editor, and set its default value. When the text editor\n"
+      "is edited, call on_complete. This function should take two arguments:\n"
+      "the socket doing the editing, and the output of the editor. Mode can\n"
+      "be 'text' or 'script'.");
 
     // add in all the getsetters and methods
     makePyType(&PySocket_Type, pysocket_getsetters, pysocket_methods);
@@ -519,8 +538,8 @@ init_PySocket(void) {
 
     // initialize the module
     module = Py_InitModule3("mudsock", socket_module_methods,
-			    "The socket module, for all MUD socket-related "
-			    "stuff.");
+      "Contains the Python wrapper for sockets, and utilities for listing\n"
+      "currently connected sockets.");
 
     // make sure the module parsed OK
     if (module == NULL)

@@ -369,15 +369,25 @@ void PyOLC_addMethod(const char *name, void *f, int flags, const char *doc) {
 PyMODINIT_FUNC
 init_PyOLC(void) {
   // add all of our methods
-  PyOLC_addMethod("do_olc", pyolc_do_olc, METH_VARARGS,"Enter the OLC editor.");
+  PyOLC_addMethod("do_olc", pyolc_do_olc, METH_VARARGS,
+    "do_olc(sock, menu_func, chooser_func, parse_func, saver_func, data, autosave=False)\n\n"
+    "Entry point to the olc system. See olc2/olc.h for documentation.");
   PyOLC_addMethod("item_add_olc", pyolc_item_add_olc, METH_VARARGS, 
-		  "Add a new OLC for editing a Python item type.");
+    "item_add_olc(itemtype, menu_func, chooser_func, parse_func,\n"
+    "             fromproto_func, toproto_func)\n\n"
+    "Register a new olc handler for an item type. See items/iedit.h for\n"
+    "documentation.");
   PyOLC_addMethod("extend", pyolc_extend, METH_VARARGS,
-		  "Extends an already existing OLC command");
+    "extend(olc_type, optname, menu_func, chooser_func, parse_func = None,\n"
+    "       fromproto_func = None, toproto_func = None)\n\n"
+    "Register a new olc menu extender. Types are medit, redit, and oedit. See\n"
+    "olc2/olc_extender.h for documentation.");
 
   // create the module
   PyObject *m = Py_InitModule3("olc", makePyMethods(pyolc_methods),
-			       "The Python module for OLC.");
+    "This is the Python wrapper for the online creation module. Allows users\n"
+    "to set up new menus and handlers for editing data, such as characters,\n"
+    "while online.");
 
   // set some important OLC values as well
   PyObject_SetAttrString(m, "MENU_NOCHOICE", Py_BuildValue("i", MENU_NOCHOICE));

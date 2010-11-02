@@ -42,6 +42,8 @@ base_colours = { c_none    : '0',
 # colour processing hooks
 ################################################################################
 def process_colour_hook(info):
+    """When outbound text is being processed, find colour codes and replace them
+       by the proper colour escape sequences."""
     sock,  = hooks.parse_info(info)
     buf    = sock.outbound_text
     newbuf = []

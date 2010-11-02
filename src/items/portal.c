@@ -399,13 +399,14 @@ void init_portal(void) {
 
   // make it so we can set portal destinations in scripts
   PyObj_addGetSetter("portal_dest", PyObj_getportaldest, PyObj_setportaldest,
-		     "the database key of the room we're going to.");
+    "A string key specifying the destination of the portal. Can be set by\n"
+    "a string or the actual room.");
   PyObj_addGetSetter("portal_enter_mssg", 
-		     PyObj_getportalentermssg, PyObj_setportalentermssg,
-		     "The message shown when user enters a new room.");
+    PyObj_getportalentermssg, PyObj_setportalentermssg,
+    "The message shown to the desination room when a character enters portal.");
   PyObj_addGetSetter("portal_leave_mssg", 
-		     PyObj_getportalleavemssg, PyObj_setportalleavemssg,
-		     "The message shown when user leaves a room.");
+    PyObj_getportalleavemssg, PyObj_setportalleavemssg,
+    "The message shown to a room after a character leaves it via a portal.");
 
   add_cmd("enter", NULL, cmd_enter, "player", TRUE);
   add_cmd_check("enter", chk_can_move);

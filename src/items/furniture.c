@@ -312,8 +312,8 @@ void init_furniture(void) {
 
   // add our getters and setters for furniture
   PyObj_addGetSetter("furniture_capacity", 
-		     PyObj_getfurncapacity, PyObj_setfurncapacity,
-		     "The capacity of a furniture object.");
+    PyObj_getfurncapacity, PyObj_setfurncapacity,
+    "The number of characters a furniture object can accomodate.");
   PyObj_addGetSetter("furniture_type", PyObj_getfurntype, PyObj_setfurntype,
-		     "The type of furniture this is: 'at' or 'on'.");
+    "The type of furniture this is: 'at' or 'on' like e.g., tables vs. couches.");
 }

@@ -1,8 +1,8 @@
 //*****************************************************************************
 //
-// py_char.c
+// pyobj.c
 //
-// A python extention to allow python scripts to treat MUD characters as an
+// A python extention to allow python scripts to treat MUD objects as a Python
 // object within the script.
 //
 //*****************************************************************************
@@ -874,6 +874,20 @@ PyObject *PyObj_store(PyObject *self, void *closure) {
   return ret;
 }
 
+PyObject *PyObj_copy(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_TypeError, "failed to copy nonexistent object.");
+    return NULL;
+  }
+  OBJ_DATA *newobj = objCopy(obj);
+
+  // we have to put the object in the global tables and list, 
+  // or else Python will not be able to access it
+  obj_to_game(newobj);
+
+  return objGetPyForm(newobj);
+}
 
 
 
@@ -1198,20 +1212,32 @@ PyObject *PyObj_read(PyObject *self, PyObject *args) {
 
 PyMethodDef obj_module_methods[] = {
   { "read",     PyObj_read, METH_VARARGS,
-    "read an object from a storage set." },
+    "read(storage_set)\n"
+    "\n"
+    "Read and return an object from a storage set." },
   { "obj_list", (PyCFunction)PyObj_all_objs, METH_NOARGS,
-    "Return a python list containing an entry for every object in game." },
+    "obj_list()\n"
+    "\n"
+    "Return a list containing every object in the game." },
   { "load_obj", PyObj_load_obj, METH_VARARGS,
-    "load a object with the specified oproto to a room." },
+    "load_obj(prototype, where=None, equip_to='')\n"
+    "\n"
+    "Generate a new object from the specified prototype. Add it to where.\n"
+    "Where can be a room, character, or container. If where is a character,\n"
+    "add the object to the character's inventory unless a comma-separated\n"
+    "list of bodypart name of positions is specified. Return the created object." },
   { "count_objs", PyObj_count_objs, METH_VARARGS,
-    "count how many occurances of an object there are in the specified scope. "
-    "prototype or name can be used."},
+    "count_objs(keyword, loc = None)\n"
+    "\n"
+    "count how many occurences of an object with the specified keyword, uid,\n"
+    "or prototype exist at a location. If loc is None, search the entire mud.\n"
+    "Loc can be a room, character, or container object." },
   { "find_obj", PyObj_find_obj, METH_VARARGS,
-    "Takes a string argument, and returns the object(s) in the scope that "
-    "correspond to what the string is searching for."},
+    "function has been deprecated. Entrypoint for generic_find().\n"
+    "Use mud.parse_args instead." },
   { "find_obj_key", PyObj_find_obj_key, METH_VARARGS,
-    "Takes a string argument, and returns the object(s) in the scope that "
-    "are an instance of the specified class."},
+    "function has been deprecated. Entrypoint for generic_find().\n"
+    "Use mud.parse_args instead." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -1253,77 +1279,112 @@ init_PyObj(void) {
 
     // getters and setters
     PyObj_addGetSetter("contents", PyObj_getcontents, NULL,
-		       "the object's contents");
+      "A list of other objects contained within this one. Immutable.\n"
+      "See obj.Obj.container for changing an object's container.");
     PyObj_addGetSetter("objs", PyObj_getcontents, NULL,
-		       "the object's contents");
+      "Alias for obj.Obj.contents");
     PyObj_addGetSetter("chars", PyObj_getchars, NULL,
-		       "the characters sitting on/riding the object");
+      "A list of characters currently sitting/riding this object. Immutable.\n"
+      "See char.Char.furniture for changing a character's furniture.");
     PyObj_addGetSetter("name", PyObj_getname, PyObj_setname,
-		       "the object's name");
+      "The object's name e.g., a longsword");
     PyObj_addGetSetter("mname", PyObj_getmname, PyObj_setmname,
-		       "the object's multi-name");
+      "The object's name for describing packs, e.g.,\n"
+      "a stack of 12 linen towels. The number should be replaced by %d, or\n"
+      "not included.");
     PyObj_addGetSetter("desc", PyObj_getdesc, PyObj_setdesc,
-		       "the object's long description");
+      "An object's verbose description e.g., for when it is looked at.");
     PyObj_addGetSetter("rdesc", PyObj_getrdesc, PyObj_setrdesc,
-		       "the object's room description");
+      "The object's description when seen in a room, e.g.,\n"
+      "a longsword is here, gleaming in the sun.");
     PyObj_addGetSetter("mdesc", PyObj_getmdesc, PyObj_setmdesc,
-		       "the object's multi room description");
+      "the equivalent of mname, for room descriptions.");
     PyObj_addGetSetter("keywords", PyObj_getkeywords, PyObj_setkeywords,
-		       "the object's keywords");
+      "A comma-separated list of keywords for referencing the object.");
     PyObj_addGetSetter("weight", PyObj_getweight, PyObj_setweight,
-		       "the object's weight (plus contents)");
-    PyObj_addGetSetter("weight_raw", PyObj_get_weight_raw, NULL,
-		       "the object's weight (minus contents)");
+      "The object's weight (plus contents). When setting a new value, \n"
+      "sets raw weight (minus contents).");
+    PyObj_addGetSetter("weight_raw", PyObj_get_weight_raw, PyObj_setweight,
+      "The object's weight (minus contents)");
     PyObj_addGetSetter("uid", PyObj_getuid, NULL,
-		       "the object's unique identification number");
+      "The object's unique identification number. Immutable.");
     PyObj_addGetSetter("prototypes", PyObj_getprototypes, NULL,
-		       "a comma-separated list of this obj's prototypes.");
+      "A comma-separated list of prototypes this object inherits from. Immutable");
     PyObj_addGetSetter("bits", PyObj_getbits, PyObj_setbits,
-		       "the object's basic bitvector.");
+      "A comma-separated list of bits currently toggled for this object.");
     PyObj_addGetSetter("carrier", PyObj_getcarrier, PyObj_setcarrier,
-		       "the person carrying the object");
+      "The character whose inventory this object is currently in, or None.");
     PyObj_addGetSetter("wearer", PyObj_getwearer, NULL,
-		       "the person wearing this object");
+      "The character who is currently wearing this object, or None.");
     PyObj_addGetSetter("room", PyObj_getroom, PyObj_setroom,
-		       "The room this object is in. "
-		       "None if on a character or in another object");
+      "The room this object is current in, or None.");
     PyObj_addGetSetter("container", PyObj_getcontainer, PyObj_setcontainer,
-		       "The container this object is in. "
-		       "None if on a character or in a room");
+      "The container this object is currently in, or None.");
     PyObj_addGetSetter("hidden", PyObj_gethidden, PyObj_sethidden,
-		       "integer value representing how hidden the object is.");
+      "Integer value representing how hard this object is to see.");
     PyObj_addGetSetter("age", PyObj_getage, NULL,
-		       "how old, in seconds, are we");
+      "Value is the difference between the object's creation time and the\n"
+      "current system time. Immutable.");
     PyObj_addGetSetter("birth", PyObj_getbirth, NULL,
-		       "when were we created");
+      "Value is the object's creation time (system time). Immutable.");
 
     // methods
     PyObj_addMethod("attach", PyObj_attach, METH_VARARGS,
-		    "attach a new script to the object");
+      "attach(trigger)\n"
+      "\n"
+      "Attach a trigger to the object by key name.");
     PyObj_addMethod("detach", PyObj_detach, METH_VARARGS,
-		    "detach an old script from the object, by vnum");
+      "detach(trigger)\n"
+      "\n"
+      "Detach a trigger from the object by key name.");
     PyObj_addMethod("isinstance", PyObj_isinstance, METH_VARARGS,
-		    "checks to see if the object inherits from the class");
+      "isinstance(prototype)\n"
+      "\n"
+      "returns whether the object inherits from a specified obj prototype.");
     PyObj_addMethod("edesc", PyObj_edesc, METH_VARARGS,
-		    "adds an extra description to the object.");
+      "edesc(keywords, desc)\n"
+      "\n"
+      "Create an extra description for the object, accessible via a comma-\n"
+      "separated list of keywords.");
     PyObj_addMethod("getAuxiliary", PyObj_get_auxiliary, METH_VARARGS,
-		    "get's the specified piece of aux data from the obj");
+      "getAuxiliary(name)\n"
+      "\n"
+      "Returns object's auxiliary data of the specified name.");
     PyObj_addMethod("aux", PyObj_get_auxiliary, METH_VARARGS,
-		    "get's the specified piece of aux data from the obj");
+      "Alias for obj.Obj.getAuxiliary(name)");
     PyObj_addMethod("getvar", PyObj_getvar, METH_VARARGS,
-		    "get the value of a special variable the object has.");
+      "getvar(name)\n"
+      "\n"
+      "Return value of a special variable. Return 0 if no value has been set.");
     PyObj_addMethod("setvar", PyObj_setvar, METH_VARARGS,
-		    "set the value of a special variable the object has.");
+      "setvar(name, val)\n"
+      "\n"
+      "Set value of a special variable for the object. Values must be strings\n"
+      "or numbers. This function is intended to allow scripts and triggers to"
+      "open-endedly add variables to objects.");
     PyObj_addMethod("hasvar", PyObj_hasvar, METH_VARARGS,
-		    "return whether or not the object has a given variable.");
+      "hasvar(name)\n"
+      "\n"
+      "Return True if object has the given special variable. False otherwise.");
     PyObj_addMethod("deletevar", PyObj_deletevar, METH_VARARGS,
-		    "delete a variable from the object's variable table.");
+      "deletevar(name)\n"
+      "\n"
+      "Deletes a special variable from an object if they have one by the\n"
+      "given name.");
     PyObj_addMethod("delvar", PyObj_deletevar, METH_VARARGS,
-		    "delete a variable from the object's variable table.");
+      "Alias for obj.Obj.deletevar(name)");
     PyObj_addMethod("fromall", PyObj_fromall, METH_NOARGS,
-		    "remove from room, character, and containers.");
+      "fromall()\n"
+      "\n"
+      "Remove object from whichever room, character, or container it is in.");
     PyObj_addMethod("store", PyObj_store, METH_NOARGS,
-		    "return a storage set for the object.");
+      "store()\n"
+      "\n"
+      "Return a storage set representing the object.");
+    PyObj_addMethod("copy", PyObj_copy, METH_NOARGS,
+      "copy()\n"
+      "\n"
+      "Returns a copy of the object.");
 
     makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
     deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;
@@ -1335,7 +1396,8 @@ init_PyObj(void) {
 
     // make the obj module
     m = Py_InitModule3("obj", obj_module_methods,
-                       "The object module, for all object-related MUD stuff.");
+      "Contains the Python wrapper for game objects. Also contains utilities\n"
+      "for listing, storing, and generating objects from prototypes.");
 
     // make sure the obj module parsed OK
     if (m == NULL)

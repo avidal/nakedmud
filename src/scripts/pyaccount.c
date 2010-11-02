@@ -280,17 +280,21 @@ init_PyAccount(void) {
 
     // add all of the basic getsetters
     PyAccount_addGetSetter("name", PyAccount_getname, NULL, 
-			   "the account's name.");
+			   "The account's name. Immutable.");
 
     // add all of the basic methods
     PyAccount_addMethod("add_char", PyAccount_add_char, METH_VARARGS,
-			"adds a character to the account.");
+      "add_char(name_or_char)\n\n"
+      "Adds a new character to an account's list of registered characters.");
     PyAccount_addMethod("characters", PyAccount_characters, METH_VARARGS,
-			"lists names of all characters tied to the account.");
+      "characters()\n\n"
+      "Returns a list of names for characters registered to the account.");
     PyAccount_addMethod("getAuxiliary", PyAccount_get_auxiliary, METH_VARARGS,
-			"gets the account auxiliary data with given key.");
+      "getAuxiliary(name)\n"
+      "\n"
+      "Returns account's auxiliary data of the specified name.");
     PyAccount_addMethod("aux", PyAccount_get_auxiliary, METH_VARARGS,
-			"gets the account auxiliary data with given key.");
+      "Alias for account.Account.getAuxiliary.");
 
     // add in all the getsetters and methods
     makePyType(&PyAccount_Type, pyaccount_getsetters, pyaccount_methods);
@@ -303,8 +307,7 @@ init_PyAccount(void) {
 
     // initialize the module
     module = Py_InitModule3("account", account_module_methods,
-			    "The account module, for all MUD account-related "
-			    "stuff.");
+			    "Contains the Python wrapper for accounts.");
 
     // make sure the module parsed OK
     if (module == NULL)

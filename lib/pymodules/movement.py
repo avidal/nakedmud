@@ -1,12 +1,8 @@
-################################################################################
-#
-# movement.py
-#
-# all of the functions concerned with movement and position change
-#
-################################################################################
-from mud import *
-from mudsys import add_cmd, add_cmd_check
+'''
+movement.py
+
+all of the functions concerned with movement and position change
+'''
 import inform, hooks, mudsys, mud
 
 
@@ -34,16 +30,18 @@ def try_use_furniture(ch, obj, pos):
     else:
         # are we already on something? get up first
         if ch.on:
-            message(ch,None,ch.on,None,True,"to_char","You stand up from $o.")
-            message(ch,None,ch.on,None,True,"to_room","$n stands up from $o.")
+            mud.message(ch,None,ch.on,None,True,"to_char",
+                        "You stand up from $o.")
+            mud.message(ch,None,ch.on,None,True,"to_room",
+                        "$n stands up from $o.")
             ch.on = None
 
-        # send our messages for sitting down
+        # send our mud.messages for sitting down
         act = pos_act[positions.index(pos)]
-        message(ch, None, obj, None, True,
-                "to_char", "You " + act + " " + obj.furniture_type + " $o.")
-        message(ch, None, obj, None, True,
-                "to_room", "$n " + act + " " + obj.furniture_type + " $o.")
+        mud.message(ch, None, obj, None, True,
+                    "to_char", "You " + act + " " + obj.furniture_type + " $o.")
+        mud.message(ch, None, obj, None, True,
+                    "to_room", "$n " + act + " " + obj.furniture_type + " $o.")
 
         # place ourselves down on our new furniture
         ch.on  = obj
@@ -60,19 +58,19 @@ def try_change_pos(ch, pos):
         return False
     else:
         if ch.pos == "flying":
-            message(ch, None, None, None, True, "to_char", "You stop flying.")
-            message(ch, None, None, None, True, "to_room", "$n stops flying.")
+            mud.message(ch,None,None,None,True, "to_char", "You stop flying.")
+            mud.message(ch,None,None,None,True, "to_room", "$n stops flying.")
 
         act = pos_act[positions.index(pos)]
-        message(ch, None, None, None, True, "to_char", "You " + act + ".")
-        message(ch, None, None, None, True, "to_room", "$n "  + act + "s.")
+        mud.message(ch, None, None, None, True, "to_char", "You " + act + ".")
+        mud.message(ch, None, None, None, True, "to_room", "$n "  + act + "s.")
         ch.pos = pos
         return True
 
 def cmd_sit(ch, cmd, arg):
     '''If standing, attempts to sit on the ground.'''
     try:
-        obj, = parse_args(ch, True, cmd, arg, "| [on] obj.room")
+        obj, = mud.parse_args(ch, True, cmd, arg, "| [on] obj.room")
     except: return
 
     if obj == None:
@@ -85,7 +83,7 @@ def cmd_sit(ch, cmd, arg):
 def cmd_sleep(ch, cmd, arg):
     '''If awake, attempts to lay down and sleep.'''
     try:
-        obj, = parse_args(ch, True, cmd, arg, "| [on] obj.room")
+        obj, = mud.parse_args(ch, True, cmd, arg, "| [on] obj.room")
     except: return
 
     if obj == None:
@@ -101,8 +99,10 @@ def cmd_stand(ch, cmd, arg):
 
 def cmd_wake(ch, cmd, arg):
     '''If sleep, attempts to wake up and sit.'''
-    message(ch,None,None,None,True, "to_char", "You stop sleeping and sit up.")
-    message(ch,None,None,None,True, "to_room", "$n stops sleeping and sits up.")
+    mud.message(ch,None,None,None,True, "to_char",
+                "You stop sleeping and sit up.")
+    mud.message(ch,None,None,None,True, "to_room",
+                "$n stops sleeping and sits up.")
     ch.pos = "sitting"
 
 def dir_opposite(dir):
@@ -150,15 +150,15 @@ def try_move(ch, dir, mssg = False):
         old_room = ch.room
         dirnum   = dir_index(dir)
 
-        # send out our leave messages as needed. Is anyone in the old room?
+        # send out our leave mud.messages as needed. Is anyone in the old room?
         if mssg == True:
             if ex.leave_mssg != '':
-                message(ch, None, None, None, True, "to_room", ex.leave_mssg)
+                mud.message(ch, None, None, None, True, "to_room",ex.leave_mssg)
             elif dirnum == -1:
-                message(ch, None, None, None, True, "to_room", "$n leaves.")
+                mud.message(ch, None, None, None, True, "to_room", "$n leaves.")
             else:
-                message(ch, None, None, None, True, "to_room",
-                        "$n leaves " + dir_name[dirnum] + ".")
+                mud.message(ch, None, None, None, True, "to_room",
+                            "$n leaves " + dir_name[dirnum] + ".")
 
         # run our leave hooks
         hooks.run("exit", hooks.build_info("ch rm ex", (ch, ch.room, ex)))
@@ -172,15 +172,15 @@ def try_move(ch, dir, mssg = False):
             
         ch.act("look")
 
-        # send out our enter messages as needed
+        # send out our enter mud.messages as needed
         if mssg == True:
             if ex.enter_mssg != '':
-                message(ch, None, None, None, True, "to_room", ex.enter_mssg)
+                mud.message(ch,None,None,None,True,"to_room",ex.enter_mssg)
             elif dirnum == -1:
-                message(ch, None, None, None, True, "to_room","$n has arrived.")
+                mud.message(ch,None,None,None,True,"to_room","$n has arrived.")
             else:
-                message(ch, None, None, None, True, "to_room",
-                        "$n arrives from the " + dir_name[dir_opp[dirnum]] +".")
+                mud.message(ch, None, None, None, True, "to_room",
+                            "$n arrives from the "+dir_name[dir_opp[dirnum]]+".")
 
         # run our enter hooks
         hooks.run("enter", hooks.build_info("ch rm", (ch, ch.room)))
@@ -201,26 +201,26 @@ def cmd_move(ch, cmd, arg):
 ################################################################################
 # mud commands
 ################################################################################
-add_cmd("north",     "n",  cmd_move, "player", True)
-add_cmd("west",      "w",  cmd_move, "player", True)
-add_cmd("east",      "e",  cmd_move, "player", True)
-add_cmd("south",     "s",  cmd_move, "player", True)
-add_cmd("up",        "u",  cmd_move, "player", True)
-add_cmd("down",      "d",  cmd_move, "player", True)
-add_cmd("northwest", None, cmd_move, "player", True)
-add_cmd("northeast", None, cmd_move, "player", True)
-add_cmd("southwest", None, cmd_move, "player", True)
-add_cmd("southeast", None, cmd_move, "player", True)
-add_cmd("nw",        None, cmd_move, "player", True)
-add_cmd("ne",        None, cmd_move, "player", True)
-add_cmd("sw",        None, cmd_move, "player", True)
-add_cmd("se",        None, cmd_move, "player", True)
+mudsys.add_cmd("north",     "n",  cmd_move, "player", True)
+mudsys.add_cmd("west",      "w",  cmd_move, "player", True)
+mudsys.add_cmd("east",      "e",  cmd_move, "player", True)
+mudsys.add_cmd("south",     "s",  cmd_move, "player", True)
+mudsys.add_cmd("up",        "u",  cmd_move, "player", True)
+mudsys.add_cmd("down",      "d",  cmd_move, "player", True)
+mudsys.add_cmd("northwest", None, cmd_move, "player", True)
+mudsys.add_cmd("northeast", None, cmd_move, "player", True)
+mudsys.add_cmd("southwest", None, cmd_move, "player", True)
+mudsys.add_cmd("southeast", None, cmd_move, "player", True)
+mudsys.add_cmd("nw",        None, cmd_move, "player", True)
+mudsys.add_cmd("ne",        None, cmd_move, "player", True)
+mudsys.add_cmd("sw",        None, cmd_move, "player", True)
+mudsys.add_cmd("se",        None, cmd_move, "player", True)
 
-add_cmd("wake",      None, cmd_wake, "player", True)
-add_cmd("sleep",     None, cmd_sleep,"player", True)
-add_cmd("stand",     None, cmd_stand,"player", True)
-add_cmd("land",      None, cmd_stand,"player", True)
-add_cmd("sit",       None, cmd_sit,  "player", True)
+mudsys.add_cmd("wake",      None, cmd_wake, "player", True)
+mudsys.add_cmd("sleep",     None, cmd_sleep,"player", True)
+mudsys.add_cmd("stand",     None, cmd_stand,"player", True)
+mudsys.add_cmd("land",      None, cmd_stand,"player", True)
+mudsys.add_cmd("sit",       None, cmd_sit,  "player", True)
 
 # The mud needs to know our command for movement as well
 mudsys.set_cmd_move(cmd_move)
@@ -242,7 +242,7 @@ def chk_wake(ch, cmd):
     if not ch.pos == "sleeping":
         ch.send("You must be asleep to wake up.")
         return False
-add_cmd_check("wake", chk_wake)
+mudsys.add_cmd_check("wake", chk_wake)
 
 def chk_sleep(ch, cmd):
     if ch.pos == "sleeping":
@@ -251,7 +251,7 @@ def chk_sleep(ch, cmd):
     elif ch.pos == "unconscious":
         ch.send("You cannot sleep while you are unconscious.")
         return False
-add_cmd_check("sleep", chk_sleep)
+mudsys.add_cmd_check("sleep", chk_sleep)
 
 def chk_stand(ch, cmd):
     if ch.pos == "standing":
@@ -260,7 +260,7 @@ def chk_stand(ch, cmd):
     elif ch.pos != "sitting":
         ch.send("You cannot stand while " + ch.pos + ".")
         return False
-add_cmd_check("stand", chk_stand)
+mudsys.add_cmd_check("stand", chk_stand)
 
 def chk_land(ch, cmd):
     if ch.pos == "standing":
@@ -269,7 +269,7 @@ def chk_land(ch, cmd):
     elif ch.pos != "flying":
         ch.send("You cannot land if you are not flying.")
         return False
-add_cmd_check("land", chk_land)
+mudsys.add_cmd_check("land", chk_land)
 
 def chk_sit(ch, cmd):
     if ch.pos == "sitting":
@@ -278,4 +278,4 @@ def chk_sit(ch, cmd):
     elif ch.pos != "standing":
         ch.send("You must be standing to sit.")
         return False
-add_cmd_check("sit", chk_sit)
+mudsys.add_cmd_check("sit", chk_sit)

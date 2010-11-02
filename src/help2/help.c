@@ -227,9 +227,10 @@ void add_help(const char *keywords, const char *info, const char *user_groups,
   char            *kwd = NULL;
   ITERATE_LIST(kwd, kwd_i) {
     // remove any old copy we might of had
-    HELP_DATA *old = nearMapRemove(help_table, kwd);
-    if(old != NULL)
-      deleteHelp(old);
+    // HELP_DATA *old = nearMapRemove(help_table, kwd);
+    // if(old != NULL)
+    //   deleteHelp(old);
+    nearMapRemove(help_table, kwd);
     
     // put our new entry
     nearMapPut(help_table, kwd, NULL, data);
@@ -453,9 +454,14 @@ void init_help() {
 
   // add all of our Python hooks
   PyMudSys_addMethod("add_help", PyMudSys_add_help, METH_VARARGS, 
-		     "allows Python modules to add non-persistent helpfiles.");
-  PyMudSys_addMethod("get_help", PyMudSys_get_help, METH_VARARGS, 
-		     "returns info for the help file.");
+    "add_help(keywords, info, user_groups='', related='')\n\n"
+    "Add a new, non-persistent helpfile to the mud's help database.");
+  PyMudSys_addMethod("get_help", PyMudSys_get_help, METH_VARARGS,
+    "get_help(keyword)\n\n"
+    "Returns a tuple of a helpfile's keywords, info, user_groups, and related\n"
+    "or None if the helpfile does not exist.");
   PyMudSys_addMethod("list_help", PyMudSys_list_help, METH_VARARGS,
-		     "Returns all help topics. If a partial keyword is supplied, only return partial matches.");
+    "list_help(keyword='')\n\n"
+    "Returns a list of helpfiles that match the specified keyword. If no\n"
+    "keywordi s supplied, return all helpfiles.");
 }

@@ -523,22 +523,24 @@ void init_container(void) {
   // set up the container OLC too
   item_add_olc("container", iedit_container_menu, iedit_container_chooser, 
   	       iedit_container_parser, NULL, container_to_proto);
+
+  // set up our Python extensions
   PyObj_addGetSetter("container_capacity",
-		     PyObj_getcontainercapacity, PyObj_setcontainercapacity,
-		     "Sets the maximum amount of weight the container holds.");
+    PyObj_getcontainercapacity, PyObj_setcontainercapacity,
+    "The maximum amount of weight c container can hold.");
   PyObj_addGetSetter("container_key", 
-		     PyObj_getcontainerkey, PyObj_setcontainerkey,
-		     "The key that opens the container.");
+    PyObj_getcontainerkey, PyObj_setcontainerkey,
+    "An object prototype that acts as a key for this container.");
   PyObj_addGetSetter("container_pick_diff",
-		     PyObj_getcontainerpickdiff, PyObj_setcontainerpickdiff,
-		     "The picking difficulty of the container,");
+    PyObj_getcontainerpickdiff, PyObj_setcontainerpickdiff,
+    "An integer representing how difficult a container's lock is to pick.");
   PyObj_addGetSetter("container_is_closable", 
-		     PyObj_getcontainerclosable, PyObj_setcontainerclosable,
-		     "true or false if the container can be closed.");
+    PyObj_getcontainerclosable, PyObj_setcontainerclosable,
+    "True or False if the container can be closed.");
   PyObj_addGetSetter("container_is_closed", 
-		     PyObj_getcontainerclosed, PyObj_setcontainerclosed,
-		      "true or false if the container is closed.");
+    PyObj_getcontainerclosed, PyObj_setcontainerclosed,
+    "True or False if the container is closed.");
   PyObj_addGetSetter("container_is_locked", 
-		     PyObj_getcontainerlocked, PyObj_setcontainerlocked,
-		      "true or false if the container is locked.");
+    PyObj_getcontainerlocked, PyObj_setcontainerlocked,
+    "True or False if the container is locked.");
 }

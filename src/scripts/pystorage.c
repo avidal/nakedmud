@@ -64,7 +64,41 @@ PyObject *PyStorageList_new(PyTypeObject *type, PyObject *args, PyObject *kwds){
 //
 // initialize a new storage list
 int PyStorageList_init(PyStorageList *self, PyObject *args, PyObject *kwds) {
+  // are we building this from a Python list?
+  PyObject *pylist = NULL;
+  if(!PyArg_ParseTuple(args, "|O", &pylist)) {
+    PyErr_Format(PyExc_TypeError, "unexpected arguments passed to StorageList.");
+    return -1;
+  }
+  
+  // if we received something, make sure it's a list
+  if(pylist != NULL && !PyList_Check(pylist)) {
+    PyErr_Format(PyExc_TypeError, "StorageList expected a list argument.");
+    return -1;
+  }
+
+  // create the storage list
   self->list = new_storage_list();
+
+  // try adding contents to the storage list
+  if(pylist != NULL) {
+    int i;
+    // first, make sure they're all storage sets
+    for(i = 0; i < PyList_Size(pylist); i++) {
+      PyObject *set = PyList_GetItem(pylist, i);
+      if(!PyStorageSet_Check(set)) {
+	PyErr_Format(PyExc_TypeError, "StorageList list content to be a StorageSet.");
+	return -1;
+      }
+    }
+
+    // all good, append them
+    for(i = 0; i < PyList_Size(pylist); i++) {
+      PyObject *set = PyList_GetItem(pylist, i);
+      storage_list_put(self->list, PyStorageSet_AsSet(set));
+    }
+  }
+
   return 0;
 }
 
@@ -115,9 +149,11 @@ PyObject *PyStorageList_add(PyObject *self, PyObject *args) {
 //*****************************************************************************
 PyMethodDef PyStorageList_class_methods[] = {
   {"sets", PyStorageList_sets, METH_VARARGS,
-   "Returns a python list of all the sets in the storage list" },
+   "sets()\n\n"
+   "Returns a python list of all the sets in the storage list." },
   {"add",  PyStorageList_add,  METH_VARARGS,
-   "Adds a new storage set to the list" },
+   "add(storage_set)\n\n"
+   "Append a new storage set to the storage list." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -143,7 +179,9 @@ PyTypeObject PyStorageList_Type = {
     0,                                /*tp_setattro*/
     0,                                /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
-    "storage lists",                  /* tp_doc */
+    "__init__(self, list=None)\n\n"
+    "Create a new storage list. A Python list of storage sets may be\n"
+    "supplied, from which to build the storage list.",
     0,		                      /* tp_traverse */
     0,		                      /* tp_clear */
     0,		                      /* tp_richcompare */
@@ -262,8 +300,10 @@ PyObject *PyStorageSet_readDouble(PyObject *self, PyObject *args) {
 // read a boolean value from the storage set
 PyObject *PyStorageSet_readBool  (PyObject *self, PyObject *args) { 
   char *key = PyStorageSet_readParseKey(args);
-  if(key != NULL) 
-    return Py_BuildValue("i", read_bool(((PyStorageSet *)self)->set, key));
+  if(key != NULL) {
+    bool val = read_bool(((PyStorageSet *)self)->set, key);
+    return Py_BuildValue("O", (val ? Py_True : Py_False));
+  }
   else
     return NULL;
 }
@@ -396,42 +436,51 @@ PyObject *PyStorageSet_contains   (PyObject *self, PyObject *args) {
 PyMethodDef PyStorageSet_class_methods[] = {
   // read functions
   { "readString", PyStorageSet_readString, METH_VARARGS,
-    "Read in the string value of a storage set entry, by key." },
+    "readString(name)\n\n"
+    "Read a string value from the storage set. Return empty string if the\n"
+    "storage set does not contain an entry by the given name." },
   { "readInt",    PyStorageSet_readInt,    METH_VARARGS,
-    "Read in the integer value of a storage set entry, by key." },
+    "Same as readString, for integers. Returns 0 if entry does not exist." },
   { "readDouble", PyStorageSet_readDouble, METH_VARARGS,
-    "Read in the double value of a storage set entry, by key." },
+    "Same as readString, for floating points. Returns 0 if entry does not exist.." },
   { "readBool",   PyStorageSet_readBool,   METH_VARARGS,
-    "Read in the boolean value of a storage set entry, by key." },
+    "Same as readString, for booleans. Returns False if entry does not exist."},
   { "readList",   PyStorageSet_readList,   METH_VARARGS,
-    "Read in the list value of a storage set entry, by key." },
+    "Same as readString, for storage lists. Returns an empty storage list\n"
+    "if entry does not exist." },
   { "readSet",    PyStorageSet_readSet,   METH_VARARGS,
-    "Read in the set value of a storage set entry, by key." },
+    "Same as readString, for storage sets. Returns an empty set if entry\n"
+    "does not exist." },
 
   // write store functions
   { "storeString", PyStorageSet_storeString, METH_VARARGS,
-    "Store the string value of a storage set entry, by key." },
+    "storeString(name, val)\n\n"
+    "Store a string value in the storage set." },
   { "storeInt",    PyStorageSet_storeInt,    METH_VARARGS,
-    "Store the integer value of a storage set entry, by key." },
+    "Same as storeString, for integers." },
   { "storeDouble", PyStorageSet_storeDouble, METH_VARARGS,
-    "Store the double value of a storage set entry, by key." },
+    "Same as storeString, for floating point values." },
   { "storeBool",   PyStorageSet_storeBool,   METH_VARARGS,
-    "Store the boolean value of a storage set entry, by key." },
+    "Same as storeString, for boolean values." },
   { "storeList",   PyStorageSet_storeList,   METH_VARARGS,
-    "Store the list value of a storage set entry, by key." },
+    "Same as storeString, for storage lists." },
   { "storeSet",    PyStorageSet_storeSet,    METH_VARARGS,
-    "Store the set value of a storage set entry, by key." },
+    "Same as storeString, for storage sets." },
 
   // other functions
   { "write",       PyStorageSet_write,       METH_VARARGS,
-    "Store the contents of the storage set to the specified filename" },
-  { "close",       PyStorageSet_close,       METH_VARARGS,
-    "Close a storage set. MUST be called when the storage set is done "
-    "being used. Garbage collection will not delete the set." },
+    "write(filename)\n\n"
+    "Write the contents of a storage set to the specified file name." },
+  { "close",       PyStorageSet_close,       METH_NOARGS,
+    "close()\n\n"
+    "Recursively close a storage set and all of its children sets and lists.\n"
+    "MUST be called when the storage set has finished being used. Garbage\n"
+    "collection will not delete the set." },
   { "contains",    PyStorageSet_contains,    METH_VARARGS,
-    "Returns True if the set contains the given key, and false otherwise." },
+    "contains(name)\n\n"
+    "Returns True or False if the set contains an entry by the given name." },
   { "__contains__",    PyStorageSet_contains,    METH_VARARGS,
-    "Returns True if the set contains the given key, and false otherwise." },
+    "__contains__(name) <==> name in self" },
 
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
@@ -459,7 +508,9 @@ PyTypeObject PyStorageSet_Type = {
     0,                                /*tp_setattro*/
     0,                                /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
-    "storage sets",                   /* tp_doc */
+    "__init__(self, filename=None)\n\n"
+    "Create a new storage set. If a file name is supplied, read a storage set\n"
+    "in from the specified file.",
     0,		                      /* tp_traverse */
     0,		                      /* tp_clear */
     0,		                      /* tp_richcompare */
@@ -494,7 +545,11 @@ PyMethodDef PyStorage_module_methods[] = {
 //*****************************************************************************
 PyMODINIT_FUNC init_PyStorage(void) {
   PyObject *module = Py_InitModule3("storage", PyStorage_module_methods,
-				    "Python wrapper for storage sets.");
+    "The storage module allows users to save information to disk as key:value\n"
+    "pairs without having to interact with files directly. This module gives\n"
+    "users access to two classes: StorageSets and StorageLists. Sets match\n"
+    "keys to values. Lists hold multiple sets.");
+
   // something went wrong... abort!
   if(module == NULL)
     return;

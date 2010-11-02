@@ -301,10 +301,10 @@ int resedit_chooser(SOCKET_DATA *sock, RESET_OLC *data, const char *option) {
     text_to_buffer(sock, "What is the success chance of the reset: ");
     return RESEDIT_CHANCE;
   case '4':
-    text_to_buffer(sock, "What is the max that can exit in game (0 = no limit): ");
+    text_to_buffer(sock, "What is the max that can exist in game (0 = no limit): ");
     return RESEDIT_MAX;
   case '5':
-    text_to_buffer(sock, "What is the max that can exit in room (0 = no limit): ");
+    text_to_buffer(sock, "What is the max that can exist in room (0 = no limit): ");
     return RESEDIT_ROOM_MAX;
   case '6':
     if(resetGetType(data->reset) == RESET_SCRIPT) {
@@ -560,7 +560,7 @@ int exedit_chooser(SOCKET_DATA *sock, EXIT_DATA *exit, const char *option) {
     text_to_buffer(sock, "Enter a new leave message: ");
     return EXEDIT_LEAVE;
   case '4':
-    text_to_buffer(sock, "Enter a new enterance message: ");
+    text_to_buffer(sock, "Enter a new entrance message: ");
     return EXEDIT_ENTER;
   case '5':
     socketStartEditor(sock, text_editor, exitGetDescBuffer(exit));

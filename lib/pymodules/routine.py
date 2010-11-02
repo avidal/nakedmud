@@ -6,8 +6,6 @@ can include walking a path, forging a sword, singing verses of a song, or
 anything else. This was primarily meant to be for path-following, but I figured
 it was worth the time to generalize it out for more complex actions
 '''
-from mud import *
-from mudsys import add_cmd
 import mud, mudsys, auxiliary, storage, event
 
 
@@ -24,6 +22,8 @@ __global_routine_checks__  = []
 # auxiliary data
 ################################################################################
 class RoutineAuxData:
+    '''Holds character data related to character routines.
+    '''
     def __init__(self, set = None):
         self.routine = None   # the routine we follow
         self.repeat  = False  # after we finish it, do we repeat?
@@ -176,8 +176,8 @@ def cmd_routine(ch, cmd, arg):
        Alternatively, these commands can be replaced with function calls.
        '''
     try:
-        tgt, routine, repeat = parse_args(ch, True, cmd, arg,
-                                          "ch.room.noself word(py_list) | bool(repeat)")
+        tgt, routine, repeat = mud.parse_args(ch, True, cmd, arg,
+                                              "ch.room.noself word(py_list) | bool(repeat)")
     except:
         return
 
@@ -197,7 +197,7 @@ auxiliary.install("routine_data", RoutineAuxData, "character")
 register_routine_check(lambda ch: ch.isActing())
 
 # commands
-add_cmd("routine", None, cmd_routine, "admin", False)
+mudsys.add_cmd("routine", None, cmd_routine, "admin", False)
 
 # misc initialization
 # mud.set_routine = set_routine

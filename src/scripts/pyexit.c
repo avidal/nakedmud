@@ -658,55 +658,62 @@ init_PyExit(void) {
 
     // add all of the basic getsetters
     PyExit_addGetSetter("uid", PyExit_getuid, NULL,
-			"returns the exit's universal ID nubmer");
+      "The exit's universal identification nubmer. Immutable.");
     PyExit_addGetSetter("spot_diff", PyExit_getspotdiff, PyExit_setspotdiff,
-			"integer value representing how hidden the exit is.");
+      "Integer value representing how hard to see the exit is.");
     PyExit_addGetSetter("hidden", PyExit_getspotdiff, PyExit_setspotdiff,
-			"integer value representing how hidden the exit is.");
+      "Alias for exit.Exit.spot_diff");
     PyExit_addGetSetter("pick_diff", PyExit_getpickdiff, PyExit_setpickdiff,
-			"integer value representing how hard lock is to pick.");
+      "Integer value representing how hard the exit's lock is to pick.");
     PyExit_addGetSetter("key", PyExit_getkey, PyExit_setkey,
-			"String or Obj value for obj class that unlocks exit.");
+      "An object prototype name that can be used to unlock this exit. Can be\n"
+      "set either by assigning a prototype name, or an actual object.");
     PyExit_addGetSetter("dest", PyExit_getdest, PyExit_setdest,
-			"String or Room value for room this exit leads to.");
+      "The room that this exit leads to. Can be set either by assigning a\n"
+      "world room key, or an actual room.");
     PyExit_addGetSetter("destproto", PyExit_getdestproto, NULL,
-			"return the class name of our our destiantion.");
+      "The world room key of our destination. Immutable.");
     PyExit_addGetSetter("name", PyExit_getname, PyExit_setname,
-			"The name of the door on the exit.");
+      "The name of the door for this exit, if any.");
     PyExit_addGetSetter("keywords", PyExit_getkeywords, PyExit_setkeywords,
-			"comma-separated string of the door's keywords.");
+      "A comma-separated string of the door's keywords.");
     PyExit_addGetSetter("opposite", PyExit_getopposite, PyExit_setopposite,
-			"if the exit is special, a dir name for the exit that "
-			"leads back to this exit's room.");
+      "if the exit is special, a dir name for the exit that leads back to\n"
+      "this exit's room.");
     PyExit_addGetSetter("desc", PyExit_getdesc, PyExit_setdesc,
-			"the long description of the exit when looked at.");
+      "The verbose description of the exit when, e.g., it is looked at.");
     PyExit_addGetSetter("leave_mssg", PyExit_getleavemssg, PyExit_setleavemssg,
-			"the special message sent when a char exits the room.");
+      "A message for when a character leaves a room via this exit.");
     PyExit_addGetSetter("enter_mssg", PyExit_getentermssg, PyExit_setentermssg, 
-		       "the special message sent when a char enters the room.");
+      "A message for when a char enters the room via this exit.");
     PyExit_addGetSetter("is_closable", PyExit_getclosable, NULL,
-			"true or false if the exit can be closed.");
+      "True or False if an exit can be closed. Immutable.");
     PyExit_addGetSetter("is_closed", PyExit_getclosed, NULL,
-			"true or false if the exit is closed.");
+      "True or False if an exit is closed. Immutable.");
     PyExit_addGetSetter("is_locked", PyExit_getlocked, NULL,
-			"true or false if the exit is locked.");
+      "True or False if an exit is locked.");
     PyExit_addGetSetter("room", PyExit_getroom, NULL,
-			"the room we are attached to.");
+      "The room we this exit is attached to. Immutable.");
 
     // add all of the basic methods
     PyExit_addMethod("makedoor", PyExit_makedoor, METH_VARARGS,
-		     "Make a door on the exit. Takes name, keywords, and "
-		     "optionally opposite, closed, locked, and key.");
+      "makedoor(name=None, keywords=None, opposite=None, closed=False, locked=False)\n\n"
+      "Create a door for the exit.");
     PyExit_addMethod("filldoor", PyExit_filldoor, METH_NOARGS,
-		     "remove a door that was made on the exit.");
-    PyExit_addMethod("open", PyExit_open, METH_VARARGS,
-		     "Opens the exit if there's a door. Also unlocks.");
-    PyExit_addMethod("close", PyExit_close, METH_VARARGS,
-		     "Close the exit's door if one exists.");
-    PyExit_addMethod("lock", PyExit_lock, METH_VARARGS,
-		     "Locks the exit if there's a door. Also closes.");
-    PyExit_addMethod("unlock", PyExit_unlock, METH_VARARGS,
-		     "Unlocks the exit's door if one exists.");
+      "filldoor()\n\n"
+      "Erase a door that was on the exit.");
+    PyExit_addMethod("open", PyExit_open, METH_NOARGS,
+      "open()\n\n"
+      "Opens the exit's door if it exists. Also unlocks.");
+    PyExit_addMethod("close", PyExit_close, METH_NOARGS,
+      "close()\n\n"
+      "Close the exit's door if it exists.");
+    PyExit_addMethod("lock", PyExit_lock, METH_NOARGS,
+      "lock()\n\n"
+      "Locks the exit's door if it exists. Also closes.");
+    PyExit_addMethod("unlock", PyExit_unlock, METH_NOARGS,
+      "unlock()\n\n"
+      "Unlocks the exit's door if it exists.");
 
     // add in all the getsetters and methods
     makePyType(&PyExit_Type, pyexit_getsetters, pyexit_methods);

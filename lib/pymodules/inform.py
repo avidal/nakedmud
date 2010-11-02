@@ -1,13 +1,10 @@
-################################################################################
-#
-# inform.py
-#
-# Python's mirror of C's inform.c -- contains various functions that perform
-# informative duties. Examining places/things, displaying proper names, etc...
-#
-################################################################################
-from mud import *
-import utils, char, hooks, mudsock, string
+"""
+inform.py
+
+Python's mirror of C's inform.c -- contains various functions that perform
+informative duties. Examining places/things, displaying proper names, etc...
+"""
+import utils, char, hooks, mudsock, mud, string, display
 
 
 
@@ -17,7 +14,7 @@ import utils, char, hooks, mudsock, string
 def build_who(ch = None):
     '''returns a formatted list of all the people currently online'''
     buf = [ ]
-    buf.append("-------------------------------------------------------------------------------")
+    buf.append(display.seperator)
 
     # build character info
     count   = len(mudsock.socket_list())
@@ -37,9 +34,9 @@ def build_who(ch = None):
     if playing == 1: play_end = ""
 
     # build our footer
-    buf.append("-------------------------------------------------------------------------------")
+    buf.append(display.seperator)
     buf.append((" %d socket" % count)  + conn_end + " logged in." + (" %d player" % playing) + play_end + " currently playing.")
-    buf.append("-------------------------------------------------------------------------------")
+    buf.append(display.seperator)
     buf.append("")
     return "\r\n".join(buf)
 
@@ -74,8 +71,8 @@ def list_room_exits(ch, room, filter_compass = False):
             if ex == None:
                 continue
             if ex.dest == None:
-                log_string("ERROR: room %s headed %s to %s, which does not exist."%\
-                           room.proto, dir, ex.destproto)
+                mud.log_string("ERROR: room %s headed %s to %s, which does not exist."%\
+                               room.proto, dir, ex.destproto)
             elif ch.cansee(ex):
                 list_one_exit(ch, ex, dir)
 
@@ -84,8 +81,8 @@ def list_room_exits(ch, room, filter_compass = False):
         if not dir in compass_dirs:
             ex = room.exit(dir)
             if ex.dest == None:
-                log_string("ERROR: room %s headed %s to %s, which does not exist." % \
-                           room.proto, dir, ex.destproto)
+                mud.log_string("ERROR: room %s headed %s to %s, which does not exist." % \
+                               room.proto, dir, ex.destproto)
             elif ch.cansee(ex):
                 list_one_exit(ch, ex, dir)
 

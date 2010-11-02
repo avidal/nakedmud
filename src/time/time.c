@@ -191,12 +191,20 @@ void init_time() {
     curr_hour = curr_day_of_week = curr_day_of_month = curr_month = curr_year = 0;
 
   // add our mud methods
-  PyMud_addMethod("get_hour",     PyMud_GetHour,     METH_NOARGS, NULL);
-  PyMud_addMethod("get_time",     PyMud_GetTime,     METH_NOARGS, NULL);
-  PyMud_addMethod("is_morning",   PyMud_IsMorning,   METH_NOARGS, NULL);
-  PyMud_addMethod("is_afternoon", PyMud_IsAfternoon, METH_NOARGS, NULL);
-  PyMud_addMethod("is_evening",   PyMud_IsEvening,   METH_NOARGS, NULL);
-  PyMud_addMethod("is_night",     PyMud_IsNight,     METH_NOARGS, NULL);
+  PyMud_addMethod("get_hour",     PyMud_GetHour,     METH_NOARGS, 
+		  "get_hour()\n\n"
+		  "Return the current in-game hour of day.");
+  PyMud_addMethod("get_time",     PyMud_GetTime,     METH_NOARGS, 
+		  "get_time()\n\n"
+		  "Return time of day (morning, afternoon, evening, night).");
+  PyMud_addMethod("is_morning",   PyMud_IsMorning,   METH_NOARGS, 
+		  "True or False if it is morning.");
+  PyMud_addMethod("is_afternoon", PyMud_IsAfternoon, METH_NOARGS, 
+		  "True or False if it is afternoon.");
+  PyMud_addMethod("is_evening",   PyMud_IsEvening,   METH_NOARGS, 
+		  "True or False if it is evening.");
+  PyMud_addMethod("is_night",     PyMud_IsNight,     METH_NOARGS, 
+		  "True or False if it is night.");
 
   // add the time command
   add_cmd("time", NULL, cmd_time, "player", FALSE);

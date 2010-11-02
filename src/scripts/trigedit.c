@@ -11,6 +11,7 @@
 #include "../utils.h"
 #include "../world.h"
 #include "scripts.h"
+#include "trighooks.h"
 
 
 
@@ -84,59 +85,28 @@ bool trigger_list_parser(SOCKET_DATA *sock, LIST *triggers, int choice,
 #define TEDIT_NAME       1
 #define TEDIT_TYPE       2
 
-struct trigger_type_usable_list {
-  char    *type;
-  char *used_by;
-};
 
-// a table of allowable trigger types
-struct trigger_type_usable_list trigger_types[] = {
-  { "speech",         "mob, room" },
-  { "greet",          "mob"       },
-  { "enter",          "mob, room" },
-  { "exit",           "mob, room" },
-  { "self_enter",     "mob"       },
-  { "self_exit",      "mob"       },
-  { "drop",           "obj, room" },
-  { "get",            "obj, room" },
-  { "give",           "obj, mob"  },
-  { "receive",        "mob"       },
-  { "wear",           "obj, mob"  },
-  { "remove",         "obj, mob"  },
-  { "reset",          "room"      },
-  { "look",           "obj, mob, room" },
-  { "open",           "obj, room" },
-  { "close",          "obj, room" },
-  { "to_game",        "obj, mob, room" },
-  { "", "" },
-};
 
-int num_trig_types(void) {
-  static int num = -1;
-  // we need to calculate...
-  if(num == -1)
-    do { num++; } while(*trigger_types[num].type);
-  return num;
-}
-
-// returns the trigger type name, for the given number
-const char *triggerTypeGetName(int num) {
-  return trigger_types[num].type;
-}
-
-// returns the types of things the trigger can be attached to
-const char *triggerTypeGetUsedBy(int num) {
-  return trigger_types[num].used_by;
-}
-
-// returns a buffer that contains the name and used-by list for a trigger
-const char *triggerTypeGetNameAndUsedBy(int num) {
-  static char buf[100];
-  sprintf(buf, "%-20s %s", triggerTypeGetName(num), triggerTypeGetUsedBy(num));
-  return buf;
-}
+//*****************************************************************************
+// tedit OLC functions
+//*****************************************************************************
 
 void tedit_menu(SOCKET_DATA *sock, TRIGGER_DATA *trigger) {
+  // the display line for our trigger type
+  BUFFER *ttype_line = newBuffer(1);
+  if(!*triggerGetType(trigger))
+    bufferCat(ttype_line, "<NONE>");
+  else {
+    bufferCat(ttype_line, triggerGetType(trigger));
+
+    // is it a valid type?
+    if(hashIn(get_tedit_opts(), triggerGetType(trigger)))
+      bprintf(ttype_line, "   (%s)", (char *)hashGet(get_tedit_opts(), 
+						   triggerGetType(trigger)));
+    else
+      bprintf(ttype_line, "   {r* unknown trigger type");
+  }
+
   send_to_socket(sock,
 		 "{g[{c%s{g]\r\n"
 		 "{g1) Name        : {c%s\r\n"
@@ -144,8 +114,11 @@ void tedit_menu(SOCKET_DATA *sock, TRIGGER_DATA *trigger) {
 		 "{g3) Script Code\r\n",
 		 triggerGetKey(trigger),
 		 triggerGetName(trigger),
-		 (*triggerGetType(trigger) ? triggerGetType(trigger):"<NONE>"));
+		 bufferString(ttype_line));
   script_display(sock, triggerGetCode(trigger), FALSE);
+
+  // garbage collection
+  deleteBuffer(ttype_line);
 }
 
 int tedit_chooser(SOCKET_DATA *sock, TRIGGER_DATA *trigger, const char *option){
@@ -154,10 +127,36 @@ int tedit_chooser(SOCKET_DATA *sock, TRIGGER_DATA *trigger, const char *option){
     send_to_socket(sock, "Enter trigger name: ");
     return TEDIT_NAME;
   case '2':
-    send_to_socket(sock, "      {wType                 Usable By\r\n");
-    send_to_socket(sock, "      {y-----------------------------------\r\n");
-    olc_display_table(sock, triggerTypeGetNameAndUsedBy, num_trig_types(), 1);
+    send_to_socket(sock, 
+		   "{w%-18s %-20s%-18s %-22s\r\n", 
+		   "Type", "Usable By", "Type", "Usable By");
+    send_to_socket(sock, "{y------------------------------------------------------------------------------{g\r\n");
+
+    // get our keys, sort them alphabetically, and then list them all
+    HASHTABLE        *opts = get_tedit_opts();
+    LIST             *keys = hashCollect(opts);
+    listSortWith(keys, strcasecmp);
+    LIST_ITERATOR   *key_i = newListIterator(keys);
+    const char        *key = NULL;
+    int             parity = 0;
+
+    // display our keys, one at a time
+    ITERATE_LIST(key, key_i) {
+      send_to_socket(sock, "%-18s %-20s", key, (char *)hashGet(opts, key));
+      parity = (parity + 1) % 2;
+      if(parity == 0)
+	send_to_socket(sock, "\r\n");
+    } deleteListIterator(key_i);
+
+    // need a newline
+    if(parity == 1)
+      send_to_socket(sock, "\r\n");
+
     send_to_socket(sock, "\r\nEnter trigger type: ");
+
+    // garbage collection
+    deleteListWith(keys, free);
+
     return TEDIT_TYPE;
   case '3':
     socketStartEditor(sock, script_editor, triggerGetCodeBuffer(trigger));
@@ -175,6 +174,8 @@ bool tedit_parser(SOCKET_DATA *sock, TRIGGER_DATA *trigger, int choice,
     return TRUE;
 
   case TEDIT_TYPE: {
+    triggerSetType(trigger, arg);
+    /*
     int num = atoi(arg);
     if(num < 0 || num >= num_trig_types())
       return FALSE;
@@ -182,6 +183,8 @@ bool tedit_parser(SOCKET_DATA *sock, TRIGGER_DATA *trigger, int choice,
       triggerSetType(trigger, triggerTypeGetName(num));
       return TRUE;
     }
+    */
+    return TRUE;
   }
 
   default: 

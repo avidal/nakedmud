@@ -168,6 +168,8 @@ COMMAND(cmd_zedit) {
 
     if(locale_malformed(key))
       send_to_char(ch, "The zone name you entered was malformed.");
+    else if(!strcasecmp(arg, "new"))
+      send_to_char(ch, "'new' is not a valid zone name.");
     else if(worldGetZone(gameworld, key))
       send_to_char(ch, "A zone already exists with that key.\r\n");
     else {

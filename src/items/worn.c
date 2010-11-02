@@ -330,11 +330,15 @@ void init_worn(void) {
 
   // add our new python get/setters
   PyObj_addGetSetter("worn_locs", PyObj_getwornlocs, NULL,
-		     "The positions this item must be equipped to.");
+    "The position names this worn type must be equipped to. Immutable.");
   PyObj_addGetSetter("worn_type", PyObj_getworntype, PyObj_setworntype,
-		     "The type of clothing this wearable item is.");
+    "The type of worn item this is.");
   PyMudSys_addMethod("add_worn_type", PyMudSys_AddWornType, METH_VARARGS,
-		     "Adds a new worn type to the game.");
+    "add_worn_type(type, postypes)\n"
+    "\n"
+    "Register a new type of worn item. Postypes is a comma-separated list of\n"
+    "body position types this object must be equipped to e.g., \n"
+    "shirt : torso, arm, arm.");
   
   // add in our basic worn types
   worn_add_type("shirt",              "torso, arm, arm");

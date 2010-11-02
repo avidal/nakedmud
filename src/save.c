@@ -163,7 +163,7 @@ void load_ofile(CHAR_DATA *ch) {
   while( (obj_set = storage_list_next(list)) != NULL) {
     if(storage_contains(obj_set, "object")) {
       obj = objRead(read_set(obj_set, "object"));
-      if(!try_equip(ch, obj, read_string(obj_set, "equipped"), NULL))
+      if(!do_equip(ch, obj, read_string(obj_set, "equipped"), TRUE))
 	obj_to_char(obj, ch);
     }
   }

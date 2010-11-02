@@ -49,8 +49,7 @@ void interrupt_events_involving(void *thing);
 // check_involvement must be a function that takes the thing to check
 // the involvement of as the first argument, and the data to check in
 // as its second argument. It must return TRUE if the data contains
-// a pointer to the thing, and FALSE otherwise. See admin.c (cmd_devent)
-// for an example of how this works. 
+// a pointer to the thing, and FALSE otherwise.
 //
 void start_event(void *owner, 
 		 int   delay,

@@ -56,6 +56,12 @@ void        bufferCat   (BUFFER *buf, const char *txt) {
   buf->len += txtlen;
 }
 
+void        bufferCatCh (BUFFER *buf, const char ch) {
+  static char tmp[2];
+  tmp[0] = ch; tmp[1] = '\0';
+  bufferCat(buf, tmp);
+}
+
 void        bufferClear (BUFFER *buf) {
   *buf->data = '\0';
   buf->len = 0;

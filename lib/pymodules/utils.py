@@ -1,10 +1,8 @@
-################################################################################
-#
-# utils.py
-#
-# Various utility functions used by other Python modules.
-#
-################################################################################
+'''
+utils.py
+
+Various utility functions used by other Python modules.
+'''
 import mud
 
 

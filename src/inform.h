@@ -29,8 +29,8 @@ void init_inform(void);
 // Send a message out
 //
 // Converts the following symbols:
-//  $c = ch name
-//  $C = vict name
+//  $n = ch name
+//  $N = vict name
 //  $m = him/her of char
 //  $M = him/her of vict
 //  $s = his/hers of char

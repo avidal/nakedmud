@@ -1,15 +1,10 @@
-################################################################################
-#
-# cmd_inform.py
-#
-# Contains various commands that are informative in nature. For instance, look,
-# equipment, inventory, etc...
-#
-################################################################################
-from mud import *
-from inform import *
-from mudsys import add_cmd
-import utils
+'''
+cmd_inform.py
+
+Contains various commands that are informative in nature. For instance, look,
+equipment, inventory, etc...
+'''
+import mud, mudsys, inform, utils
 
 
 
@@ -28,18 +23,18 @@ def cmd_inventory(ch, cmd, arg):
 def cmd_equipment(ch, cmd, arg):
     '''Displays all of the equipment you are currently wearing.'''
     ch.send("You are wearing:")
-    show_equipment(ch, ch)
+    inform.show_equipment(ch, ch)
 
 def cmd_who(ch, cmd, arg):
     '''List all of the players currently online.'''
-    ch.page(build_who(ch))
+    ch.page(inform.build_who(ch))
     
 def cmd_look(ch, cmd, arg):
     '''allows players to examine just about anything in the game'''
     if arg == '':
         inform.look_at_room(ch, ch.room)
     else:
-        found, type = generic_find(ch, arg, "all", "immediate", False)
+        found, type = mud.generic_find(ch, arg, "all", "immediate", False)
 
         # what did we find?
         if found == None:
@@ -61,11 +56,11 @@ def cmd_look(ch, cmd, arg):
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("inventory", "i",   cmd_inventory, "player", False)
-add_cmd("equipment", "eq",  cmd_equipment, "player", False)
-add_cmd("worn",      None,  cmd_equipment, "player", False)
-add_cmd("who",       None,  cmd_who,       "player", False)
+mudsys.add_cmd("inventory", "i",   cmd_inventory, "player", False)
+mudsys.add_cmd("equipment", "eq",  cmd_equipment, "player", False)
+mudsys.add_cmd("worn",      None,  cmd_equipment, "player", False)
+mudsys.add_cmd("who",       None,  cmd_who,       "player", False)
 
 '''
-add_cmd("look",      "l",   cmd_look,      "player", False)
+mudsys.add_cmd("look",      "l",   cmd_look,      "player", False)
 '''

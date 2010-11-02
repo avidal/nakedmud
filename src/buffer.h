@@ -18,6 +18,7 @@ void deleteBuffer(BUFFER *buf);
 
 // concatinate the text to the end of the buffer
 void        bufferCat   (BUFFER *buf, const char *txt);
+void        bufferCatCh (BUFFER *buf, const char ch);
 
 // clear the buffer's contents
 void bufferClear(BUFFER *buf);

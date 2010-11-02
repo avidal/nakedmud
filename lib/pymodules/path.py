@@ -4,8 +4,6 @@ path.py
 Plugs into the routine module to allow for the easy construction of paths and
 path following.
 '''
-from mud import *
-from mudsys import add_cmd
 import mud, mudsys, room
 
 
@@ -16,7 +14,7 @@ import mud, mudsys, room
 def leads_to(frm, to):
     '''returns whether from leads directly to to'''
     for ex in frm.exnames:
-        if frm.exit(ex).dest is to:
+        if frm.exit(ex).dest == to:
             return True
     return False
 
@@ -24,80 +22,61 @@ def shortest_path_bfs(frm, to, ignore_doors = False, stay_zone = True,
                       ignore = None):
     '''calculates the shortest path, but uses a breadth first search. More
        efficient than depth-first seach for very short paths with lots of
-       branches or very large muds.'''
+       branches or very large muds.
+    '''
     if frm == to:
-        return [frm]
+        return [ frm ]
 
-    rooms = []
-    depth = []
+    depth = [ [ frm ] ]
 
     if ignore == None:
         ignore = set()
     ignore.add(frm)
 
-    # what is our highest depth
-    i = 1
-
-    # the index of the room our last depth started at
-    j = 0
-
-    # append ourself and our depth
-    rooms.append(frm)
-    depth.append(i)
-
     # figure out what zone we're doing this from
     zone = None
     if stay_zone:
-        zone = "@" + frm.proto.split("@")[-1]
+        zone = frm.locale
 
-    # keep going until we find To, or we can't go any deeper
+    # keep going until we find to, or we can't go any deeper
     found = False
     while not found:
-        prev_depth = rooms[j:]
-        for rm in prev_depth:
-            for ex in rm.exnames:
-                dest = rm.exit(ex).dest
-                if (dest == None or dest in ignore or
-                    (stay_zone and not dest.proto.endswith(zone))):
-                    continue
-                rooms.append(dest)
-                depth.append(i)
-                if dest is to:
+        layer = [ ]
+        for room in depth[-1]:
+            for dir in room.exnames:
+                dest = room.exit(dir).dest
+                if dest == None or dest in ignore:
+                    pass
+                elif zone != None and dest.locale != zone:
+                    pass
+                elif dest == to:
                     found = True
+                    layer = [ ]
                     break
-                ignore.add(rm)
-            if found:
+                else:
+                    layer.append(dest)
+                ignore.add(dest)
+            if found == True:
+                break
+        if len(layer) > 0:
+            depth.append(layer)
+        if found == True or len(layer) == 0:
+            break
+
+    # no path found
+    if found == False:
+        return None
+
+    # find the rooms that link each other, in reverse order
+    path  = [ to ]
+    order = range(len(depth))
+    order.reverse()
+    for i in order:
+        for room in depth[i]:
+            if leads_to(room, path[-1]):
+                path.append(room)
                 break
 
-        i += 1
-        j += len(prev_depth)
-
-    # go backwards from our destination
-    rooms.reverse()
-    depth.reverse()
-
-    # first step, pull out our destination room
-    path = [to]
-
-    # pull out all other rooms on the shortest path
-    while len(rooms) > 0:
-        curr_depth = depth[0]
-        
-        # figure out which room in our current layer
-        # links to our previous room in the shortest path
-        for next in rooms:
-            if leads_to(next, path[len(path)-1]):
-                path.append(next)
-                break
-
-        # clear our last layer
-        i = 0
-        while i < len(depth) and depth[i] == curr_depth:
-            i += 1
-        rooms = rooms[i:]
-        depth = depth[i:]
-
-    # put it back in order
     path.reverse()
     return path
 
@@ -115,12 +94,12 @@ def shortest_path_dfs(frm, to, ignore_doors = False, stay_zone = True,
     ignore.add(frm)
 
     # if we're the target room, return an empty list
-    if frm is to:
+    if frm == to:
         return [frm]
 
     zone = None
     if stay_zone:
-        zone = "@" + frm.proto.split("@")[-1]
+        zone = frm.locale
 
     # build the shortest path 
     for ex in frm.exnames:
@@ -131,12 +110,12 @@ def shortest_path_dfs(frm, to, ignore_doors = False, stay_zone = True,
         # get the dest room. if there is none, skip this exit
         next_room = frm.exit(ex).dest
         
-        if next_room is None:
+        if next_room == None:
             continue
 
         # if we already know this is a dead end or a loopback, skip it
         if (next_room in ignore or
-            (stay_zone and not next_room.proto.endswith(zone))):
+            (stay_zone and not next_room.locale == zone)):
             continue
 
         next_path = shortest_path(next_room, to, ignore_doors, stay_zone,ignore)
@@ -201,12 +180,12 @@ def step(frm, to, ignore_doors = False, stay_zone = True):
 # commands
 ################################################################################
 def cmd_path(ch, cmd, arg):
-    '''Usage: path <person>
+    '''Usage: path <room>
 
        Prints out a Python list of the directions needed to move from your
-       current location to the location of the specified person.'''
+       current location to a specified destination.'''
     try:
-        dest, = parse_args(ch, True, cmd, arg, "room")
+        dest, = mud.parse_args(ch, True, cmd, arg, "room")
     except: return
 
     path = build_patrol([ch.room, dest])
@@ -223,7 +202,7 @@ def cmd_path(ch, cmd, arg):
 ################################################################################
 
 # add our commands
-add_cmd("path", None, cmd_path, "admin", False)
+mudsys.add_cmd("path", None, cmd_path, "admin", False)
 
 # mud initialization
 mud.build_patrol = build_patrol

@@ -297,7 +297,7 @@ void PyHooks_Monitor(const char *type, const char *info) {
     LIST_ITERATOR *list_i = newListIterator(list);
     PyObject *func = NULL;
     ITERATE_LIST(func, list_i) {
-      PyObject *arglist = Py_BuildValue("(s)", info);
+      PyObject *arglist = Py_BuildValue("(s)", info_dup);
       PyObject *retval  = PyEval_CallObject(func, arglist);
       // check for an error:
       if(retval == NULL)
@@ -319,18 +319,26 @@ void PyHooks_Monitor(const char *type, const char *info) {
 PyMODINIT_FUNC
 init_PyHooks(void) {
   PyHooks_addMethod("parse_info", PyHooks_ParseInfo, METH_VARARGS,
-		    "parses a hook info string into a tuple.");
+    "parse_info(info)\n\n"
+    "Returns a tuple of parsed hook information.");
   PyHooks_addMethod("build_info", PyHooks_BuildInfo, METH_VARARGS,
-		    "builds a hook info string out of a tuple and format.");
+    "build_info(format, args)\n\n"
+    "Returns hook information from a string format and a tuple of values for\n"
+    "the format. Format arguments must be space-separated. They include:\n"
+    "ch, rm, obj, ex, sk, str, int, dbl.");
   PyHooks_addMethod("run", PyHooks_Run, METH_VARARGS,
-		    "runs a hook.");
+    "run(hooktypes)\n\n"
+    "Runs hooks registered to the given type.");
   PyHooks_addMethod("add", PyHooks_Add, METH_VARARGS,
-		    "adds a hook.");
+    "add(type, function)\n\n"
+    "Register a new hook function. Hook functions should take one argument:\n"
+    "an information string that can be parsed with hooks.parse_info");
   PyHooks_addMethod("remove", PyHooks_Remove, METH_VARARGS,
-		    "removes a hook");
+    "remove(type, function)\n\n"
+    "Unregister a hook function.");
 
   Py_InitModule3("hooks", makePyMethods(pyhooks_methods),
-		 "The hooks module.");
+    "The python module for registering and running hooks.");
 
   // set up our hook monitor
   pyhook_table = newHashtable();

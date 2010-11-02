@@ -341,11 +341,20 @@ PyObject *PyObj_GetTypeData(PyObject *self, PyObject *args) {
     return NULL;
   }
 
+  // make sure the object exists
+  if(obj == NULL) {
+    PyErr_Format(PyExc_TypeError, "Tried to get type data for non-existent object.");
+    return NULL;
+  }
+
   // make sure it's Python data
   fdata = hashGet(type_table, type);
   if(fdata == NULL || fdata->type == ITYPE_C)
-    return Py_BuildValue("O", Py_None);
-  return Py_BuildValue("O", objGetTypeData(obj, type));
+    return Py_BuildValue("");
+  
+  // make sure this item actually has the relevant type data
+  PyObject *tdata = objGetTypeData(obj, type);
+  return Py_BuildValue("O", (tdata == NULL ? Py_None : tdata));
 }
 
 PyObject *PyObj_istype(PyObject *self, PyObject *args) {  
@@ -420,17 +429,27 @@ void init_items(void) {
 
   // initialize Python mudsys methods
   PyMudSys_addMethod("item_add_type", PyMudSys_ItemAddType, METH_VARARGS,
-		     "add a new type of item to the game");
+		     "item_add_type(name, type_data)\n"
+		     "\n"
+		     "Register a new item type and its data.");
 
   // initialize Python pyobj methods
   PyObj_addMethod("get_type_data", PyObj_GetTypeData, METH_VARARGS,
-		  "Returns the Python data associated with the item type.");
+    "get_type_data(item_type)\n"
+    "\n"
+    "Returns Python item type data if it exists, or None.");
   PyObj_addMethod("istype", PyObj_istype, METH_VARARGS,
-		  "checks to see if the object is of the specified type");
+    "istype(item_type)\n"
+    "\n"
+    "Returns True or False if the object is of the specified item type.");
   PyObj_addMethod("settype", PyObj_settype, METH_VARARGS,
-		  "the object will become of the specified type");
+    "settype(item_type)\n"
+    "\n"
+    "Make an object be the specified item type.");
   PyObj_addMethod("get_types", PyObj_get_types, METH_NOARGS,
-		  "returns a list of the types this object is");
+    "get_types()\n"
+    "\n"
+    "Returns a comma-separated list of item types this object has.");
   // do we need a deltype as well?
   //***********
   // FINISH ME

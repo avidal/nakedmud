@@ -136,14 +136,20 @@ PyObject *PyAuxiliary_install(PyObject *self, PyObject *args) {
   }
 
   // parse the data types that this auxiliary data installs to
-  if(is_keyword(installs_on, "character", FALSE))
+  if(is_keyword(installs_on, "character", FALSE) ||
+     is_keyword(installs_on, "char",      FALSE))
     SET_BIT(type, AUXILIARY_TYPE_CHAR);
   if(is_keyword(installs_on, "room",      FALSE))
     SET_BIT(type, AUXILIARY_TYPE_ROOM);
-  if(is_keyword(installs_on, "object",    FALSE))
+  if(is_keyword(installs_on, "object",    FALSE) ||
+     is_keyword(installs_on, "obj",       FALSE))
     SET_BIT(type, AUXILIARY_TYPE_OBJ);
-  if(is_keyword(installs_on, "account",   FALSE))
+  if(is_keyword(installs_on, "account",   FALSE) ||
+     is_keyword(installs_on, "acct",      FALSE))
     SET_BIT(type, AUXILIARY_TYPE_ACCOUNT);
+  if(is_keyword(installs_on, "socket",    FALSE) ||
+     is_keyword(installs_on, "sock",      FALSE))
+    SET_BIT(type, AUXILIARY_TYPE_SOCKET);
   // more types to come soon!!
   //***********
   // FINISH ME
@@ -164,10 +170,23 @@ PyObject *PyAuxiliary_install(PyObject *self, PyObject *args) {
 
 PyMethodDef pyauxiliary_module_methods[] = {
   { "install", PyAuxiliary_install, METH_VARARGS,
-    "installs new python auxiliary data into the mud. Auxiliary Data must "
-    "take the form of an uninstanced class that has a ClassXXX(set = None) "
-    "init function, a copy() function, a copyTo(to) function, and a store() "
-    "function" },
+    "install(name, AuxClass, installs_on)\n\n"
+    "Register new auxiliary data to the given name. Auxiliary data can be\n"
+    "installed on: character, object, room, account, socket. Auxiliary data\n"
+    "must be a class object of the following form:\n\n"
+    "  class ClassName:\n"
+    "    def __init__(self, storage_set = None)\n"
+    "      ...\n\n"
+    "    def copy(self)\n"
+    "      ...\n\n"
+    "    def copyTo(self, to)\n"
+    "      ...\n\n"
+    "    def store(self)\n"    
+    "      ...\n\n"
+    "The Store method returns a storage set representation of the data. If\n"
+    "the auxiliary data is not persistent, an empty storage set can be\n"
+    "returned. The class's init function must be able to handle reading in\n"
+    "data from a storage set, or creating a fresh instance if set = None.\n" },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 

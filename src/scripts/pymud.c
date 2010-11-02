@@ -507,41 +507,53 @@ PyMODINIT_FUNC
 init_PyMud(void) {
   // add all of our methods
   PyMud_addMethod("get_global", mud_get_global, METH_VARARGS,
-		  "Get the value of a global variable.");
+    "get_global(name)\n\n"
+    "Return a non-persistent global variable, or None.");
   PyMud_addMethod("set_global", mud_set_global, METH_VARARGS,
-		  "Set the value of a global variable.");
+    "set_global(name, val)\n\n"
+    "Sets a non-persistent global variable. Val can be any type.");
   PyMud_addMethod("erase_global",  mud_erase_global, METH_VARARGS,
-		  "Erase the value of a global variable.");
+    "erase_global(name)\n\n"
+    "Delete a value from the global variable table.");
   PyMud_addMethod("message", mud_message, METH_VARARGS,
-		  "plugs into the message() function from inform.h");
+    "message(ch, vict, obj, vobj, show_invis, range, mssg)\n\n"
+    "Send a message via the mud messaging system using $ expansions. Range\n"
+    "can be 'to_room', 'to_char', 'to_vict', or 'to_world'.");
   PyMud_addMethod("format_string", mud_format_string, METH_VARARGS,
-		  "format a string to be 80 chars wide and indented.");
+    "format_string(text, indent=True, width=80)\n\n"
+    "Format a block of text to be of the specified width, possibly indenting\n"
+    "paragraphs.");
   PyMud_addMethod("generic_find",  mud_generic_find, METH_VARARGS,
-		  "Python wrapper around the generic_find() function");
+    "Deprecated. Use mud.parse_args instead.");
   PyMud_addMethod("extract", mud_extract, METH_VARARGS,
-		  "extracts an object or character from the game.");
+    "extract(thing)\n\n"
+    "Extracts an object, character, or room from the game.");
   PyMud_addMethod("keys_equal", mud_keys_equal, METH_VARARGS,
-		  "Returns whether or not two db keys are equal, given the ."
-		  "locale that the script is running in.");
+    "keys_equal(key1, key2)\n\n"
+    "Returns whether two world database keys are equal, relative to the\n"
+    "locale (if any) that the current script is running in.");
   PyMud_addMethod("ite", mud_ite, METH_VARARGS,
-		  "A functional form of an if-then-else statement. Takes 2 "
-		  "arguments (condition, if action) and an optional third "
-		  "(else action). If no else action is specified and the "
-		  "condition is false, None is returned.");
+    "ite(logic_statement, if_statement, else_statement=None)\n\n"
+    "A functional form of if/then/else.");
   PyMud_addMethod("parse_args", mud_parse_args, METH_VARARGS,
-		  "equivalent to parse_args written in C");
-  PyMud_addMethod("get_motd", mud_get_motd, METH_VARARGS,
-		  "returns the mud's message of the day");
-  PyMud_addMethod("get_greeting", mud_get_greeting, METH_VARARGS,
-		  "returns the mud's login greeting");
+    "parse_args(ch, show_usage_errors, cmd, args, format)\n\n"
+    "equivalent to parse_args written in C. See parse.h for information.");
+  PyMud_addMethod("get_motd", mud_get_motd, METH_NOARGS,
+    "get_motd()\n\n"
+    "Returns the mud's message of the day.");
+  PyMud_addMethod("get_greeting", mud_get_greeting, METH_NOARGS,
+    "get_greeting()\n\n"
+    "returns the mud's connection greeting.");
   PyMud_addMethod("log_string", mud_log_string, METH_VARARGS,
-		  "adds a string to the mudlog");
+    "log_string(mssg)\n"
+    "Send a message to the mud's log.");
   PyMud_addMethod("is_race", mud_is_race, METH_VARARGS,
-		  "returns whether or not the string is a valid race.");
+    "is_race(name)\n\n"
+    "Returns True or False if the string is a valid race name.");
   PyMud_addMethod("list_races", mud_list_races, METH_VARARGS,
-		  "returns a list of all the races available. Can take one "
-		  "argument that specifies whether or not to list player "
-		  "races.");
+    "list_races(player_only=False)\n\n"
+    "Return a list of available races. If player_only is True, list only the\n"
+    "races that players have access to.");
 
   Py_InitModule3("mud", makePyMethods(pymud_methods),
 		 "The mud module, for all MUD misc mud utils.");

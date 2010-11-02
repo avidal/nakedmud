@@ -736,7 +736,7 @@ PyObject *PyRoom_add_cmd(PyRoom *self, PyObject *args) {
   bool interrupts = FALSE;
 
   // parse all of the values
-  if (!PyArg_ParseTuple(args, "szOsb", &name, &sort_by, &func,
+  if (!PyArg_ParseTuple(args, "szOs|b", &name, &sort_by, &func,
   			&group, &interrupts)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Could not add new room command. Improper arguments supplied");
@@ -1025,7 +1025,11 @@ PyTypeObject PyRoom_Type = {
     0,                         /*tp_setattro*/
     0,                         /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
-    "Python Room object",      /* tp_doc */
+    "__init__(self, uid_or_string_key)\n\n"
+    "Creates a new Python reference to a room, by uid. If a string database\n"
+    "key is instead supplied, first try to generate a room by an rporoto of\n"
+    "the same name. If no rproto exists, create a new blank room in the room\n"
+    "table, and assign it the given key.",
     0,		               /* tp_traverse */
     0,		               /* tp_clear */
     0,		               /* tp_richcompare */
@@ -1047,13 +1051,25 @@ PyTypeObject PyRoom_Type = {
 
 PyMethodDef room_module_methods[] = {
   { "get_room", (PyCFunction)PyRoom_get_room, METH_VARARGS,
-    "Takes a room key/locale and returns a pointer to that room." },
+    "get_room(key)\n"
+    "\n"
+    "Takes a room key/locale and returns the matching room, or None." },
   { "is_loaded", (PyCFunction)PyRoom_loaded, METH_VARARGS,
-    "Returns whether the given room key has been loaded to the game." },
+    "is_loaded(key)\n"
+    "\n"
+    "Returns whether a room with the given key currently exists in game." },
   { "instance",  (PyCFunction)PyRoom_instance, METH_VARARGS,
-    "Returns a new instanced room to the game." },
+    "instance(room_proto, as_key = None)\n"
+    "\n"
+    "Create an instanced copy of a room, specified by a room prototype name.\n"
+    "If as_key is None, the instanced room's key will be a derivation of\n"
+    "the original prototype name, with a uid number appended to it. Otherwise\n"
+    "as_key is used for the room's key." },
   { "is_abstract",  (PyCFunction)PyRoom_is_abstract, METH_VARARGS,
-    "Returns whether a room with the specified prototype is abstract." },
+    "is_abstract(proto)\n"
+    "\n"
+    "Returns whether a specified room prototype is abstract. Also return True\n"
+    "if the prototype does not exist." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -1097,73 +1113,122 @@ init_PyRoom(void) {
 
     // add all of the basic getsetters
     PyRoom_addGetSetter("name",    PyRoom_getname,     PyRoom_setname, 
-			"the room's name");
+      "The room's name, e.g., Town Square.");
     PyRoom_addGetSetter("desc",    PyRoom_getdesc,     PyRoom_setdesc, 
-			"the room's desc");
+      "The room's description when, e.g., looked at.");
     PyRoom_addGetSetter("proto",   PyRoom_getclass,    NULL, 
-			"The room's class");
+      "The room's unique identifier key. For non-instanced rooms, equivalent\n"
+      "to the main room prototype inherited from. Immutable.");
     PyRoom_addGetSetter("locale",  PyRoom_getlocale,   NULL, 
-			"The zone we belong to");
+      "The zone a room belongs to. Immutable.");
     PyRoom_addGetSetter("protoname",PyRoom_getprotoname,NULL, 
-			"The head of our proto");
+      "The first half of the room's unique identifier key. Immutable.");
     PyRoom_addGetSetter("protos",  PyRoom_getprotos,   NULL, 
-			"The room's prototypes");
+      "A comma-separated list of room prototypes this room inherits from. Immutable.");
     PyRoom_addGetSetter("chars",   PyRoom_getchars,    NULL, 
-			"chars in the room");
+      "A list of all characters in the room. Immutable. See char.Char.room\n"
+      "for changing the room a character is in.");
     PyRoom_addGetSetter("objs",  PyRoom_getobjs,       NULL, 
-			"objects in the room");
+      "Alias for room.Room.contents");
     PyRoom_addGetSetter("contents",PyRoom_getobjs,     NULL, 
-			"objects in the room");
+      "A list of objects in the room. Immutable. See obj.Obj.room for\n"
+      "changing the room an object is in.");
     PyRoom_addGetSetter("exnames", PyRoom_getexnames,  NULL, 
-			"the room's exits");
+      "A list of the room's exits, by direction. Immutable. See room.Room.dig\n"
+      "for creating new links between rooms.");
     PyRoom_addGetSetter("uid",     PyRoom_getuid,      NULL,
-			"the room's uid");
+      "The room's unique identification number. Immutable.");
     PyRoom_addGetSetter("terrain", PyRoom_getterrain,  PyRoom_setterrain,
-			"the room's terrain type");
+      "The current terrain type of the room.");
     PyRoom_addGetSetter("bits",    PyRoom_getbits,     PyRoom_setbits,
-			"the room's bits");
+      "A comma-separated list of setting bits currently toggled on the room.");
 
     // add all of the basic methods
     PyRoom_addMethod("attach", PyRoom_attach, METH_VARARGS,
-		     "attach a new script to the room.");
+      "attach(trigger)\n"
+      "\n"
+      "Attach a trigger to the room by key name.");
     PyRoom_addMethod("detach", PyRoom_detach, METH_VARARGS,
-		     "detach a script from the room, by vnum.");
+      "detach(trigger)\n"
+      "\n"
+      "Detach a trigger from the room by key name.");
     PyRoom_addMethod("dig", PyRoom_dig, METH_VARARGS,
-		     "digs in direction to the target room. Returns exit.");
+      "dig(dir, dest)\n"
+      "\n"
+      "Link the room to another room via the specified direction. The\n"
+      "destination room can be an actual room or a room key name. Returns\n"
+      "the created exit. If an exit already exists in the specified\n"
+      "direction, change its destination.");
     PyRoom_addMethod("fill", PyRoom_fill, METH_VARARGS,
-		     "fills in direction for the room.");
+      "fill(dir)\n"
+      "\n"
+      "Erases an exit in the specified direction.");
     PyRoom_addMethod("exit", PyRoom_get_exit, METH_VARARGS,
-		     "gets an exit in the room with the given direction name.");
+      "exit(dir)\n"
+      "\n"
+      "Returns an exit for the specified direction, or None.");
     PyRoom_addMethod("exdir", PyRoom_get_exit_dir, METH_VARARGS,
-		     "returns the direction of the exit.");
+      "exdir(exit)\n"
+      "\n"
+      "Returns the direction for a specified exit, or None.");
     PyRoom_addMethod("send", PyRoom_send, METH_VARARGS,
-		     "send a message to everyone in the room.");
+      "send(mssg)\n"
+      "\n"
+      "Send a message to all characters in the room.");
     PyRoom_addMethod("edesc", PyRoom_edesc, METH_VARARGS,
-		     "adds an extra description to the room.");
+      "edesc(keywords, desc)\n"
+      "\n"
+      "Create an extra description for the room, accessible via a comma-\n"
+      "separated list of keywords.");
     PyRoom_addMethod("add_cmd", PyRoom_add_cmd, METH_VARARGS,
-		     "adds a command to the room.");
+      "add_cmd(name, shorthand, cmd_func, user_group, interrupts = False)\n"
+      "\n"
+      "Add a new player command specific to the room. See mudsys.add_cmd for\n"
+      "documentation on commands.");
     PyRoom_addMethod("add_cmd_check", PyRoom_add_cmd_check, METH_VARARGS,
-		     "adds a pre-check to a room command.");
+      "add_cmd_check(cmd_name, check_func)\n"
+      "\n"
+      "Add a new command check function specific to the room. See \n"
+      "mudsys.add_cmd_check for documentation on command checks.");
     PyRoom_addMethod("isinstance", PyRoom_isinstance, METH_VARARGS,
-		     "returns whether or not the room inherits from the proto");
+      "isinstance(prototype)\n"
+      "\n"
+      "returns whether the room inherits from a specified room prototype.");
     PyRoom_addMethod("getAuxiliary", PyRoom_get_auxiliary, METH_VARARGS,
-		     "get's the specified piece of aux data from the room");
+      "getAuxiliary(name)\n"
+      "\n"
+      "Returns room's auxiliary data of the specified name.");
     PyRoom_addMethod("aux", PyRoom_get_auxiliary, METH_VARARGS,
-		     "get's the specified piece of aux data from the room");
+      "Alias for room.Room.getAuxiliary(name)");
     PyRoom_addMethod("getvar", PyRoom_getvar, METH_VARARGS,
-		    "get the value of a special variable the room has.");
+      "getvar(name)\n"
+      "\n"
+      "Return value of a special variable. Return 0 if no value has been set.");
     PyRoom_addMethod("setvar", PyRoom_setvar, METH_VARARGS,
-		    "set the value of a special variable the room has.");
+      "setvar(name, val)\n"
+      "\n"
+      "Set value of a special variable for the room. Values must be strings \n"
+      "or numbers. This function is intended to allow scripts and triggers to"
+      "open-endedly add variables to rooms.");
     PyRoom_addMethod("hasvar", PyRoom_hasvar, METH_VARARGS,
-		    "return whether or not the room has a given variable.");
+      "hasvar(name)\n"
+      "\n"
+      "Return True if a room has the given special variable. False otherwise.");
     PyRoom_addMethod("deletevar", PyRoom_deletevar, METH_VARARGS,
-		    "delete a variable from the room's variable table.");
+      "deletevar(name)\n"
+      "\n"
+      "Deletes a special variable from a room if they have one by the\n"
+      "given name.");
     PyRoom_addMethod("delvar", PyRoom_deletevar, METH_VARARGS,
-		    "delete a variable from the room's variable table.");
+      "Alias for room.Room.deletevar(name)");
     PyRoom_addMethod("reset", PyRoom_reset, METH_NOARGS,
-		     "run all of the room's reset commands.");
+      "reset()\n"
+      "\n"
+      "Runs a room's reset commands and reset hooks.");
     PyRoom_addMethod("hasBit", PyRoom_hasBit, METH_VARARGS,
-		     "return whether or not the room has a specified bit.");
+      "hasBit(name)\n"
+      "\n"
+      "Return whether room has a bit toggled.\n");
 
     // add in all the getsetters and methods
     makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);
@@ -1176,7 +1241,8 @@ init_PyRoom(void) {
 
     // initialize the module
     module = Py_InitModule3("room", room_module_methods,
-			    "The room module, for all MUD room-related stuff.");
+      "Contains the Python wrapper for rooms, and utilities for loading and\n"
+      "instancing rooms.");
 
     // make sure the module parsed OK
     if (module == NULL)

@@ -105,6 +105,9 @@ def cg_finish_prompt(sock):
 # character generation hooks
 ################################################################################
 def char_gen_hook(info):
+    '''Put a socket into the character generation menu when character generation
+       hooks are called.
+    '''
     sock, = hooks.parse_info(info)
     sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt, "playing")
     sock.push_ih(cg_finish_handler, cg_finish_prompt)

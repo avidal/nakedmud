@@ -69,9 +69,12 @@ void      char_to_room        (CHAR_DATA *ch, ROOM_DATA *room);
 void      char_from_furniture (CHAR_DATA *ch);
 void      char_to_furniture   (CHAR_DATA *ch, OBJ_DATA *furniture);
 
+bool      do_equip          (CHAR_DATA *ch, OBJ_DATA *obj, const char *pos, 
+			     bool by_name);
 bool      try_equip         (CHAR_DATA *ch, OBJ_DATA *obj, 
 			     const char *wanted_pos, const char *required_pos);
 bool      try_unequip       (CHAR_DATA *ch, OBJ_DATA *obj);
+bool      do_unequip        (CHAR_DATA *ch, OBJ_DATA *obj);
 void      unequip_all       (CHAR_DATA *ch);
 
 

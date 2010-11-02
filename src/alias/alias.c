@@ -378,9 +378,16 @@ void init_aliases() {
   add_cmd("alias", NULL, cmd_alias, "player", TRUE);
 
   // Python extensions
-  PyChar_addMethod("get_alias", PyChar_GetAlias,   METH_VARARGS, NULL);
-  PyChar_addMethod("set_alias", PyChar_SetAlias,   METH_VARARGS, NULL);
-  PyChar_addGetSetter("aliases",PyChar_GetAliases, NULL,         NULL);
+  PyChar_addMethod("get_alias", PyChar_GetAlias,   METH_VARARGS, 
+    "get_alias(name)\n"
+    "\n"
+    "Return character's alias by the specified name, or None.");
+  PyChar_addMethod("set_alias", PyChar_SetAlias,   METH_VARARGS, 
+    "set_alias(name, value)\n"
+    "\n"
+    "Set a character's alias. Value must be a string.");
+  PyChar_addGetSetter("aliases",PyChar_GetAliases, NULL, 
+    "A list of all aliases the character currently has defined. Immutable.");
 }
 
 

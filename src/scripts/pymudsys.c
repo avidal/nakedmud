@@ -761,7 +761,7 @@ PyObject *mudsys_gen_add_method(PyTypeObject *type, PyObject *args) {
   char       *name = NULL;
 
   if(!PyArg_ParseTuple(args, "OO", &pyname, &method)) {
-    PyErr_Format(PyExc_TypeError, "Method takes string and function argument.");
+    PyErr_Format(PyExc_TypeError, "Method takes string and function or property argument.");
     return NULL;
   }
 
@@ -770,8 +770,8 @@ PyObject *mudsys_gen_add_method(PyTypeObject *type, PyObject *args) {
     return NULL;
   }
 
-  if(!PyFunction_Check(method)) {
-    PyErr_Format(PyExc_TypeError, "Second argument not a function.");
+  if(!PyFunction_Check(method) && !PyObject_TypeCheck(method,&PyProperty_Type)){
+    PyErr_Format(PyExc_TypeError,"Second argument not a function or property.");
     return NULL;
   }
 
@@ -1023,7 +1023,7 @@ PyObject *mudsys_world_save_type(PyObject *self, PyObject *args) {
   char      *type = NULL;
   char       *key = NULL;
 
-  if(!PyArg_ParseTuple(args, "ssO", &type, &key)) {
+  if(!PyArg_ParseTuple(args, "ss", &type, &key)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Error parsing type and key for world_save_type");
     return NULL;
@@ -1101,6 +1101,33 @@ PyObject *mudsys_list_zone_contents(PyObject *self, PyObject *args) {
   }
 }
 
+PyObject *mudsys_can_edit_zone(PyObject *self, PyObject *args) {
+  PyObject  *pych = NULL;
+  CHAR_DATA   *ch = NULL;
+  ZONE_DATA *zone = NULL;
+  char     *zname = NULL;
+
+  if(!PyArg_ParseTuple(args, "Os", &pych, &zname)) {
+    PyErr_Format(PyExc_TypeError,"can_edit_zone takes ch and zone name.");
+    return NULL;
+  }
+
+  if(!PyChar_Check(pych)) {
+    PyErr_Format(PyExc_TypeError,"Non-character supplied to can_edit_zone.");
+    return NULL;
+  }
+  else if( (ch = PyChar_AsChar(pych)) == NULL) {
+    PyErr_Format(PyExc_TypeError,"can_edit_zone supplied non-existent zone.");
+    return NULL;
+  }
+
+  // find the zone and check
+  zone = worldGetZone(gameworld, zname);
+  if(zone == NULL || !canEditZone(zone, ch))
+    return Py_BuildValue("i", 0);
+  return Py_BuildValue("i", 1);
+}
+
 
 
 //*****************************************************************************
@@ -1133,117 +1160,211 @@ init_PyMudSys(void) {
 
   // add all of our methods
   PyMudSys_addMethod("do_shutdown", mudsys_shutdown, METH_VARARGS,
+		     "do_shutdown()\n\n"
 		     "shuts the mud down.");
   PyMudSys_addMethod("do_copyover", mudsys_copyover, METH_VARARGS,
+		     "do_copyover()\n\n"
 		     "performs a copyover on the mud.");
   PyMudSys_addMethod("sys_setval", mudsys_set_sys_val, METH_VARARGS,
-		     "sets a system value on the mud.");
+		     "set_sysval(name, val)\n"
+		     "\n"
+		     "sets a value registered in the system settings.");
   PyMudSys_addMethod("sys_getval", mudsys_get_sys_val, METH_VARARGS,
-		     "returns a system value on the mud.");
+		     "sys_getval(name)\n"
+		     "\n"
+		     "returns a value registered in the system settings.");
   PyMudSys_addMethod("sys_getvar", mudsys_get_sys_val, METH_VARARGS,
-		     "returns a system value on the mud.");
+		     "Alias to mudsys.sys_getval");
   PyMudSys_addMethod("sys_setvar", mudsys_set_sys_val, METH_VARARGS,
-		     "sets a system value on the mud.");
+		     "Alias to mudsys.sys_setval");
   PyMudSys_addMethod("player_exists", mudsys_player_exists, METH_VARARGS,
-		     "returns whether a player with the name exists.");
+		     "player_exists(name)\n"
+		     "\n"
+		     "Returns whether a player with the name exists.");
   PyMudSys_addMethod("account_exists", mudsys_account_exists, METH_VARARGS,
-		     "returns whether an account with the name exists.");
+		     "account_exists(name)\n"
+		     "\n"
+		     "Returns whether an account with the name exists.");
   PyMudSys_addMethod("player_creating", mudsys_player_creating, METH_VARARGS,
+		     "player_creating(name)\n"
+		     "\n"
 		     "returns whether a player with the name is creating.");
   PyMudSys_addMethod("account_creating", mudsys_account_creating, METH_VARARGS,
+		     "account_creating(name)\n"
+		     "\n"
 		     "returns whether an account with the name is creating.");
   PyMudSys_addMethod("do_register", mudsys_do_register, METH_VARARGS,
-		     "register a player to disk, and with an account.");
+		     "do_register(char_or_account)\n"
+		     "\n"
+		     "Register a PC or account for the first time. Should be called after creation.");
+  PyMudSys_addMethod("get_player", mudsys_load_char, METH_VARARGS,
+		     "get_player(name)\n"
+		     "\n"
+		     "Return a saved character of specified name, or None.");
   PyMudSys_addMethod("load_char", mudsys_load_char, METH_VARARGS,
-		     "load a characer from disk");
+		     "Alias for mudsys.get_player(name).");
   PyMudSys_addMethod("load_account", mudsys_load_account, METH_VARARGS,
-		     "load an account from disk");
+		     "load_account(name)\n"
+		     "\n"
+		     "Return a saved account of specified name, or None.");
   PyMudSys_addMethod("try_enter_game", mudsys_try_enter_game, METH_VARARGS,
-		     "Tries to put the character into the game world");
+		     "try_enter_game(ch)\n"
+		     "\n"
+		     "Tries to add a character the game world.");
   PyMudSys_addMethod("do_save", mudsys_do_save, METH_VARARGS,
-		     "save a character to disk");
+		     "do_save(char_or_account)\n"
+		     "\n"
+		     "Save a character or account's information.");
   PyMudSys_addMethod("do_quit", mudsys_do_quit, METH_VARARGS,
-		     "quit a character from game");
+		     "do_quit(ch)\n"
+		     "\n"
+		     "Extract a character from game.");
   PyMudSys_addMethod("attach_account_socket",mudsys_attach_account_socket, 
-		     METH_VARARGS, "attaches an account and socket.");
+		     METH_VARARGS, 
+		     "attach_account_socket(acct, sock)\n"
+		     "\n"
+		     "Link a loaded account to a connected socket.");
   PyMudSys_addMethod("attach_char_socket", mudsys_attach_char_socket, 
-		     METH_VARARGS, "attaches a char and socket.");
+		     METH_VARARGS,
+		     "attach_char_socket(ch, sock)\n"
+		     "\n"
+		     "Link a loaded character to a connected socket.");
   PyMudSys_addMethod("detach_char_socket", mudsys_detach_char_socket,
-		     METH_VARARGS, "detachs a char from a socket.");
+		     METH_VARARGS,
+		     "detach_char_socket(ch)\n"
+		     "\n"
+		     "Unlink a character from its attached socket.");
   PyMudSys_addMethod("do_disconnect", mudsys_do_disconnect, METH_VARARGS,
-		     "disconnects a character from its socket");
+		     "do_disconnect(ch)\n"
+		     "\n"
+		     "call detach_char_socket, then close the socket.");
   PyMudSys_addMethod("password_matches", mudsys_password_matches, METH_VARARGS,
-		     "returns whether or not the password matches the account's"
-		     " password.");
+		     "password_matches(acct, psswd)\n"
+		     "\n"
+		     "Returns True or False if the given password matches the account's password.");
   PyMudSys_addMethod("set_password", mudsys_set_password, METH_VARARGS,
-		     "sets an account's password.");
+		     "set_password(acct, passwd)\n"
+		     "\n"
+		     "Set an account's password.");
   PyMudSys_addMethod("add_cmd", mudsys_add_cmd, METH_VARARGS,
-		     "Add a new command to the game.");
+    "add_cmd(name, shorthand, cmd_func, user_group, interrupts_action)\n"
+    "\n"
+    "Add a new command to the master command table. If a preferred shorthand\n"
+    "exists, e.g., 'n' for 'north', it can be specified. Otherwise, shorthand\n"
+    "should be None. Command functions take three arguments: a character\n"
+    "issuing the command, the command name, and a string argument supplied\n"
+    "to the command. Commands must be tied to a specific user group, and they\n"
+    "can optionally interupt character actions.");
   PyMudSys_addMethod("add_cmd_check", mudsys_add_cmd_check, METH_VARARGS,
-		     "Add a new check prior to a command running.");
+    "add_cmd_check(name, check_func)\n"
+    "\n"
+    "Add a new command check to a registered command. Check functions take\n"
+    "two arguments: the character issuing the command, and the command name.\n"
+    "If a check fails, it should return False and send the character a\n"
+    "message why.");
   PyMudSys_addMethod("remove_cmd", mudsys_remove_cmd, METH_VARARGS,
-		     "Removes a command from the game.");
+    "remove_cmd(name)\n"
+    "\n"
+    "Removes a command from the master command table.");
   PyMudSys_addMethod("handle_cmd_input", mudsys_handle_cmd_input, METH_VARARGS,
-		     "the default input handler for character commands.");
+    "handle_cmd_input(sock, cmd)\n"
+    "\n"
+    "Equivalent to char.Char.act(cmd)");
   PyMudSys_addMethod("show_prompt", mudsys_show_prompt, METH_VARARGS,
-		     "the default character prompt. Can be replaced in Python "
-		     "by assigning a new prompt to the same named variable.");
+    "show_prompt(sock)\n"
+    "\n"
+    "Display the default game prompt to the socket. Can be replaced in Python\n"
+    "by assigning a new function to show_prompt.");
   PyMudSys_addMethod("create_account", mudsys_create_account, METH_VARARGS,
-		     "creates a new account by name. Must be registered "
-		     "after fully created.");
+    "create_account(acctname)\n"
+    "\n"
+    "Returns a new account by the specified name, or None if an account by.\n"
+    "the specified name is already registered or creating. After the account" 
+    "generation process is complete, mudsys.do_register(acct) must be called.");
   PyMudSys_addMethod("create_player", mudsys_create_player, METH_VARARGS,
-		     "creates a new player by name. Must be registered "
-		     "after fully created.");
+    "Same as mudsys.create_account for player characters.");
   PyMudSys_addMethod("add_sock_method", mudsys_add_sock_method, METH_VARARGS,
-		     "adds a new Python method to the Mudsock class");
+    "Same as add_acct_method for sockets.");
   PyMudSys_addMethod("add_char_method", mudsys_add_char_method, METH_VARARGS,
-		     "adds a new Python method to the Char class");
+    "Same as add_acct_method for characters.");
   PyMudSys_addMethod("add_room_method", mudsys_add_room_method, METH_VARARGS,
-		     "adds a new Python method to the Room class");
+    "Same as add_acct_method for rooms.");
   PyMudSys_addMethod("add_exit_method",  mudsys_add_exit_method, METH_VARARGS,
-		     "adds a new Python method to the Exit class");
+    "Same as add_acct_method for exits.");
   PyMudSys_addMethod("add_obj_method",  mudsys_add_obj_method, METH_VARARGS,
-		     "adds a new Python method to the Obj class");
+    "Same as add_acct_method for objects.");
   PyMudSys_addMethod("add_acct_method",  mudsys_add_acct_method, METH_VARARGS,
-		     "adds a new Python method to the Account class");
+    "add_acct_method(name, method)\n"
+    "\n"
+    "Adds a function or property to the Account class.");
   PyMudSys_addMethod("world_add_type", mudsys_world_add_type, METH_VARARGS,
-		     "adds a new type to the world. like, e.g., mob, obj, and "
-                     "room prototypes. Assumes a class with a store and "
-		     "setKey method");
+    "world_add_type(typename, class_data)\n"
+    "\n"
+    "Registers a new type to the world database. Like, e.g., mob, obj, and\n"
+    "room prototypes. Assumes class has a store and setKey method. Init\n"
+    "method should take one optional argument: a storage set to parse the\n"
+    "type data from, when loaded.");
   PyMudSys_addMethod("world_get_type", mudsys_world_get_type, METH_VARARGS,
-		     "gets a registered item from the world database. Assumes "
-		     "it is a python type, and not a C type. If no type exists "
-		     "return Py_None");
+    "world_get_type(typename, key)\n"
+    "\n"
+    "Returns registered entry of the specified type from the world database.\n"
+    "Assumes it is a python type, and not a C type. If no type exists\n"
+    "return None.");
   PyMudSys_addMethod("world_put_type", mudsys_world_put_type, METH_VARARGS,
-		     "Put a new type into thw world database.");
+    "world_put_type(typename, key, data)\n"
+    "\n"
+    "Put and save an entry of the specified type to the world database.");
   PyMudSys_addMethod("world_save_type", mudsys_world_save_type, METH_VARARGS,
-		     "Saves a world entry if it exists.");
+    "world_save_type(typename, key)\n"
+    "\n"
+    "Saves an entry in the world database if it exists.");
   PyMudSys_addMethod("world_remove_type", mudsys_world_remove_type,METH_VARARGS,
-		     "Removes a type, and returns a reference to it, or None "
-		     "if it does not exist.");
+    "world_remove_type(typename, key)\n"
+    "\n"
+    "Remove and return an entry from the world database, or None.");
   PyMudSys_addMethod("register_char_cansee", mudsys_register_char_cansee,
-		     METH_VARARGS, "Register a new check of whether one "
-		     "character can see another.");
+    METH_VARARGS,
+   "register_char_cansee(check_function(observer, observee))\n"
+   "\n"
+   "Register a new check of whether one character can see another.");
   PyMudSys_addMethod("register_obj_cansee", mudsys_register_obj_cansee,
-		     METH_VARARGS, "Register a new check of whether a "
-		     "character can see an object.");
+    METH_VARARGS, "Same as register_char_cansee for objects.");
   PyMudSys_addMethod("register_exit_cansee", mudsys_register_exit_cansee,
-		     METH_VARARGS, "Register a new check of whether a char "
-		     "can see an exit.");
+    METH_VARARGS, "Same as register_char_cansee for exits.");
   PyMudSys_addMethod("set_cmd_move", mudsys_set_cmd_move, METH_VARARGS,
-		     "sets the movement command.");
+    "set_cmd_move(cmd_func)\n"
+    "\n"
+    "Register a player command for handling all default movement commands.\n"
+    "See mudsys.add_cmd for information about commands.");
   PyMudSys_addMethod("register_dflt_move_cmd", mudsys_register_dflt_move_cmd, 
-		     METH_VARARGS, "registers a new default movement command.");
+    METH_VARARGS,
+    "register_dflt_move_cmd(cmdname)\n"
+    "\n" 
+    "registers a new default movement command, e.g., north");
   PyMudSys_addMethod("register_move_check",mudsys_register_move_check,
-		     METH_VARARGS,"register new check to perform a movement.");
+    METH_VARARGS,
+    "register_move_check(check_func)\n"
+    "\n"
+    "Register a check to perform movement commands. See mudsys.add_cmd_check\n"
+    "for information about command checks.");
   PyMudSys_addMethod("create_bitvector", mudsys_create_bitvector,
-		     METH_VARARGS,"creates a new type of bitvector."); 
+    METH_VARARGS, "Not yet implemented."); 
   PyMudSys_addMethod("create_bit", mudsys_create_bit,
-		     METH_VARARGS,"creates a new bit on the specified bitvector."); 
+    METH_VARARGS,
+    "create_bit(bitvector, bit)\n"
+    "\n"
+    "Creates a new bit on the specified bitvector."); 
   PyMudSys_addMethod("next_uid", mudsys_next_uid, METH_NOARGS,
-		     "returns the next available uid.");
+    "next_uid()\n\n"
+    "Returns the next available universal identification number.");
   PyMudSys_addMethod("list_zone_contents", mudsys_list_zone_contents, 
-		     METH_VARARGS, "returns a list of the contents of the given type, for the specified zone.");
+    METH_VARARGS,
+    "list_zone_contents(zone, type)\n\n" 
+    "Returns a list of the content keys of the given type, for the specified\n"
+    "zone.");
+  PyMudSys_addMethod("can_edit_zone", mudsys_can_edit_zone, METH_VARARGS,
+    "can_edit_zone(ch, zone)\n\n"
+    "True or False if a character has permission to edit a zone.");
 
   Py_InitModule3("mudsys", makePyMethods(pymudsys_methods),
 		 "The mudsys module, for all MUD system utils.");

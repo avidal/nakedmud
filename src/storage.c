@@ -351,7 +351,7 @@ bool skip_indent(FILEBUF *fb, int indent) {
 //
 bool storage_end(FILEBUF *fb) {
   char c = fbgetc(fb);
-  if(c == SET_MARKER) {
+  if(c == SET_MARKER || c == EOF) {
     // also skip the newline that comes after us
     fbgetc(fb);
     return TRUE;

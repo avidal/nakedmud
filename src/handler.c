@@ -489,17 +489,30 @@ void char_to_furniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
 //*****************************************************************************
 // functions related to equipping and unequipping items
 //*****************************************************************************
+
+//
+// if we're equipping by the specific name of positions, by_name should be TRUE.
+// If instead we are equipping by the TYPE of position, by_name should be FALSE
+bool do_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *pos, bool by_name) {
+  if((by_name  && bodyEquipPosnames(charGetBody(ch), obj, pos)) ||
+     (!by_name && bodyEquipPostypes(charGetBody(ch), obj, pos))) {
+    objSetWearer(obj, ch);
+    return TRUE;
+  }
+  return FALSE;
+}
+
 bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *wanted_pos,
 	       const char *required_pos) {
   bool success = FALSE;
 
   // if we don't need any specific places, try equipping to our wanted spots
   if(!required_pos || !*required_pos)
-    success = bodyEquipPosnames(charGetBody(ch), obj, wanted_pos);
+    success = do_equip(ch, obj, wanted_pos, TRUE);
 
   // if we don't want any specific places, equip to whatever is open
   else if(!wanted_pos || !*wanted_pos)
-    success = bodyEquipPostypes(charGetBody(ch), obj, required_pos);
+    success = do_equip(ch, obj, required_pos, FALSE);
 
   // otherwise, see if the places we want to equip to match what we need,
   // and also make sure we're not trying to equip the same position twice
@@ -539,18 +552,35 @@ bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *wanted_pos,
 
     // if we didn't run into problems, try equipping
     if(match == TRUE)
-      success = bodyEquipPosnames(charGetBody(ch), obj, wanted_pos);
+      success = do_equip(ch, obj, wanted_pos, TRUE);
   }
 
   if(success == TRUE)
-    objSetWearer(obj, ch);
+    hookRun("equip", hookBuildInfo("ch obj", ch, obj));
+
   return success;
 }
 
-bool try_unequip(CHAR_DATA *ch, OBJ_DATA *obj) {
+bool do_unequip(CHAR_DATA *ch, OBJ_DATA *obj) {
   if(bodyUnequip(charGetBody(ch), obj)) {
     objSetWearer(obj, NULL);
     return TRUE;
+  }
+  return FALSE;
+}
+
+bool try_unequip(CHAR_DATA *ch, OBJ_DATA *obj) {
+  if(objGetWearer(obj) == ch) {
+    hookRun("pre_unequip", hookBuildInfo("ch obj", ch, obj));
+
+    // if wearer == ch, this should never fail
+    bool success = do_unequip(ch, obj);
+
+    if(success == TRUE)
+      hookRun("unequip", hookBuildInfo("ch obj", ch, obj));
+    else
+      log_string("ERROR: failed to unequip obj when wearer == ch");
+    return success;
   }
   return FALSE;
 }
@@ -562,10 +592,8 @@ void unequip_all(CHAR_DATA *ch) {
   LIST      *eq = bodyGetAllEq(charGetBody(ch));
   OBJ_DATA *obj = NULL;
   while( (obj = listPop(eq)) != NULL) {
-    if(bodyUnequip(charGetBody(ch), obj)) {
-      objSetWearer(obj, NULL);
+    if(do_unequip(ch, obj))
       obj_to_char(obj, ch);
-    }
   } deleteList(eq);
 }
 

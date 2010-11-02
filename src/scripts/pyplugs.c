@@ -97,6 +97,7 @@ COMMAND(cmd_pyload) {
   if(!*arg)
     send_to_char(ch, "Which module or package would you like to load?\r\n");
   else {
+    send_to_char(ch, "{rpyload is unsafe and has been deprecated.{n\r\n");
     char fname[SMALL_BUFFER];
     sprintf(fname, "%s/%s.py", PYMOD_LIB, arg);
     // make sure the file exists

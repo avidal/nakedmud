@@ -332,6 +332,9 @@ def acct_main_menu(sock):
 # events for blocking action when dns lookup is in progress
 ################################################################################
 def dns_check_event(owner, void, info):
+    '''After a socket connects, monitor their hostname until dns lookup is
+       complete. Then, put the socket into the account handler.
+    '''
     sock, = hooks.parse_info(info)
     if sock != None and sock.can_use:
         sock.send(" Lookup complete.")
@@ -349,6 +352,7 @@ def dns_check_event(owner, void, info):
 # account handler hooks
 ################################################################################
 def account_handler_hook(info):
+    '''When a socket connects, put them into the account handler menu.'''
     # put a nonfunctional prompt up while waiting for the DNS to resolve
     sock, = hooks.parse_info(info)
     sock.push_ih(login_method_handler, login_method_prompt)

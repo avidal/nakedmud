@@ -23,6 +23,8 @@
 #include "pyobj.h"
 #include "pyroom.h"
 #include "pyexit.h"
+#include "pymudsys.h"
+#include "trighooks.h"
 
 
 
@@ -30,17 +32,15 @@
 // local datastructures and defines
 //*****************************************************************************
 
-// values for figuring out what "me" and optional variables are in gen_do_trig
-#define VARTYPE_CHAR      0
-#define VARTYPE_OBJ       1
-#define VARTYPE_ROOM      2
+// a table matching trigger types to what they can attach to (obj, mob, room)
+HASHTABLE *tedit_opts = NULL;
 
 // used for providing additional variables to gen_do_trig that are not standard
-typedef struct {
+struct opt_var {
   char *name;
   void *data;
   int   type;
-} OPT_VAR;
+};
 
 OPT_VAR *newOptVar(const char *name, void *data, int type) {
   OPT_VAR *var = malloc(sizeof(OPT_VAR));
@@ -53,6 +53,16 @@ OPT_VAR *newOptVar(const char *name, void *data, int type) {
 void deleteOptVar(OPT_VAR *var) {
   if(var->name) free(var->name);
   free(var);
+}
+
+HASHTABLE *get_tedit_opts(void) {
+  return tedit_opts;
+}
+
+void register_tedit_opt(const char *type, const char *desc) {
+  if(tedit_opts == NULL)
+    tedit_opts = newHashtable();
+  hashPut(tedit_opts, type, strdupsafe(desc));
 }
 
 
@@ -114,9 +124,9 @@ void gen_do_trig(TRIGGER_DATA *trig,
   if(me) {
     PyObject *pyme = NULL;
     switch(me_type) {
-    case VARTYPE_CHAR:  pyme = charGetPyForm(me); break;
-    case VARTYPE_OBJ:   pyme = objGetPyForm(me);  break;
-    case VARTYPE_ROOM:  pyme = roomGetPyForm(me); break;
+    case TRIGVAR_CHAR:  pyme = charGetPyForm(me); break;
+    case TRIGVAR_OBJ:   pyme = objGetPyForm(me);  break;
+    case TRIGVAR_ROOM:  pyme = roomGetPyForm(me); break;
     }
     PyDict_SetItemString(dict, "me", pyme);
     listPut(varnames, strdup("me"));
@@ -131,9 +141,9 @@ void gen_do_trig(TRIGGER_DATA *trig,
     ITERATE_LIST(opt, opt_i) {
       pyopt = NULL;
       switch(opt->type) {
-      case VARTYPE_CHAR:  pyopt = charGetPyForm(opt->data); break;
-      case VARTYPE_OBJ:   pyopt = objGetPyForm(opt->data);  break;
-      case VARTYPE_ROOM:  pyopt = roomGetPyForm(opt->data); break;
+      case TRIGVAR_CHAR:  pyopt = charGetPyForm(opt->data); break;
+      case TRIGVAR_OBJ:   pyopt = objGetPyForm(opt->data);  break;
+      case TRIGVAR_ROOM:  pyopt = roomGetPyForm(opt->data); break;
       }
       PyDict_SetItemString(dict, opt->name, pyopt);
       listPut(varnames, strdup(opt->name));
@@ -157,176 +167,32 @@ void gen_do_trig(TRIGGER_DATA *trig,
   Py_XDECREF(dict);
 }
 
-
 //
-// handles all of a character's triggers
-void do_char_trigs(CHAR_DATA *ch, const char *type, void *thing, void *arg) {
-  if(ch == NULL)
+// generalized function for running all triggers of a specified type.
+void gen_do_trigs(void *me, int me_type, const char *type,
+		  CHAR_DATA *ch,OBJ_DATA *obj, ROOM_DATA *room, EXIT_DATA *exit,
+		  const char *command, const char *arg, LIST *optional) {
+  // find our list of triggers
+  LIST *trig_keys = NULL;
+  if(me_type == TRIGVAR_CHAR)
+    trig_keys = charGetTriggers(me);
+  else if(me_type == TRIGVAR_OBJ)
+    trig_keys = objGetTriggers(me);
+  else if(me_type == TRIGVAR_ROOM)
+    trig_keys = roomGetTriggers(me);
+
+  if(trig_keys == NULL || listSize(trig_keys) == 0)
     return;
-
-  if(listSize(charGetTriggers(ch)) > 0) {
-    // first, build a list of all our triggers of this type
-    LIST           *trigs = newList();
-    LIST_ITERATOR *trig_i = newListIterator(charGetTriggers(ch));
-    char             *key = NULL;
-    TRIGGER_DATA    *trig = NULL;
-    ITERATE_LIST(key, trig_i) {
-      if((trig = worldGetType(gameworld, "trigger", key)) != NULL &&
-	 !strcasecmp(triggerGetType(trig), type))
-	listPut(trigs, trig);
-    } deleteListIterator(trig_i);
-
-    // did we find any triggers?
-    if(listSize(trigs) > 0) {
-      trig_i = newListIterator(trigs);
-      ITERATE_LIST(trig, trig_i) {
-	if(!strcasecmp(type, "speech"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,thing,NULL,NULL,NULL,NULL,arg,NULL);
-	else if(!strcasecmp(type, "look"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "self_exit"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,NULL,NULL,NULL,thing,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "self_enter"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "enter"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "exit"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,thing,NULL,NULL,arg,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "greet"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "give"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,thing,arg,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "receive"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,thing,arg,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "wear"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,NULL,thing,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "remove"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,NULL,thing,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "to_game"))
-	  gen_do_trig(trig,ch,VARTYPE_CHAR,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
-	else {
-	  log_string("Unrecognized trigger type %s attached to %s, uid %d.\r\n",
-		     type, charGetClass(ch), charGetUID(ch));
-	}
-      } deleteListIterator(trig_i);
-    }
-    
-    // clean up our mess
-    deleteList(trigs);
-  }
+  
+  char        *trig_key = NULL;
+  LIST_ITERATOR *trig_i = newListIterator(trig_keys);
+  TRIGGER_DATA    *trig = NULL;
+  ITERATE_LIST(trig_key, trig_i) {
+    if((trig = worldGetType(gameworld, "trigger", trig_key)) != NULL &&
+       !strcasecmp(triggerGetType(trig), type))
+      gen_do_trig(trig,me,me_type,ch,obj,room,exit,command,arg,optional);
+  } deleteListIterator(trig_i);
 }
-
-//
-// handles all of an object's triggers
-void do_obj_trigs(OBJ_DATA *obj, const char *type, void *thing, void *arg) {
-  if(obj == NULL)
-    return;
-
-  if(listSize(objGetTriggers(obj)) > 0) {
-    // first, build a list of all our triggers of this type
-    LIST           *trigs = newList();
-    LIST_ITERATOR *trig_i = newListIterator(objGetTriggers(obj));
-    char             *key = NULL;
-    TRIGGER_DATA    *trig = NULL;
-    ITERATE_LIST(key, trig_i) {
-      if((trig = worldGetType(gameworld, "trigger", key)) != NULL &&
-	 !strcasecmp(triggerGetType(trig), type))
-	listPut(trigs, trig);
-    } deleteListIterator(trig_i);
-
-    // did we find any triggers?
-    if(listSize(trigs) > 0) {
-      trig_i = newListIterator(trigs);
-      ITERATE_LIST(trig, trig_i) {
-	if(!strcasecmp(type, "give")) {
-	  // set up the optional "receiver" variable
-	  LIST *opts = newList();
-	  listPut(opts, newOptVar("recv", arg, VARTYPE_CHAR));
-	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,opts);
-	  deleteListWith(opts, deleteOptVar);
-	}
-	else if(!strcasecmp(type, "get"))
-	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "drop"))
-	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "wear"))
-	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "remove"))
-	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "open"))
-	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "close"))
-	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "look"))
-	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "to_game"))
-	  gen_do_trig(trig,obj,VARTYPE_OBJ,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
-	else {
-	  log_string("Unrecognized trigger type %s attached to %s, uid %d.\r\n",
-		     type, objGetClass(obj), objGetUID(obj));
-	}
-      } deleteListIterator(trig_i);
-    }
-
-    // clean up our mess
-    deleteList(trigs);
-  }
-}
-
-//
-// handles all of a room's triggers
-void do_room_trigs(ROOM_DATA *rm, const char *type, void *thing, void *arg){
-  if(rm == NULL)
-    return;
-
-  if(listSize(roomGetTriggers(rm)) > 0) {
-    // first, build a list of all our triggers of this type
-    LIST           *trigs = newList();
-    LIST_ITERATOR *trig_i = newListIterator(roomGetTriggers(rm));
-    char             *key = NULL;
-    TRIGGER_DATA    *trig = NULL;
-    ITERATE_LIST(key, trig_i) {
-      if((trig = worldGetType(gameworld, "trigger", key)) != NULL &&
-	 !strcasecmp(triggerGetType(trig), type))
-	listPut(trigs, trig);
-    } deleteListIterator(trig_i);
-
-    // did we find any triggers?
-    if(listSize(trigs) > 0) {
-      trig_i = newListIterator(trigs);
-      ITERATE_LIST(trig, trig_i) {
-	if(!strcasecmp(type, "get"))
-	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,arg,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "drop"))
-	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,arg,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "enter"))
-	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "exit"))
-	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,arg,NULL,NULL,NULL);
- 	else if(!strcasecmp(type, "look"))
- 	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "speech"))
-	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,NULL,NULL,arg,NULL);
-	else if(!strcasecmp(type, "reset"))
-	  gen_do_trig(trig,rm,VARTYPE_ROOM,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
-	else if(!strcasecmp(type, "open"))
-	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,arg,NULL,NULL,NULL);
- 	else if(!strcasecmp(type, "close"))
- 	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,arg,NULL,NULL,NULL);
- 	else if(!strcasecmp(type, "to_game"))
- 	  gen_do_trig(trig,rm,VARTYPE_ROOM,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
-	else {
-	  log_string("Unrecognized trigger type %s attached to %s, uid %d.\r\n",
-		     type, roomGetClass(rm), roomGetUID(rm));
-	}
-      } deleteListIterator(trig_i);
-    }
-    
-    // clean up our mess
-    deleteList(trigs);
-  }
-}
-
 
 
 //*****************************************************************************
@@ -338,9 +204,15 @@ void do_give_trighooks(const char *info) {
   OBJ_DATA   *obj = NULL;
   hookParseInfo(info, &ch, &recv, &obj);
 
-  do_char_trigs(ch,   "give",    recv, obj);
-  do_char_trigs(recv, "receive", ch,   obj);
-  do_obj_trigs (obj,  "give",    ch,  recv);
+  gen_do_trigs(ch,TRIGVAR_CHAR,"give",recv,obj,NULL,NULL,NULL,NULL,NULL);
+  gen_do_trigs(recv,TRIGVAR_CHAR,"receive",ch,obj,NULL,NULL,NULL,NULL,NULL);
+
+  LIST *opts = newList();
+  listPut(opts, newOptVar("vict", recv, TRIGVAR_CHAR));
+  gen_do_trigs(obj,TRIGVAR_OBJ,"give",ch,NULL,NULL,NULL,NULL,NULL,opts);
+
+  // garbage collection
+  deleteListWith(opts, deleteOptVar);
 }
 
 void do_get_trighooks(const char *info) {
@@ -348,17 +220,16 @@ void do_get_trighooks(const char *info) {
   OBJ_DATA *obj = NULL;
   hookParseInfo(info, &ch, &obj);
 
-  do_obj_trigs (obj,             "get", ch, NULL);
-  do_room_trigs(charGetRoom(ch), "get", ch, obj);
+  gen_do_trigs(obj,TRIGVAR_OBJ,"get",ch,NULL,NULL,NULL,NULL,NULL,NULL);
+  gen_do_trigs(charGetRoom(ch),TRIGVAR_ROOM,"get",ch,obj,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_drop_trighooks(const char *info) {
   CHAR_DATA *ch = NULL;
   OBJ_DATA *obj = NULL;
   hookParseInfo(info, &ch, &obj);
-
-  do_obj_trigs (obj,             "drop", ch, NULL);
-  do_room_trigs(charGetRoom(ch), "drop", ch,  obj);
+  gen_do_trigs(obj,TRIGVAR_OBJ,"drop",ch,NULL,NULL,NULL,NULL,NULL,NULL);
+  gen_do_trigs(charGetRoom(ch),TRIGVAR_ROOM,"drop",ch,obj,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_enter_trighooks(const char *info) {
@@ -370,10 +241,10 @@ void do_enter_trighooks(const char *info) {
   CHAR_DATA       *mob = NULL;
   ITERATE_LIST(mob, mob_i) {
     if(ch != mob)
-      do_char_trigs(mob, "enter", ch, NULL);
+      gen_do_trigs(mob,TRIGVAR_CHAR,"enter",ch,NULL,NULL,NULL,NULL,NULL,NULL);
   } deleteListIterator(mob_i);
-  do_room_trigs(room, "enter", ch, NULL);
-  do_char_trigs(ch,   "self_enter", NULL, NULL);
+  gen_do_trigs(room,TRIGVAR_ROOM,"enter",ch,NULL,NULL,NULL,NULL,NULL,NULL);
+  gen_do_trigs(ch,TRIGVAR_CHAR,"self enter",NULL,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_exit_trighooks(const char *info) {
@@ -386,10 +257,10 @@ void do_exit_trighooks(const char *info) {
   CHAR_DATA       *mob = NULL;
   ITERATE_LIST(mob, mob_i) {
     if(ch != mob)
-      do_char_trigs(mob, "exit", ch, exit);
+      gen_do_trigs(mob,TRIGVAR_CHAR,"exit",ch,NULL,NULL,exit,NULL,NULL,NULL);
   } deleteListIterator(mob_i);
-  do_room_trigs(room, "exit", ch,   exit);
-  do_char_trigs(ch,   "self_exit", exit, NULL);
+  gen_do_trigs(room,TRIGVAR_ROOM,"exit",ch,NULL,NULL,exit,NULL,NULL,NULL);
+  gen_do_trigs(ch,TRIGVAR_CHAR,"self exit",NULL,NULL,NULL,exit,NULL,NULL,NULL);
 }
 
 void do_ask_trighooks(const char *info) {
@@ -397,8 +268,10 @@ void do_ask_trighooks(const char *info) {
   CHAR_DATA *listener = NULL;
   char        *speech = NULL;
   hookParseInfo(info, &ch, &listener, &speech);
-  do_char_trigs(listener, "speech", ch, speech);
-  if(speech) free(speech);
+  gen_do_trigs(listener,TRIGVAR_CHAR,"speech",ch,NULL,NULL,NULL,NULL,speech,NULL);
+
+  // garbage collection
+  free(speech);
 }
 
 void do_say_trighooks(const char *info) {
@@ -410,34 +283,35 @@ void do_say_trighooks(const char *info) {
   CHAR_DATA       *mob = NULL;
   ITERATE_LIST(mob, mob_i) {
     if(ch != mob)
-      do_char_trigs(mob, "speech", ch, speech);
+     gen_do_trigs(mob,TRIGVAR_CHAR,"speech",ch,NULL,NULL,NULL,NULL,speech,NULL);
   } deleteListIterator(mob_i);
-  do_room_trigs(charGetRoom(ch), "speech", ch, speech);
-  if(speech) free(speech);
+  gen_do_trigs(charGetRoom(ch),TRIGVAR_ROOM,"speech",ch,NULL,NULL,NULL,NULL,speech,NULL);
+
+  // garbage collection
+  free(speech);
 }
 
 void do_greet_trighooks(const char *info) {
   CHAR_DATA      *ch = NULL;
   CHAR_DATA *greeted = NULL;
   hookParseInfo(info, &ch, &greeted);
-  do_char_trigs(greeted, "greet", ch, NULL);
+  gen_do_trigs(greeted,TRIGVAR_CHAR,"greet",ch,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_wear_trighooks(const char *info) {
   CHAR_DATA *ch = NULL;
   OBJ_DATA *obj = NULL;
   hookParseInfo(info, &ch, &obj);
-
-  do_char_trigs(ch,  "wear", obj, NULL);
-  do_obj_trigs (obj, "wear", ch,  NULL);
+  gen_do_trigs(ch,TRIGVAR_CHAR,"wear",NULL,obj,NULL,NULL,NULL,NULL,NULL);
+  gen_do_trigs(obj,TRIGVAR_OBJ,"wear",ch,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_remove_trighooks(const char *info) {
   CHAR_DATA *ch = NULL;
   OBJ_DATA *obj = NULL;
   hookParseInfo(info, &ch, &obj);
-  do_char_trigs(ch,  "remove", obj, NULL);
-  do_obj_trigs (obj, "remove", ch,  NULL);
+  gen_do_trigs(ch,TRIGVAR_CHAR,"remove",NULL,obj,NULL,NULL,NULL,NULL,NULL);
+  gen_do_trigs(obj,TRIGVAR_OBJ,"remove",ch,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_reset_trighooks(const char *info) {
@@ -451,7 +325,8 @@ void do_reset_trighooks(const char *info) {
   ROOM_DATA      *room = NULL;
   ITERATE_LIST(name, res_i) {
     room = worldGetRoom(gameworld, get_fullkey(name, locale));
-    if(room != NULL) do_room_trigs(room, "reset", NULL, NULL);
+    if(room != NULL)
+     gen_do_trigs(room,TRIGVAR_ROOM,"reset",NULL,NULL,NULL,NULL,NULL,NULL,NULL);
   } deleteListIterator(res_i);
 
   // garbage collection
@@ -462,67 +337,67 @@ void do_open_door_trighooks(const char *info) {
   CHAR_DATA *ch = NULL;
   EXIT_DATA *ex = NULL;
   hookParseInfo(info, &ch, &ex);
-  do_room_trigs(charGetRoom(ch), "open", ch, ex);
+  gen_do_trigs(charGetRoom(ch),TRIGVAR_ROOM,"open",ch,NULL,NULL,ex,NULL,NULL,NULL);
 }
 
 void do_open_obj_trighooks(const char *info) {
   CHAR_DATA *ch = NULL;
   OBJ_DATA *obj = NULL;
   hookParseInfo(info, &ch, &obj);
-  do_obj_trigs(obj, "open", ch, NULL);
+  gen_do_trigs(obj,TRIGVAR_OBJ,"open",ch,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_close_door_trighooks(const char *info) {
   CHAR_DATA *ch = NULL;
   EXIT_DATA *ex = NULL;
   hookParseInfo(info, &ch, &ex);
-  do_room_trigs(charGetRoom(ch), "close", ch, ex);
+  gen_do_trigs(charGetRoom(ch),TRIGVAR_ROOM,"close",ch,NULL,NULL,ex,NULL,NULL,NULL);
 }
 
 void do_close_obj_trighooks(const char *info) {
   CHAR_DATA *ch = NULL;
   OBJ_DATA *obj = NULL;
   hookParseInfo(info, &ch, &obj);
-  do_obj_trigs(obj, "close", ch, NULL);
+  gen_do_trigs(obj,TRIGVAR_OBJ,"close",ch,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_look_at_obj_trighooks(const char *info) {
   OBJ_DATA     *obj = NULL;
   CHAR_DATA *looker = NULL;
   hookParseInfo(info, &obj, &looker);
-  do_obj_trigs(obj, "look", looker, NULL);
+  gen_do_trigs(obj,TRIGVAR_OBJ,"look",looker,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_look_at_room_trighooks(const char *info) {
   ROOM_DATA   *room = NULL;
   CHAR_DATA *looker = NULL;
   hookParseInfo(info, &room, &looker);
-  do_room_trigs(room, "look", looker, NULL);
+  gen_do_trigs(room,TRIGVAR_ROOM,"look",looker,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_look_at_char_trighooks(const char *info) {
   CHAR_DATA     *ch = NULL;
   CHAR_DATA *looker = NULL;
   hookParseInfo(info, &ch, &looker);
-  do_char_trigs(ch, "look", looker, NULL);
+  gen_do_trigs(ch,TRIGVAR_CHAR,"look",looker,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_obj_to_game_trighooks(const char *info) {
   OBJ_DATA *obj = NULL;
   hookParseInfo(info, &obj);
-  do_obj_trigs(obj, "to_game", obj, NULL);
+  gen_do_trigs(obj,TRIGVAR_OBJ,"to_game",NULL,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_char_to_game_trighooks(const char *info) {
   CHAR_DATA *ch = NULL;
   hookParseInfo(info, &ch);
-  do_char_trigs(ch, "to_game", ch, NULL);
+  gen_do_trigs(ch, TRIGVAR_CHAR,"to_game",NULL,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 void do_room_to_game_trighooks(const char *info) {
   ROOM_DATA *rm = NULL;
   hookParseInfo(info, &rm);
-  do_room_trigs(rm, "to_game", rm, NULL);
+  gen_do_trigs(rm,TRIGVAR_ROOM,"to_game",NULL,NULL,NULL,NULL,NULL,NULL,NULL);
 }
 
 
@@ -553,4 +428,23 @@ void init_trighooks(void) {
   hookAdd("obj_to_game",    do_obj_to_game_trighooks);
   hookAdd("char_to_game",   do_char_to_game_trighooks);
   hookAdd("room_to_game",   do_room_to_game_trighooks);
+
+  // add our trigger displays
+  register_tedit_opt("speech",         "mob, room" );
+  register_tedit_opt("greet",          "mob"       );
+  register_tedit_opt("enter",          "mob, room" );
+  register_tedit_opt("exit",           "mob, room" );
+  register_tedit_opt("self enter",     "mob"       ),
+  register_tedit_opt("self exit",      "mob"       );
+  register_tedit_opt("drop",           "obj, room" );
+  register_tedit_opt("get",            "obj, room" );
+  register_tedit_opt("give",           "obj, mob"  );
+  register_tedit_opt("receive",        "mob"       );
+  register_tedit_opt("wear",           "obj, mob"  );
+  register_tedit_opt("remove",         "obj, mob"  );
+  register_tedit_opt("reset",          "room"      );
+  register_tedit_opt("look",           "obj, mob, room" );
+  register_tedit_opt("open",           "obj, room" );
+  register_tedit_opt("close",          "obj, room" );
+  register_tedit_opt("to_game",        "obj, mob, room" );
 }

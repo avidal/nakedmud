@@ -1,13 +1,9 @@
-################################################################################
-#
-# cmd_admin.py
-#
-# commands available only to admins.
-#
-################################################################################
-from mud import *
-from mudsys import add_cmd
-import mudsys, inform, string, mudsock, mud, hooks
+'''
+cmd_admin.py
+
+commands available only to admins.
+'''
+import mudsys, inform, string, mudsock, mud, hooks, display
 import room as mudroom
 import char as mudchar
 import obj  as mudobj
@@ -51,7 +47,7 @@ def cmd_repeat(ch, cmd, arg):
          > repeat 20 load obj beer@drinks
        '''
     try:
-        times, arg = parse_args(ch, True, cmd, arg, "int(times) string(command)")
+        times, arg = mud.parse_args(ch, True, cmd, arg, "int(times) string(command)")
     except: return
 
     if times < 1:
@@ -118,8 +114,8 @@ def cmd_at(ch, cmd, arg):
        Perform a command at another room or person while never leaving your
        current room.'''
     try:
-        found, type, arg = parse_args(ch, True, cmd, arg,
-                                      "{ room ch.world.noself } string(command)")
+        found, type, arg = mud.parse_args(ch, True, cmd, arg,
+                                          "{ room ch.world.noself } string(command)")
     except: return
 
     # figure out what room we're doing the command at
@@ -150,8 +146,8 @@ def cmd_force(ch, cmd, arg):
     
        Attempts to make the specified perform a command of your choosing.'''
     try:
-        found, multi, arg = parse_args(ch, True, cmd, arg,
-                                       "ch.world.noself.multiple string(command)")
+        found, multi, arg = mud.parse_args(ch, True, cmd, arg,
+                                           "ch.world.noself.multiple string(command)")
     except: return
 
     if multi == False:
@@ -167,7 +163,7 @@ def cmd_goto(ch, cmd, arg):
        are referenced by their zone key.
        '''
     try:
-        found, type = parse_args(ch, True, cmd, arg, "{ room ch.world.noself }")
+        found, type = mud.parse_args(ch, True, cmd, arg, "{ room ch.world.noself }")
     except: return
 
     # what did we find?
@@ -176,12 +172,12 @@ def cmd_goto(ch, cmd, arg):
     else:
         dest = found
 
-    message(ch, None, None, None, True, "to_room",
-            "$n disappears in a puff of smoke.")
+    mud.message(ch, None, None, None, True, "to_room",
+                "$n disappears in a puff of smoke.")
     ch.room = dest
     ch.act("look")
-    message(ch, None, None, None, True, "to_room",
-            "$n appears in a puff of smoke.")
+    mud.message(ch, None, None, None, True, "to_room",
+                "$n appears in a puff of smoke.")
     hooks.run("enter", hooks.build_info("ch rm", (ch, ch.room)))
     
 def do_transfer(ch, tgt, dest):
@@ -190,12 +186,12 @@ def do_transfer(ch, tgt, dest):
         ch.send(ch.see_as(tgt) + " is already there")
     else:
         tgt.send(tgt.see_as(ch) + " has transferred you to " + dest.name)
-        message(tgt, None, None, None, True, "to_room",
-                "$n disappears in a puff of smoke.")
+        mud.message(tgt, None, None, None, True, "to_room",
+                    "$n disappears in a puff of smoke.")
         tgt.room = dest
         tgt.act("look", False)
-        message(tgt, None, None, None, True, "to_room",
-                "$n arrives in a puff of smoke.")
+        mud.message(tgt, None, None, None, True, "to_room",
+                    "$n arrives in a puff of smoke.")
 
 def cmd_transfer(ch, cmd, arg):
     '''Usage: transfer <person> [[to] room]
@@ -204,8 +200,8 @@ def cmd_transfer(ch, cmd, arg):
        takes the target to the user. If an additional argument is supplied,
        instead transfers the target to the specifie room.'''
     try:
-        found, multi, dest = parse_args(ch, True, cmd, arg,
-                                        "ch.world.multiple.noself | [to] room")
+        found, multi, dest = mud.parse_args(ch, True, cmd, arg,
+                                            "ch.world.multiple.noself | [to] room")
     except: return
 
     # if we didn't supply a room, use our own
@@ -252,7 +248,7 @@ def cmd_exec(ch, cmd, arg):
 def cmd_instance(ch, cmd, arg):
     '''Create an instanced version of the specified room'''
     try:
-        source, dest = parse_args(ch, True, cmd, arg, "word(source) [as] word(dest)")
+        source, dest = mud.parse_args(ch, True, cmd, arg, "word(source) [as] word(dest)")
     except: return
 
     room = mudroom.instance(source, dest)
@@ -299,7 +295,7 @@ def cmd_zinstance(ch, cmd, arg):
             ch.send("No zones currently instanced.")
         else:
             ch.send("{w %-40s %36s " % ("Instance", "Source"))
-            ch.send("{b-------------------------------------------------------------------------------")
+            ch.send("{b" + display.seperator)
             for pair in curr_instances:
                 ch.send("{c %-40s %36s{n" % pair)
         return
@@ -322,42 +318,59 @@ def cmd_connections(ch, cmd, arg):
 
     tosend = [ ]
 
-    fmt = " %-11s %-11s %-11s %s"
+    fmt = " %2s   %-11s %-11s %-11s %s"
 
-    tosend.append(("{w" + fmt) % ("Character", "Account", "Status", "Host"))
-    tosend.append("{b--------------------------------------------------------------------------------{c")
+    tosend.append(("{w"+fmt) % ("Id", "Character", "Account", "Status", "Host"))
+    tosend.append("{b" + display.seperator + "{c")
     for sock in mudsock.socket_list():
         chname  = "none"
         accname = "none"
         state   = sock.state
         host    = sock.hostname
+        id      = sock.uid
 
         if sock.ch != None:
             chname  = sock.ch.name
         if sock.account != None:
             accname = sock.account.name
-        tosend.append(fmt % (chname, accname, state, host))
+        tosend.append(fmt % (id, chname, accname, state, host))
     tosend.append("{n")
     ch.page("\r\n".join(tosend))
+
+def cmd_disconnect(ch, cmd, arg):
+    """Usage: disconnect <uid>
+
+       Disconnects a socket with the given uid. Use 'connections' to see
+       current connected sockets."""
+    try:
+        uid, = mud.parse_args(ch, True, cmd, arg, "int(uid)")
+    except: return
+
+    for sock in mudsock.socket_list():
+        if sock.uid == uid:
+            ch.send("You disconnect socket %d." % uid)
+            sock.close()
+            break
 
 
 
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("shutdow",     None, cmd_shutdown_net, "admin",   False)
-add_cmd("shutdown",    None, cmd_shutdown,     "admin",   False)
-add_cmd("copyove",     None, cmd_copyover_net, "admin",   False)
-add_cmd("copyover",    None, cmd_copyover,     "admin",   False)
-add_cmd("at",          None, cmd_at,           "wizard",  False)
-add_cmd("lockdown",    None, cmd_lockdown,     "admin",   False)
-add_cmd("pulserate",   None, cmd_pulserate,    "admin",   False)
-add_cmd("repeat",      None, cmd_repeat,       "wizard",  False)
-add_cmd("force",       None, cmd_force,        "wizard",  False)
-add_cmd("goto",        None, cmd_goto,         "wizard",  False)
-add_cmd("transfer",    None, cmd_transfer,     "wizard",  False)
-add_cmd("eval",        None, cmd_eval,         "admin",   False)
-add_cmd("exec",        None, cmd_exec,         "admin",   False)
-add_cmd("connections", None, cmd_connections,  "admin",   False)
-add_cmd("instance",    None, cmd_instance,     "admin",   False)
-add_cmd("zinstance",   None, cmd_zinstance,    "admin",   False)
+mudsys.add_cmd("shutdow",     None, cmd_shutdown_net, "admin",   False)
+mudsys.add_cmd("shutdown",    None, cmd_shutdown,     "admin",   False)
+mudsys.add_cmd("copyove",     None, cmd_copyover_net, "admin",   False)
+mudsys.add_cmd("copyover",    None, cmd_copyover,     "admin",   False)
+mudsys.add_cmd("at",          None, cmd_at,           "wizard",  False)
+mudsys.add_cmd("lockdown",    None, cmd_lockdown,     "admin",   False)
+mudsys.add_cmd("pulserate",   None, cmd_pulserate,    "admin",   False)
+mudsys.add_cmd("repeat",      None, cmd_repeat,       "wizard",  False)
+mudsys.add_cmd("force",       None, cmd_force,        "wizard",  False)
+mudsys.add_cmd("goto",        None, cmd_goto,         "wizard",  False)
+mudsys.add_cmd("transfer",    None, cmd_transfer,     "wizard",  False)
+mudsys.add_cmd("eval",        None, cmd_eval,         "admin",   False)
+mudsys.add_cmd("exec",        None, cmd_exec,         "admin",   False)
+mudsys.add_cmd("connections", None, cmd_connections,  "admin",   False)
+mudsys.add_cmd("disconnect",  None, cmd_disconnect,   "admin",   False)
+mudsys.add_cmd("instance",    None, cmd_instance,     "admin",   False)
+mudsys.add_cmd("zinstance",   None, cmd_zinstance,    "admin",   False)
