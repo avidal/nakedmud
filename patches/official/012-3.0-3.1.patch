@@ -1,0 +1,5781 @@
+diff -ruN ../nakedmudv3.0/src/account_handler.c src/account_handler.c
+--- ../nakedmudv3.0/src/account_handler.c	Fri Oct  7 14:15:55 2005
++++ src/account_handler.c	Sun Dec  4 20:03:08 2005
+@@ -189,8 +189,11 @@
+ 
+     // account created. Register it, and plop it into the account menu. If it
+     // is already created, we're just editing the password. So save changes.
+-    if(!account_exists(accountGetName(socketGetAccount(sock))))
++    if(!account_exists(accountGetName(socketGetAccount(sock)))) {
++      // run hooks for creating our account for the first time
++      hookRun("create_account", socketGetAccount(sock));
+       register_account(socketGetAccount(sock));
++    }
+     else
+       save_account(socketGetAccount(sock));
+     socketReplaceInputHandler(sock, account_handle_menu, account_menu);
+@@ -245,7 +248,7 @@
+ 	socketSetChar(sock, NULL);
+ 	return;
+       }
+-
++      
+       // try putting the character into the game. Pop the input handler
+       // if we cannot
+       if(try_enter_game(ch)) {
+@@ -258,7 +261,7 @@
+ 	look_at_room(ch, charGetRoom(ch));
+ 
+ 	// run entrance hooks
+-	hookRun("enter", ch, charGetRoom(ch), NULL);
++	hookRun("enter", ch, charGetRoom(ch));
+       }
+       else {
+ 	text_to_buffer(sock, "There was a problem entering the game. Try again later!\r\n");
+diff -ruN ../nakedmudv3.0/src/action.c src/action.c
+--- ../nakedmudv3.0/src/action.c	Fri Oct  7 14:15:55 2005
++++ src/action.c	Sun Dec  4 20:03:08 2005
+@@ -112,11 +112,6 @@
+ #endif
+ }
+ 
+-// stop_all_actions as a hook
+-void stop_all_actions_hook(CHAR_DATA *ch, void *none1, void *none2) {
+-  stop_all_actions(ch);
+-}
+-
+ 
+ 
+ //*****************************************************************************
+@@ -131,7 +126,7 @@
+ 	  "admin", TRUE, FALSE);
+ 
+   // make sure the character does not continue actions after being extracted
+-  hookAdd("char_from_game", stop_all_actions_hook);
++  hookAdd("char_from_game", stop_all_actions);
+ }
+ 
+ bool is_acting(void *ch, bitvector_t where) {
+diff -ruN ../nakedmudv3.0/src/alias/.depend src/alias/.depend
+--- ../nakedmudv3.0/src/alias/.depend	Wed Dec 31 17:00:00 1969
++++ src/alias/.depend	Sun Dec  4 20:03:07 2005
+@@ -0,0 +1 @@
++alias.o: alias.c alias.h
+diff -ruN ../nakedmudv3.0/src/alias/alias.c src/alias/alias.c
+--- ../nakedmudv3.0/src/alias/alias.c	Fri Oct  7 14:15:55 2005
++++ src/alias/alias.c	Sun Dec  4 20:03:07 2005
+@@ -158,7 +158,7 @@
+   BUFFER *cmd = newBuffer(SMALL_BUFFER);
+   func_depth++;
+ 
+-  BUFFER *filled_alias = newBuffer(1);
++  BUFFER *filled_alias = newBuffer(MAX_BUFFER);
+   bufferCat(filled_alias, alias);
+   // now, replace all of our parameters 
+   int i;
+@@ -312,25 +312,25 @@
+     if(alias == NULL)
+       return FALSE;
+     else {
+-      BUFFER     *buf = expand_alias(ch, alias, arg);
+-      int i, num_cmds = 0;
+       // break the buffer contents up into multiple commands, if there are any
+-      char     **cmds = parse_strings(bufferString(buf), ';', &num_cmds);
++      BUFFER     *buf = expand_alias(ch, alias, arg);
++      LIST      *cmds = parse_strings(bufferString(buf), ';');
++      char     *first = listPop(cmds);
+       
+       // queue all of our commands after the first onto the command list
+-      if(charGetSocket(ch) && num_cmds > 1) {
+-	for(i = 1; i < num_cmds; i++)
+-	  socketQueueCommand(charGetSocket(ch), cmds[i]);
+-	// note how many commands we got out of this alias
+-	charSetAliasesQueued(ch, num_cmds);
++      if(charGetSocket(ch) && listSize(cmds) > 0) {
++	LIST_ITERATOR *cmd_i = newListIterator(cmds);
++	char            *cmd = NULL;
++	ITERATE_LIST(cmd, cmd_i) {
++	  socketQueueCommand(charGetSocket(ch), cmd);
++	} deleteListIterator(cmd_i);
++	charSetAliasesQueued(ch, listSize(cmds) + 1);
+       }
+-      if(num_cmds > 0)
+-	do_cmd(ch, cmds[0], FALSE);
+-      
+-      // clean up our mess
+-      for(i = 0; i < num_cmds; i++)
+-	free(cmds[i]);
+-      free(cmds);
++      if(first != NULL)
++	do_cmd(ch, first, FALSE);
++
++      deleteListWith(cmds, free);
++      if(first) free(first);
+       deleteBuffer(buf);
+       return TRUE;
+     }
+diff -ruN ../nakedmudv3.0/src/bitvector.c src/bitvector.c
+--- ../nakedmudv3.0/src/bitvector.c	Fri Oct  7 14:15:55 2005
++++ src/bitvector.c	Sun Dec  4 20:03:08 2005
+@@ -143,40 +143,34 @@
+ }
+ 
+ bool bitIsSet(BITVECTOR *v, const char *bit) {
+-  // first, parse all of the names
+-  bool found = FALSE;
+-  int i, num_names = 0;
+-  char **bits = parse_keywords(bit, &num_names);
++  LIST    *bits = parse_keywords(bit);
++  char *one_bit = NULL; 
++  bool    found = FALSE;
+ 
+   // check for one
+-  for(i = 0; i < num_names && !found; i++) {
+-    found = bitIsOneSet(v, bits[i]);
+-    free(bits[i]);
++  while( !found && (one_bit = listPop(bits)) != NULL) {
++    found = bitIsOneSet(v, one_bit);
++    free(one_bit);
+   }
+-
+-  // continue our clean up
+-  for(; i < num_names; i++)
+-    free(bits[i]);
+-  free(bits);
++  
++  // clean up our mess
++  deleteListWith(bits, free);
+   return found;
+ }
+ 
+ bool bitIsAllSet(BITVECTOR *v, const char *bit) {
+-  // first, parse all of the names
+-  bool found = TRUE;
+-  int i, num_names = 0;
+-  char **bits = parse_keywords(bit, &num_names);
++  LIST    *bits = parse_keywords(bit);
++  char *one_bit = NULL;
++  bool    found = TRUE;
+ 
+   // check for each one
+-  for(i = 0; i < num_names && found; i++) {
+-    found = bitIsOneSet(v, bits[i]);
+-    free(bits[i]);
++  while( found && (one_bit = listPop(bits)) != NULL) {
++    found = bitIsOneSet(v, one_bit);
++    free(one_bit);
+   }
+ 
+-  // continue our clean up
+-  for(; i < num_names; i++)
+-    free(bits[i]);
+-  free(bits);
++  // clean up our mess
++  deleteListWith(bits, free);
+   return found;
+ }
+ 
+@@ -186,19 +180,20 @@
+ }
+ 
+ void bitSet(BITVECTOR *v, const char *name) {
+-  // first, parse all of the names
+-  int i, num_names = 0;
+-  char **bits = parse_keywords(name, &num_names);
++  LIST    *bits = parse_keywords(name);
++  char *one_bit = NULL;
+ 
+   // set each one
+-  for(i = 0; i < num_names; i++) {
+-    int val = (int)hashGet(v->data->bitmap, bits[i]);
+-    free(bits[i]);
++  while( (one_bit = listPop(bits)) != NULL) {
++    int val = (int)hashGet(v->data->bitmap, one_bit);
++    free(one_bit);
+     // 0 is a filler meaning 'this is not an actual name for a bit'
+     if(val == 0) continue;
+     SET_BIT(v->bits[val/8], (1 << (val % 8)));
+   }
+-  free(bits);
++
++  // garbage collection
++  deleteListWith(bits, free);
+ }
+ 
+ void bitClear(BITVECTOR *v) {
+@@ -208,33 +203,35 @@
+ }
+ 
+ void bitRemove(BITVECTOR *v, const char *name) {
+-  // first, parse all of the names
+-  int i, num_names = 0;
+-  char **bits = parse_keywords(name, &num_names);
++  LIST    *bits = parse_keywords(name);
++  char *one_bit = NULL;
+ 
+-  // set each one
+-  for(i = 0; i < num_names; i++) {
+-    int val = (int)hashGet(v->data->bitmap, bits[i]);
++  // remove each one
++  while( (one_bit = listPop(bits)) != NULL) {
++    int val = (int)hashGet(v->data->bitmap, one_bit);
+     REMOVE_BIT(v->bits[val/8], (1 << (val % 8)));
+-    free(bits[i]);
++    free(one_bit);
+   }
+-  free(bits);
++
++  // garbage collection
++  deleteListWith(bits, free);
+ }
+ 
+ void bitToggle(BITVECTOR *v, const char *name) {
+-  // first, parse all of the names
+-  int i, num_names = 0;
+-  char **bits = parse_keywords(name, &num_names);
++  LIST    *bits = parse_keywords(name);
++  char *one_bit = NULL;
+ 
+-  // set each one
+-  for(i = 0; i < num_names; i++) {
+-    int val = (int)hashGet(v->data->bitmap, bits[i]);
+-    free(bits[i]);
++  // toggle each one
++  while( (one_bit = listPop(bits)) != NULL) {
++    int val = (int)hashGet(v->data->bitmap, one_bit);
++    free(one_bit);
+     // 0 is a filler meaning 'this is not an actual name for a bit'
+     if(val == 0) continue;
+     TOGGLE_BIT(v->bits[val/8], (1 << (val % 8)));
+   }
+-  free(bits);
++
++  // garbage collection
++  deleteListWith(bits, free);
+ }
+ 
+ const char *bitvectorGetBits(BITVECTOR *v) {
+diff -ruN ../nakedmudv3.0/src/body.c src/body.c
+--- ../nakedmudv3.0/src/body.c	Fri Oct  7 14:15:55 2005
++++ src/body.c	Sun Dec  4 20:03:08 2005
+@@ -112,23 +112,27 @@
+ //*****************************************************************************
+ 
+ char *list_postypes(const BODY_DATA *B, const char *posnames) {
+-  int i, found, part, num_names = 0;
+-  char **names  = parse_keywords(posnames, &num_names);
+-  char types[MAX_BUFFER] = "\0";
+-
+-  for(i = found = 0; i < num_names; i++) {
+-    part = bodyGetPart(B, names[i]);
+-    free(names[i]);
++  LIST           *names = parse_keywords(posnames);
++  LIST_ITERATOR *name_i = newListIterator(names);
++  BUFFER           *buf = newBuffer(MAX_BUFFER);
++  char            *name = NULL;
++  char          *retval = NULL;
++  int             found = 0;
++
++  ITERATE_LIST(name, name_i) {
++    int part = bodyGetPart(B, name);
+     if(part != BODYPOS_NONE) {
+       found++;
+       if(found != 1)
+-	strcat(types, ", ");
+-      strcat(types, bodyposGetName(part));
++	bufferCat(buf, ", ");
++      bufferCat(buf, bodyposGetName(part));
+     }
+-  }
+-  if(names) free(names);
++  } deleteListIterator(name_i);
++  deleteListWith(names, free);
+ 
+-  return strdup(types);
++  retval = strdup(bufferString(buf));
++  deleteBuffer(buf);
++  return retval;
+ }
+ 
+ const char *bodysizeGetName(int size) {
+@@ -282,8 +286,7 @@
+     if(pos && *pos && !is_keyword(pos, part->name, FALSE))
+       continue;
+     size_sum += part->size;
+-  }
+-  // dont' delete the iterator... we use it again below after resetting
++  } deleteListIterator(part_i);
+ 
+   // nothing that can be hit was found
+   if(size_sum <= 1) {
+@@ -294,7 +297,7 @@
+   pos_roll = rand_number(1, size_sum);
+   
+   // find the position the roll corresponds to
+-  listIteratorReset(part_i);
++  part_i = newListIterator(B->parts);
+   ITERATE_LIST(part, part_i) {
+     // if we have a list of positions to draw from, only factor in those
+     if(pos && *pos && !is_keyword(pos, part->name, FALSE))
+@@ -304,8 +307,7 @@
+       name = part->name;
+       break;
+     }
+-  }
+-  deleteListIterator(part_i);
++  } deleteListIterator(part_i);
+   return name;
+ }
+ 
+@@ -333,8 +335,7 @@
+       parts[i] = part->name;
+       pos[i]   = part->type;
+       i++;
+-    }
+-    deleteListIterator(part_i);
++    } deleteListIterator(part_i);
+ 
+     // now sort everything in the array
+     for(i = 0; i < *num_pos; i++) {
+@@ -365,72 +366,88 @@
+ 
+ 
+ bool bodyEquipPostypes(BODY_DATA *B, OBJ_DATA *obj, const char *types) {
+-  int i, num_positions = 0;
+-  char **pos_list = parse_keywords(types, &num_positions);
+-  LIST     *parts = newList();
++  LIST  *pos_list = parse_keywords(types);
++  LIST     *parts = NULL;
+   BODYPART  *part = NULL;
++  bool    success = TRUE;
+ 
+   // make sure we have more than zero positions
+-  if(num_positions < 1)
++  if(listSize(pos_list) == 0) {
++    deleteList(pos_list);
+     return FALSE;
++  }
++
++  // create our list of parts
++  parts = newList();
+ 
+   // get a list of all open slots in the list provided ...
+   // equip them as we go along, incase we more than one of a piece.
+   // if we don't do it this way, findFreeBodypart might find the same
+   // piece multiple times (e.g. the same ear when it's looking for two ears)
+-  for(i = 0; i < num_positions; i++) {
+-    part = findFreeBodypart(B, pos_list[i]);
++  LIST_ITERATOR *pos_i = newListIterator(pos_list);
++  char            *pos = NULL;
++
++  ITERATE_LIST(pos, pos_i) {
++    part = findFreeBodypart(B, pos);
+     if(part && !part->equipment) {
+       part->equipment = obj;
+       listPut(parts, part);
+     }
+-    free(pos_list[i]);
+-  }
+-  if(pos_list) free(pos_list);
++  } deleteListIterator(pos_i);
+ 
+-  // make sure we supplied valid names
+-  if(listSize(parts) != num_positions) {
+-    // remove everything we put on
++  // make sure we supplied a valid number of empty positions
++  if(listSize(pos_list) != listSize(parts)) {
++    // remove equipment for every part we put it on
+     while((part = listPop(parts)) != NULL)
+       part->equipment = NULL;
+-    deleteList(parts);
+-    return FALSE;
++    success = FALSE;
+   }
+ 
++  // garbage collection
++  deleteListWith(pos_list, free);
+   deleteList(parts);
+-  return TRUE;
++
++  return success;
+ }
+ 
+ 
+ bool bodyEquipPosnames(BODY_DATA *B, OBJ_DATA *obj, const char *positions) {
+-  int i, num_positions = 0;
+-  char **pos_list = parse_keywords(positions, &num_positions);
+-  LIST  *parts = newList();
++  LIST *pos_list = parse_keywords(positions);
++  LIST    *parts = NULL;
+   BODYPART *part = NULL;
++  bool   success = TRUE;
+ 
+   // make sure we have more than zero positions
+-  if(num_positions < 1)
++  if(listSize(pos_list) == 0) {
++    deleteList(pos_list);
+     return FALSE;
++  }
++
++  // create our list of parts
++  parts = newList();
+ 
+   // get a list of all open slots in the list provided
+-  for(i = 0; i < num_positions; i++) {
+-    part = findBodypart(B, pos_list[i]);
+-    if(part && !part->equipment) listPut(parts, part);
+-    free(pos_list[i]);
+-  }
+-  if(pos_list) free(pos_list);
++  LIST_ITERATOR *pos_i = newListIterator(pos_list);
++  char            *pos = NULL;
++  ITERATE_LIST(pos, pos_i) {
++    part = findBodypart(B, pos);
++    if(part && !part->equipment && !listIn(parts, part))
++      listPut(parts, part);
++  } deleteListIterator(pos_i);
+ 
+-  // make sure we supplied valid names
+-  if(listSize(parts) != num_positions || listSize(parts) < 1) {
+-    deleteList(parts);
+-    return FALSE;
+-  }
++  // make sure we found the right amount of parts
++  if(listSize(parts) != listSize(pos_list) || listSize(parts) == 0)
++    success = FALSE;
+ 
+   // fill in all of the parts that need to be filled
+   while( (part = listPop(parts)) != NULL)
+     part->equipment = obj;
++
++  // clean up our garbage
++  deleteListWith(pos_list, free);
+   deleteList(parts);
+-  return TRUE;
++
++  return success;
+ }
+ 
+ const char *bodyEquippedWhere(BODY_DATA *B, OBJ_DATA *obj) {
+@@ -455,7 +472,7 @@
+ 
+ OBJ_DATA *bodyGetEquipment(BODY_DATA *B, const char *pos) {
+   BODYPART *part = findBodypart(B, pos);
+-  return part->equipment;
++  return (part ? part->equipment : NULL);
+ }
+ 
+ bool bodyUnequip(BODY_DATA *B, const OBJ_DATA *obj) {
+diff -ruN ../nakedmudv3.0/src/buffer.c src/buffer.c
+--- ../nakedmudv3.0/src/buffer.c	Fri Oct  7 14:15:55 2005
++++ src/buffer.c	Sun Dec  4 20:03:07 2005
+@@ -25,6 +25,7 @@
+ 
+ BUFFER    *newBuffer   (int start_capacity) {
+   BUFFER *buf = malloc(sizeof(BUFFER));
++  if(start_capacity <= 0) start_capacity = 1;
+   buf->data   = malloc(sizeof(char) * start_capacity);
+   *buf->data  = '\0';
+   buf->maxlen = start_capacity;
+@@ -206,7 +207,6 @@
+     return 0;
+ }
+ 
+-
+ void bufferFormat(BUFFER *buf, int max_width, int indent) {
+   char formatted[(buf->len * 3)/2];
+   bool needs_capital = TRUE, needs_indent = FALSE;
+@@ -225,13 +225,12 @@
+       buf_i++;
+   }
+ 
+-
+   for(; buf->data[buf_i] != '\0'; buf_i++) {
+     // we have to put a newline in because the word won't fit on the line
+     next_space = next_space_in(buf->data + buf_i);
+     if(next_space == -1)
+       next_space = buf->len - buf_i;
+-    if(col + next_space > max_width-2) {
++    if(col + next_space > max_width-1) {
+       formatted[fmt_i] = '\r'; fmt_i++;
+       formatted[fmt_i] = '\n'; fmt_i++;
+       col = 0;
+@@ -239,8 +238,8 @@
+ 
+     char ch = buf->data[buf_i];
+ 
+-    // no spaces on newlines
+-    if(isspace(ch) && col == 0)
++    // no spaces on newlines or ends of lines
++    if(isspace(ch) && (col == 0 || col == max_width-1))
+       continue;
+     // we will do our own sentance formatting
+     else if(needs_capital && isspace(ch))
+@@ -259,7 +258,7 @@
+     }
+     // if someone is putting more than 1 sentence delimiter, we
+     // need to catch it so we will still capitalize the next word
+-    else if(strchr("?!.", ch)) {
++    else if(strchr("?!.", ch) && isspace(buf->data[buf_i + 1])) {
+       needs_capital = TRUE;
+       needs_indent  = TRUE;
+       formatted[fmt_i] = ch;
+@@ -273,7 +272,7 @@
+       next_space = next_space_in(buf->data + buf_i);
+       if(next_space == -1)
+ 	next_space = buf->len - buf_i;
+-      if(col + 2 + next_space > max_width-2) {
++      if(col + 2 + next_space > max_width-1) {
+ 	formatted[fmt_i] = '\r'; fmt_i++;
+ 	formatted[fmt_i] = '\n'; fmt_i++;
+ 	col = 0;
+@@ -292,7 +291,11 @@
+     }
+     else {
+       formatted[fmt_i] = ch;
+-      col++;
++     
++      // if we're adding a { or our last character was an {, don't increase
++      // our columns, because these are colour codes
++      if(ch != '{' && (fmt_i == 0 || formatted[fmt_i-1] != '{'))
++	col++;
+     }
+ 
+     fmt_i++;
+@@ -305,6 +308,12 @@
+   }
+ 
+   formatted[fmt_i] = '\0';
++
++  // if all we have are spaces and newlines, erase it all
++  if(fmt_i == 2 + indent) {
++    formatted[0] = '\0';
++    fmt_i = 0;
++  }
+ 
+   // make sure we have enough room to copy everything over
+   if(fmt_i >= buf->maxlen)
+diff -ruN ../nakedmudv3.0/src/char_gen.c src/char_gen.c
+--- ../nakedmudv3.0/src/char_gen.c	Fri Oct  7 14:15:55 2005
++++ src/char_gen.c	Sun Dec  4 20:03:07 2005
+@@ -167,6 +167,9 @@
+     // we should do some checks here to make sure the start room exists
+     char_to_room(socketGetChar(sock), worldGetRoom(gameworld, START_ROOM));
+     look_at_room(socketGetChar(sock), charGetRoom(socketGetChar(sock)));
++
++    // run any hooks for creating the player for the first time
++    hookRun("create_player", socketGetChar(sock));
+     
+     // and register him as a valid player
+     register_player(socketGetChar(sock));
+@@ -180,7 +183,7 @@
+ 
+     // run entrance hooks
+     ROOM_DATA      *room = charGetRoom(socketGetChar(sock));
+-    hookRun("enter", socketGetChar(sock), room, NULL);
++    hookRun("enter", socketGetChar(sock), room);
+   }
+ }
+ 
+diff -ruN ../nakedmudv3.0/src/char_vars/.depend src/char_vars/.depend
+--- ../nakedmudv3.0/src/char_vars/.depend	Wed Dec 31 17:00:00 1969
++++ src/char_vars/.depend	Sun Dec  4 20:03:07 2005
+@@ -0,0 +1 @@
++char_vars.o: char_vars.c char_vars.h
+diff -ruN ../nakedmudv3.0/src/cmd_admin.c src/cmd_admin.c
+--- ../nakedmudv3.0/src/cmd_admin.c	Fri Oct  7 14:15:55 2005
++++ src/cmd_admin.c	Sun Dec  4 20:03:07 2005
+@@ -82,9 +82,8 @@
+     send_to_char(ch,"The mud currently has %d pulses per second.\r\n", 
+ 		 PULSES_PER_SECOND);
+   else {
+-    int pulserate = 0;
+-    if(!parse_args(ch, FALSE, cmd, arg, "int",  &pulserate) ||
+-       (1000 % pulserate != 0))
++    int pulserate = atoi(arg);
++    if(pulserate == 0 || 1000 % pulserate != 0)
+       send_to_char(ch, "The number of pulses per second must divide 1000.\r\n");
+     else {
+       mudsettingSetInt("pulses_per_second", pulserate);
+diff -ruN ../nakedmudv3.0/src/cmd_builder.c src/cmd_builder.c
+--- ../nakedmudv3.0/src/cmd_builder.c	Fri Oct  7 14:15:55 2005
++++ src/cmd_builder.c	Sun Dec  4 20:03:07 2005
+@@ -218,19 +218,28 @@
+ // Functions for deleting different prototype
+ //*****************************************************************************
+ COMMAND(cmd_rdelete) {
+-  if(do_delete(ch, "rproto", deleteProto, arg)) {
+-    do_delete(ch, "reset", deleteResetList, arg);
++  char *name = NULL;
++  if(!parse_args(ch, TRUE, cmd, arg, "word", &name))
++    return;
++  if(do_delete(ch, "rproto", deleteProto, name)) {
++    do_delete(ch, "reset", deleteResetList, name);
+     send_to_char(ch, "If the room has already been used, do not forget to "
+ 		 "also purge the current instance of it.\r\n");
+   }
+ }
+ 
+ COMMAND(cmd_mdelete) {
+-  do_delete(ch, "mproto", deleteProto, arg);
++  char *name = NULL;
++  if(!parse_args(ch, TRUE, cmd, arg, "word", &name))
++    return;
++  do_delete(ch, "mproto", deleteProto, name);
+ }
+ 
+ COMMAND(cmd_odelete) {
+-  do_delete(ch, "oproto", deleteProto, arg);
++  char *name = NULL;
++  if(!parse_args(ch, TRUE, cmd, arg, "word", &name))
++    return;
++  do_delete(ch, "oproto", deleteProto, name);
+ }
+ 
+ 
+@@ -242,7 +251,7 @@
+ // returns yes/no if the prototype is abstract or not
+ const char *prototype_list_info(PROTO_DATA *data) {
+   static char buf[SMALL_BUFFER];
+-  sprintf(buf, "%-40s %13s", 
++  sprintf(buf, "%-50s %3s", 
+ 	  (*protoGetParents(data) ? protoGetParents(data) : "-------"),
+ 	  (protoIsAbstract(data)  ? "yes" : "no"));
+   return buf;
+@@ -269,25 +278,28 @@
+ }
+ 
+ COMMAND(cmd_mrename) {
+-  char from[SMALL_BUFFER];
+-  arg = one_arg(arg, from);
+-  do_rename(ch, "mproto", from, arg);
++  char *from = NULL, *to = NULL;
++  if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
++    return;
++  do_rename(ch, "mproto", from, to);
+ }
+ 
+ COMMAND(cmd_rrename) {
+-  char from[SMALL_BUFFER];
+-  arg = one_arg(arg, from);
+-  if(do_rename(ch, "rproto", from, arg)) {
+-    do_rename(ch, "reset", from, arg);
++  char *from = NULL, *to = NULL;
++  if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
++    return;
++  if(do_rename(ch, "rproto", from, to)) {
++    do_rename(ch, "reset", from, to);
+     send_to_char(ch, "No not forget to purge any instances of %s already "
+ 		 "loaded.\r\n", from); 
+   }
+ }
+ 
+ COMMAND(cmd_orename) {
+-  char from[SMALL_BUFFER];
+-  arg = one_arg(arg, from);
+-  do_rename(ch, "oproto", from, arg);
++  char *from = NULL, *to = NULL;
++  if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
++    return;
++  do_rename(ch, "oproto", from, to);
+ }
+ 
+ COMMAND(cmd_zlist) {
+diff -ruN ../nakedmudv3.0/src/cmd_comm.c src/cmd_comm.c
+--- ../nakedmudv3.0/src/cmd_comm.c	Fri Oct  7 14:15:55 2005
++++ src/cmd_comm.c	Sun Dec  4 20:03:07 2005
+@@ -89,7 +89,7 @@
+     send_to_char(ch, "Say what?\n\r");
+   else {
+     communicate(ch, arg, COMM_LOCAL);
+-    hookRun("say", ch, NULL, arg);
++    hookRun("say", ch, arg);
+   }
+ }
+ 
+@@ -107,10 +107,10 @@
+   if(!parse_args(ch, TRUE, cmd, arg, "ch.room.noself", &tgt))
+     return;
+ 
+-  message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, "{wYou greet $N.");
+-  message(ch, tgt, NULL, NULL, FALSE, TO_VICT, "{w$n greets you.");
++  message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, "You greet $N.");
++  message(ch, tgt, NULL, NULL, FALSE, TO_VICT, "$n greets you.");
+   message(ch, tgt, NULL, NULL, FALSE, TO_ROOM, "$n greets $N.");
+-  hookRun("greet", ch, tgt, NULL);
++  hookRun("greet", ch, tgt);
+ }
+ 
+ 
+diff -ruN ../nakedmudv3.0/src/cmd_manip.c src/cmd_manip.c
+--- ../nakedmudv3.0/src/cmd_manip.c	Fri Oct  7 14:15:55 2005
++++ src/cmd_manip.c	Sun Dec  4 20:03:07 2005
+@@ -17,6 +17,7 @@
+ #include "world.h"
+ #include "room.h"
+ #include "object.h"
++#include "hooks.h"
+ 
+ 
+ 
+@@ -126,8 +127,7 @@
+       exitSetLocked(found, TRUE);
+ 
+       // and try the other side
+-      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found),
+-			   TRUE);
++      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found), TRUE);
+     }
+   }
+ 
+@@ -181,8 +181,7 @@
+       exitSetLocked(found, FALSE);
+ 
+       // and try the other side
+-      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found),
+-			   FALSE);
++      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found), FALSE);
+     }
+   }
+ 
+@@ -283,6 +282,7 @@
+ 
+       // try opening the other side
+       try_manip_other_exit(charGetRoom(ch), found, FALSE, exitIsLocked(found));
++      hookRun("open_door", ch, found);
+     }
+   }
+ 
+@@ -299,6 +299,7 @@
+       send_to_char(ch, "You open %s.\r\n", objGetName(found));
+       message(ch, NULL, found, NULL, FALSE, TO_ROOM, "$n opens $o.");
+       containerSetClosed(found, FALSE);
++      hookRun("open_obj", ch, found);
+     }
+   }
+ }
+@@ -523,7 +524,7 @@
+   bool multiple = FALSE;
+   char   *where = NULL;
+ 
+-  if(!parse_args(ch, TRUE, cmd, arg, "[the] obj.inv.multiple | [on my] string", 
++  if(!parse_args(ch, TRUE, cmd, arg, "[the] obj.inv.multiple | [on] string", 
+ 		 &found, &multiple, &where))
+     return;
+ 
+diff -ruN ../nakedmudv3.0/src/command.c src/command.c
+--- ../nakedmudv3.0/src/command.c	Fri Oct  7 14:15:55 2005
++++ src/command.c	Sun Dec  4 20:03:07 2005
+@@ -21,6 +21,7 @@
+ //*****************************************************************************
+ // mandatory modules
+ //*****************************************************************************
++#include "scripts/scripts.h"
+ #include "scripts/pyplugs.h"
+ #include "scripts/pychar.h"
+ 
+@@ -207,7 +208,8 @@
+     if(cmd->func)
+       (cmd->func)(ch, cmd->name, arg);
+     else {
+-      PyObject *arglist = Py_BuildValue("Oss", newPyChar(ch), cmd->name, arg);
++      PyObject *arglist = Py_BuildValue("Oss", charGetPyFormBorrowed(ch), 
++					cmd->name, arg);
+       PyObject *retval  = PyEval_CallObject(cmd->pyfunc, arglist);
+       // check for an error:
+       if(retval == NULL) {
+@@ -218,6 +220,8 @@
+ 	  free(tb);
+ 	}
+       }
++
++      // garbage collection
+       Py_XDECREF(retval);
+       Py_XDECREF(arglist);
+     }
+diff -ruN ../nakedmudv3.0/src/event.c src/event.c
+--- ../nakedmudv3.0/src/event.c	Fri Oct  7 14:15:55 2005
++++ src/event.c	Sun Dec  4 20:03:07 2005
+@@ -96,11 +96,6 @@
+     event->on_complete(event->owner, event->data, event->arg);
+ }
+ 
+-// the hook for interrupting events when something is removed from game
+-void interrupt_events_hook(void *thing, void *none1, void *none2) {
+-  interrupt_events_involving(thing);
+-}
+-
+ 
+ 
+ //*****************************************************************************
+@@ -115,9 +110,9 @@
+ 
+   // make sure all events involving the object/char are cancelled when
+   // either is extracted from the game
+-  hookAdd("obj_from_game",  interrupt_events_hook);
+-  hookAdd("char_from_game", interrupt_events_hook);
+-  hookAdd("room_from_game", interrupt_events_hook);
++  hookAdd("obj_from_game",  interrupt_events_involving);
++  hookAdd("char_from_game", interrupt_events_involving);
++  hookAdd("room_from_game", interrupt_events_involving);
+ }
+ 
+ void interrupt_event(EVENT_DATA *event) {
+diff -ruN ../nakedmudv3.0/src/exit.c src/exit.c
+--- ../nakedmudv3.0/src/exit.c	Fri Oct  7 14:15:55 2005
++++ src/exit.c	Sun Dec  4 20:03:07 2005
+@@ -28,6 +28,7 @@
+   char *to;                // where do we exit to?
+   char *key;               // what is the key's prototype?
+   BUFFER *desc;            // what does a person see when they look at us?
++  ROOM_DATA *room;         // the room we're attached to
+ 
+   char *spec_enter;        // the message when we enter from this exit
+   char *spec_leave;        // the message when we leave through this exit
+@@ -56,6 +57,7 @@
+   exit->pick_lev    = 0;
+   exit->status      = 0;
+   exit->closable    = FALSE;
++  exit->room        = NULL;
+   exit->uid         = next_exit_uid++;
+   return exit;
+ };
+@@ -200,6 +202,10 @@
+   return exit->desc;
+ }
+ 
++ROOM_DATA *exitGetRoom(const EXIT_DATA *exit) {
++  return exit->room;
++}
++
+ void        exitSetClosable(EXIT_DATA *exit, bool closable) {
+   exit->closable = (closable != 0);
+ }
+@@ -260,4 +266,8 @@
+ void        exitSetSpecLeave(EXIT_DATA *exit, const char *leave) {
+   if(exit->spec_leave)  free(exit->spec_leave);
+   exit->spec_leave    = strdupsafe(leave);
++}
++
++void exitSetRoom(EXIT_DATA *exit, ROOM_DATA *room) {
++  exit->room = room;
+ }
+diff -ruN ../nakedmudv3.0/src/exit.h src/exit.h
+--- ../nakedmudv3.0/src/exit.h	Fri Oct  7 14:15:55 2005
++++ src/exit.h	Sun Dec  4 20:03:07 2005
+@@ -65,6 +65,7 @@
+ const char *exitGetSpecLeave   (const EXIT_DATA *exit);
+ const char *exitGetSpecEnter   (const EXIT_DATA *exit);
+ BUFFER     *exitGetDescBuffer  (const EXIT_DATA *exit);
++ROOM_DATA  *exitGetRoom        (const EXIT_DATA *exit);
+ 
+ void        exitSetClosable    (EXIT_DATA *exit, bool closable);
+ void        exitSetClosed      (EXIT_DATA *exit, bool closed);
+@@ -79,5 +80,6 @@
+ void        exitSetDesc        (EXIT_DATA *exit, const char *desc);
+ void        exitSetSpecLeave   (EXIT_DATA *exit, const char *leave);
+ void        exitSetSpecEnter   (EXIT_DATA *exit, const char *enter);
++void        exitSetRoom        (EXIT_DATA *exit, ROOM_DATA *room);
+ 
+ #endif // __EXIT_H
+diff -ruN ../nakedmudv3.0/src/gameloop.c src/gameloop.c
+--- ../nakedmudv3.0/src/gameloop.c	Fri Oct  7 14:15:55 2005
++++ src/gameloop.c	Sun Dec  4 20:03:07 2005
+@@ -23,6 +23,7 @@
+ #include "auxiliary.h"
+ #include "storage.h"
+ #include "races.h"
++#include "inform.h"
+ #include "hooks.h"
+ 
+ 
+@@ -172,6 +173,9 @@
+   log_string("Initializing races and default bodies.");
+   init_races();
+ 
++  log_string("Initializing inform system.");
++  init_inform();
++
+   log_string("Initializing room resets.");
+   init_room_reset();
+ 
+@@ -299,7 +303,7 @@
+   game_loop(control);
+ 
+   // run our finalize hooks
+-  hookRun("shutdown", NULL, NULL, NULL);
++  hookRun("shutdown");
+ 
+   // close down the socket
+   close(control);
+diff -ruN ../nakedmudv3.0/src/handler.c src/handler.c
+--- ../nakedmudv3.0/src/handler.c	Fri Oct  7 14:55:09 2005
++++ src/handler.c	Sun Dec  4 20:03:07 2005
+@@ -44,7 +44,7 @@
+   propertyTablePut(obj_table, obj);
+ 
+   // execute all of our to_game hooks
+-  hookRun("obj_to_game", obj, NULL, NULL);
++  hookRun("obj_to_game", obj);
+ 
+   // also add all contents
+   if(listSize(objGetContents(obj)) > 0) {
+@@ -61,7 +61,7 @@
+   propertyTablePut(room_table, room);
+ 
+   // execute all of our to_game hooks
+-  hookRun("room_to_game", room, NULL, NULL);
++  hookRun("room_to_game", room);
+ 
+   // add contents
+   if(listSize(roomGetContents(room)) > 0) {
+@@ -100,7 +100,7 @@
+   propertyTablePut(mob_table, ch);
+ 
+   // execute all of our to_game hooks
+-  hookRun("char_to_game", ch, NULL, NULL);
++  hookRun("char_to_game", ch);
+ 
+   // also add inventory
+   if(listSize(charGetInventory(ch)) > 0) {
+@@ -132,7 +132,7 @@
+   propertyTableRemove(obj_table, objGetUID(obj));
+ 
+   // go through all of our fromgame hooks
+-  hookRun("obj_from_game", obj, NULL, NULL);
++  hookRun("obj_from_game", obj);
+ 
+   // also remove everything that is contained within the object
+   if(listSize(objGetContents(obj)) > 0) {
+@@ -149,7 +149,7 @@
+   propertyTableRemove(room_table, roomGetUID(room));
+ 
+   // go through all of our fromgame hooks
+-  hookRun("room_from_game", room, NULL, NULL);
++  hookRun("room_from_game", room);
+ 
+   // also remove all the objects contained within the room
+   if(listSize(roomGetContents(room)) > 0) {
+@@ -184,7 +184,7 @@
+   propertyTableRemove(mob_table, charGetUID(ch));
+ 
+   // go through all of our fromgame hooks
+-  hookRun("char_from_game", ch, NULL, NULL);
++  hookRun("char_from_game", ch);
+ 
+   // also remove inventory
+   if(listSize(charGetInventory(ch)) > 0) {
+@@ -292,7 +292,7 @@
+ 	    "$n gets $o.");
+     obj_from_room(obj);
+     obj_to_char(obj, ch);
+-    hookRun("get", ch, obj, NULL);
++    hookRun("get", ch, obj);
+   }
+ }
+ 
+@@ -334,13 +334,12 @@
+ 
+ void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
+   send_to_char(ch, "You drop %s.\r\n", objGetName(obj));
+-  message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
+-	  "$n drops $o.");
++  message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n drops $o.");
+   obj_from_char(obj);
+   obj_to_room(obj, charGetRoom(ch));
+ 
+   // run all of our drop hooks
+-  hookRun("drop", ch, obj, NULL);
++  hookRun("drop", ch, obj);
+ }
+ 
+ 
+@@ -349,8 +348,10 @@
+     send_to_char(ch, "You cannot wear %s!\r\n", objGetName(obj));
+   else {
+     obj_from_char(obj);
+-    if(try_equip(ch, obj, where))
+-      send_to_char(ch, "You equip %s.\r\n", objGetName(obj));
++    if(try_equip(ch, obj, where, wornGetPositions(obj))) {
++      message(ch, NULL, obj, NULL, TRUE, TO_CHAR, "You equip $o.");
++      message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n equips $o.");
++    }
+     else {
+       send_to_char(ch, "You could not equip %s.\r\n", objGetName(obj));
+       obj_to_char(obj, ch);
+@@ -361,7 +362,8 @@
+ 
+ void do_remove(CHAR_DATA *ch, OBJ_DATA *obj) {
+   if(try_unequip(ch, obj)) {
+-    send_to_char(ch, "You remove %s.\r\n", objGetName(obj));
++    message(ch, NULL, obj, NULL, TRUE, TO_CHAR, "You remove $o.");
++    message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n removes $o.");
+     obj_to_char(obj, ch);
+   }
+   else
+@@ -373,73 +375,62 @@
+ //*****************************************************************************
+ // functions related to equipping and unequipping items
+ //*****************************************************************************
+-bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *poslist) {
+-  if(!objIsType(obj, "worn"))
+-    return FALSE;
+-
+-  bool success       = FALSE;
+-  char *wanted       = NULL;
+-  const char *needed = NULL;
+-
+-  // get a list of the position types we need to equip to
+-
+-  // see where we _want_ to equip to
+-  if(poslist && *poslist)
+-    wanted = list_postypes(charGetBody(ch), poslist);
+-  needed = wornGetPositions(obj);
+-
+-  // just equip to the first free slots
+-  if(!wanted)
+-    success = bodyEquipPostypes(charGetBody(ch), obj, needed);
+-  // check to see if all the positions we want to equip to match up with
+-  // what we need to equip to
+-  else {
++bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *wanted_pos,
++	       const char *required_pos) {
++  bool success = FALSE;
++
++  // if we don't need any specific places, try equipping to our wanted spots
++  if(!required_pos || !*required_pos)
++    success = bodyEquipPosnames(charGetBody(ch), obj, wanted_pos);
++
++  // if we don't want any specific places, equip to whatever is open
++  else if(!wanted_pos || !*wanted_pos)
++    success = bodyEquipPostypes(charGetBody(ch), obj, required_pos);
++
++  // otherwise, see if the places we want to equip to match what we need,
++  // and also make sure we're not trying to equip the same position twice
++  else if(!dup_keywords_exist(wanted_pos)) {
+     // build lists of what we want and what we need, and compare
+-    int i, j, num_want = 0, num_need = 0;
+-    char **want_names, **need_names;
+-    bool match = FALSE;
+-    want_names = parse_keywords(wanted, &num_want);
+-    need_names = parse_keywords(needed, &num_need); 
+-
+-    // try to match it all up
+-    if(num_want == num_need) {
+-      // assume true, and try to find two that mismatch
+-      match = TRUE;
+-      for(i = 0; i < num_want; i++) {
+-	bool found = FALSE;
+-	for(j = 0; j < num_need; j++) {
+-	  if(need_names[j] && !strcmp(want_names[i], need_names[j])) {
+-	    // use one up
+-	    free(need_names[j]); 
+-	    need_names[j] = NULL;
+-	    found = TRUE;
+-	    break;
+-	  }
+-	}
+-	if(!found) {
+-	  match = FALSE;
++    char *want_type_list = list_postypes(charGetBody(ch), wanted_pos);
++    LIST     *want_types = parse_keywords(want_type_list); 
++    LIST     *need_types = parse_keywords(required_pos);
++    bool           match = TRUE;
++
++    // make sure we have both wanted and needed positions
++    // and then try to match it all up
++    if(listSize(want_types) != listSize(need_types))
++      match = FALSE;
++    else {
++      LIST_ITERATOR *need_i = newListIterator(need_types);
++      char        *one_need = NULL;
++
++      // now, make sure that each our our needed positions is represented
++      ITERATE_LIST(one_need, need_i) {
++	char *found = listRemoveWith(want_types, one_need, strcasecmp);
++	// if we found it, free the memory. Otherwise, break out and fail
++	if(found == NULL)
+ 	  break;
+-	}
+-      }
+-    }
++	else
++	  free(found);
++      } deleteListIterator(need_i);
+ 
+-    // try to equip
+-    if(match)
+-      success = bodyEquipPosnames(charGetBody(ch), obj, poslist);
+-
+-    // free everything up
+-    for(i = 0; i < num_want || i < num_need; i++) {
+-      if(want_names[i]) free(want_names[i]);
+-      if(need_names[i]) free(need_names[i]);
++      // make sure we accounted for all of our needed positions
++      match = (listSize(want_types) == 0);
+     }
+-    if(want_names) free(want_names);
+-    if(need_names) free(need_names);
++
++    // garbage collection
++    if(want_type_list) free(want_type_list);
++    deleteListWith(want_types, free);
++    deleteListWith(need_types, free);
++
++    // if we didn't run into problems, try equipping
++    if(match == TRUE)
++      success = bodyEquipPosnames(charGetBody(ch), obj, wanted_pos);
+   }
+ 
+-  if(wanted) free(wanted);
+-  if(success) {
++  if(success == TRUE) {
+     objSetWearer(obj, ch);
+-    hookRun("wear", ch, obj, NULL);
++    hookRun("wear", ch, obj);
+   }
+   return success;
+ }
+@@ -447,7 +438,7 @@
+ bool try_unequip(CHAR_DATA *ch, OBJ_DATA *obj) {
+   if(bodyUnequip(charGetBody(ch), obj)) {
+     objSetWearer(obj, NULL);
+-    hookRun("remove", ch, obj, NULL);
++    hookRun("remove", ch, obj);
+     return TRUE;
+   }
+   return FALSE;
+@@ -462,7 +453,7 @@
+   while( (obj = listPop(eq)) != NULL) {
+     if(bodyUnequip(charGetBody(ch), obj)) {
+       objSetWearer(obj, NULL);
+-      hookRun("remove", ch, obj, NULL);
++      hookRun("remove", ch, obj);
+       obj_to_char(obj, ch);
+     }
+   } deleteList(eq);
+diff -ruN ../nakedmudv3.0/src/handler.h src/handler.h
+--- ../nakedmudv3.0/src/handler.h	Fri Oct  7 14:15:55 2005
++++ src/handler.h	Sun Dec  4 20:03:07 2005
+@@ -51,7 +51,8 @@
+ void      char_from_furniture (CHAR_DATA *ch);
+ void      char_to_furniture   (CHAR_DATA *ch, OBJ_DATA *furniture);
+ 
+-bool      try_equip         (CHAR_DATA *ch, OBJ_DATA *obj, const char *poslist);
++bool      try_equip         (CHAR_DATA *ch, OBJ_DATA *obj, 
++			     const char *wanted_pos, const char *required_pos);
+ bool      try_unequip       (CHAR_DATA *ch, OBJ_DATA *obj);
+ void      unequip_all       (CHAR_DATA *ch);
+ 
+diff -ruN ../nakedmudv3.0/src/hashtable.c src/hashtable.c
+--- ../nakedmudv3.0/src/hashtable.c	Fri Oct  7 14:15:55 2005
++++ src/hashtable.c	Sun Dec  4 20:03:07 2005
+@@ -63,7 +63,7 @@
+     return NULL;
+   else {
+     LIST_ITERATOR *list_i = newListIterator(table->buckets[bucket]);
+-    HASH_ENTRY *elem = NULL;
++    HASH_ENTRY      *elem = NULL;
+ 
+     for(;(elem = listIteratorCurrent(list_i)) != NULL; listIteratorNext(list_i))
+       if(!strcasecmp(key, elem->key))
+@@ -227,25 +227,7 @@
+ }
+ 
+ int   hashIn     (HASHTABLE *table, const char *key) {
+-  int bucket = hash(key) % table->num_buckets;
+-
+-  if(table->buckets[bucket] == NULL)
+-    return 0;
+-  else {
+-    int found  = 0;
+-    LIST_ITERATOR *list_i = newListIterator(table->buckets[bucket]);
+-    HASH_ENTRY *elem = NULL;
+-
+-    for(;(elem = listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i)){
+-      if(!strcasecmp(key, elem->key)) {
+-	found = 1;
+-	break;
+-      }
+-    }
+-    deleteListIterator(list_i);
+-
+-    return found;
+-  }
++  return (hashGetEntry(table, key) != NULL);
+ }
+ 
+ int   hashSize   (HASHTABLE *table) {
+@@ -265,6 +247,25 @@
+     deleteListIterator(list_i);
+   }
+   return list;
++}
++
++void hashClear(HASHTABLE *table) {
++  hashClearWith(table, NULL);
++}
++
++void hashClearWith(HASHTABLE *table, void *func) {
++  void (* free_func)(void *) = func;
++  int i;
++
++  for(i = 0; i < table->num_buckets; i++) {
++    if(table->buckets[i] == NULL) continue;
++    HASH_ENTRY *elem = NULL;
++    while( (elem = listPop(table->buckets[i])) != NULL) {
++      if(free_func && elem->val)
++	free_func(elem->val);
++      deleteHashtableEntry(elem);
++    }
++  }
+ }
+ 
+ 
+diff -ruN ../nakedmudv3.0/src/hashtable.h src/hashtable.h
+--- ../nakedmudv3.0/src/hashtable.h	Fri Oct  7 14:15:55 2005
++++ src/hashtable.h	Sun Dec  4 20:03:07 2005
+@@ -40,6 +40,15 @@
+ // must be deleted after use. Try: deleteListWith(list, free)
+ LIST *hashCollect(HASHTABLE *table);
+ 
++//
++// clears all of the contents of the hashtable
++void hashClear(HASHTABLE *table);
++
++//
++// clears all of the contents of the hashtable, and deletes the vals with the
++// specified function. NULL indicates no delection
++void hashClearWith(HASHTABLE *table, void *func);
++
+ 
+ 
+ //*****************************************************************************
+diff -ruN ../nakedmudv3.0/src/help/help.c src/help/help.c
+--- ../nakedmudv3.0/src/help/help.c	Fri Oct  7 14:15:55 2005
++++ src/help/help.c	Sun Dec  4 20:03:07 2005
+@@ -161,20 +161,22 @@
+ // add a helpfile to the help table. Assocciate all of its keywords with it
+ //
+ void add_help(HELP_DATA *help) {
+-  int num_keywords = 0;
+-  char  **keywords = parse_keywords(help->keywords, &num_keywords);
+-  int i;
+-  for(i = 0; i < num_keywords; i++) {
+-    LIST *row = help_table[helpbucket(keywords[i])];
+-    HELP_ENTRY *new_entry = newHelpEntry(keywords[i], help);
++  LIST       *keywords = parse_keywords(help->keywords);
++  LIST_ITERATOR *key_i = newListIterator(keywords);
++  char            *key = NULL;
++
++  ITERATE_LIST(key, key_i) {
++    LIST *row = help_table[helpbucket(key)];
++    HELP_ENTRY *new_entry = newHelpEntry(key, help);
+     HELP_ENTRY *old_entry = NULL;
+     // make sure we're not already in the help table
+     if((old_entry = listRemoveWith(row, new_entry, hentrycmp)) != NULL)
+       deleteHelpEntry(old_entry);
+     listPutWith(row, new_entry, hentrycmp);
+-    free(keywords[i]);
+-  }
+-  free(keywords);
++  } deleteListIterator(key_i);
++
++  // garbage collection
++  deleteListWith(keywords, free);
+ }
+ 
+ 
+diff -ruN ../nakedmudv3.0/src/hooks.c src/hooks.c
+--- ../nakedmudv3.0/src/hooks.c	Fri Oct  7 14:15:55 2005
++++ src/hooks.c	Sun Dec  4 20:03:07 2005
+@@ -30,14 +30,49 @@
+ // the table of all our installed hooks
+ HASHTABLE *hook_table = NULL;
+ 
++// a table of all our handlers for running hooks
++HASHTABLE *hook_handler_table = NULL;
++
+ 
+ 
+ //*****************************************************************************
+ // implementation of hooks.h
+ //*****************************************************************************
+ void init_hooks(void) {
+-  // make our table of hooks
+-  hook_table = newHashtable();
++  // make our required tables
++  hook_handler_table = newHashtable();
++  hook_table         = newHashtable();
++
++  // set up our basic types of hooks
++  hook_add_handler("shutdown",             hook_handler_0_args);
++  hook_add_handler("create_account",       hook_handler_1_arg);
++  hook_add_handler("create_player",        hook_handler_1_arg);
++  hook_add_handler("enter",                hook_handler_2_args);
++  hook_add_handler("exit",                 hook_handler_3_args);
++  hook_add_handler("ask",                  hook_handler_3_args);
++  hook_add_handler("say",                  hook_handler_2_args);
++  hook_add_handler("greet",                hook_handler_2_args);
++  hook_add_handler("obj_to_game",          hook_handler_1_arg);
++  hook_add_handler("char_to_game",         hook_handler_1_arg);
++  hook_add_handler("room_to_game",         hook_handler_1_arg);
++  hook_add_handler("obj_from_game",        hook_handler_1_arg);
++  hook_add_handler("char_from_game",       hook_handler_1_arg);
++  hook_add_handler("room_from_game",       hook_handler_1_arg);
++  hook_add_handler("get",                  hook_handler_2_args);
++  hook_add_handler("give",                 hook_handler_3_args);
++  hook_add_handler("drop",                 hook_handler_2_args);
++  hook_add_handler("wear",                 hook_handler_2_args);
++  hook_add_handler("remove",               hook_handler_2_args);
++  hook_add_handler("reset",                hook_handler_1_arg);
++  hook_add_handler("open_door",            hook_handler_2_args);
++  hook_add_handler("open_obj",             hook_handler_2_args);
++  hook_add_handler("close_door",           hook_handler_2_args);
++  hook_add_handler("close_obj",            hook_handler_2_args);
++}
++
++void hook_add_handler(const char *type, 
++		      void (* handler)(LIST *hooks, va_list args)) {
++  hashPut(hook_handler_table, type, handler);
+ }
+ 
+ void hookAdd(const char *type, void *hook) {
+@@ -49,18 +84,96 @@
+   listQueue(list, hook);
+ }
+ 
+-void hookRun(const char *type, void *actor, void *acted, void *arg) {
++void hookRun(const char *type, ...) {
+   LIST *list = hashGet(hook_table, type);
+-  if(list != NULL) {
+-    LIST_ITERATOR *hook_i = newListIterator(list);
+-    void (* hook)(void *actor, void *acted, void *arg) = NULL;
+-    ITERATE_LIST(hook, hook_i)
+-      hook(actor, acted, arg);
+-    deleteListIterator(hook_i);
++  void (* handler)(LIST *hooks, va_list args) = 
++    hashGet(hook_handler_table, type);
++  if(list != NULL && handler != NULL) {
++    va_list args;
++    va_start(args, type);
++    handler(list, args);
++    va_end(args);
+   }
+ }
+ 
+ void hookRemove(const char *type, void *hook) {
+   LIST *list = hashGet(hook_table, type);
+   if(list != NULL) listRemove(list, hook);
++}
++
++void hook_handler_0_args(LIST *hooks, va_list args) {
++  LIST_ITERATOR *hook_i = newListIterator(hooks);
++  void   (* hook)(void) = NULL;
++  ITERATE_LIST(hook, hook_i) {
++    hook();
++  } deleteListIterator(hook_i);
++}
++
++void hook_handler_1_arg(LIST *hooks, va_list args) {
++  LIST_ITERATOR *hook_i = newListIterator(hooks);
++  void *arg1 = va_arg(args, void *);
++  void (* hook)(void *) = NULL;
++  ITERATE_LIST(hook, hook_i) {
++    hook(arg1);
++  } deleteListIterator(hook_i);
++}
++
++void hook_handler_2_args(LIST *hooks, va_list args) {
++  LIST_ITERATOR *hook_i = newListIterator(hooks);
++  void *arg1 = va_arg(args, void *);
++  void *arg2 = va_arg(args, void *);
++  void (* hook)(void *, void *) = NULL;
++  ITERATE_LIST(hook, hook_i) {
++    hook(arg1, arg2);
++  } deleteListIterator(hook_i);
++}
++
++void hook_handler_3_args(LIST *hooks, va_list args) {
++  LIST_ITERATOR *hook_i = newListIterator(hooks);
++  void *arg1 = va_arg(args, void *);
++  void *arg2 = va_arg(args, void *);
++  void *arg3 = va_arg(args, void *);
++  void (* hook)(void *, void *, void *) = NULL;
++  ITERATE_LIST(hook, hook_i) {
++    hook(arg1, arg2, arg3);
++  } deleteListIterator(hook_i);
++}
++
++void hook_handler_4_args(LIST *hooks, va_list args) {
++  LIST_ITERATOR *hook_i = newListIterator(hooks);
++  void *arg1 = va_arg(args, void *);
++  void *arg2 = va_arg(args, void *);
++  void *arg3 = va_arg(args, void *);
++  void *arg4 = va_arg(args, void *);
++  void (* hook)(void *, void *, void *, void *) = NULL;
++  ITERATE_LIST(hook, hook_i) {
++    hook(arg1, arg2, arg3, arg4);
++  } deleteListIterator(hook_i);
++}
++
++void hook_handler_5_args(LIST *hooks, va_list args) {
++  LIST_ITERATOR *hook_i = newListIterator(hooks);
++  void *arg1 = va_arg(args, void *);
++  void *arg2 = va_arg(args, void *);
++  void *arg3 = va_arg(args, void *);
++  void *arg4 = va_arg(args, void *);
++  void *arg5 = va_arg(args, void *);
++  void (* hook)(void *, void *, void *, void *, void *) = NULL;
++  ITERATE_LIST(hook, hook_i) {
++    hook(arg1, arg2, arg3, arg4, arg5);
++  } deleteListIterator(hook_i);
++}
++
++void hook_handler_6_args(LIST *hooks, va_list args) {
++  LIST_ITERATOR *hook_i = newListIterator(hooks);
++  void *arg1 = va_arg(args, void *);
++  void *arg2 = va_arg(args, void *);
++  void *arg3 = va_arg(args, void *);
++  void *arg4 = va_arg(args, void *);
++  void *arg5 = va_arg(args, void *);
++  void *arg6 = va_arg(args, void *);
++  void (* hook)(void *, void *, void *, void *, void *, void *) = NULL;
++  ITERATE_LIST(hook, hook_i) {
++    hook(arg1, arg2, arg3, arg4, arg5, arg6);
++  } deleteListIterator(hook_i);
+ }
+diff -ruN ../nakedmudv3.0/src/hooks.h src/hooks.h
+--- ../nakedmudv3.0/src/hooks.h	Fri Oct  7 14:15:55 2005
++++ src/hooks.h	Sun Dec  4 20:03:07 2005
+@@ -25,27 +25,39 @@
+ void init_hooks(void);
+ 
+ //
+-// This function attaches a hook to the game. It will run whenever a signal is
+-// sent that a hook of "type" should run. Hooks take three arguments, some of
+-// which may be null depending on the hook:
+-//   void hook(actor, acted, arg)
+-//
+-// actor is the thing taking an action which is causing the hook to execute.
+-// For instance, a character asking something for an "ask" hook.
+-// 
+-// acted is the thing being acted upon. For instance, the person being asked
+-// a question in an "ask" hook.
++// creates a "middle-man" between hooks and the variables passed in when 
++// hookRun is called. The supplied function should take a LIST of hooks to
++// be run, and a VA_LIST of arguments. It should parse the arguments out of
++// VA_LIST and call each hook in the LIST with the arguments found in VA_LIST.
++void hook_add_handler(const char *type, 
++		      void(* handler)(LIST *hooks, va_list args));
++
+ //
+-// arg is some argument to the hook. Its type is determined by the type of
+-// hook it is. In the example of the "ask" hook, this might be the question
+-// being asked.
++// some handlers for use by outside modules not wanting to write their own hook
++// handlers. Each assumes a specific number of (void *) pointer arguments, and
++// no return value. If you want to support arguments of other sizes (like ints,
++// bools, etc) or would like your hooks to be able to return values, you will
++// have to write your own handler.
++void hook_handler_0_args(LIST *hooks, va_list args);
++void  hook_handler_1_arg(LIST *hooks, va_list args);
++void hook_handler_2_args(LIST *hooks, va_list args);
++void hook_handler_3_args(LIST *hooks, va_list args);
++void hook_handler_4_args(LIST *hooks, va_list args);
++void hook_handler_5_args(LIST *hooks, va_list args);
++void hook_handler_6_args(LIST *hooks, va_list args);
++
+ //
+-// init_hooks must be called before this function can be used.
++// This function attaches a hook to the game. It will run whenever a signal is
++// sent that a hook of "type" should run. A hook is a function. The number and
++// types of arguments that the function should take, as well as the type of 
++// return value the hook should supply depends on the type of hook it's added as
+ void hookAdd(const char *type, void *hook);
+ 
+ //
+-// executes all of the hooks of the given type, with the given arguments.
+-void hookRun(const char *type, void *actor, void *acted, void *arg);
++// executes all of the hooks of the given type, with the given arguments. This
++// is sort of a sloppy way to provide hooks with arguments, but it's the best
++// I've come up with so far.
++void hookRun(const char *type, ...);
+ 
+ //
+ // remove the given hook
+diff -ruN ../nakedmudv3.0/src/inform.c src/inform.c
+--- ../nakedmudv3.0/src/inform.c	Fri Oct  7 14:15:55 2005
++++ src/inform.c	Sun Dec  4 20:03:07 2005
+@@ -30,8 +30,6 @@
+ // mandatory modules
+ //*****************************************************************************
+ #include "items/items.h"
+-#include "items/portal.h"
+-#include "items/container.h"
+ #include "items/furniture.h"
+ 
+ 
+@@ -137,86 +135,54 @@
+   // do all of the preprocessing on the new descriptions
+   hookRun("preprocess_obj_desc", new_desc, obj, ch);
+ 
++  // append anything that might also go onto it
++  hookRun("append_obj_desc", new_desc, obj, ch);
++
+   // colorize all of the edescs
+   edescTagDesc(new_desc, objGetEdescs(obj), "{c", "{g");
+ 
+   // format the desc, and send it
+   bufferFormat(new_desc, SCREEN_WIDTH, PARA_INDENT);
+-  send_to_char(ch, "{g%s", bufferString(new_desc));
++
++  if(bufferLength(new_desc) == 0)
++    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
++  else
++    send_to_char(ch, "{g%s", bufferString(new_desc));
+ 
+   // free up our mess
+   deleteBuffer(new_desc);
+ 
+-  // list container-related stuff
+-  if(objIsType(obj, "container")) {
+-    send_to_char(ch, "{g%s is %s%s.\r\n",
+-		 objGetName(obj), 
+-		 (containerIsClosed(obj) ? "closed" : "opened"),
+-		 (containerIsLocked(obj) ? " and locked"  : ""));
+-
+-    // print all of our contents
+-    if(listSize(objGetContents(obj)) > 0 && !containerIsClosed(obj)) {
+-      LIST *vis_contents = find_all_objs(ch, objGetContents(obj), "", 
+-					 NULL, TRUE);
+-      // make sure we can still see things
+-      if(listSize(vis_contents) > 0) {
+-	send_to_char(ch, "It contains:\r\n");
+-	show_list(ch, vis_contents, objGetName, objGetMultiName);
+-      }
+-      deleteList(vis_contents);
+-    }
+-  }
+-
+-  // list furniture-related stuff
+-  else if(objIsType(obj, "furniture")) {
+-    int num_sitters = listSize(objGetUsers(obj));
+-
+-    send_to_char(ch, "\r\n");
+-
+-    // print character names
+-    if(num_sitters > 0) {
+-      LIST *can_see = find_all_chars(ch, objGetUsers(obj), "", NULL, TRUE);
+-      listRemove(can_see, ch);
+-
+-      char *chars = print_list(can_see, charGetName, charGetMultiName);
+-      if(*chars) send_to_char(ch, "{g%s %s %s %s%s.\r\n",
+-			      chars, (listSize(can_see) == 1 ? "is" : "are"),
+-			      (furnitureGetType(obj)==FURNITURE_AT ? "at":"on"),
+-			      objGetName(obj),
+-			      (charGetFurniture(ch) == obj ? " with you" : ""));
+-      deleteList(can_see);
+-      free(chars);
+-    }
+-
+-    // print out how much room there is left on the furniture
+-    int seats_left = (furnitureGetCapacity(obj) - num_sitters);
+-    if(seats_left > 0)
+-      send_to_char(ch, "{g%s looks like it could fit %d more %s.\r\n",
+-		   objGetName(obj), seats_left, 
+-		   (seats_left == 1 ? "person" : "people"));
+-  }
++  hookRun("look_at_obj", obj, ch);
++  send_to_char(ch, "{n");
+ }
+ 
+ 
+ void look_at_exit(CHAR_DATA *ch, EXIT_DATA *exit) {
+-  send_to_char(ch, "{g%s", (*exitGetDesc(exit) ? exitGetDesc(exit) :
+-			    NOTHING_SPECIAL"\r\n"));
+-  // we have a door ... gotta print it's status
+-  if(exitIsClosable(exit)) {
+-    if(!*exitGetName(exit))
+-      send_to_char(ch, "It is %s.\r\n", (exitIsClosed(exit) ? "closed":"open"));
+-    else {
+-      send_to_char(ch, "You see %s. (%s)\r\n", 
+-		   exitGetName(exit), (exitIsClosed(exit) ? "closed":"open"));
+-    }
+-  }
++  // make the working copy of the description, and fill it up with info
++  BUFFER *desc = bufferCopy(exitGetDescBuffer(exit));
+ 
+-  // the door is not closed, list off the people we can see as well
+-  if(!exitIsClosed(exit)) {
+-    ROOM_DATA *room = worldGetRoom(gameworld, exitGetTo(exit));
+-    if(room != NULL)
+-      list_room_contents(ch, room);
+-  }
++  // do all of our preprocessing of the description before we show it
++  hookRun("preprocess_exit_desc", desc, exit, ch);
++
++  // append anything that might also go onto it
++  hookRun("append_exit_desc", desc, exit, ch);
++
++  // colorize all of the edescs
++  edescTagDesc(desc, roomGetEdescs(exitGetRoom(exit)), "{c", "{g");
++
++  // format our description
++  bufferFormat(desc, SCREEN_WIDTH, PARA_INDENT);
++
++  // if the buffer has nothing in it, send a "nothing special" message
++  if(bufferLength(desc) == 0)
++    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
++  else
++    send_to_char(ch, "{g%s", bufferString(desc));
++
++  deleteBuffer(desc);
++
++  hookRun("look_at_exit", exit, ch);
++  send_to_char(ch, "{n");
+ }
+ 
+ //
+@@ -292,27 +258,25 @@
+ 
+ 
+ void look_at_char(CHAR_DATA *ch, CHAR_DATA *vict) {
+-  // if we're an NPC, do some special work for displaying us. We don't do 
+-  // dynamic descs for PCs because they will probably be describing themselves,
+-  // and we don't want to give them access to the scripting language.
+-  if(!charIsNPC(vict))
+-    send_to_char(ch, "{g%s{n", (*charGetDesc(vict) ? 
+-				charGetDesc(vict) : NOTHING_SPECIAL"\r\n"));
+-  else {
+-    BUFFER *new_desc = bufferCopy(charGetDescBuffer(vict));
++  BUFFER *new_desc = bufferCopy(charGetDescBuffer(vict));
+ 
+-    // preprocess our desc before it it sent to the person
+-    hookRun("preprocess_char_desc", new_desc, vict, ch);
++  // preprocess our desc before it it sent to the person
++  hookRun("preprocess_char_desc", new_desc, vict, ch);
++
++  // append anything that might also go onto it
++  hookRun("append_char_desc", new_desc, vict, ch);
+     
+-    // format and send it
+-    bufferFormat(new_desc, SCREEN_WIDTH, PARA_INDENT);
+-    send_to_char(ch, "{g%s{n", (bufferLength(new_desc) > 0 ?
+-				bufferString(new_desc): NOTHING_SPECIAL"\r\n"));
++  // format and send it
++  bufferFormat(new_desc, SCREEN_WIDTH, PARA_INDENT);
+ 
+-    // clean up our mess
+-    deleteBuffer(new_desc);
+-  }
+-  show_body(ch, charGetBody(vict));
++  if(bufferLength(new_desc) == 0)
++    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
++  else
++    send_to_char(ch, "{g%s{n", bufferString(new_desc));
++  
++  // clean up our mess
++  deleteBuffer(new_desc);
++  hookRun("look_at_char", vict, ch);
+ }
+ 
+ 
+@@ -329,19 +293,24 @@
+   // do all of our preprocessing of the description before we show it
+   hookRun("preprocess_room_desc", desc, room, ch);
+ 
++  // append anything that might also go onto it
++  hookRun("append_room_desc", desc, room, ch);
++
+   // colorize all of the edescs
+   edescTagDesc(desc, roomGetEdescs(room), "{c", "{g");
+ 
+   // format our description
+   bufferFormat(desc, SCREEN_WIDTH, PARA_INDENT);
+ 
+-  send_to_char(ch, "{g%s", bufferString(desc));
+-  list_room_exits(ch, room);
+-  list_room_contents(ch, room);
++  if(bufferLength(desc) == 0)
++    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
++  else
++    send_to_char(ch, "{g%s", bufferString(desc));
+ 
+-  send_to_char(ch, "{n");
+   deleteBuffer(desc);
+-};
++  hookRun("look_at_room", room, ch);
++  send_to_char(ch, "{n");
++}
+ 
+ 
+ 
+@@ -534,41 +503,9 @@
+     }
+ 
+     // is it an item?
+-    else if(found_type == FOUND_OBJ)
++    else if(found_type == FOUND_OBJ || found_type == FOUND_IN_OBJ)
+       look_at_obj(ch, found);
+ 
+-    // is it something inside of an object?
+-    else if(found_type == FOUND_IN_OBJ) {
+-      // show the destination we're peering at
+-      if(objIsType(found, "portal")) {
+-	ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(found));
+-	if(dest) {
+-	  send_to_char(ch, "You peer inside %s.\r\n", see_obj_as(ch, found));
+-	  look_at_room(ch, dest);
+-	}
+-	else
+-	  send_to_char(ch, 
+-		       "%s is murky, and you cannot "
+-		       "make out anything on the other side.\r\n",
+-		       see_obj_as(ch, found));
+-      }
+-      else if(!objIsType(found, "container"))
+-	send_to_char(ch, "%s is not a container or portal.\r\n",
+-		     objGetName(found));
+-      else if(containerIsClosed(found))
+-	send_to_char(ch, "%s is closed.\r\n", objGetName(found));
+-      else if(listSize(objGetContents(found)) == 0)
+-	send_to_char(ch, "There is nothing inside of %s.\r\n", 
+-		     objGetName(found));
+-      else {
+-	send_to_char(ch, "You peer inside of %s:\r\n", objGetName(found));
+-	LIST *vis_objs = find_all_objs(ch, objGetContents(found), "", NULL,
+-				       TRUE);
+-	show_list(ch, vis_objs, objGetName, objGetMultiName);
+-	deleteList(vis_objs);
+-      }
+-    }
+-
+     // is it another character?
+     else if(found_type == FOUND_CHAR)
+       look_at_char(ch, found);
+@@ -840,4 +777,163 @@
+     va_end(args);
+     message(ch, vict, obj, vobj, hide_nosee, range, buf);
+   }
++}
++
++
++
++//*****************************************************************************
++// hooks
++//*****************************************************************************
++
++//
++// appends all of our exit extra descriptions to the room description.
++void exit_append_room_hook(BUFFER *buf, ROOM_DATA *room, CHAR_DATA *ch) {
++  LIST       *exnames = roomGetExitNames(room);
++  LIST       *ex_same = newList(); // leads to room w/ same name
++  LIST       *ex_diff = newList(); // leads to room w/ diff name
++  LIST     *ex_closed = newList(); // there is a closed door blocking us
++  LIST_ITERATOR *ex_i = newListIterator(exnames);
++  char            *ex = NULL;
++
++  // figure out our exits that lead to same-room-name 
++  // or different-room-name destinations.
++  ITERATE_LIST(ex, ex_i) {
++    EXIT_DATA *exit = roomGetExit(room, ex);
++    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(exit));
++    if(dest && can_see_exit(ch, exit) && dirGetNum(ex) != DIR_NONE) {
++      if(exitIsClosed(exit))
++	listPut(ex_closed, ex);
++      else if(!strcasecmp(roomGetName(room), roomGetName(dest)))
++	listPush(ex_same, ex);
++      else
++	listQueue(ex_diff, ex);
++    }
++  } deleteListIterator(ex_i);
++
++  // append info for dirs that are blocked by doors
++  ex_i = newListIterator(ex_closed);
++  ITERATE_LIST(ex, ex_i) {
++    EXIT_DATA *exit = roomGetExit(room, ex);
++    bprintf(buf, " %s%s, you see %s.",
++	    (dirGetNum(ex) == DIR_NONE ? "At the exit " : ""), ex,
++	    (*exitGetName(exit) ? exitGetName(exit) : "a door"));
++  } deleteListIterator(ex_i);
++
++  // append info for dirs that exit to other room names
++  ex_i = newListIterator(ex_diff);
++  ITERATE_LIST(ex, ex_i) {
++    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(roomGetExit(room, ex)));
++    bprintf(buf, " Continuing %s would take you to %s.", ex, roomGetName(dest));
++  } deleteListIterator(ex_i);
++
++  // and now print stuff for exits that go to rooms with the name name
++  if(listSize(ex_same) > 0) {
++    // if we just have a couple exits, list them off
++    if(listSize(ex_same) <= 3) {
++      char *list = print_list(ex_same, identity_func, NULL);
++      bprintf(buf, " %s continues %s.", roomGetName(room), list);
++      free(list);
++    }
++    // else display in bulk
++    else {
++      bprintf(buf, " All %sdiretions continue to %s.", 
++	      (listSize(ex_same) == listSize(exnames) ? "" : "other "),
++	      roomGetName(room));
++    }
++  }
++
++  // clean up our garbage
++  deleteList(ex_diff);
++  deleteList(ex_same);
++  deleteList(ex_closed);
++  deleteListWith(exnames, free);
++}
++
++void exit_append_hook(BUFFER *buf, EXIT_DATA *exit, CHAR_DATA *ch) {
++  // before anything, figure out some basic information like our dir and dest
++  ROOM_DATA     *room = exitGetRoom(exit);
++  ROOM_DATA     *dest = worldGetRoom(gameworld, exitGetTo(exit));
++  LIST       *exnames = roomGetExitNames(room);
++  LIST_ITERATOR *ex_i = newListIterator(exnames);
++  char            *ex = NULL;
++  char           *dir = NULL;
++
++  // figure out which direction we came from
++  ITERATE_LIST(ex, ex_i) {
++    if(roomGetExit(room, ex) == exit) {
++      dir = strdup(ex);
++      break;
++    }
++  } deleteListIterator(ex_i);
++  deleteListWith(exnames, free);
++
++  // tell us where it would take us
++  if(dest && !*exitGetDesc(exit) && !exitIsClosed(exit)) {
++    if(!strcasecmp(roomGetName(dest), roomGetName(room)))
++      bprintf(buf, " %s continues %s.", roomGetName(dest), dir);
++    else 
++      bprintf(buf, " Continuing %s would take you to %s.", dir, 
++	      roomGetName(dest));
++  }
++
++  // we have a door ... gotta print its status
++  if(exitIsClosable(exit)) {
++    bprintf(buf, " %s%s, you see %s which is currently %s.",
++	    (dirGetNum(dir) == DIR_NONE ? "At the exit " : ""), dir,
++	    (*exitGetName(exit) ? exitGetName(exit) : "a door"),
++	    (exitIsClosed(exit) ? "closed" : "open"));
++  }
++
++  // garbage collection
++  if(dir) free(dir);
++}
++
++void exit_look_hook(EXIT_DATA *exit, CHAR_DATA *ch) {
++  // the door is not closed, list off the people we can see as well
++  if(!exitIsClosed(exit)) {
++    ROOM_DATA *room = worldGetRoom(gameworld, exitGetTo(exit));
++    if(room != NULL)
++      list_room_contents(ch, room);
++  }
++}
++
++void body_look_hook(CHAR_DATA *vict, CHAR_DATA *ch) {
++  send_to_char(ch, "\r\n{g%s %s wearing:\r\n", 
++	       (ch == vict ? "You" : HESHE(vict)),
++	       (ch == vict ? "are" : "is"));
++  show_body(ch, charGetBody(vict));
++}
++
++void room_look_hook(ROOM_DATA *room, CHAR_DATA *ch) {
++  list_room_exits(ch, room);
++  list_room_contents(ch, room);
++}
++
++
++
++//*****************************************************************************
++// initialization of inform.h
++//*****************************************************************************
++void init_inform(void) {
++  // add all of our hook types
++  hook_add_handler("preprocess_room_desc", hook_handler_3_args);
++  hook_add_handler("preprocess_obj_desc",  hook_handler_3_args);
++  hook_add_handler("preprocess_char_desc", hook_handler_3_args);
++  hook_add_handler("preprocess_exit_desc", hook_handler_3_args);
++  hook_add_handler("append_room_desc",     hook_handler_3_args);
++  hook_add_handler("append_obj_desc",      hook_handler_3_args);
++  hook_add_handler("append_char_desc",     hook_handler_3_args);
++  hook_add_handler("append_exit_desc",     hook_handler_3_args);
++  hook_add_handler("look_at_room",         hook_handler_2_args);
++  hook_add_handler("look_at_obj",          hook_handler_2_args);
++  hook_add_handler("look_at_char",         hook_handler_2_args);
++  hook_add_handler("look_at_exit",         hook_handler_2_args);
++
++  // attach hooks
++  hookAdd("append_exit_desc", exit_append_hook);
++  // enable if you want exits to append to the end of room descs
++  //  hookAdd("append_room_desc", exit_append_room_hook);
++  hookAdd("look_at_exit",     exit_look_hook);
++  hookAdd("look_at_char",     body_look_hook);
++  hookAdd("look_at_room",     room_look_hook);
+ }
+diff -ruN ../nakedmudv3.0/src/inform.h src/inform.h
+--- ../nakedmudv3.0/src/inform.h	Fri Oct  7 14:15:55 2005
++++ src/inform.h	Sun Dec  4 20:03:07 2005
+@@ -10,6 +10,11 @@
+ //
+ //*****************************************************************************
+ 
++//
++// lots of informative stuff needs to be initialized. Do that before the
++// information functions are used.
++void init_inform(void);
++
+ 
+ 
+ //********************
+diff -ruN ../nakedmudv3.0/src/interpret.c src/interpret.c
+--- ../nakedmudv3.0/src/interpret.c	Fri Oct  7 14:15:55 2005
++++ src/interpret.c	Sun Dec  4 20:03:07 2005
+@@ -392,7 +392,8 @@
+ #endif
+ 
+   // first try room commands then world commands
+-  if(!try_use_cmd_table(ch,roomGetCmdTable(charGetRoom(ch)),command,arg,FALSE))
++  if(!charGetRoom(ch) || 
++     !try_use_cmd_table(ch,roomGetCmdTable(charGetRoom(ch)),command,arg,FALSE))
+     if(!try_use_cmd_table(ch, cmd_table, command, arg, TRUE))
+       text_to_char(ch, "No such command.\r\n");
+ }
+diff -ruN ../nakedmudv3.0/src/items/container.c src/items/container.c
+--- ../nakedmudv3.0/src/items/container.c	Fri Oct  7 14:15:55 2005
++++ src/items/container.c	Sun Dec  4 20:03:07 2005
+@@ -13,6 +13,8 @@
+ #include "../world.h"
+ #include "../socket.h"
+ #include "../utils.h"
++#include "../hooks.h"
++#include "../inform.h"
+ #include "../olc2/olc.h"
+ 
+ #include "items.h"
+@@ -495,6 +497,31 @@
+ 
+ 
+ //*****************************************************************************
++// hooks
++//*****************************************************************************
++void container_append_hook(BUFFER *desc, OBJ_DATA *obj, CHAR_DATA *ch) {
++  if(objIsType(obj, "container")) {
++    bprintf(desc, " It is %s%s.", (containerIsClosed(obj) ? "closed":"open"),
++	    (containerIsLocked(obj) ? " and locked" : ""));
++  }
++}
++
++void container_look_hook(OBJ_DATA *obj, CHAR_DATA *ch) {
++  if(objIsType(obj, "container") && !containerIsClosed(obj)) {
++    LIST *vis_contents = find_all_objs(ch, objGetContents(obj), "", 
++				       NULL, TRUE);
++      // make sure we can still see things
++      if(listSize(vis_contents) > 0) {
++	send_to_char(ch, "It contains:\r\n");
++	show_list(ch, vis_contents, objGetName, objGetMultiName);
++      }
++      deleteList(vis_contents);
++  }
++}
++
++
++
++//*****************************************************************************
+ // install the container item type
+ //*****************************************************************************
+ 
+@@ -505,6 +532,10 @@
+   		newContainerData, deleteContainerData,
+   		containerDataCopyTo, containerDataCopy, 
+   		containerDataStore, containerDataRead);
++
++  // add our hooks
++  hookAdd("append_obj_desc", container_append_hook);
++  hookAdd("look_at_obj",     container_look_hook);
+ 
+   // set up the container OLC too
+   item_add_olc("container", iedit_container_menu, iedit_container_chooser, 
+diff -ruN ../nakedmudv3.0/src/items/furniture.c src/items/furniture.c
+--- ../nakedmudv3.0/src/items/furniture.c	Fri Oct  7 14:15:55 2005
++++ src/items/furniture.c	Sun Dec  4 20:03:07 2005
+@@ -10,9 +10,11 @@
+ #include "../mud.h"
+ #include "../utils.h"
+ #include "../storage.h"
++#include "../character.h"
+ #include "../object.h"
+ #include "../world.h"
+ #include "../socket.h"
++#include "../hooks.h"
+ #include "../olc2/olc.h"
+ 
+ #include "items.h"
+@@ -271,6 +273,38 @@
+ 
+ 
+ //*****************************************************************************
++// hooks
++//*****************************************************************************
++void furniture_append_hook(BUFFER *buf, OBJ_DATA *obj, CHAR_DATA *ch) {
++  if(objIsType(obj, "furniture")) {
++    int num_sitters = listSize(objGetUsers(obj));
++
++    // print out how much room there is left on the furniture
++    int seats_left = (furnitureGetCapacity(obj) - num_sitters);
++    if(seats_left > 0)
++      bprintf(buf, " It looks like it could fit %d more %s.\r\n",
++		   seats_left, (seats_left == 1 ? "person" : "people"));
++
++    // print character names
++    if(num_sitters > 0) {
++      LIST *can_see = find_all_chars(ch, objGetUsers(obj), "", NULL, TRUE);
++      listRemove(can_see, ch);
++
++      char *chars = print_list(can_see, charGetName, charGetMultiName);
++      if(*chars) bprintf(buf, "%s %s %s %s%s.\r\n",
++			 chars, (listSize(can_see) == 1 ? "is" : "are"),
++			 (furnitureGetType(obj) == FURNITURE_AT ? "at":"on"),
++			 see_obj_as(ch, obj),
++			 (charGetFurniture(ch) == obj ? " with you" : ""));
++      deleteList(can_see);
++      free(chars);
++    }
++  }
++}
++
++
++
++//*****************************************************************************
+ // install the furniture item type
+ //*****************************************************************************
+ 
+@@ -281,6 +315,9 @@
+   		newFurnitureData, deleteFurnitureData,
+   		furnitureDataCopyTo, furnitureDataCopy, 
+   		furnitureDataStore, furnitureDataRead);
++
++  // add our hooks
++  hookAdd("append_obj_desc", furniture_append_hook);
+ 
+   // set up the furniture OLC too
+   item_add_olc("furniture", iedit_furniture_menu, iedit_furniture_chooser, 
+diff -ruN ../nakedmudv3.0/src/items/iedit.c src/items/iedit.c
+--- ../nakedmudv3.0/src/items/iedit.c	Fri Oct  7 14:15:55 2005
++++ src/items/iedit.c	Sun Dec  4 20:03:07 2005
+@@ -75,9 +75,9 @@
+ 
+   text_to_buffer(sock, "{wEditable item types:{g\r\n");
+   ITERATE_LIST(type, list_i) {
++    col++;
+     send_to_socket(sock, "  %s%-14s%s", (objIsType(obj, type) ? "{y" : "{g"),
+ 		   type, ((col != 0 && col % 4 == 0) ? "\r\n": "   "));
+-    col++;
+   }
+   deleteListIterator(list_i);
+   deleteListWith(list, free);
+diff -ruN ../nakedmudv3.0/src/items/portal.c src/items/portal.c
+--- ../nakedmudv3.0/src/items/portal.c	Fri Oct  7 14:15:55 2005
++++ src/items/portal.c	Sun Dec  4 20:03:07 2005
+@@ -18,10 +18,12 @@
+ #include "../movement.h"
+ #include "../inform.h"
+ #include "../handler.h"
++#include "../hooks.h"
+ #include "items.h"
+ 
+ #include "../olc2/olc.h"
+ #include "iedit.h"
++#include "portal.h"
+ 
+ 
+ 
+@@ -38,23 +40,34 @@
+ // item data for portals
+ //*****************************************************************************
+ typedef struct portal_data {
+-  char *dest;
++  char        *dest;
++  char  *leave_mssg;
++  char  *enter_mssg;
+ } PORTAL_DATA;
+ 
+ PORTAL_DATA *newPortalData() {
+   PORTAL_DATA *data = malloc(sizeof(PORTAL_DATA));
+-  data->dest = strdup("");
++  data->dest       = strdup("");
++  data->leave_mssg = strdup("");
++  data->enter_mssg = strdup("");
+   return data;
+ }
+ 
+ void deletePortalData(PORTAL_DATA *data) {
+-  if(data->dest) free(data->dest);
++  if(data->dest)       free(data->dest);
++  if(data->leave_mssg) free(data->leave_mssg);
++  if(data->enter_mssg) free(data->enter_mssg);
+   free(data);
+ }
+ 
+ void portalDataCopyTo(PORTAL_DATA *from, PORTAL_DATA *to) {
+-  if(to->dest) free(to->dest);
+-  to->dest = strdupsafe(from->dest);
++  if(to->dest)       free(to->dest);
++  if(to->leave_mssg) free(to->leave_mssg);
++  if(to->enter_mssg) free(to->enter_mssg);
++  to->dest       = strdupsafe(from->dest);
++  to->leave_mssg = strdupsafe(from->leave_mssg);
++  to->enter_mssg = strdupsafe(from->enter_mssg);
++  
+ }
+ 
+ PORTAL_DATA *portalDataCopy(PORTAL_DATA *data) {
+@@ -65,13 +78,17 @@
+ 
+ STORAGE_SET *portalDataStore(PORTAL_DATA *data) {
+   STORAGE_SET *set = new_storage_set();
+-  store_string(set, "dest", data->dest);
++  store_string(set, "dest",  data->dest);
++  store_string(set, "enter", data->enter_mssg);
++  store_string(set, "leave", data->leave_mssg);
+   return set;
+ }
+ 
+ PORTAL_DATA *portalDataRead(STORAGE_SET *set) {
+-  PORTAL_DATA *data = newPortalData();
+-  data->dest = strdup(read_string(set, "dest"));
++  PORTAL_DATA *data = malloc(sizeof(PORTAL_DATA));
++  data->dest        = strdupsafe(read_string(set, "dest"));
++  data->enter_mssg  = strdupsafe(read_string(set, "enter"));
++  data->leave_mssg  = strdupsafe(read_string(set, "leave"));
+   return data;
+ }
+ 
+@@ -85,12 +102,34 @@
+   return data->dest;
+ }
+ 
++const char *portalGetLeaveMssg(OBJ_DATA *obj) {
++  PORTAL_DATA *data = objGetTypeData(obj, "portal");
++  return data->leave_mssg;
++}
++
++const char *portalGetEnterMssg(OBJ_DATA *obj) {
++  PORTAL_DATA *data = objGetTypeData(obj, "portal");
++  return data->enter_mssg;
++}
++
+ void portalSetDest(OBJ_DATA *obj, const char *dest) {
+   PORTAL_DATA *data = objGetTypeData(obj, "portal");
+   if(data->dest) free(data->dest);
+   data->dest = strdupsafe(dest);
+ }
+ 
++void portalSetLeaveMssg(OBJ_DATA *obj, const char *mssg) {
++  PORTAL_DATA *data = objGetTypeData(obj, "portal");
++  if(data->leave_mssg) free(data->leave_mssg);
++  data->leave_mssg = strdupsafe(mssg);
++}
++
++void portalSetEnterMssg(OBJ_DATA *obj, const char *mssg) {
++  PORTAL_DATA *data = objGetTypeData(obj, "portal");
++  if(data->enter_mssg) free(data->enter_mssg);
++  data->enter_mssg = strdupsafe(mssg);
++}
++
+ 
+ //
+ // cmd_enter is used to go through portals
+@@ -102,14 +141,12 @@
+   void    *found = NULL;
+   int found_type = PARSE_NONE;
+ 
+-  if(!parse_args(ch, TRUE, cmd, arg, "{ obj.room exit } ", &found, &found_type))
++  if(!parse_args(ch, TRUE, cmd, arg, "{ obj.room exit }", &found, &found_type))
+     return;
+ 
+   // we're trying to enter an exit
+-  if(found_type == PARSE_EXIT) {
+-    if(try_move_mssg(ch, roomGetExitDir(charGetRoom(ch), found)))
+-      look_at_room(ch, charGetRoom(ch));
+-  }
++  if(found_type == PARSE_EXIT)
++    try_move_mssg(ch, roomGetExitDir(charGetRoom(ch), found));
+ 
+   // we're trying to enter a portal
+   else {
+@@ -120,14 +157,21 @@
+       if(dest == NULL)
+ 	send_to_char(ch, "There is nothing on the other side...\r\n");
+       else {
+-	send_to_char(ch, "You step through %s.\r\n", see_obj_as(ch, found));
+-	message(ch, NULL, found, NULL, TRUE, TO_ROOM,
+-		"$n steps through $o.");
++	if(*portalGetLeaveMssg(found))
++	  message(ch, NULL, found,NULL,TRUE,TO_ROOM, portalGetLeaveMssg(found));
++	else
++	  message(ch, NULL, found, NULL, TRUE, TO_ROOM, "$n steps into $o.");
++
++	// transfer our character and look
+ 	char_from_room(ch);
+ 	char_to_room(ch, dest);
+ 	look_at_room(ch, dest);
+-	message(ch, NULL, found, NULL, TRUE, TO_ROOM,
+-		"$n arrives after travelling through $o.");
++
++	if(*portalGetEnterMssg(found))
++	  message(ch, NULL, found,NULL,TRUE,TO_ROOM, portalGetEnterMssg(found));
++	else
++	  message(ch, NULL, found, NULL, TRUE, TO_ROOM,
++		  "$n arrives after travelling through $o.");
+       }
+     }
+   }
+@@ -139,10 +183,14 @@
+ // portal olc
+ //*****************************************************************************
+ #define IEDIT_PORTAL_DEST      1
++#define IEDIT_PORTAL_ENTER     2
++#define IEDIT_PORTAL_LEAVE     3
+ 
+ // the resedit olc needs these declared
+-void iedit_portal_menu   (SOCKET_DATA *sock, PORTAL_DATA *data) {
+-  send_to_socket(sock, "{g1) Destination: {c%s\r\n", data->dest);
++void iedit_portal_menu(SOCKET_DATA *sock, PORTAL_DATA *data) {
++  send_to_socket(sock, "{g1) Destination  : {c%s\r\n", data->dest);
++  send_to_socket(sock, "{g2) Enter message:\r\n{c%s\r\n", data->enter_mssg);
++  send_to_socket(sock, "{g3) Leave message:\r\n{c%s\r\n", data->leave_mssg);
+ }
+ 
+ int  iedit_portal_chooser(SOCKET_DATA *sock, PORTAL_DATA *data, 
+@@ -151,6 +199,12 @@
+   case '1': 
+     text_to_buffer(sock, "Enter new destination (return for none): ");
+     return IEDIT_PORTAL_DEST;
++  case '2':
++    text_to_buffer(sock, "Enter message shown to room user arrives at: ");
++    return IEDIT_PORTAL_ENTER;
++  case '3':
++    text_to_buffer(sock, "Enter message shown to room user leaves: ");
++    return IEDIT_PORTAL_LEAVE;
+   default:
+     return MENU_CHOICE_INVALID;
+   }
+@@ -164,24 +218,59 @@
+     data->dest   = strdupsafe(arg);
+     return TRUE;
+   }
++  case IEDIT_PORTAL_LEAVE: {
++    if(data->leave_mssg) free(data->leave_mssg);
++    data->leave_mssg = strdupsafe(arg);
++    return TRUE;
++  }
++  case IEDIT_PORTAL_ENTER: {
++    if(data->enter_mssg) free(data->enter_mssg);
++    data->enter_mssg = strdupsafe(arg);
++    return TRUE;
++  }
+   default:
+     return FALSE;
+   }
+ }
+ 
+ void portal_from_proto(PORTAL_DATA *data, BUFFER *buf) {
+-  if(*bufferString(buf)) {
+-    char dest[SMALL_BUFFER];
+-    sscanf(bufferString(buf), "me.portal_dest = \"%s", dest);
+-    dest[next_letter_in(dest, '\"')] = '\0'; // kill closing "
+-    if(data->dest) free(data->dest);
+-    data->dest = strdupsafe(dest);
+-  }
++  char line[MAX_BUFFER];
++  const char *code = bufferString(buf);
++  do {
++    code = strcpyto(line, code, '\n');
++    char *lptr = line;
++    if(!strncasecmp(lptr, "me.portal_dest", 14)) {
++      while(*lptr && *lptr != '\"') lptr++;
++      lptr++; // skip leading "
++      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
++      if(data->dest) free(data->dest);
++      data->dest = strdupsafe(lptr);
++    }
++    else if(!strncasecmp(lptr, "me.portal_enter_mssg", 20)) {
++      while(*lptr && *lptr != '\"') lptr++;
++      lptr++; // skip leading "
++      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
++      if(data->enter_mssg) free(data->enter_mssg);
++      data->enter_mssg = strdupsafe(lptr);
++    }
++    else if(!strncasecmp(lptr, "me.portal_leave_mssg", 20)) {
++      while(*lptr && *lptr != '\"') lptr++;
++      lptr++; // skip leading "
++      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
++      if(data->leave_mssg) free(data->leave_mssg);
++      data->leave_mssg = strdupsafe(lptr);
++    }
++    else; // ignore line
++  } while(*code != '\0');
+ }
+ 
+ void portal_to_proto(PORTAL_DATA *data, BUFFER *buf) {
+   if(*data->dest)
+     bprintf(buf, "me.portal_dest = \"%s\"\n", data->dest);
++  if(*data->leave_mssg)
++    bprintf(buf, "me.portal_leave_mssg = \"%s\"\n", data->leave_mssg);
++  if(*data->enter_mssg)
++    bprintf(buf, "me.portal_enter_mssg = \"%s\"\n", data->enter_mssg);
+ }
+ 
+ 
+@@ -201,6 +290,30 @@
+   }
+ }
+ 
++PyObject *PyObj_getportalleavemssg(PyObject *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj(self);
++  if(obj == NULL)
++    return NULL;
++  else if(objIsType(obj, "portal"))
++    return Py_BuildValue("s", portalGetLeaveMssg(obj));
++  else {
++    PyErr_Format(PyExc_TypeError, "Can only get leave message for portals.");
++    return NULL;
++  }
++}
++
++PyObject *PyObj_getportalentermssg(PyObject *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj(self);
++  if(obj == NULL)
++    return NULL;
++  else if(objIsType(obj, "portal"))
++    return Py_BuildValue("s", portalGetEnterMssg(obj));
++  else {
++    PyErr_Format(PyExc_TypeError, "Can only get enter message for portals.");
++    return NULL;
++  }
++}
++
+ int PyObj_setportaldest(PyObject *self, PyObject *value, void *closure) {
+   OBJ_DATA *obj = PyObj_AsObj(self);
+   if(obj == NULL) {
+@@ -226,6 +339,67 @@
+   return 0;
+ }
+ 
++int PyObj_setportalleavemssg(PyObject *self, PyObject *value, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj(self);
++  if(obj == NULL) {
++    PyErr_Format(PyExc_StandardError, "Tried to set leave message for "
++		 "nonexistent portal, %d", PyObj_AsUid(self));
++    return -1;
++  }
++  else if(!objIsType(obj, "portal")) {
++    PyErr_Format(PyExc_TypeError, "Tried to set leave mssg for non-portal, %s",
++		 objGetClass(obj));
++    return -1;
++  }
++
++  if(PyString_Check(value))
++    portalSetLeaveMssg(obj, PyString_AsString(value));
++  else {
++    PyErr_Format(PyExc_TypeError, "portal leave message must be a string.");
++    return -1;
++  }
++
++  return 0;
++}
++
++int PyObj_setportalentermssg(PyObject *self, PyObject *value, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj(self);
++  if(obj == NULL) {
++    PyErr_Format(PyExc_StandardError, "Tried to set enter message for "
++		 "nonexistent portal, %d", PyObj_AsUid(self));
++    return -1;
++  }
++  else if(!objIsType(obj, "portal")) {
++    PyErr_Format(PyExc_TypeError, "Tried to set enter mssg for non-portal, %s",
++		 objGetClass(obj));
++    return -1;
++  }
++
++  if(PyString_Check(value))
++    portalSetEnterMssg(obj, PyString_AsString(value));
++  else {
++    PyErr_Format(PyExc_TypeError, "portal enter message must be a string.");
++    return -1;
++  }
++
++  return 0;
++}
++  
++
++
++//*****************************************************************************
++// add our hookds
++//*****************************************************************************
++void portal_look_hook(OBJ_DATA *obj, CHAR_DATA *ch) {
++  if(objIsType(obj, "portal")) {
++    ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(obj));
++    if(dest != NULL) {
++      send_to_char(ch, "You peer inside %s.\r\n", see_obj_as(ch, obj));
++      look_at_room(ch, dest);
++    }
++  }
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -240,6 +414,9 @@
+ 		portalDataCopyTo, portalDataCopy, 
+ 		portalDataStore, portalDataRead);
+ 
++  // set up our hooks
++  hookAdd("look_at_obj", portal_look_hook);
++
+   // set up the portal OLC too
+   item_add_olc("portal", iedit_portal_menu, iedit_portal_chooser, 
+ 	       iedit_portal_parser, portal_from_proto, portal_to_proto);
+@@ -247,6 +424,12 @@
+   // make it so we can set portal destinations in scripts
+   PyObj_addGetSetter("portal_dest", PyObj_getportaldest, PyObj_setportaldest,
+ 		     "the database key of the room we're going to.");
++  PyObj_addGetSetter("portal_enter_mssg", 
++		     PyObj_getportalentermssg, PyObj_setportalentermssg,
++		     "The message shown when user enters a new room.");
++  PyObj_addGetSetter("portal_leave_mssg", 
++		     PyObj_getportalleavemssg, PyObj_setportalleavemssg,
++		     "The message shown when user leaves a room.");
+ 
+   add_cmd("enter", NULL, cmd_enter, POS_STANDING, POS_FLYING,
+ 	  "player", TRUE, TRUE);
+diff -ruN ../nakedmudv3.0/src/items/portal.h src/items/portal.h
+--- ../nakedmudv3.0/src/items/portal.h	Fri Oct  7 14:15:55 2005
++++ src/items/portal.h	Sun Dec  4 20:03:07 2005
+@@ -12,10 +12,14 @@
+ 
+ //
+ // return the key of the room that the portal leads to
+-const char *portalGetDest(OBJ_DATA *obj);
++const char      *portalGetDest(OBJ_DATA *obj);
++const char *portalGetLeaveMssg(OBJ_DATA *obj);
++const char *portalGetEnterMssg(OBJ_DATA *obj);
+ 
+ //
+ // set the destination of the portal
+-void portalSetDest(OBJ_DATA *obj, const char *dest);
++void      portalSetDest(OBJ_DATA *obj, const char *dest);
++void portalSetLeaveMssg(OBJ_DATA *obj, const char *mssg);
++void portalSetEnterMssg(OBJ_DATA *obj, const char *mssg);
+ 
+ #endif // PORTAL_H
+diff -ruN ../nakedmudv3.0/src/items/worn.c src/items/worn.c
+--- ../nakedmudv3.0/src/items/worn.c	Fri Oct  7 14:15:55 2005
++++ src/items/worn.c	Sun Dec  4 20:03:07 2005
+@@ -29,6 +29,7 @@
+ #include "../object.h"
+ #include "../inform.h"
+ #include "../handler.h"
++#include "../hooks.h"
+ 
+ #include "../olc2/olc.h"
+ #include "iedit.h"
+@@ -73,6 +74,15 @@
+   return (entry ? entry->positions : "");
+ }
+ 
++//
++// append information about where the item can be worn
++void append_worn_hook(BUFFER *desc, OBJ_DATA *obj, CHAR_DATA *ch) {
++  if(objIsType(obj, "worn")) {
++    bprintf(desc, "When worn, this item covers bodyparts: %s.", 
++	    wornGetPositions(obj));
++  }
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -163,13 +173,13 @@
+ 
+   text_to_buffer(sock, "{wEditable item types:{g\r\n");
+   ITERATE_LIST(key, type_i) {
+-    send_to_socket(sock, "  %-14s%s",
+-		   key, ((col != 0 && col % 3 == 0) ? "\r\n": "   "));
+     col++;
++    send_to_socket(sock, "  %-14s%s",
++		   key, ((col != 0 && col % 4 == 0) ? "\r\n": "   "));
+   }
+   deleteListIterator(type_i);
+   deleteListWith(types, free);
+-  if(col % 3 != 0) text_to_buffer(sock, "\r\n");
++  if(col % 4 != 0) text_to_buffer(sock, "\r\n");
+ }
+ 
+ 
+@@ -293,6 +303,9 @@
+   // set up the worn OLC too
+   item_add_olc("worn", iedit_worn_menu, iedit_worn_chooser, iedit_worn_parser,
+ 	       worn_from_proto, worn_to_proto);
++
++  // attach our hooks to display worn info on look
++  hookAdd("append_obj_desc", append_worn_hook);
+ 
+   // add our new python get/setters
+   PyObj_addGetSetter("worn_type", PyObj_getworntype, PyObj_setworntype,
+diff -ruN ../nakedmudv3.0/src/list.c src/list.c
+--- ../nakedmudv3.0/src/list.c	Fri Oct  7 14:15:55 2005
++++ src/list.c	Sun Dec  4 20:03:07 2005
+@@ -14,6 +14,7 @@
+ //*****************************************************************************
+ 
+ #include <stdlib.h>
++#include <stdarg.h>
+ #include "list.h"
+ 
+ #ifndef FALSE
+@@ -435,6 +436,16 @@
+ 
+   return newlist;
+ }
++
++void listParse(LIST *L, int n, ...) {
++  int i;
++  va_list args;
++  va_start(args, n);
++  for(i = 0; i < n; i++)
++    *va_arg(args, void **) = listGet(L, i);
++  va_end(args);
++}
++
+ 
+ 
+ //*****************************************************************************
+diff -ruN ../nakedmudv3.0/src/list.h src/list.h
+--- ../nakedmudv3.0/src/list.h	Fri Oct  7 14:15:55 2005
++++ src/list.h	Sun Dec  4 20:03:07 2005
+@@ -148,6 +148,12 @@
+ LIST *listCopyWith(LIST *L, void *func);
+ 
+ 
++//
++// Parses out the first n arguments of the list, and assigns them to the 
++// pointers supplied as arguments in the elipsis. Assumes n <= listSize(L)
++void listParse(LIST *L, int n, ...);
++
++
+ 
+ //*****************************************************************************
+ // list iterator function prototypes
+diff -ruN ../nakedmudv3.0/src/log.c src/log.c
+--- ../nakedmudv3.0/src/log.c	Fri Oct  7 14:15:55 2005
++++ src/log.c	Sun Dec  4 20:03:07 2005
+@@ -132,19 +132,18 @@
+       found = TRUE;
+     // for each key, see if it exists in the string
+     else {
+-      int i, num_keys = 0;
+-      char **keys = NULL;
+-      keys = parse_keywords(keywords, &num_keys);
+-      for(i = 0; i < num_keys; i++) {
++      LIST           *keys = parse_keywords(keywords);
++      LIST_ITERATOR *key_i = newListIterator(keys);
++      char            *key = NULL;
++
++      ITERATE_LIST(key, key_i) {
+ 	// found one
+-	if(strstr(string, keys[i])) {
++	if(strstr(string, key)) {
+ 	  found = TRUE;
+ 	  break;
+ 	}
+-      }
+-      // free all of the keys
+-      for(i = 0; i < num_keys; i++)
+-	free(keys[i]);
++      } deleteListIterator(key_i);
++      deleteListWith(keys, free);
+     }
+ 
+     if(found) {
+diff -ruN ../nakedmudv3.0/src/map.c src/map.c
+--- ../nakedmudv3.0/src/map.c	Fri Oct  7 14:15:55 2005
++++ src/map.c	Sun Dec  4 20:03:08 2005
+@@ -220,7 +220,7 @@
+ }
+ 
+ int   mapIn     (MAP *map, const void *key) {
+-  return (mapGet(map, key) != NULL);
++  return (mapGetEntry(map, key) != NULL);
+ }
+ 
+ int   mapSize   (MAP *map) {
+diff -ruN ../nakedmudv3.0/src/movement.c src/movement.c
+--- ../nakedmudv3.0/src/movement.c	Fri Oct  7 14:15:55 2005
++++ src/movement.c	Sun Dec  4 20:03:08 2005
+@@ -100,7 +100,7 @@
+     look_at_room(ch, charGetRoom(ch));
+ 
+     // now try all of our entrance hooks
+-    hookRun("enter", ch, to, NULL);
++    hookRun("enter", ch, to);
+ 
+     return exit;
+   }
+diff -ruN ../nakedmudv3.0/src/mud.h src/mud.h
+--- ../nakedmudv3.0/src/mud.h	Fri Oct  7 14:15:55 2005
++++ src/mud.h	Sun Dec  4 20:03:08 2005
+@@ -118,7 +118,7 @@
+ #define EXE_FILE           "../src/NakedMud"      /* the name of the mud binary         */
+ #define DEFAULT_PORT       4000                   /* the default port we run on */
+ #define SCREEN_WIDTH       80                     // the width of a term screen
+-#define PARA_INDENT        3                      // num of spaces to start para
++#define PARA_INDENT        0                      // num of spaces to start para
+ 
+ /* Thread States */
+ #define TSTATE_LOOKUP          0  /* Socket is in host_lookup        */
+diff -ruN ../nakedmudv3.0/src/numbers.c src/numbers.c
+--- ../nakedmudv3.0/src/numbers.c	Fri Oct  7 14:15:55 2005
++++ src/numbers.c	Sun Dec  4 20:03:08 2005
+@@ -33,6 +33,10 @@
+   return integer->val;
+ }
+ 
++void integerSetVal(INTEGER *integer, int val) {
++  integer->val = val;
++}
++
+ int integerCmp(INTEGER *int1, INTEGER *int2) {
+   if(int1->val == int2->val)
+     return 0;
+@@ -65,6 +69,10 @@
+   return dbl->val;
+ }
+ 
++void doubleSetVal(DOUBLE *dbl, double val) {
++  dbl->val = val;
++}
++
+ int doubleCmp(DOUBLE *dbl1, DOUBLE *dbl2) {
+   if(dbl1->val == dbl2->val)
+     return 0;
+@@ -97,10 +105,50 @@
+   return lng->val;
+ }
+ 
++void longSetVal(LONG *lng, long val) {
++  lng->val = val;
++}
++
+ int longCmp(LONG *lng1, LONG *lng2) {
+   if(lng1->val == lng2->val)
+     return 0;
+   else if(lng1->val > lng2->val)
++    return 1;
++  else
++    return -1;
++}
++
++
++
++//*****************************************************************************
++// booleans
++//*****************************************************************************
++struct boolean_struct {
++  bool val;
++};
++
++BOOLEAN *newBoolean(bool val) {
++  BOOLEAN *bl = malloc(sizeof(BOOLEAN));
++  bl->val  = val;
++  return bl;
++}
++
++void deleteBoolean(BOOLEAN *bl) {
++  free(bl);
++}
++
++bool booleanGetVal(BOOLEAN *bl) {
++  return bl->val;
++}
++
++void booleanSetVal(BOOLEAN *bl, bool val) {
++  bl->val = val;
++}
++
++int booleanCmp(BOOLEAN *bl1, BOOLEAN *bl2) {
++  if(bl1->val == bl2->val)
++    return 0;
++  else if(bl1->val > bl2->val)
+     return 1;
+   else
+     return -1;
+diff -ruN ../nakedmudv3.0/src/numbers.h src/numbers.h
+--- ../nakedmudv3.0/src/numbers.h	Fri Oct  7 14:15:55 2005
++++ src/numbers.h	Sun Dec  4 20:03:08 2005
+@@ -12,20 +12,30 @@
+ typedef struct int_struct      INTEGER;
+ typedef struct double_struct    DOUBLE;
+ typedef struct long_struct        LONG;
++typedef struct boolean_struct  BOOLEAN;
+ 
+ INTEGER *newInteger(int val);
+ void  deleteInteger(INTEGER *integer);
+ int   integerGetVal(INTEGER *integer);
++void  integerSetVal(INTEGER *integer, int val);
+ int      integerCmp(INTEGER *int1, INTEGER *int2);
+ 
+ DOUBLE   *newDouble(double val);
+ void   deleteDouble(DOUBLE *dbl);
+ double doubleGetVal(DOUBLE *dbl);
++void   doubleSetVal(DOUBLE *dbl, double val);
+ int       doubleCmp(DOUBLE *dbl1, DOUBLE *dbl2);
+ 
+ LONG       *newLong(long val);
+ void     deleteLong(LONG *lng);
+ long     longGetVal(LONG *lng);
++void     longSetVal(LONG *lng, long val);
+ int         longCmp(LONG *lng1, LONG *lng2);
++
++BOOLEAN *newBoolean(bool val);
++void  deleteBoolean(BOOLEAN *bl);
++bool  booleanGetVal(BOOLEAN *bl);
++void  booleanSetVal(BOOLEAN *bl, bool val);
++int      booleanCmp(BOOLEAN *bl1, BOOLEAN *bl2);
+ 
+ #endif // NUMBERS_H
+diff -ruN ../nakedmudv3.0/src/object.c src/object.c
+--- ../nakedmudv3.0/src/object.c	Fri Oct  7 14:15:55 2005
++++ src/object.c	Sun Dec  4 20:03:08 2005
+@@ -313,7 +313,7 @@
+ 
+ void objSetPrototypes(OBJ_DATA *obj, const char *prototypes) {
+   if(obj->prototypes) free(obj->prototypes);
+-  obj->prototypes = strdupsafe(obj->prototypes);
++  obj->prototypes = strdupsafe(prototypes);
+ }
+ 
+ void objAddPrototype(OBJ_DATA *obj, const char *prototype) {
+diff -ruN ../nakedmudv3.0/src/olc2/medit.c src/olc2/medit.c
+--- ../nakedmudv3.0/src/olc2/medit.c	Fri Oct  7 14:15:55 2005
++++ src/olc2/medit.c	Sun Dec  4 20:03:07 2005
+@@ -146,6 +146,8 @@
+       while(*lptr != '\"') lptr++; lptr++;
+       lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+       charSetDesc(ch, lptr);
++      // replace our \"s with "
++      bufferReplace(charGetDescBuffer(ch), "\\\"", "\"", TRUE);
+       bufferFormat(charGetDescBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
+     }
+     else if(!strncmp(lptr, "me.keywords", 11)) {
+@@ -175,8 +177,9 @@
+     }
+     else if(!strcmp(lptr, "### begin extra code")) {
+       code = strcpyto(line, code, '\n');
+-      while(*line && strcmp(line, "### end extra code") != 0) {
++      while(strcmp(line, "### end extra code") != 0) {
+ 	bprintf(charOLCGetExtraCode(data), "%s\n", line);
++	if(!*code) break;
+ 	code = strcpyto(line, code, '\n');
+       }
+     }
+@@ -218,6 +221,7 @@
+     BUFFER *desc_copy = bufferCopy(charGetDescBuffer(ch));
+     bufferReplace(desc_copy, "\n", " ", TRUE);
+     bufferReplace(desc_copy, "\r", "",  TRUE);
++    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+     bprintf(buf, "me.desc     = me.desc + \" \" + \"%s\"\n", 
+ 	    bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+diff -ruN ../nakedmudv3.0/src/olc2/oedit.c src/olc2/oedit.c
+--- ../nakedmudv3.0/src/olc2/oedit.c	Fri Oct  7 14:15:55 2005
++++ src/olc2/oedit.c	Sun Dec  4 20:03:07 2005
+@@ -151,6 +151,8 @@
+       while(*lptr != '\"') lptr++; lptr++;
+       lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+       objSetDesc(obj, lptr);
++      // replace our \"s with "
++      bufferReplace(objGetDescBuffer(obj), "\\\"", "\"", TRUE);
+       bufferFormat(objGetDescBuffer(obj), SCREEN_WIDTH, PARA_INDENT);
+     }
+     else if(!strncmp(lptr, "me.keywords", 11)) {
+@@ -211,8 +213,9 @@
+     }
+     else if(!strcmp(lptr, "### begin extra code")) {
+       code = strcpyto(line, code, '\n');
+-      while(*line && strcmp(line, "### end extra code") != 0) {
++      while(strcmp(line, "### end extra code") != 0) {
+ 	bprintf(objOLCGetExtraCode(data), "%s\n", line);
++	if(!*code) break;
+ 	code = strcpyto(line, code, '\n');
+       }
+     }
+@@ -252,6 +255,7 @@
+     BUFFER *desc_copy = bufferCopy(objGetDescBuffer(obj));
+     bufferReplace(desc_copy, "\n", " ", TRUE);
+     bufferReplace(desc_copy, "\r", "",  TRUE);
++    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+     bprintf(buf, "me.desc     = me.desc + \" \" + \"%s\"\n", 
+ 	    bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+diff -ruN ../nakedmudv3.0/src/olc2/redit.c src/olc2/redit.c
+--- ../nakedmudv3.0/src/olc2/redit.c	Fri Oct  7 14:15:55 2005
++++ src/olc2/redit.c	Sun Dec  4 20:03:07 2005
+@@ -92,6 +92,27 @@
+ 
+ 
+ //*****************************************************************************
++// utility functions
++//*****************************************************************************
++
++//
++// reload a room. used whenever a room is edited and saved
++void reload_room(const char *key) {
++  if(worldRoomLoaded(gameworld, key)) {
++    PROTO_DATA   *proto = worldGetType(gameworld, "rproto", key);
++    ROOM_DATA *old_room = worldGetRoom(gameworld, key);
++    ROOM_DATA *new_room = protoRoomRun(proto);
++    if(new_room != NULL) {
++      do_mass_transfer(old_room, new_room, TRUE, TRUE, TRUE);
++      extract_room(old_room);
++      worldPutRoom(gameworld, key, new_room);
++    }
++  }
++}
++
++
++
++//*****************************************************************************
+ // functions for printing room reset data
+ //*****************************************************************************
+ const char *write_reset_arg(int type, const char *arg, const char *locale) {
+@@ -480,7 +501,7 @@
+ 		 "{c%s\r\n"
+ 		 "{g6) Exits to    : {c%s\r\n"
+ 		 "{g8) Key         : {c%s\r\n"
+-		 "{g7) Closable    : {y[{c%6s{y]\r\n"
++		 "{g7) Closable    : {y[{c%6s{y]%s\r\n"
+ 		 "{g9) Pick diff   : {y[{c%6d{y]\r\n"
+ 		 "{g0) Spot diff   : {y[{c%6d{y]\r\n"
+ 		 "{gO) Opposite dir: {c%s{n\r\n",
+@@ -492,6 +513,7 @@
+ 		 exitGetTo(exit),
+ 		 exitGetKey(exit),
+ 		 (exitIsClosable(exit) ? "Yes" : "No" ),
++		 (exitIsClosable(exit) && (!*exitGetName(exit) || !*exitGetKeywords(exit)) ? " {r* exit also needs name and keywords{n" : ""),
+ 		 exitGetPickLev(exit),
+ 		 exitGetHidden(exit),
+ 		 (*exitGetOpposite(exit) ? exitGetOpposite(exit) : "<DEFAULT>")
+@@ -708,8 +730,10 @@
+     else if(!strncmp(lptr, "exit.desc", 9)) {
+       while(*lptr != '\"') lptr++;
+       lptr++;                                  // kill the leading "
+-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
++      lptr[strlen(lptr) - 1] = '\0';           // kill the ending "
+       exitSetDesc(exit, lptr);
++      // replace our \"s with "
++      bufferReplace(exitGetDescBuffer(exit), "\\\"", "\"", TRUE);
+       bufferFormat(exitGetDescBuffer(exit), SCREEN_WIDTH, PARA_INDENT);
+     }
+     else if(!strncmp(lptr, "exit.pick_diff", 14)) {
+@@ -753,10 +777,12 @@
+       while(*lptr != '\"') lptr++; lptr++;
+       lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+       roomSetDesc(room, lptr);
++      // replace our \"s with "
++      bufferReplace(roomGetDescBuffer(room), "\\\"", "\"", TRUE);
+       bufferFormat(roomGetDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
+     }
+ #ifdef MODULE_TIME
+-    else if(!strncmp(lptr, "me.night_desc",  13)) {
++    else if(!strncmp(lptr, "me.ndesc",  13)) {
+       // we have three "'s to skip by, because this lptr will take the form:
+       // me.desc = me.desc + " " + "..."
+       while(*lptr != '\"') lptr++; lptr++;
+@@ -764,6 +790,8 @@
+       while(*lptr != '\"') lptr++; lptr++;
+       lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+       roomSetDesc(room, lptr);
++      // replace our \"s with "
++      bufferReplace(roomGetNightDescBuffer(room), "\\\"", "\"", TRUE);
+       bufferFormat(roomGetNightDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
+     }
+ #endif
+@@ -780,8 +808,11 @@
+       lptr[next_letter_in(lptr, '\"')] = '\0';             // kill the ending "
+       while(*desc_start != '\"') desc_start++;
+       desc_start++;                                        // kill start and end
+-      desc_start[next_letter_in(desc_start, '\"')] = '\0'; // "s for desc too
+-      edescSetPut(roomGetEdescs(room), newEdesc(lptr, desc_start));
++      desc_start[strlen(desc_start)-2] = '\0';             // "s for desc too
++      EDESC_DATA *edesc = newEdesc(lptr, desc_start);
++      // replace our \"s with "
++      bufferReplace(edescGetDescBuffer(edesc), "\\\"", "\"", TRUE);
++      edescSetPut(roomGetEdescs(room), edesc);
+     }
+     else if(!strncmp(lptr, "me.attach(\"", 11)) {
+       char trigname[SMALL_BUFFER];
+@@ -820,10 +851,11 @@
+       deleteBuffer(ex_buf);
+     }
+ 
+-    else if(!strcmp(lptr, "\n### begin extra code")) {
++    else if(!strcmp(lptr, "### begin extra code")) {
+       code = strcpyto(line, code, '\n');
+-      while(*line && strcmp(line, "### end extra code") != 0) {
++      while(strcmp(line, "### end extra code") != 0) {
+ 	bprintf(roomOLCGetExtraCode(data), "%s\n", line);
++	if(!*code) break;
+ 	code = strcpyto(line, code, '\n');
+       }
+     }
+@@ -850,6 +882,7 @@
+     BUFFER *desc_copy = bufferCopy(exitGetDescBuffer(exit));
+     bufferReplace(desc_copy, "\n", " ", TRUE);
+     bufferReplace(desc_copy, "\r", "",  TRUE);
++    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+     bprintf(buf, "exit.desc       = \"%s\"\n", bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+   }
+@@ -885,6 +918,7 @@
+     BUFFER *desc_copy = bufferCopy(roomGetDescBuffer(room));
+     bufferReplace(desc_copy, "\n", " ", TRUE);
+     bufferReplace(desc_copy, "\r", "",  TRUE);
++    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+     bprintf(buf, "me.desc       = me.desc + \" \" + \"%s\"\n", 
+ 	    bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+@@ -892,9 +926,10 @@
+ #ifdef MODULE_TIME
+   if(*roomGetNightDesc(room)) {
+     BUFFER *desc_copy = bufferCopy(roomGetNightDescBuffer(room));
+-    bufferReplace(desc_copy, "\n", " ", TRUE);
+-    bufferReplace(desc_copy, "\r", "",  TRUE);
+-    bprintf(buf, "me.night_desc = me.night_desc + \" \" + \"%s\"\n", 
++    bufferReplace(desc_copy, "\n", " ",    TRUE);
++    bufferReplace(desc_copy, "\r", "",     TRUE);
++    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
++    bprintf(buf, "me.ndesc = me.ndesc + \" \" + \"%s\"\n", 
+ 	    bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+   }
+@@ -910,6 +945,7 @@
+       BUFFER *desc_copy = bufferCopy(edescGetDescBuffer(edesc));
+       bufferReplace(desc_copy, "\n", " ", TRUE);
+       bufferReplace(desc_copy, "\r", "",  TRUE);
++      bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+       bprintf(buf, "me.edesc(\"%s\", \"%s\")\n", 
+ 	      edescGetKeywords(edesc), bufferString(desc_copy));
+       deleteBuffer(desc_copy);
+@@ -1239,6 +1275,9 @@
+   worldSaveType(gameworld, "rproto", roomOLCGetKey(data));
+   worldSaveType(gameworld, "reset",  roomOLCGetKey(data));
+   zoneSave(zone);
++
++  // force-reset our room
++  reload_room(roomOLCGetKey(data));
+ }
+ 
+ 
+diff -ruN ../nakedmudv3.0/src/parse.c src/parse.c
+--- ../nakedmudv3.0/src/parse.c	Fri Oct  7 14:15:55 2005
++++ src/parse.c	Sun Dec  4 20:03:08 2005
+@@ -884,18 +884,28 @@
+     break;
+ 
+     // parse out a single word
+-  case PARSE_TOKEN_WORD:
++  case PARSE_TOKEN_WORD: {
+     var = newParseVar(PARSE_VAR_POINTER);
+-    var->ptr_val = arg;
++    var->ptr_val    = arg;
++    bool multi_word = FALSE;
++
++    // are we using quotation marks to specify multiple words?
++    if(*arg == '\"') {
++      multi_word = TRUE;
++      arg++;
++      var->ptr_val = arg;
++    }
++
+     // go through arg to the next space, and delimit the word
+-    for(;*arg != '\0'; arg++) {
+-      if(isspace(*arg)) {
++    for(; *arg != '\0'; arg++) {
++      if((multi_word && *arg == '\"') || (!multi_word && isspace(*arg))) {
+ 	*arg = '\0';
+ 	arg++;
+ 	break;
+       }
+     }
+     break;
++  }
+ 
+     // copies whatever is left
+   case PARSE_TOKEN_STRING:
+diff -ruN ../nakedmudv3.0/src/prototype.c src/prototype.c
+--- ../nakedmudv3.0/src/prototype.c	Fri Oct  7 14:15:55 2005
++++ src/prototype.c	Sun Dec  4 20:03:08 2005
+@@ -24,6 +24,7 @@
+ // mandatory modules
+ //*****************************************************************************
+ #include "scripts/scripts.h"
++#include "scripts/pyplugs.h"
+ #include "scripts/pychar.h"
+ #include "scripts/pyroom.h"
+ #include "scripts/pyobj.h"
+@@ -38,6 +39,7 @@
+   char   *parents;
+   bool   abstract;
+   BUFFER  *script;
++  PyObject  *code;
+ };
+ 
+ 
+@@ -51,6 +53,7 @@
+   data->parents  = strdup("");
+   data->abstract = TRUE;
+   data->script   = newBuffer(1);
++  data->code     = NULL;
+   return data;
+ }
+ 
+@@ -58,6 +61,7 @@
+   if(data->key)     free(data->key);
+   if(data->parents) free(data->parents);
+   if(data->script)  deleteBuffer(data->script);
++  Py_XDECREF(data->code);
+   free(data);
+ }
+ 
+@@ -66,6 +70,9 @@
+   protoSetParents(to,  protoGetParents(from));
+   protoSetScript(to,   protoGetScript(from));
+   protoSetAbstract(to, protoIsAbstract(from));
++  Py_XDECREF(to->code);
++  Py_XINCREF(from->code);
++  to->code = from->code;
+ }
+ 
+ PROTO_DATA *protoCopy(PROTO_DATA *data) {
+@@ -103,6 +110,8 @@
+ void   protoSetScript(PROTO_DATA *data, const char *script) {
+   bufferClear(data->script);
+   bufferCat(data->script, script);
++  Py_XDECREF(data->code);
++  data->code = NULL;
+ }
+ 
+ void protoSetAbstract(PROTO_DATA *data, bool abstract) {
+@@ -131,37 +140,44 @@
+ 
+ bool protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc, 
+ 	      void *protoaddfunc, void *protoclassfunc, void *me) {
+-  // parse all of our parents
+-  int i, num_parents = 0;
+-  char     **parents = parse_keywords(proto->parents, &num_parents);
+-  bool    parents_ok = TRUE;
+-  for(i = 0; i < num_parents && parents_ok; i++) {
++  // parse and run all of our parents
++  LIST           *parents = parse_keywords(proto->parents);
++  LIST_ITERATOR *parent_i = newListIterator(parents);
++  char        *one_parent = NULL;
++  bool         parents_ok = TRUE;
++
++  // try to run each parent
++  ITERATE_LIST(one_parent, parent_i) {
+     PROTO_DATA *parent = NULL;
+     // does our parent have a locale? If so, find it. If not, use ours
+-    int separator_pos = next_letter_in(parents[i], '@');
++    int separator_pos = next_letter_in(one_parent, '@');
+     if(separator_pos == -1)
+       parent = worldGetType(gameworld, type, 
+-			    get_fullkey(parents[i],get_key_locale(proto->key)));
++			    get_fullkey(one_parent,get_key_locale(proto->key)));
+     else
+-      parent = worldGetType(gameworld, type, parents[i]);
+-    if(parent == NULL || !protoRun(parent, type, pynewfunc, protoaddfunc, 
+-				   protoclassfunc, me))
++      parent = worldGetType(gameworld, type, one_parent);
++    
++    if(parent == NULL) {
++      log_string("ERROR: could not find parent %s for %s %s.", one_parent,
++		 type, protoGetKey(proto));
+       parents_ok = FALSE;
+-    free(parents[i]);
+-  }
++    }
++    else if(!protoRun(parent, type, pynewfunc, protoaddfunc, protoclassfunc,me))
++      parents_ok = FALSE;
++
++    // if we had a problem running the proto, report it
++    if(parents_ok == FALSE)
++      break;
++  } deleteListIterator(parent_i);
+ 
+-  // finish cleaning up our parent keys
+-  for(; i < num_parents; i++)
+-    free(parents[i]);
+-  free(parents);
++  // do garbage collection for our parent list
++  deleteListWith(parents, free);
+ 
+   // did we encounter a problem w/ our parents?
+   if(parents_ok == FALSE)
+     return FALSE;
+ 
+   // now, do us
+-  extern PyObject *newScriptDict();
+-  extern void      start_script(PyObject *dict, const char *script);
+   PyObject *dict = restricted_script_dict();
+   PyObject *pyme = ((PyObject *(*)(void *))pynewfunc)(me);
+   if(protoaddfunc)
+@@ -170,8 +186,25 @@
+     ((void (*)(void *, const char *))protoclassfunc)(me, protoGetKey(proto));
+ 
+   PyDict_SetItemString(dict, "me", pyme);
+-  run_script(dict, bufferString(proto->script), 
+-	     get_key_locale(protoGetKey(proto)));
++
++  // do we have our own code already, or do we need to compile from source?
++  if(proto->code == NULL) {
++    proto->code = run_script_forcode(dict, bufferString(proto->script),
++				     get_key_locale(protoGetKey(proto)));
++  }
++  // we already have a code object. Evaluate it.
++  else {
++    run_code(proto->code, dict, get_key_locale(protoGetKey(proto)));
++    
++    if(!last_script_ok()) {
++      char *tb = getPythonTraceback();
++      log_string("Prototype %s terminated with an error:\r\n%s\r\n"
++		 "\r\nTraceback is:\r\n%s\r\n", 
++		 proto->key, bufferString(proto->script), tb);
++      free(tb);
++    }
++  }
++
+   Py_DECREF(dict);
+   Py_DECREF(pyme);
+   return last_script_ok();
+@@ -182,7 +215,7 @@
+     return NULL;
+   CHAR_DATA *ch = newMobile();
+   char_to_game(ch);
+-  if(!protoRun(proto, "mproto", newPyChar, charAddPrototype, charSetClass, ch)){
++  if(!protoRun(proto, "mproto", charGetPyForm, charAddPrototype, charSetClass, ch)){
+     extract_mobile(ch);
+     ch = NULL;
+   }
+diff -ruN ../nakedmudv3.0/src/room.c src/room.c
+--- ../nakedmudv3.0/src/room.c	Fri Oct  7 14:15:55 2005
++++ src/room.c	Sun Dec  4 20:03:08 2005
+@@ -299,6 +299,7 @@
+ //*****************************************************************************
+ void roomSetExit(ROOM_DATA *room, const char *dir, EXIT_DATA *exit) {
+   hashPut(room->exits, dir, exit);
++  exitSetRoom(exit, room);
+ }
+ 
+ EXIT_DATA *roomGetExit(ROOM_DATA *room, const char *dir) {
+@@ -306,7 +307,9 @@
+ }
+ 
+ EXIT_DATA *roomRemoveExit(ROOM_DATA *room, const char *dir) {
+-  return hashRemove(room->exits, dir);
++  EXIT_DATA *exit = hashRemove(room->exits, dir);
++  if(exit != NULL) exitSetRoom(exit, NULL);
++  return exit;
+ }
+ 
+ const char *roomGetExitDir(ROOM_DATA *room, EXIT_DATA *exit) {
+diff -ruN ../nakedmudv3.0/src/room_reset.c src/room_reset.c
+--- ../nakedmudv3.0/src/room_reset.c	Fri Oct  7 14:15:55 2005
++++ src/room_reset.c	Sun Dec  4 20:03:08 2005
+@@ -32,6 +32,7 @@
+ #include "items/items.h"
+ #include "items/container.h"
+ #include "items/furniture.h"
++#include "items/worn.h"
+ 
+ 
+ 
+@@ -355,7 +356,8 @@
+   // equip the mobile
+   else if(initiator_type == INITIATOR_ON_MOB) {
+     // see if we can equip it
+-    bool equipped = try_equip(initiator, obj, NULL);
++    bool equipped = (objIsType(obj, "worn") && 
++		     try_equip(initiator, obj, NULL, wornGetPositions(obj)));
+     // we failed! Extract the object
+     if(!equipped) {
+       extract_obj(obj);
+@@ -375,7 +377,9 @@
+     else if(objGetCarrier(initiator))
+       obj_to_char(obj, objGetCarrier(initiator));
+     else if(objGetWearer(initiator)) {
+-      bool equipped = try_equip(objGetWearer(initiator), obj, NULL);
++      bool equipped = (objIsType(obj, "worn") && 
++		       try_equip(objGetWearer(initiator), obj, NULL, 
++				 wornGetPositions(obj)));
+       // we failed! Extract the object
+       if(!equipped) {
+ 	extract_obj(obj);
+@@ -709,7 +713,7 @@
+ 
+ //
+ // room reset hook. Whenever a room is reset, apply all of its reset rules
+-void room_reset_hook(ZONE_DATA *zone, void *none1, void *none2) {
++void room_reset_hook(ZONE_DATA *zone) {
+   LIST_ITERATOR *res_i = newListIterator(zoneGetResettable(zone));
+   char           *name = NULL;
+   const char   *locale = zoneGetKey(zone);
+diff -ruN ../nakedmudv3.0/src/save.c src/save.c
+--- ../nakedmudv3.0/src/save.c	Fri Oct  7 14:15:55 2005
++++ src/save.c	Sun Dec  4 20:03:08 2005
+@@ -171,9 +171,11 @@
+   // and then equipped items
+   list = read_list(set, "equipment");
+   while( (obj_set = storage_list_next(list)) != NULL) {
+-    obj = objRead(obj_set);
+-    if(!try_equip(ch, obj, read_string(obj_set, "equipped")))
+-      obj_to_char(obj, ch);
++    if(storage_contains(obj_set, "object")) {
++      obj = objRead(read_set(obj_set, "object"));
++      if(!try_equip(ch, obj, read_string(obj_set, "equipped"), NULL))
++	obj_to_char(obj, ch);
++    }
+   }
+ 
+   storage_close(set);
+@@ -190,8 +192,9 @@
+   LIST *eq_list = bodyGetAllEq(charGetBody(ch));
+   OBJ_DATA *obj = NULL;
+   while((obj = listPop(eq_list)) != NULL) {
+-    STORAGE_SET *eq_set = objStore(obj);
+-    store_string(set, "equipped", bodyEquippedWhere(charGetBody(ch), obj));
++    STORAGE_SET *eq_set = new_storage_set();
++    store_string(eq_set, "equipped", bodyEquippedWhere(charGetBody(ch), obj));
++    store_set   (eq_set, "object",   objStore(obj));
+     storage_list_put(list, eq_set);
+   }
+   deleteList(eq_list);
+diff -ruN ../nakedmudv3.0/src/scripts/pyauxiliary.c src/scripts/pyauxiliary.c
+--- ../nakedmudv3.0/src/scripts/pyauxiliary.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/pyauxiliary.c	Sun Dec  4 20:03:07 2005
+@@ -85,9 +85,11 @@
+     return NULL;
+   else {
+     // build our arguments and keywords
++    PyObject  *pystore = newPyStorageSet(set);
+     PyObject     *args = Py_BuildValue("(O)", newPyStorageSet(set));
+     PyObject *instance = PyInstance_New(proto, args, NULL);
+     Py_DECREF(args);
++    Py_DECREF(pystore);
+     return instance;
+   }
+ }
+diff -ruN ../nakedmudv3.0/src/scripts/pychar.c src/scripts/pychar.c
+--- ../nakedmudv3.0/src/scripts/pychar.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/pychar.c	Sun Dec  4 20:03:07 2005
+@@ -37,6 +37,7 @@
+ //*****************************************************************************
+ #include "../char_vars/char_vars.h"
+ #include "../items/items.h"
++#include "../items/worn.h"
+ 
+ 
+ 
+@@ -163,7 +164,7 @@
+ 
+ PyObject *PyChar_getroom(PyChar *self, void *closure) {
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+-  if(ch != NULL) return Py_BuildValue("O", newPyRoom(charGetRoom(ch)));
++  if(ch != NULL) return Py_BuildValue("O", roomGetPyFormBorrowed(charGetRoom(ch)));
+   else           return NULL;
+ }
+ 
+@@ -172,7 +173,7 @@
+   if(ch == NULL)
+     return NULL;
+   else if(charGetLastRoom(ch) != NULL)
+-    return Py_BuildValue("O", newPyRoom(charGetLastRoom(ch)));
++    return Py_BuildValue("O", roomGetPyFormBorrowed(charGetLastRoom(ch)));
+   else {
+     Py_INCREF(Py_None);
+     return Py_None;
+@@ -216,7 +217,7 @@
+   else if(charGetFurniture(ch) == NULL)
+     return Py_None;
+   else 
+-    return Py_BuildValue("i", newPyObj(charGetFurniture(ch)));
++    return Py_BuildValue("O", objGetPyFormBorrowed(charGetFurniture(ch)));
+ }
+ 
+ PyObject *PyChar_getuid(PyChar *self, void *closure) {
+@@ -241,9 +242,28 @@
+   
+   // for each obj in the inventory, add it to the Python list
+   ITERATE_LIST(obj, inv_i)
+-    PyList_Append(list, newPyObj(obj));
++    PyList_Append(list, objGetPyFormBorrowed(obj));
+   deleteListIterator(inv_i);
+-  return Py_BuildValue("O", list);
++  PyObject *retval = Py_BuildValue("O", list);
++  Py_DECREF(list);
++  return retval;
++}
++
++PyObject *PyChar_geteq(PyChar *self, PyObject *args) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch == NULL)
++    return NULL;
++
++  PyObject      *list = PyList_New(0);
++  LIST      *equipped = bodyGetAllEq(charGetBody(ch));
++  LIST_ITERATOR *eq_i = newListIterator(equipped);
++  OBJ_DATA        *eq = NULL;
++  ITERATE_LIST(eq, eq_i) {
++    PyList_Append(list, objGetPyFormBorrowed(eq));
++  } deleteListIterator(eq_i);
++  PyObject *retval = Py_BuildValue("O", list);
++  Py_DECREF(list);
++  return retval;
+ }
+ 
+ 
+@@ -384,6 +404,7 @@
+   CHAR_DATA *ch;
+   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+   charSetRace(ch, race);
++  charResetBody(ch);
+   return 0;
+ }
+ 
+@@ -606,7 +627,10 @@
+ 
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch) {
+-    do_cmd(ch, act, FALSE);
++    // do not send the actual act - if we edit it, things go awry
++    char *working_act = strdupsafe(act);
++    do_cmd(ch, working_act, FALSE);
++    free(working_act);
+     return Py_BuildValue("i", 1);
+   }
+   else {
+@@ -825,7 +849,7 @@
+   }
+ 
+   // try equipping the object. If we fail, put it back wherever it came from
+-  if(!objIsType(obj, "worn") || !try_equip(ch, obj, pos)) {
++  if(!objIsType(obj, "worn") || !try_equip(ch, obj, pos,wornGetPositions(obj))){
+     if(old_room != NULL)
+       obj_to_room(obj, old_room);
+     else if(old_cont != NULL)
+@@ -833,7 +857,7 @@
+     else if(old_carrier != NULL)
+       obj_to_char(obj, old_carrier);
+     else if(old_wearer != NULL)
+-      try_equip(ch, obj, old_pos);
++      try_equip(ch, obj, old_pos, NULL);
+     PyErr_Format(PyExc_StandardError,
+ 		 "Character is already equipped in all possible positions!");
+     return NULL;
+@@ -1049,7 +1073,9 @@
+     printf("Data is NULL for %s!!\r\n", keyword);
+     data = Py_None;
+   }
+-  return Py_BuildValue("O", data);
++  PyObject *retval = Py_BuildValue("O", data);
++  Py_DECREF(data);
++  return retval;
+ }
+ 
+ 
+@@ -1208,10 +1234,84 @@
+   }
+ 
+   // create a python object for the new char, and return it
+-  PyChar *py_mob = (PyChar *)newPyChar(mob);
+-  return Py_BuildValue("O", py_mob);
++  return Py_BuildValue("O", charGetPyFormBorrowed(mob));
+ }
+ 
++PyObject *PyChar_find_char_key(PyObject *self, PyObject *args) {
++  CHAR_DATA     *ch = NULL;
++  PyObject    *pych = NULL;
++  LIST       *where = mobile_list;
++  PyObject *pywhere = NULL;
++  char         *key = NULL;
++  bool     must_see = TRUE;
++  bool     multiple = FALSE;
++  ROOM_DATA   *room = NULL;
++
++  // figure out our arguments
++  if(!PyArg_ParseTuple(args, "Os|Obb",&pych,&key,&pywhere,&must_see,&multiple)){
++    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to find_char");
++    return NULL;
++  }
++
++  // make sure ch exists, if we supplied one
++  if(pych == Py_None)
++    ch = NULL;
++  else if(PyChar_Check(pych)) {
++    ch = PyChar_AsChar(pych);
++    if(ch == NULL) {
++      PyErr_Format(PyExc_StandardError, "character does not exist");
++      return NULL;
++    }
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, "first arg must be a Char, or None");
++    return NULL;
++  }
++
++  // figoure out our room if we supply one
++  if(pywhere != NULL) {
++    if(PyRoom_Check(pywhere))
++      room = PyRoom_AsRoom(pywhere);
++    else if(PyString_Check(pywhere))
++      room = worldGetRoom(gameworld, 
++			  get_fullkey_relative(PyString_AsString(pywhere),
++					       get_script_locale()));
++    else if(pywhere == Py_None)
++      room = NULL;
++    else {
++      PyErr_Format(PyExc_TypeError, "search scope must be a room or room key");
++      return NULL;
++    }
++  }
++
++  // if we've got a room, look in it
++  if(room != NULL)
++    where = roomGetCharacters(room);
++
++  // do the searching for a single thing
++  if(multiple == FALSE) {
++    CHAR_DATA *found = find_char(ch, where, 1, NULL, 
++				 get_fullkey_relative(key, get_script_locale()),
++				 must_see);
++    return Py_BuildValue("O", (found ? charGetPyFormBorrowed(found) : Py_None));
++  }
++  // search for multiple occurences
++  else {
++    LIST *found = find_all_chars(ch, where, NULL,
++				 get_fullkey_relative(key, get_script_locale()),
++				 must_see);
++    PyObject         *list = PyList_New(0);
++    LIST_ITERATOR *found_i = newListIterator(found);
++    CHAR_DATA   *one_found = NULL;
++    ITERATE_LIST(one_found, found_i) {
++      PyList_Append(list, charGetPyForm(one_found));
++    } deleteListIterator(found_i);
++    deleteList(found);
++    PyObject *retval = Py_BuildValue("O", list);
++    Py_DECREF(list);
++    return retval;
++  }
++}
+ 
+ PyObject *PyChar_count_mobs(PyObject *self, PyObject *args) {
+   LIST            *list = NULL;
+@@ -1261,9 +1361,11 @@
+   LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+   CHAR_DATA       *ch = NULL;
+   ITERATE_LIST(ch, ch_i)
+-    PyList_Append(list, newPyChar(ch));
++    PyList_Append(list, charGetPyForm(ch));
+   deleteListIterator(ch_i);
+-  return Py_BuildValue("O", list);
++  PyObject *retval = Py_BuildValue("O", list);
++  Py_DECREF(list);
++  return retval;
+ }
+ 
+ PyObject *PyChar_all_sockets(PyObject *self) {
+@@ -1273,9 +1375,11 @@
+   ITERATE_LIST(sock, sock_i) {
+     // only add sockets with attached characters who are in game
+     if(socketGetChar(sock) && charGetRoom(socketGetChar(sock)))
+-      PyList_Append(list, newPyChar(socketGetChar(sock)));
++      PyList_Append(list, charGetPyForm(socketGetChar(sock)));
+   } deleteListIterator(sock_i);
+-  return Py_BuildValue("O", list);
++  PyObject *retval = Py_BuildValue("O", list);
++  Py_DECREF(list);
++  return retval;
+ }
+ 
+ PyMethodDef char_module_methods[] = {
+@@ -1288,6 +1392,9 @@
+   { "count_mobs", PyChar_count_mobs, METH_VARARGS,
+     "count how many occurances of a mobile there are in the specified scope. "
+     "prototype or name can be used." },
++  { "find_char_key", PyChar_find_char_key, METH_VARARGS,
++    "finds a character (or group of chars) by their prototype. Finding by "
++    "keywords is done with generic_find()" },
+   {NULL, NULL, 0, NULL}  /* Sentinel */
+ };
+ 
+@@ -1333,6 +1440,8 @@
+ 		      "returns a list of objects in the char's inventory");
+   PyChar_addGetSetter("objs", PyChar_getinv, NULL,
+ 		      "returns a list of objects in the char's inventory");
++  PyChar_addGetSetter("eq",   PyChar_geteq,  NULL,
++		      "returns a list of the character's equipment");
+   PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
+ 		      "handle the character's name");
+   PyChar_addGetSetter("mname", PyChar_getmname, PyChar_setmname,
+@@ -1399,6 +1508,8 @@
+   PyChar_addMethod("hasvar", PyChar_hasvar, METH_VARARGS,
+ 		   "return whether or not the character has a given variable.");
+   PyChar_addMethod("deletevar", PyChar_deletevar, METH_VARARGS,
++		   "delete a variable from the character's variable table.");
++  PyChar_addMethod("delvar", PyChar_deletevar, METH_VARARGS,
+ 		   "delete a variable from the character's variable table.");
+   PyChar_addMethod("equip", PyChar_equip, METH_VARARGS,
+ 		   "equips a character with the given item. Removes the item "
+diff -ruN ../nakedmudv3.0/src/scripts/pyevent.c src/scripts/pyevent.c
+--- ../nakedmudv3.0/src/scripts/pyevent.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/pyevent.c	Sun Dec  4 20:03:07 2005
+@@ -151,6 +151,7 @@
+    "itself to the event queue after completion."},
+   {"interrupt_events_involving",  PyEvent_interrupt_event, METH_VARARGS,
+    "Interrupt all of the events involving the given object, room, or char."},
++  {NULL, NULL, 0, NULL}  /* Sentinel */
+ };
+ 
+ 
+diff -ruN ../nakedmudv3.0/src/scripts/pyexit.c src/scripts/pyexit.c
+--- ../nakedmudv3.0/src/scripts/pyexit.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/pyexit.c	Sun Dec  4 20:03:07 2005
+@@ -7,15 +7,14 @@
+ //
+ //*****************************************************************************
+ 
+-#include <Python.h>
+-#include <structmember.h>
+-
+ #include "../mud.h"
+ #include "../utils.h"
+ #include "../object.h"
+ #include "../room.h"
+ #include "../exit.h"
++#include "../world.h"
+ 
++#include "scripts.h"
+ #include "pyroom.h"
+ #include "pyobj.h"
+ #include "pyplugs.h"
+@@ -103,8 +102,11 @@
+ 
+ PyObject *PyExit_getdest(PyObject *self, void *closure) {
+   EXIT_DATA *ex = PyExit_AsExit((PyObject *)self);
+-  if(ex != NULL) return Py_BuildValue("s", exitGetTo(ex));
+-  else           return NULL;  
++  if(ex == NULL) return NULL;
++  else {
++    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(ex));
++    return Py_BuildValue("O", (dest ? roomGetPyFormBorrowed(dest) : Py_None));
++  }
+ }
+ 
+ PyObject *PyExit_getspotdiff(PyObject *self, void *closure) {
+@@ -173,6 +175,17 @@
+   else           return NULL;  
+ }
+ 
++PyObject *PyExit_getroom(PyObject *self, void *closure) {
++  EXIT_DATA *ex = PyExit_AsExit((PyObject *)self);
++  if(ex == NULL) 
++    return NULL;
++  else
++    return Py_BuildValue("O", (exitGetRoom(ex) ? 
++			       roomGetPyFormBorrowed(exitGetRoom(ex)) : 
++			       Py_None));
++}
++
++
+ 
+ //
+ // Standard check to make sure the exit exists when trying to set a value for 
+@@ -434,6 +447,7 @@
+     exitSetName(ex, name);
+   if(kwds != NULL)
+     exitSetKeywords(ex, kwds);
++  exitSetClosable(ex, TRUE);
+ 
+   // if we pulled up an opposite, we know we probably also got closed and locked
+   // status. Not always, but close enough...
+@@ -620,6 +634,8 @@
+ 			"true or false if the exit is closed.");
+     PyExit_addGetSetter("is_locked", PyExit_getlocked, NULL,
+ 			"true or false if the exit is locked.");
++    PyExit_addGetSetter("room", PyExit_getroom, NULL,
++			"the room we are attached to.");
+ 
+     // add all of the basic methods
+     PyExit_addMethod("makedoor", PyExit_makedoor, METH_VARARGS,
+diff -ruN ../nakedmudv3.0/src/scripts/pymud.c src/scripts/pymud.c
+--- ../nakedmudv3.0/src/scripts/pymud.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/pymud.c	Sun Dec  4 20:03:07 2005
+@@ -34,6 +34,9 @@
+ // global variables we have set.
+ PyObject  *globals = NULL;
+ 
++// a list of methods to add to the mud module
++LIST *pymud_methods = NULL;
++
+ 
+ 
+ //*****************************************************************************
+@@ -205,12 +208,27 @@
+   int found_type = FOUND_NONE;
+   void    *found = generic_find(looker, arg, type, scope, all_ok, &found_type);
+ 
+-  if(found_type == FOUND_CHAR)
+-    return Py_BuildValue("Os", newPyChar(found), "char");
+-  else if(found_type == FOUND_OBJ)
+-    return Py_BuildValue("Os", newPyObj(found), "obj");
+-  else if(found_type == FOUND_IN_OBJ)
+-    return Py_BuildValue("Os", newPyObj(found), "in");
++  if(found_type == FOUND_CHAR) {
++    // were we searching for one type, or multiple types?
++    if(!strcasecmp("char", type_str))
++      return Py_BuildValue("O", charGetPyFormBorrowed(found));
++    else
++      return Py_BuildValue("Os", charGetPyFormBorrowed(found), "char");
++  }
++  else if(found_type == FOUND_OBJ) {
++    // were we searching for one type, or multiple types?
++    if(!strcasecmp("obj", type_str))
++      return Py_BuildValue("O", objGetPyFormBorrowed(found));
++    else
++      return Py_BuildValue("Os", objGetPyFormBorrowed(found), "obj");
++  }
++  else if(found_type == FOUND_IN_OBJ) {
++    // were we searching for one type, or multiple types?
++    if(!strcasecmp("in", type_str))
++      return Py_BuildValue("O", objGetPyFormBorrowed(found));
++    else
++      return Py_BuildValue("Os", objGetPyFormBorrowed(found), "in");
++  }
+   // now it gets a bit more tricky... we have to see what other bit was set
+   else if(found_type == FOUND_LIST) {
+     PyObject         *list = PyList_New(0);
+@@ -218,15 +236,17 @@
+     void        *one_found = NULL;
+     if(IS_SET(type, FIND_TYPE_CHAR)) {
+       ITERATE_LIST(one_found, found_i)
+-	PyList_Append(list, newPyChar(one_found));
++	PyList_Append(list, charGetPyFormBorrowed(one_found));
+     }
+     else if(IS_SET(type, FIND_TYPE_OBJ | FIND_TYPE_IN_OBJ)) {
+       ITERATE_LIST(one_found, found_i)
+-	PyList_Append(list, newPyChar(one_found));
++	PyList_Append(list, charGetPyFormBorrowed(one_found));
+     }
+     deleteListIterator(found_i);
+     deleteList(found);
+-    return Py_BuildValue("Os", list, "list");
++    PyObject *retval = Py_BuildValue("Os", list, "list");
++    Py_DECREF(list);
++    return retval;
+   }
+ 
+   // nothing was found...
+@@ -362,45 +382,74 @@
+     return false_act;
+ }
+ 
++//
++// returns whether or not two database keys have the same name. Locale sensitive
++PyObject *mud_keys_equal(PyObject *self, PyObject *args) {
++  char *key1 = NULL;
++  char *key2 = NULL;
++  if(!PyArg_ParseTuple(args, "ss", &key1, &key2)) {
++    PyErr_Format(PyExc_TypeError, "keys_equal takes two string arguments");
++    return NULL;
++  }
++
++  char *fullkey1 = strdup(get_fullkey_relative(key1, get_script_locale()));
++  char *fullkey2 = strdup(get_fullkey_relative(key2, get_script_locale()));
++  bool        ok = !strcasecmp(fullkey1, fullkey2);
++  free(fullkey1);
++  free(fullkey2);
++  return Py_BuildValue("i", ok);
++}
++
+ 
+ 
+ //*****************************************************************************
+ // MUD module
+ //*****************************************************************************
+-PyMethodDef mud_module_methods[] = {
+-    {"get_global",  mud_get_global, METH_VARARGS,
+-     "Get the value of a global variable."},
+-    {"set_global",  mud_set_global, METH_VARARGS,
+-     "Set the value of a global variable."},
+-    {"erase_global",  mud_erase_global, METH_VARARGS,
+-     "Erase the value of a global variable."},
+-    {"add_cmd", mud_add_cmd, METH_VARARGS,
+-     "Add a new command to the game."},
+-    {"message", mud_message, METH_VARARGS,
+-     "plugs into the message() function from inform.h" },
+-    {"format_string", mud_format_string, METH_VARARGS,
+-     "format a string to be 80 chars wide and indented. Like a desc."},
+-    {"generic_find",  mud_generic_find, METH_VARARGS,
+-     "Python wrapper around the generic_find() function"},
+-    {"extract", mud_extract, METH_VARARGS,
+-    "extracts an object or character from the game. This method is dangerous, "
+-    "since the object may still be needed in whichever function called the "
+-    "script that activated this method" },
+-    {"ite", mud_ite, METH_VARARGS,
+-     "A functional form of an if-then-else statement. Takes 2 arguments "
+-     "(condition, if action) and an optional third (else action). If no else "
+-     "action is specified and the condition is false, None is returned." },
+-    {NULL, NULL, 0, NULL}        /* Sentinel */
+-};
++void PyMud_addMethod(const char *name, void *f, int flags, const char *doc) {
++  // make sure our list of methods is created
++  if(pymud_methods == NULL) pymud_methods = newList();
++
++  // make the Method def
++  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
++  def->ml_name     = strdup(name);
++  def->ml_meth     = (PyCFunction)f;
++  def->ml_flags    = flags;
++  def->ml_doc      = (doc ? strdup(doc) : NULL);
++  listPut(pymud_methods, def);
++}
+ 
+ 
+ PyMODINIT_FUNC
+ init_PyMud(void) {
+-  PyObject *m;
++  // add all of our methods
++  PyMud_addMethod("get_global", mud_get_global, METH_VARARGS,
++		  "Get the value of a global variable.");
++  PyMud_addMethod("set_global", mud_set_global, METH_VARARGS,
++		  "Set the value of a global variable.");
++  PyMud_addMethod("erase_global",  mud_erase_global, METH_VARARGS,
++		  "Erase the value of a global variable.");
++  PyMud_addMethod("add_cmd", mud_add_cmd, METH_VARARGS,
++		  "Add a new command to the game.");
++  PyMud_addMethod("message", mud_message, METH_VARARGS,
++		  "plugs into the message() function from inform.h");
++  PyMud_addMethod("format_string", mud_format_string, METH_VARARGS,
++		  "format a string to be 80 chars wide and indented.");
++  PyMud_addMethod("generic_find",  mud_generic_find, METH_VARARGS,
++		  "Python wrapper around the generic_find() function");
++  PyMud_addMethod("extract", mud_extract, METH_VARARGS,
++		  "extracts an object or character from the game.");
++  PyMud_addMethod("keys_equal", mud_keys_equal, METH_VARARGS,
++		  "Returns whether or not two db keys are equal, given the ."
++		  "locale that the script is running in.");
++  PyMud_addMethod("ite", mud_ite, METH_VARARGS,
++		  "A functional form of an if-then-else statement. Takes 2 "
++		  "arguments (condition, if action) and an optional third "
++		  "(else action). If no else action is specified and the "
++		  "condition is false, None is returned.");
++
++  Py_InitModule3("mud", makePyMethods(pymud_methods),
++		 "The mud module, for all MUD misc mud utils.");
+ 
+   globals = PyDict_New();
+   Py_INCREF(globals);
+-
+-  m = Py_InitModule3("mud", mud_module_methods,
+-		     "The mud module, for all MUD misc mud utils.");
+ }
+diff -ruN ../nakedmudv3.0/src/scripts/pymud.h src/scripts/pymud.h
+--- ../nakedmudv3.0/src/scripts/pymud.h	Fri Oct  7 14:15:55 2005
++++ src/scripts/pymud.h	Sun Dec  4 20:03:07 2005
+@@ -14,4 +14,12 @@
+ PyMODINIT_FUNC
+ init_PyMud(void);
+ 
++//
++// Adds a new method function (i.e. void *f) to the Mud module. Name is the name
++// of the function, f is the PyCFunction implementing the new method, flags is
++// the type of method beings used (almost always METH_VARARGS), and doc is an
++// (optional) description of what the method does. For examples on how to add
++// new methods, see pymud.c
++void PyMud_addMethod(const char *name, void *f, int flags, const char *doc);
++
+ #endif //__PYMUD_H
+diff -ruN ../nakedmudv3.0/src/scripts/pyobj.c src/scripts/pyobj.c
+--- ../nakedmudv3.0/src/scripts/pyobj.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/pyobj.c	Sun Dec  4 20:03:07 2005
+@@ -33,6 +33,7 @@
+ // mandatory modules
+ //*****************************************************************************
+ #include "../items/items.h"
++#include "../items/worn.h"
+ 
+ 
+ 
+@@ -172,9 +173,11 @@
+   
+   // for each obj in the contentory, add it to the Python list
+   ITERATE_LIST(cont, cont_i)
+-    PyList_Append(list, newPyObj(cont));
++    PyList_Append(list, objGetPyFormBorrowed(cont));
+   deleteListIterator(cont_i);
+-  return Py_BuildValue("O", list);
++  PyObject *retval = Py_BuildValue("O", list);
++  Py_DECREF(list);
++  return retval;
+ }
+ 
+ PyObject *PyObj_getchars(PyObj *self, PyObject *args) {
+@@ -188,9 +191,11 @@
+   
+   // for each obj in the contentory, add it to the Python list
+   ITERATE_LIST(ch, char_i)
+-    PyList_Append(list, newPyChar(ch));
++    PyList_Append(list, charGetPyFormBorrowed(ch));
+   deleteListIterator(char_i);
+-  return Py_BuildValue("O", list);
++  PyObject *retval = Py_BuildValue("O", list);
++  Py_DECREF(list);
++  return retval;
+ }
+ 
+ PyObject *PyObj_getcarrier(PyObj *self, void *closure) {
+@@ -199,7 +204,7 @@
+     return NULL;
+   if(objGetCarrier(obj) == NULL)
+     return Py_None;
+-  return Py_BuildValue("O", newPyChar(objGetCarrier(obj)));
++  return Py_BuildValue("O", charGetPyFormBorrowed(objGetCarrier(obj)));
+ }
+ 
+ PyObject *PyObj_getroom(PyObj *self, void *closure) {
+@@ -208,7 +213,7 @@
+     return NULL;
+   if(objGetRoom(obj) == NULL)
+     return Py_None;
+-  return Py_BuildValue("O", newPyRoom(objGetRoom(obj)));
++  return Py_BuildValue("O", roomGetPyFormBorrowed(objGetRoom(obj)));
+ }
+ 
+ PyObject *PyObj_getcontainer(PyObj *self, void *closure) {
+@@ -217,7 +222,7 @@
+     return NULL;
+   if(objGetContainer(obj) == NULL)
+     return Py_None;
+-  return Py_BuildValue("O", newPyObj(objGetContainer(obj)));
++  return Py_BuildValue("O", objGetPyFormBorrowed(objGetContainer(obj)));
+ }
+ 
+ //
+@@ -743,16 +748,25 @@
+   else if(cont != NULL)
+     obj_to_obj(obj, cont);
+   else if(ch != NULL) {
+-    // see if we're trying to equip the object
+-    if(equip_to && !try_equip(ch, obj, equip_to))
+-      obj_to_char(obj, ch);
++    // if we have supplied locations, equip to those
++    if(equip_to && *equip_to) {
++      if(!try_equip(ch, obj, equip_to, NULL))
++	obj_to_char(obj, ch);
++    }
++
++    // otherwise, assume it's worn equipemnt
++    else if(objIsType(obj, "worn")) {
++      if(!try_equip(ch, obj, NULL, wornGetPositions(obj)))
++	obj_to_char(obj, ch);
++    }
++
++    // failed. Just give it to us
+     else
+       obj_to_char(obj, ch);
+   }
+ 
+   // create a python object for the new obj, and return it
+-  PyObj *py_obj = (PyObj *)newPyObj(obj);
+-  return Py_BuildValue("O", py_obj);
++  return Py_BuildValue("O", objGetPyFormBorrowed(obj));
+ }
+ 
+ 
+@@ -850,7 +864,7 @@
+     OBJ_DATA *obj    = find_obj(looker_ch, list, count, name, NULL, 
+ 				(looker_ch ? TRUE : FALSE));
+     PyObject *py_obj = Py_None;
+-    if(obj) py_obj = newPyObj(obj);
++    if(obj) py_obj = objGetPyFormBorrowed(obj);
+     return Py_BuildValue("O", py_obj);
+   }
+   // otherwise, return everything that meets our critereon
+@@ -908,7 +922,7 @@
+     OBJ_DATA *obj    = find_obj(looker_ch, list, count, NULL, key,
+ 				(looker_ch ? TRUE : FALSE));
+     PyObject *py_obj = Py_None;
+-    if(obj) py_obj = newPyObj(obj);
++    if(obj) py_obj = objGetPyFormBorrowed(obj);
+     return Py_BuildValue("O", py_obj);
+   }
+   // otherwise, return everything that meets our critereon
+diff -ruN ../nakedmudv3.0/src/scripts/pyplugs.c src/scripts/pyplugs.c
+--- ../nakedmudv3.0/src/scripts/pyplugs.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/pyplugs.c	Sun Dec  4 20:03:07 2005
+@@ -222,31 +222,36 @@
+     return chrRetval;
+ }
+ 
++PyGetSetDef *makePyGetSetters(LIST *getsetters) {
++  PyGetSetDef *getsets = calloc(listSize(getsetters)+1,sizeof(PyGetSetDef));
++  LIST_ITERATOR  *gs_i = newListIterator(getsetters);
++  PyGetSetDef      *gs = NULL;
++  int i                = 0;
++  ITERATE_LIST(gs, gs_i) {
++    getsets[i] = *gs;
++    i++;
++  } deleteListIterator(gs_i);
++  return getsets;
++}
++
++PyMethodDef *makePyMethods(LIST *methods) {
++  PyMethodDef  *meth = calloc(listSize(methods)+1, sizeof(PyMethodDef));
++  LIST_ITERATOR *m_i = newListIterator(methods);
++  PyMethodDef     *m = NULL;
++  int i              = 0;
++  ITERATE_LIST(m, m_i) {
++    meth[i] = *m;
++    i++;
++  } deleteListIterator(m_i);
++  return meth;
++}
+ 
+ void makePyType(PyTypeObject *type, LIST *getsetters, LIST *methods) {
+   // build up the array of getsetters for this object
+-  if(getsetters != NULL) {
+-    PyGetSetDef *getsets = calloc(listSize(getsetters)+1,sizeof(PyGetSetDef));
+-    LIST_ITERATOR  *gs_i = newListIterator(getsetters);
+-    PyGetSetDef      *gs = NULL;
+-    int i                = 0;
+-    ITERATE_LIST(gs, gs_i) {
+-      getsets[i] = *gs;
+-      i++;
+-    } deleteListIterator(gs_i);
+-    type->tp_getset = getsets;
+-  }
++  if(getsetters != NULL)
++    type->tp_getset = makePyGetSetters(getsetters);
+   
+   // build up the array of methods for this object
+-  if(methods != NULL) {
+-    PyMethodDef *meth  = calloc(listSize(methods)+1, sizeof(PyMethodDef));
+-    LIST_ITERATOR *m_i = newListIterator(methods);
+-    PyMethodDef     *m = NULL;
+-    int i              = 0;
+-    ITERATE_LIST(m, m_i) {
+-      meth[i] = *m;
+-      i++;
+-    } deleteListIterator(m_i);
+-    type->tp_methods = meth;
+-  }
++  if(methods != NULL)
++    type->tp_methods = makePyMethods(methods);
+ }
+diff -ruN ../nakedmudv3.0/src/scripts/pyplugs.h src/scripts/pyplugs.h
+--- ../nakedmudv3.0/src/scripts/pyplugs.h	Fri Oct  7 14:15:55 2005
++++ src/scripts/pyplugs.h	Sun Dec  4 20:03:07 2005
+@@ -25,4 +25,12 @@
+ // lists can each be NULL if there are no getsetters or methods, respectively
+ void makePyType(PyTypeObject *type, LIST *getsetters, LIST *methods);
+ 
++//
++// makes an array of get/setters
++PyGetSetDef *makePyGetSetters(LIST *getsetters);
++
++//
++// makes an array of python methods
++PyMethodDef *makePyMethods(LIST *methods);
++
+ #endif // PYPLUGS_H
+diff -ruN ../nakedmudv3.0/src/scripts/pyroom.c src/scripts/pyroom.c
+--- ../nakedmudv3.0/src/scripts/pyroom.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/pyroom.c	Sun Dec  4 20:03:07 2005
+@@ -136,7 +136,9 @@
+   LIST_ITERATOR *ex_i = newListIterator(ex_list);
+   char           *dir = NULL;
+   ITERATE_LIST(dir, ex_i) {
+-    PyList_Append(list, Py_BuildValue("s", dir));
++    PyObject    *cont = Py_BuildValue("s", dir);
++    PyList_Append(list, cont);
++    Py_DECREF(cont);
+   } deleteListIterator(ex_i);
+   deleteListWith(ex_list, free);
+   return list;
+@@ -153,9 +155,11 @@
+ 
+     // for each char in the room list, add him to a Python list
+     ITERATE_LIST(ch, char_i)
+-      PyList_Append(list, newPyChar(ch));
++      PyList_Append(list, charGetPyFormBorrowed(ch));
+     deleteListIterator(char_i);
+-    return Py_BuildValue("O", list);
++    PyObject *retval = Py_BuildValue("O", list);
++    Py_DECREF(list);
++    return retval;
+   }
+ }
+ 
+@@ -170,12 +174,20 @@
+ 
+     // for each obj in the room list, add him to a Python list
+     ITERATE_LIST(obj, obj_i)
+-      PyList_Append(list, newPyObj(obj));
++      PyList_Append(list, objGetPyFormBorrowed(obj));
+     deleteListIterator(obj_i);
+-    return Py_BuildValue("O", list);
++    PyObject *retval = Py_BuildValue("O", list);
++    Py_DECREF(list);
++    return retval;
+   }
+ }
+ 
++PyObject *PyRoom_getbits(PyRoom *self, void *closure) {
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room!=NULL) return Py_BuildValue("s", bitvectorGetBits(roomGetBits(room)));
++  else           return NULL;
++}
++
+ 
+ //
+ // Standard check to make sure the room exists when trying to set a value for 
+@@ -248,6 +260,24 @@
+   return 0;
+ }
+ 
++int PyRoom_setbits(PyRoom *self, PyObject *value, void *closure) {
++  if(value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete room's bits");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, "Room bits must be strings");
++    return -1;
++  }
++
++  ROOM_DATA *room;
++  PYROOM_CHECK_ROOM_EXISTS(self->uid, room);
++  bitClear(roomGetBits(room));
++  bitSet(roomGetBits(room), PyString_AsString(value));
++  return 0;
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -326,8 +356,12 @@
+     cdir = dirGetName(dirGetAbbrevNum(dir));
+ 
+   EXIT_DATA *exit = roomGetExit(room, cdir);
+-  if(exit != NULL)
+-    return Py_BuildValue("O", newPyExit(exit));
++  if(exit != NULL) {
++    PyObject   *pyex = newPyExit(exit);
++    PyObject *retval = Py_BuildValue("O", pyex);
++    Py_DECREF(pyex);
++    return retval;
++  }
+   else
+     return Py_None;
+ }
+@@ -435,7 +469,10 @@
+ 			"player", TRUE, TRUE));
+   }
+ 
+-  return Py_BuildValue("O", newPyExit(exit));
++  PyObject   *pyex = newPyExit(exit);
++  PyObject *retval = Py_BuildValue("O", pyex);
++  Py_DECREF(pyex);
++  return retval;
+ }
+ 
+ 
+@@ -656,7 +693,7 @@
+ 			"the room's name");
+     PyRoom_addGetSetter("desc",    PyRoom_getdesc,     PyRoom_setdesc, 
+ 			"the room's desc");
+-    PyRoom_addGetSetter("class",   PyRoom_getclass,    NULL, 
++    PyRoom_addGetSetter("proto",   PyRoom_getclass,    NULL, 
+ 			"The room's class");
+     PyRoom_addGetSetter("chars",   PyRoom_getchars,    NULL, 
+ 			"chars in the room");
+@@ -670,6 +707,8 @@
+ 			"the room's uid");
+     PyRoom_addGetSetter("terrain", PyRoom_getterrain,  PyRoom_setterrain,
+ 			"the room's terrain type");
++    PyRoom_addGetSetter("bits",    PyRoom_getbits,     PyRoom_setbits,
++			"the room's bits");
+ 
+     // add all of the basic methods
+     PyRoom_addMethod("attach", PyRoom_attach, METH_VARARGS,
+diff -ruN ../nakedmudv3.0/src/scripts/pystorage.c src/scripts/pystorage.c
+--- ../nakedmudv3.0/src/scripts/pystorage.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/pystorage.c	Sun Dec  4 20:03:07 2005
+@@ -76,11 +76,16 @@
+   PyObject             *list = PyList_New(0);
+ 
+   // add in all of the elements
+-  while( (set = storage_list_next(set_list)) != NULL)
+-    PyList_Append(list, newPyStorageSet(set));
++  while( (set = storage_list_next(set_list)) != NULL) {
++    PyObject *pyset = newPyStorageSet(set);
++    PyList_Append(list, pyset);
++    Py_DECREF(pyset);
++  }
+ 
+   // return the new list
+-  return Py_BuildValue("O", list);
++  PyObject *retval = Py_BuildValue("O", list);
++  Py_DECREF(list);
++  return retval;
+ }
+ 
+ //
+@@ -269,24 +274,30 @@
+ // read a storage list from the storage set
+ PyObject *PyStorageSet_readList  (PyObject *self, PyObject *args) { 
+   char *key = PyStorageSet_readParseKey(args);
+-  if(key != NULL) 
+-    return Py_BuildValue("O", 
+-			 newPyStorageList(read_list(((PyStorageSet*)self)->set, 
+-						   key)));
+-  else
++  if(key == NULL)
+     return NULL;
++  else {
++    PyObject *pylist =
++      newPyStorageList(read_list(((PyStorageSet*)self)->set, key));
++    PyObject *retval = Py_BuildValue("O", pylist);
++    Py_DECREF(pylist);
++    return retval;
++  }
+ }
+ 
+ //
+ // read a storage set from within the set
+ PyObject *PyStorageSet_readSet   (PyObject *self, PyObject *args) { 
+   char *key = PyStorageSet_readParseKey(args);
+-  if(key != NULL) 
+-    return Py_BuildValue("O", 
+-			 newPyStorageSet(read_set(((PyStorageSet *)self)->set, 
+-						  key)));
+-  else
++  if(key == NULL)
+     return NULL;
++  else {
++    PyObject *pyset = 
++      newPyStorageSet(read_set(((PyStorageSet *)self)->set, key));
++    PyObject *retval = Py_BuildValue("O", pyset);
++    Py_DECREF(pyset);
++    return retval;
++  }
+ }
+ 
+ 
+diff -ruN ../nakedmudv3.0/src/scripts/scripts.c src/scripts/scripts.c
+--- ../nakedmudv3.0/src/scripts/scripts.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/scripts.c	Sun Dec  4 20:39:05 2005
+@@ -10,11 +10,13 @@
+ // actions when items are received.. you know... that sort of stuff. 
+ //
+ //*****************************************************************************
++
+ #include "../mud.h"
+ #include "../utils.h"
+ #include "../world.h"
+ #include "../character.h"
+ #include "../room.h"
++#include "../exit.h"
+ #include "../object.h"
+ #include "../socket.h"
+ #include "../auxiliary.h"
+@@ -38,23 +40,33 @@
+ #include "../editor/editor.h"
+ #include "script_editor.h"
+ 
++// Python stuff
++#include <compile.h>
++#include <eval.h>
++
+ 
+ 
+ //*****************************************************************************
+ // auxiliary data
+ //*****************************************************************************
+ typedef struct {
+-  LIST *triggers;
++  LIST   *triggers;
++  PyObject *pyform;
+ } TRIGGER_AUX_DATA;
+ 
+ TRIGGER_AUX_DATA *newTriggerAuxData(void) {
+   TRIGGER_AUX_DATA *data = malloc(sizeof(TRIGGER_AUX_DATA));
+   data->triggers         = newList();
++  data->pyform           = NULL;
+   return data;
+ }
+ 
+ void deleteTriggerAuxData(TRIGGER_AUX_DATA *data) {
+   deleteListWith(data->triggers, free);
++  if(data->pyform && data->pyform->ob_refcnt > 1)
++    log_string("LEAK: Memory leak (%d refcnt) on someone or something's pyform",
++	       data->pyform->ob_refcnt);
++  Py_XDECREF(data->pyform);
+   free(data);
+ }
+ 
+@@ -64,8 +76,8 @@
+ }
+ 
+ TRIGGER_AUX_DATA *triggerAuxDataCopy(TRIGGER_AUX_DATA *data) {
+-  TRIGGER_AUX_DATA *newdata = malloc(sizeof(TRIGGER_AUX_DATA));
+-  newdata->triggers = listCopyWith(data->triggers, strdup);
++  TRIGGER_AUX_DATA *newdata = newTriggerAuxData();
++  triggerAuxDataCopyTo(data, newdata);
+   return newdata;
+ }
+ 
+@@ -76,6 +88,7 @@
+ TRIGGER_AUX_DATA *triggerAuxDataRead(STORAGE_SET *set) {
+   TRIGGER_AUX_DATA *data = malloc(sizeof(TRIGGER_AUX_DATA));
+   data->triggers = gen_read_list(read_list(set, "triggers"), read_one_trigger);
++  data->pyform   = NULL;
+   return data;
+ }
+ 
+@@ -112,124 +125,44 @@
+ // a local variable used for storing whether or not the last script ran fine
+ bool script_ok = TRUE;
+ 
+-
+-//
+-// looks for dynamic descs and expands them out as needed. Dynamic descs are
+-// bits of code that are embedded within descriptions, and surrounded by [ and
+-// ]. They can be anything that returns a  (string or numeric) value. Code must
+-// be a single statement. To perform conditional output, it is common to use 
+-// the ite() (if, then, else) function, which takes 2 arguments and an optional
+-// third.Here would be some valid dynamic descriptions (assuming that the 
+-// variables I made up exist in your mud):
+-//   You see [me.getvar("flowers")] flowers blooming here.
+-//   [ite(ch.perception >10, "There is a large bird's nest on the east cliff.")]
+-//   [ite(ch.name=="Bob", "You are in your house.", "You are in Bob's house.")]
+-//   You are in [ite(ch.name == "Bob", "your", ch.name + "'s")] house.
+-void expand_dynamic_descs(BUFFER *desc, PyObject *me, CHAR_DATA *ch) {
+-  // make a new temp buffer to hold all of the expanded data
+-  BUFFER *new_desc = newBuffer(bufferLength(desc)*2);
+-  char code[SMALL_BUFFER];
+-  PyObject   *dict = NULL;
+-
+-  int start, end, i, size = bufferLength(desc);
+-  for(i = 0; i < size; i++) {
+-    // figure out when our next dynamic desc is.
+-    start = next_letter_in(bufferString(desc) + i, '[');
+-
+-    // no more
+-    if(start == -1) {
+-      // copy the rest and skip to the end of the buffer
+-      bprintf(new_desc, "%s", bufferString(desc) + i);
+-      i = size - 1;
+-    }
+-    // we have another desc
+-    else {
+-      // copy everything up to start
+-      while(start > 0) {
+-	bprintf(new_desc, "%c", *(bufferString(desc) + i));
+-	start--;
+-	i++;
+-      }
+-
+-      // skip the start marker
+-      i++;
+-
+-      // find our end
+-      end = next_letter_in(bufferString(desc) + i, ']');
+-
+-      // make sure we have it
+-      if(end == -1)
+-	break;
+-
+-      // copy everything between start and end
+-      strncpy(code, bufferString(desc) + i, end);
+-      code[end] = '\0';
+-
+-      // skip i up to the end
+-      i = i + end;
+-
+-      // if we haven't already created a dict, do it now
+-      if(dict == NULL) {
+-	PyObject *pych = newPyChar(ch);
+-	dict = restricted_script_dict();
+-	PyDict_SetItemString(dict, "me", me);
+-	PyDict_SetItemString(dict, "ch", pych);
+-	Py_DECREF(pych);
+-      }
+-
+-      // evaluate the code
+-      PyObject *retval = PyRun_String(code, Py_eval_input, dict, dict);
+-
+-      // did we encounter an error?
+-      if(retval == NULL) {
+-	char *tb = getPythonTraceback();
+-	log_string("Dynamic desc terminated with an error:\r\n%s\r\n"
+-		   "\r\nTraceback is:\r\n%s\r\n", code, tb);
+-	free(tb);
+-	break;
+-      }
+-      // append the output
+-      else if(PyString_Check(retval))
+-	bprintf(new_desc, "%s", PyString_AsString(retval));
+-      else if(PyInt_Check(retval))
+-	bprintf(new_desc, "%ld", PyInt_AsLong(retval));
+-      else if(PyFloat_Check(retval))
+-	bprintf(new_desc, "%lf", PyFloat_AsDouble(retval));
+-      // invalid return type...
+-      else if(retval != Py_None)
+-	log_string("dynamic desc had invalid evaluation: %s", code);
+-
+-      Py_XDECREF(retval);
+-    }
++void expand_char_dynamic_descs(BUFFER *desc, CHAR_DATA *me, CHAR_DATA *ch) {
++  // if we're an NPC, do some special work for displaying us. We don't do 
++  // dynamic descs for PCs because they will probably be describing themselves,
++  // and we don't want to give them access to the scripting language.
++  if(charIsNPC(me)) {
++    PyObject *pyme = charGetPyForm(me);
++    char   *locale = strdup(get_key_locale(charGetClass(me))); 
++    expand_dynamic_descs(desc, pyme, ch, locale);
++    Py_DECREF(pyme);
++    free(locale);
+   }
+-
+-  // copy over the changes, and free our buffer
+-  bufferCopyTo(new_desc, desc);
+-  deleteBuffer(new_desc);
+-
+-  // free up our dictionary
+-  Py_XDECREF(dict);
+ }
+ 
+-void expand_char_dynamic_descs(BUFFER *desc, CHAR_DATA *me, CHAR_DATA *ch) {
+-  PyObject *pyme = newPyChar(me);
+-  expand_dynamic_descs(desc, pyme, ch);
++void  expand_obj_dynamic_descs(BUFFER *desc, OBJ_DATA *me, CHAR_DATA *ch) {
++  PyObject *pyme = objGetPyForm(me);
++  char   *locale = strdup(get_key_locale(objGetClass(me))); 
++  expand_dynamic_descs(desc, pyme, ch, locale);
+   Py_DECREF(pyme);
++  free(locale);
+ }
+ 
+-void  expand_obj_dynamic_descs(BUFFER *desc, OBJ_DATA *me,  CHAR_DATA *ch) {
+-  PyObject *pyme = newPyObj(me);
+-  expand_dynamic_descs(desc, pyme, ch);
++void expand_room_dynamic_descs(BUFFER *desc, ROOM_DATA *me, CHAR_DATA *ch) {
++  PyObject *pyme = roomGetPyForm(me);
++  char   *locale = strdup(get_key_locale(roomGetClass(me))); 
++  expand_dynamic_descs(desc, pyme, ch, locale);
+   Py_DECREF(pyme);
++  free(locale);
+ }
+ 
+-void expand_room_dynamic_descs(BUFFER *desc, ROOM_DATA *me, CHAR_DATA *ch) {
+-  PyObject *pyme = newPyRoom(me);
+-  expand_dynamic_descs(desc, pyme, ch);
++void expand_exit_dynamic_descs(BUFFER *desc, EXIT_DATA *me, CHAR_DATA *ch) {
++  PyObject *pyme = newPyExit(me);
++  char   *locale = strdup(get_key_locale(roomGetClass(exitGetRoom(me)))); 
++  expand_dynamic_descs(desc, pyme, ch, locale);
+   Py_DECREF(pyme);
++  free(locale);
+ }
+ 
+-void finalize_scripts(void *none1, void *none2, void *none3) {
++void finalize_scripts(void) {
+   Py_Finalize();
+ }
+ 
+@@ -353,18 +286,21 @@
+ }
+ 
+ COMMAND(cmd_tdelete) {
+-  do_delete(ch, "trigger", deleteTrigger, arg);
++  char *name = NULL;
++  if(!parse_args(ch, TRUE, cmd, arg, "word", &name))
++    return;
++  do_delete(ch, "trigger", deleteTrigger, name);
+ }
+ 
+ COMMAND(cmd_trename) {
+-  char from[SMALL_BUFFER];
+-  arg = one_arg(arg, from);
+-  do_rename(ch, "trigger", from, arg);
++  char *from = NULL, *to = NULL;
++  if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
++    return;
++  do_rename(ch, "trigger", from, to);
+ }
+ 
+ 
+ 
+-
+ //*****************************************************************************
+ // implementation of scripts.h - triggers portion in triggers.c
+ //*****************************************************************************
+@@ -408,6 +344,7 @@
+   hookAdd("preprocess_room_desc", expand_room_dynamic_descs);
+   hookAdd("preprocess_char_desc", expand_char_dynamic_descs);
+   hookAdd("preprocess_obj_desc",  expand_obj_dynamic_descs);
++  hookAdd("preprocess_exit_desc", expand_exit_dynamic_descs);
+   hookAdd("shutdown",             finalize_scripts);
+ 
+   /*
+@@ -496,29 +433,276 @@
+   return dict;
+ }
+ 
+-void run_script(PyObject *dict, const char *script, const char *locale) {
+-  if(script_loop_depth >= MAX_LOOP_DEPTH)
++void run_code(PyObject *code, PyObject *dict, const char *locale) {
++  if(script_loop_depth >= MAX_LOOP_DEPTH) {
++    // should we flag some sort of error, here?
++    //***********
++    // FINISH ME
++    //***********
++
+     script_ok = FALSE;
++  }
+   else {
+     listPush(locale_stack, strdupsafe(locale));
+ 
++    // try executing the code
++    script_ok = TRUE;
+     script_loop_depth++;
+-    PyObject* compileRetval = PyRun_String(script, Py_file_input, dict, dict);
++    PyObject *retval = PyEval_EvalCode((PyCodeObject *)code, dict, dict);
+     script_loop_depth--;
+-    script_ok = TRUE;
+-    // we threw an error and it wasn't an intentional
+-    // system exit error. Now print the backtrace
+-    if(compileRetval == NULL && PyErr_Occurred() != PyExc_SystemExit) {
+-      char *tb = getPythonTraceback();
+-      log_string("Script terminated with an error:\r\n%s\r\n"
+-		 "\r\nTraceback is:\r\n%s\r\n", script, tb);
+-      free(tb);
++
++    // did we throw an error?
++    if(retval == NULL && PyErr_Occurred() != PyExc_SystemExit)
+       script_ok = FALSE;
+-    }
+ 
+-    Py_XDECREF(compileRetval);
++    // garbage collection
+     free(listPop(locale_stack));
++    Py_XDECREF(retval);
++  }
++}
++
++PyObject *run_script_forcode(PyObject *dict, const char *script, 
++			     const char *locale) {
++  // try compiling the code
++  PyObject *retval = Py_CompileString(script, "<string>", Py_file_input);
++
++  // try running the code
++  if(retval != NULL)
++    run_code(retval, dict, locale);
++  
++  // did we end up with an error?
++  if(retval == NULL || !last_script_ok()) {
++    char *tb = getPythonTraceback();
++    log_string("Script terminated with an error:\r\n%s\r\n"
++	       "\r\nTraceback is:\r\n%s\r\n", script, tb);
++    free(tb);
++  }
++
++  // return our code object
++  return retval;
++}
++
++void run_script(PyObject *dict, const char *script, const char *locale) {
++  PyObject *code = run_script_forcode(dict, script, locale);
++  Py_XDECREF(code);
++}
++
++PyObject *eval_script(PyObject *dict, const char *statement,const char *locale){
++  listPush(locale_stack, strdupsafe(locale));
++ 
++  // run the statement
++  PyObject *retval = PyRun_String(statement, Py_eval_input, dict, dict);
++
++  // did we encounter an error?
++  if(retval == NULL) {
++    char *tb = getPythonTraceback();
++    log_string("eval_script terminated with an error:\r\n%s\r\n"
++	       "\r\nTraceback is:\r\n%s\r\n", statement, tb);
++    free(tb);
+   }
++
++  free(listPop(locale_stack));
++  return retval;
++}
++
++//
++// Tries to expand out a conditional statement. Returns whatever is expanded.
++// Moves i to the proper place after the conditional has been expanded in the
++// originating buffer.
++BUFFER *expand_dynamic_conditional(BUFFER *desc,     PyObject *dict, 
++				   PyObject *retval, const char *locale,
++				   int *pos) {
++  BUFFER *new_desc = newBuffer(bufferLength(desc)*2);
++  BUFFER     *code = newBuffer(1); // code we have to evaluate
++  int         j, i = *pos + 1;     // +1 to skip the current closing ]
++  bool       match = PyObject_IsTrue(retval);
++
++  while(TRUE) {
++    // copy over all of our contents for the new desc and increment i
++    while(*(bufferString(desc)+i) &&
++	  !startswith(bufferString(desc)+i, "[else]") &&
++	  !startswith(bufferString(desc)+i, "[elif ") &&
++	  !startswith(bufferString(desc)+i, "[/if]")) {
++      if(match == TRUE)
++	bprintf(new_desc, "%c", *(bufferString(desc) + i));
++      i++;
++    }
++
++    // did we terminate?
++    if(match == TRUE || startswith(bufferString(desc)+i, "[/if]"))
++      break;
++    // we haven't had a match yet. Are we trying an else or elif?
++    else if(startswith(bufferString(desc)+i, "[else]")) {
++      match  = TRUE;
++      i     += 6;
++    }
++    else if(startswith(bufferString(desc)+i, "[elif ")) {
++      // skip the elif and spaces
++      i += 6;
++      while(isspace(*(bufferString(desc)+i)))
++	i++;
++
++      // find our end
++      int end = next_letter_in(bufferString(desc) + i, ']');
++
++      // make sure we have it
++      if(end == -1)
++	break;
++
++      // copy everything between start and end, and format the code
++      bufferClear(code);
++      for(j = 0; j < end; j++)
++	bprintf(code, "%c", *(bufferString(desc) + i + j));
++      bufferReplace(code, "\n", "", TRUE);
++
++      // skip i up to and beyond the ] marker
++      i = i + end + 1;
++      
++      // evaluate the code
++      PyObject *retval = eval_script(dict, bufferString(code), locale);
++      match            = retval && PyObject_IsTrue(retval);
++
++      // did we encounter an error?
++      if(retval == NULL)
++	break;
++    }
++  }
++
++  // skip everything up to our closing [/if]
++  while(*(bufferString(desc)+i) && !startswith(bufferString(desc)+i, "[/if]"))
++    i++;
++  if(startswith(bufferString(desc)+i, "[/if]"))
++    i += 4; // put us at the closing ], not the end of the ending if block
++
++  // garbage collection
++  deleteBuffer(code);
++ 
++  // return our expansion and move our i
++  *pos = i;
++  return new_desc;
++}
++
++void expand_dynamic_descs_dict(BUFFER *desc, PyObject *dict,const char *locale){
++  // make our new buffer
++  BUFFER *new_desc = newBuffer(bufferLength(desc)*2);
++  BUFFER     *code = newBuffer(1); // for things we have to evaluate
++  bool   proc_cond = FALSE; // are we processing a conditional statement?
++
++  // copy over all of our description that is not dynamic text
++  int start, end, i, j, size = bufferLength(desc);
++  for(i = 0; i < size; i++) {
++    // figure out when our next dynamic desc is.
++    start = next_letter_in(bufferString(desc) + i, '[');
++
++    // no more
++    if(start == -1) {
++      // copy the rest and skip to the end of the buffer
++      bprintf(new_desc, "%s", bufferString(desc) + i);
++      i = size - 1;
++    }
++    // we have another desc
++    else {
++      // copy everything up to start
++      while(start > 0) {
++	bprintf(new_desc, "%c", *(bufferString(desc) + i));
++	start--;
++	i++;
++      }
++
++      // skip the start marker
++      i++;
++
++      // find our end
++      end = next_letter_in(bufferString(desc) + i, ']');
++
++      // make sure we have it
++      if(end == -1)
++	break;
++
++      // copy everything between start and end, and format the code
++      bufferClear(code);
++      for(j = 0; j < end; j++)
++	bprintf(code, "%c", *(bufferString(desc) + i + j));
++      bufferReplace(code, "\n", "", TRUE);
++
++      // skip i up to the end
++      i = i + end;
++
++      // are we trying to process a conditional statement?
++      if(!strncasecmp(bufferString(code), "if ", 3)) {
++	// strip out the leading if and whitespace
++	char *code_copy = strdup(bufferString(code));
++	char       *ptr = code_copy + 3;
++	while(isspace(*ptr)) ptr++;
++	
++	// copy over the cleaned-up code, signal we're processing a conditional
++	bufferClear(code);
++	bufferCat(code, ptr);
++	proc_cond = TRUE;
++
++	// garbage collection
++	free(code_copy);
++      }
++
++      // evaluate the code
++      PyObject *retval = eval_script(dict, bufferString(code), locale);
++
++      // did we encounter an error?
++      if(retval == NULL)
++	break;
++      // are we evaluating a conditional or no?
++      else if(proc_cond) {
++	BUFFER *cond_retval =
++	  expand_dynamic_conditional(desc, dict, retval, locale, &i);
++
++	// if we have something to print, expand its embedded python
++	if(*bufferString(cond_retval))
++	  expand_dynamic_descs_dict(cond_retval, dict, locale);
++
++	bufferCat(new_desc, bufferString(cond_retval));
++	deleteBuffer(cond_retval);
++	proc_cond = FALSE;
++      }
++      // append the output
++      else if(PyString_Check(retval))
++	bprintf(new_desc, "%s", PyString_AsString(retval));
++      else if(PyInt_Check(retval))
++	bprintf(new_desc, "%ld", PyInt_AsLong(retval));
++      else if(PyFloat_Check(retval))
++	bprintf(new_desc, "%lf", PyFloat_AsDouble(retval));
++      // invalid return type...
++      else if(retval != Py_None)
++	log_string("dynamic desc had invalid evaluation: %s", 
++		   bufferString(code));
++
++      // oddly, freeing retval here corrupt memory. 
++      // And not freeing it doesn't cause a memory leak. So bizarre...
++      //   Py_XDECREF(retval);
++    }
++  }
++
++  // copy over our contents
++  bufferCopyTo(new_desc, desc);
++
++  // garbage collection
++  deleteBuffer(code);
++  deleteBuffer(new_desc);
++}
++
++void expand_dynamic_descs(BUFFER *desc, PyObject *me, CHAR_DATA *ch, 
++			  const char *locale) {
++  // set up our dictionary
++  PyObject *dict = restricted_script_dict();
++  PyObject *pych = charGetPyForm(ch);
++  PyDict_SetItemString(dict, "me", me);
++  PyDict_SetItemString(dict, "ch", pych);
++
++  // expand the dynamic description
++  expand_dynamic_descs_dict(desc, dict, locale);
++
++  // garbage collection
++  Py_XDECREF(dict);
++  Py_XDECREF(pych);
+ }
+ 
+ const char *get_script_locale(void) {
+@@ -548,6 +732,45 @@
+   return data->triggers;
+ }
+ 
++PyObject *charGetPyFormBorrowed(CHAR_DATA *ch) {
++  TRIGGER_AUX_DATA *data = charGetAuxiliaryData(ch, "trigger_data");
++  if(data->pyform == NULL)
++    data->pyform = newPyChar(ch);
++  return data->pyform;
++}
++
++PyObject *objGetPyFormBorrowed(OBJ_DATA  *obj) {
++  TRIGGER_AUX_DATA *data = objGetAuxiliaryData(obj, "trigger_data");
++  if(data->pyform == NULL)
++    data->pyform = newPyObj(obj);
++  return data->pyform;
++}
++
++PyObject *roomGetPyFormBorrowed(ROOM_DATA *room) {
++  TRIGGER_AUX_DATA *data = roomGetAuxiliaryData(room, "trigger_data");
++  if(data->pyform == NULL)
++    data->pyform = newPyRoom(room);
++  return data->pyform;
++}
++
++PyObject *charGetPyForm(CHAR_DATA *ch) {
++  PyObject *pyform = charGetPyFormBorrowed(ch);
++  Py_INCREF(pyform);
++  return pyform;
++}
++
++PyObject *objGetPyForm(OBJ_DATA *obj) {
++  PyObject *pyform = objGetPyFormBorrowed(obj);
++  Py_INCREF(pyform);
++  return pyform; 
++}
++
++PyObject *roomGetPyForm(ROOM_DATA *room) {
++  PyObject *pyform = roomGetPyFormBorrowed(room);
++  Py_INCREF(pyform);
++  return pyform;
++}
++
+ void triggerListAdd(LIST *list, const char *trigger) {
+   if(!listGetWith(list, trigger, strcasecmp))
+     listPut(list, strdup(trigger));
+@@ -695,9 +918,14 @@
+   }
+ 
+   line[line_i] = '\0';
++
+   // send the last line
+-  if(*line)
+-    send_to_socket(sock, "{c%2d]{g  %s{n\r\n", line_num, line);
++  if(*line) {
++    if(show_line_nums)
++      send_to_socket(sock, "{c%2d]{g  %s{n\r\n", line_num, line);
++    else
++      send_to_socket(sock, "%s{n\r\n", line);
++  }
+ 
+   // and kill any color that is leaking
+   //  send_to_socket(sock, "{n");
+diff -ruN ../nakedmudv3.0/src/scripts/scripts.h src/scripts/scripts.h
+--- ../nakedmudv3.0/src/scripts/scripts.h	Fri Oct  7 14:15:55 2005
++++ src/scripts/scripts.h	Sun Dec  4 20:39:05 2005
+@@ -69,6 +69,10 @@
+ BUFFER *triggerGetCodeBuffer(TRIGGER_DATA *trigger);
+ 
+ //
++// run a trigger
++void triggerRun(TRIGGER_DATA *trigger, PyObject *dict);
++
++//
+ // for getting lists of triggers installed on various things. Returns the
+ // trigger's key, and not the actual trigger. If an entry is removed from one
+ // of these lists, it must be freed afterwards.
+@@ -77,6 +81,22 @@
+ LIST *roomGetTriggers(ROOM_DATA *room);
+ 
+ //
++// get the python form for a character, object, or room. These are persistent
++// from the first time the python form is created. Before the pyform is 
++// returned, it is increfed. Therefore, users must decref after they are done
++// to avoid memory leaks.
++PyObject *charGetPyForm(CHAR_DATA *ch);
++PyObject *roomGetPyForm(ROOM_DATA *room);
++PyObject  *objGetPyForm(OBJ_DATA  *obj);
++
++//
++// The same as above, but returns a borrowed reference so no incref/decref are
++// needed
++PyObject *charGetPyFormBorrowed(CHAR_DATA *ch);
++PyObject *roomGetPyFormBorrowed(ROOM_DATA *room);
++PyObject  *objGetPyFormBorrowed(OBJ_DATA  *obj);
++
++//
+ // adds a trigger to the trigger list. Makes sure it's not a duplicate copy
+ void triggerListAdd(LIST *list, const char *trigger);
+ 
+@@ -113,6 +133,45 @@
+ // script has a locale (i.e. zone) associated with it (for instance, running
+ // a trigger or a mob proto) locale can be set. Otherwise, locale should be NULL
+ void run_script(PyObject *dict, const char *script, const char *locale);
++
++//
++// same as above, but returns the code object that is generated by compiling
++// the string.
++PyObject *run_script_forcode(PyObject *dict, const char *script, 
++			     const char *locale);
++
++//
++// runs a python code object wit hthe given dictionary. If the script has a 
++// locale (i.e. zone) associated with it (for instance, running code for a mob
++// proto) locale can be set. Otherwise, locale should be NULL.
++void run_code(PyObject *code, PyObject *dict, const char *locale);
++
++//
++// Evaluates a Python statement. If the statement has a locale (i.e. a zone)
++// associated with it, locale can be set. Otherwise, locale should be NULL
++PyObject *eval_script(PyObject *dict, const char *statement,const char *locale);
++
++//
++// Descriptions can have scripts embedded within them. Embedded scripts must be
++// surrounded by a [ and an ]. Each script must be a single statement that will
++// return a string or numeric value. To perform conditional output, it is 
++// common to use the ite() (if, then, else) function, which takes 2 arguments
++// and an optional third. Here would be some valid dynamic descriptions 
++// (assuming that the variables I made up exist in your mud):
++//   You see [me.getvar("flowers")] flowers blooming here.
++//   [if ch.perception > 10]There is a large bird's nest on the east cliff.[/if]
++//   [ite(ch.perception >10, "There is a large bird's nest on the east cliff.")]
++//   [if ch.name=="Bob"]You are in your house.[else]You are in Bob's house.[/if]
++//   [ite(ch.name=="Bob", "You are in your house.", "You are in Bob's house.")]
++//   You are in [ite(ch.name == "Bob", "your", ch.name + "'s")] house.
++// If the expansion has a locale (i.e. a zone) associated with it, locale can
++// be set. Otherwise, locale should be NULL
++void expand_dynamic_descs(BUFFER *desc, PyObject *me, CHAR_DATA *ch, 
++			  const char *locale);
++
++//
++// same as expand_dynamic_descs, but takes a dictionary instead of "me" and "ch"
++void expand_dynamic_descs_dict(BUFFER *desc, PyObject *dict,const char *locale);
+ 
+ //
+ // returns the locale our script is running in. NULL if no scripts are running,
+diff -ruN ../nakedmudv3.0/src/scripts/trigedit.c src/scripts/trigedit.c
+--- ../nakedmudv3.0/src/scripts/trigedit.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/trigedit.c	Sun Dec  4 20:03:07 2005
+@@ -91,18 +91,20 @@
+ 
+ // a table of allowable trigger types
+ struct trigger_type_usable_list trigger_types[] = {
+-  { "speech",  "mob, room" },
+-  { "greet",   "mob"       },
+-  { "enter",   "mob, room" },
+-  { "exit",    "mob, room" },
+-  { "move",    "mob"       },
+-  { "drop",    "obj, room" },
+-  { "get",     "obj, room" },
+-  { "give",    "obj, mob"  },
+-  { "receive", "mob"       },
+-  { "wear",    "mob"       },
+-  { "remove",  "obj, mob"  },
+-  { "reset",   "room"      },
++  { "speech",         "mob, room" },
++  { "greet",          "mob"       },
++  { "enter",          "mob, room" },
++  { "exit",           "mob, room" },
++  { "move",           "mob"       },
++  { "drop",           "obj, room" },
++  { "get",            "obj, room" },
++  { "give",           "obj, mob"  },
++  { "receive",        "mob"       },
++  { "wear",           "mob"       },
++  { "remove",         "obj, mob"  },
++  { "reset",          "room"      },
++  { "combat",         "mob"       },
++  { "open",           "obj, room" },
+   { "", "" },
+ };
+ 
+@@ -185,6 +187,7 @@
+ }
+ 
+ void save_trigger(TRIGGER_DATA *trigger) {
++  format_script_buffer(triggerGetCodeBuffer(trigger));
+   worldSaveType(gameworld, "trigger", triggerGetKey(trigger));
+ }
+ 
+diff -ruN ../nakedmudv3.0/src/scripts/triggers.c src/scripts/triggers.c
+--- ../nakedmudv3.0/src/scripts/triggers.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/triggers.c	Sun Dec  4 20:03:07 2005
+@@ -12,6 +12,7 @@
+ #include "../storage.h"
+ 
+ #include "scripts.h"
++#include "pyplugs.h"
+ 
+ 
+ 
+@@ -19,10 +20,11 @@
+ // local datastructures, functions, and defines
+ //*****************************************************************************
+ struct trigger_data {
+-  char   *name; // a short description of what the trigger is intended for
+-  char   *type; // what type of hook does this trigger install itself as?
+-  char    *key; // our unique key for lookup in the world database
+-  BUFFER *code; // the python script that is executed
++  char       *name; // a short description of what the trigger is intended for
++  char       *type; // what type of hook does this trigger install itself as?
++  char        *key; // our unique key for lookup in the world database
++  BUFFER     *code; // the python script that is executed
++  PyObject *pycode; // the compiled version of our python code
+ };
+ 
+ 
+@@ -36,6 +38,7 @@
+   data->type         = strdup("");
+   data->key          = strdup("");
+   data->code         = newBuffer(1);
++  data->pycode       = NULL;
+   return data;
+ }
+ 
+@@ -43,6 +46,8 @@
+   if(trigger->name) free(trigger->name);
+   if(trigger->type) free(trigger->type);
+   if(trigger->key)  free(trigger->key);
++  deleteBuffer(trigger->code);
++  Py_XDECREF(trigger->pycode);
+ }
+ 
+ STORAGE_SET *triggerStore(TRIGGER_DATA *trigger) {
+@@ -92,6 +97,8 @@
+ void triggerSetCode(TRIGGER_DATA *trigger, const char *code) {
+   bufferClear(trigger->code);
+   bufferCat(trigger->code, code);
++  Py_XDECREF(trigger->pycode);
++  trigger->pycode = NULL;
+ }
+ 
+ const char *triggerGetName(TRIGGER_DATA *trigger) {
+@@ -112,4 +119,24 @@
+ 
+ BUFFER *triggerGetCodeBuffer(TRIGGER_DATA *trigger) {
+   return trigger->code;
++}
++
++void triggerRun(TRIGGER_DATA *trigger, PyObject *dict) {
++  // if we haven't yet run the trigger, compile the source code
++  if(trigger->pycode == NULL)
++    trigger->pycode = 
++      run_script_forcode(dict, bufferString(trigger->code),
++			 get_key_locale(triggerGetKey(trigger)));
++  // run right from the code
++  else {
++    run_code(trigger->pycode, dict, get_key_locale(triggerGetKey(trigger)));
++    
++    if(!last_script_ok()) {
++      char *tb = getPythonTraceback();
++      log_string("Trigger %s terminated with an error:\r\n%s\r\n"
++		 "\r\nTraceback is:\r\n%s\r\n", 
++		 trigger->key, bufferString(trigger->code), tb);
++      free(tb);
++    }
++  }
+ }
+diff -ruN ../nakedmudv3.0/src/scripts/trighooks.c src/scripts/trighooks.c
+--- ../nakedmudv3.0/src/scripts/trighooks.c	Fri Oct  7 14:15:55 2005
++++ src/scripts/trighooks.c	Sun Dec  4 20:03:07 2005
+@@ -83,17 +83,17 @@
+     Py_DECREF(pyarg);
+   }
+   if(ch) {
+-    PyObject *pych = newPyChar(ch);
++    PyObject *pych = charGetPyForm(ch);
+     PyDict_SetItemString(dict, "ch", pych);
+     Py_DECREF(pych);
+   }
+   if(room) {
+-    PyObject *pyroom = newPyRoom(room);
++    PyObject *pyroom = roomGetPyForm(room);
+     PyDict_SetItemString(dict, "room", pyroom);
+     Py_DECREF(pyroom);
+   }    
+   if(obj) {
+-    PyObject *pyobj = newPyObj(obj);
++    PyObject *pyobj = objGetPyForm(obj);
+     PyDict_SetItemString(dict, "obj", pyobj);
+     Py_DECREF(pyobj);
+   }
+@@ -107,9 +107,9 @@
+   if(me) {
+     PyObject *pyme = NULL;
+     switch(me_type) {
+-    case VARTYPE_CHAR:  pyme = newPyChar(me); break;
+-    case VARTYPE_OBJ:   pyme = newPyObj(me);  break;
+-    case VARTYPE_ROOM:  pyme = newPyRoom(me); break;
++    case VARTYPE_CHAR:  pyme = charGetPyForm(me); break;
++    case VARTYPE_OBJ:   pyme = objGetPyForm(me);  break;
++    case VARTYPE_ROOM:  pyme = roomGetPyForm(me); break;
+     }
+     PyDict_SetItemString(dict, "me", pyme);
+     Py_DECREF(pyme);
+@@ -123,9 +123,9 @@
+     ITERATE_LIST(opt, opt_i) {
+       pyopt = NULL;
+       switch(opt->type) {
+-      case VARTYPE_CHAR:  pyopt = newPyChar(opt->data); break;
+-      case VARTYPE_OBJ:   pyopt = newPyObj(opt->data);  break;
+-      case VARTYPE_ROOM:  pyopt = newPyRoom(opt->data); break;
++      case VARTYPE_CHAR:  pyopt = charGetPyForm(opt->data); break;
++      case VARTYPE_OBJ:   pyopt = objGetPyForm(opt->data);  break;
++      case VARTYPE_ROOM:  pyopt = roomGetPyForm(opt->data); break;
+       }
+       PyDict_SetItemString(dict, opt->name, pyopt);
+       Py_XDECREF(pyopt);
+@@ -133,7 +133,7 @@
+   }
+ 
+   // run the script, then kill our dictionary
+-  run_script(dict, triggerGetCode(trig), get_key_locale(triggerGetKey(trig)));
++  triggerRun(trig, dict);
+   Py_DECREF(dict);
+ }
+ 
+@@ -221,6 +221,8 @@
+ 	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
+ 	else if(!strcasecmp(type, "remove"))
+ 	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
++	else if(!strcasecmp(type, "open"))
++	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
+ 	else {
+ 	  log_string("Unrecognized trigger type %s attached to %s, uid %d.\r\n",
+ 		     type, objGetClass(obj), objGetUID(obj));
+@@ -264,6 +266,8 @@
+ 	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,NULL,NULL,arg,NULL);
+ 	else if(!strcasecmp(type, "reset"))
+ 	  gen_do_trig(trig,rm,VARTYPE_ROOM,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
++	else if(!strcasecmp(type, "open"))
++	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,arg,NULL,NULL,NULL);
+ 	else {
+ 	  log_string("Unrecognized trigger type %s attached to %s, uid %d.\r\n",
+ 		     type, roomGetClass(rm), roomGetUID(rm));
+@@ -287,17 +291,17 @@
+   do_obj_trigs (obj,  "give",    ch,  recv);
+ }
+ 
+-void do_get_trighooks(CHAR_DATA *ch, OBJ_DATA *obj, void *none) {
++void do_get_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+   do_obj_trigs (obj,             "get", ch, NULL);
+   do_room_trigs(charGetRoom(ch), "get", ch, obj);
+ }
+ 
+-void do_drop_trighooks(CHAR_DATA *ch, OBJ_DATA *obj, void *none) {
++void do_drop_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+   do_obj_trigs (obj,             "drop", ch, NULL);
+   do_room_trigs(charGetRoom(ch), "drop", ch,  obj);
+ }
+ 
+-void do_enter_trighooks(CHAR_DATA *ch, ROOM_DATA *room, void *none) {
++void do_enter_trighooks(CHAR_DATA *ch, ROOM_DATA *room) {
+   LIST_ITERATOR *mob_i = newListIterator(roomGetCharacters(room));
+   CHAR_DATA       *mob = NULL;
+   ITERATE_LIST(mob, mob_i) {
+@@ -322,7 +326,7 @@
+   do_char_trigs(listener, "speech", ch, speech);
+ }
+ 
+-void do_say_trighooks(CHAR_DATA *ch, void *none, char *speech) {
++void do_say_trighooks(CHAR_DATA *ch, char *speech) {
+   LIST_ITERATOR *mob_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
+   CHAR_DATA       *mob = NULL;
+   ITERATE_LIST(mob, mob_i) {
+@@ -332,21 +336,21 @@
+   do_room_trigs(charGetRoom(ch), "speech", ch, speech);
+ }
+ 
+-void do_greet_trighooks(CHAR_DATA *ch, CHAR_DATA *greeted, void *none) {
++void do_greet_trighooks(CHAR_DATA *ch, CHAR_DATA *greeted) {
+   do_char_trigs(greeted, "greet", ch, NULL);
+ }
+ 
+-void do_wear_trighooks(CHAR_DATA *ch, OBJ_DATA *obj, void *none) {
++void do_wear_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+   do_char_trigs(ch,  "wear", obj, NULL);
+   do_obj_trigs (obj, "wear", ch,  NULL);
+ }
+ 
+-void do_remove_trighooks(CHAR_DATA *ch, OBJ_DATA *obj, void *none) {
++void do_remove_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+   do_char_trigs(ch,  "remove", obj, NULL);
+   do_obj_trigs (obj, "remove", ch,  NULL);
+ }
+ 
+-void do_reset_trighooks(ZONE_DATA *zone, void *none1, void *none2) {
++void do_reset_trighooks(ZONE_DATA *zone) {
+   LIST_ITERATOR *res_i = newListIterator(zoneGetResettable(zone));
+   char           *name = NULL;
+   const char   *locale = zoneGetKey(zone);
+@@ -357,6 +361,14 @@
+   } deleteListIterator(res_i);
+ }
+ 
++void do_open_door_trighooks(CHAR_DATA *ch, EXIT_DATA *ex) {
++  do_room_trigs(charGetRoom(ch), "open", ch, ex);
++}
++
++void do_open_obj_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
++  do_obj_trigs(obj, "open", ch, NULL);
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -364,15 +376,17 @@
+ //*****************************************************************************
+ void init_trighooks(void) {
+   // add all of our hooks to the game
+-  hookAdd("give",   do_give_trighooks);
+-  hookAdd("get",    do_get_trighooks);
+-  hookAdd("drop",   do_drop_trighooks);
+-  hookAdd("enter",  do_enter_trighooks);
+-  hookAdd("exit",   do_exit_trighooks);
+-  hookAdd("ask",    do_ask_trighooks);
+-  hookAdd("say",    do_say_trighooks);
+-  hookAdd("greet",  do_greet_trighooks);
+-  hookAdd("wear",   do_wear_trighooks);
+-  hookAdd("remove", do_remove_trighooks);
+-  hookAdd("reset",  do_reset_trighooks);
++  hookAdd("give",      do_give_trighooks);
++  hookAdd("get",       do_get_trighooks);
++  hookAdd("drop",      do_drop_trighooks);
++  hookAdd("enter",     do_enter_trighooks);
++  hookAdd("exit",      do_exit_trighooks);
++  hookAdd("ask",       do_ask_trighooks);
++  hookAdd("say",       do_say_trighooks);
++  hookAdd("greet",     do_greet_trighooks);
++  hookAdd("wear",      do_wear_trighooks);
++  hookAdd("remove",    do_remove_trighooks);
++  hookAdd("reset",     do_reset_trighooks);
++  hookAdd("open_door", do_open_door_trighooks);
++  hookAdd("open_obj",  do_open_obj_trighooks);
+ }
+diff -ruN ../nakedmudv3.0/src/set.c src/set.c
+--- ../nakedmudv3.0/src/set.c	Fri Oct  7 14:15:55 2005
++++ src/set.c	Sun Dec  4 20:03:08 2005
+@@ -15,8 +15,10 @@
+ 
+ struct set_data {
+   int    num_buckets;
+-  int    size;
+-  LIST **buckets;
++  int           size;
++  LIST     **buckets;
++  int  (* cmp)(const void *, const void *);
++  int (* hash)(const void *);
+ };
+ 
+ struct set_iterator {
+@@ -32,12 +34,22 @@
+ //*****************************************************************************
+ 
+ //
+-// Find the bucket the set element belongs to
+-int set_elem_bucket(void *elem, int num_buckets) {
+-  // simple for now: just take the modulo
+-  return ((int)elem < 0 ? -1 * (int)elem : (int)elem) % num_buckets;
+-};
++// compre two elements for equality
++int gen_set_cmp(const void *key1, const void *key2) {
++  int val = (key2 - key1);
++  if(val < 0)      return -1;
++  else if(val > 0) return  1;
++  else             return  0;
++  return val;
++}
+ 
++//
++// hash an item
++int gen_set_hash(const void *key) {
++  int val = (int)key;
++  if(val < 0) return -val;
++  else        return  val;
++}
+ 
+ //
+ // expand a set to the new number of buckets
+@@ -60,7 +72,7 @@
+ 
+   // now, we put all of our entries back into the new buckets
+   while((entry = listPop(entries)) != NULL) {
+-    int bucket = set_elem_bucket(entry, set->num_buckets);
++    int bucket = set->hash(entry) % set->num_buckets;
+     if(set->buckets[bucket] == NULL) set->buckets[bucket] = newList();
+     listPut(set->buckets[bucket], entry);
+   }
+@@ -77,6 +89,8 @@
+   set->buckets     = calloc(DEFAULT_SET_SIZE, sizeof(LIST *));
+   set->num_buckets = DEFAULT_SET_SIZE;
+   set->size        = 0;
++  set->cmp         = gen_set_cmp;
++  set->hash        = gen_set_hash;
+   return set;
+ }
+ 
+@@ -105,7 +119,7 @@
+     setExpand(set, (set->num_buckets * 150)/100);
+ 
+   // find out what bucket we belong to
+-  int hash_bucket = set_elem_bucket(elem, set->num_buckets);
++  int hash_bucket = set->hash(elem) % set->num_buckets;
+ 
+   // add us to the bucket
+   if(set->buckets[hash_bucket] == NULL)
+@@ -117,20 +131,20 @@
+ 
+ void setRemove(SET *set, void *elem) {
+   // find out what bucket we belong to
+-  int hash_bucket = set_elem_bucket(elem, set->num_buckets);
++  int hash_bucket = set->hash(elem) % set->num_buckets;
+ 
+   // see if the bucket exists
+   if(set->buckets[hash_bucket] != NULL)
+-    if(listRemove(set->buckets[hash_bucket], elem))
++    if(listRemoveWith(set->buckets[hash_bucket], elem, set->cmp))
+       set->size--;
+ }
+ 
+-int setIn(SET *set, void *elem) {
++int setIn(SET *set, const void *elem) {
+   // find out what bucket we belong to
+-  int hash_bucket = set_elem_bucket(elem, set->num_buckets);
++  int hash_bucket = set->hash(elem) % set->num_buckets;
+ 
+   if(set->buckets[hash_bucket] != NULL)
+-    return listIn(set->buckets[hash_bucket], elem);
++    return (listGetWith(set->buckets[hash_bucket], elem, set->cmp) != NULL);
+   else
+     return 0;
+ }
+@@ -143,15 +157,16 @@
+     if(set->buckets[i] == NULL) continue;
+     LIST_ITERATOR *list_i = newListIterator(set->buckets[i]);
+     void            *elem = NULL;
+-    for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
++    ITERATE_LIST(elem, list_i) {
+       listPut(list, elem);
+-    deleteListIterator(list_i);
++    } deleteListIterator(list_i);
+   }
+   return list;
+ }
+ 
+ SET  *setCopy(SET *set) {
+   SET *newset = newSet();
++  setChangeHashing(newset, set->cmp, set->hash);
+   setExpand(newset, set->num_buckets);
+   SET_ITERATOR *set_i = newSetIterator(set);
+   void          *elem = NULL;
+@@ -203,6 +218,11 @@
+       setRemove(intersection, elem);
+   } deleteSetIterator(set_i);
+   return intersection;
++}
++
++void setChangeHashing(SET *set, void *cmp_func, void *hash_func) {
++  set->cmp  = cmp_func;
++  set->hash = hash_func;
+ }
+ 
+ 
+diff -ruN ../nakedmudv3.0/src/set.h src/set.h
+--- ../nakedmudv3.0/src/set.h	Fri Oct  7 14:15:55 2005
++++ src/set.h	Sun Dec  4 20:03:08 2005
+@@ -15,12 +15,13 @@
+ void  deleteSet      (SET *set);
+ void  setPut         (SET *set, void *elem);
+ void  setRemove      (SET *set, void *elem);
+-int   setIn          (SET *set, void *elem);
++int   setIn          (SET *set, const void *elem);
+ int   setSize        (SET *set);
+ LIST *setCollect     (SET *set);
+ SET  *setCopy        (SET *set);
+ SET  *setUnion       (SET *set1, SET *set2);
+ SET  *setIntersection(SET *set1, SET *set2);
++void setChangeHashing(SET *set, void *cmp_func, void *hash_func);
+ 
+ 
+ 
+diff -ruN ../nakedmudv3.0/src/socials/socials.c src/socials/socials.c
+--- ../nakedmudv3.0/src/socials/socials.c	Fri Oct  7 14:15:55 2005
++++ src/socials/socials.c	Sun Dec  4 20:03:07 2005
+@@ -478,18 +478,20 @@
+ void add_social(SOCIAL_DATA *social) {
+   // for each of our keywords, go through and 
+   // unlink all of the current socials and link the new one
+-  int i, num_cmds = 0;
+-  char **cmd_list = parse_keywords(social->cmds, &num_cmds);
++  LIST       *cmd_list = parse_keywords(social->cmds);
++  LIST_ITERATOR *cmd_i = newListIterator(cmd_list);
++  char            *cmd = NULL;
+ 
+-  for(i = 0; i < num_cmds; i++) {
+-    unlink_social(cmd_list[i]);
+-    hashPut(social_table, cmd_list[i], social);
++  ITERATE_LIST(cmd, cmd_i) {
++    unlink_social(cmd);
++    hashPut(social_table, cmd, social);
+     // add the new command to the game
+-    add_cmd(cmd_list[i], NULL, cmd_social, social->min_pos, social->max_pos,
++    add_cmd(cmd, NULL, cmd_social, social->min_pos, social->max_pos,
+ 	    "player", TRUE, FALSE);
+-    free(cmd_list[i]);
+-  }
+-  free(cmd_list);
++  } deleteListIterator(cmd_i);
++
++  // garbage collection
++  deleteListWith(cmd_list, free);
+ 
+   // save changes
+   if(!in_social_init)
+diff -ruN ../nakedmudv3.0/src/socket.c src/socket.c
+--- ../nakedmudv3.0/src/socket.c	Fri Oct  7 14:15:55 2005
++++ src/socket.c	Sun Dec  4 20:03:08 2005
+@@ -57,6 +57,7 @@
+ 
+   LIST          * input_handlers;// a stack of our input handlers and prompts
+   LIST          * input;         // lines of input we have received
++  LIST          * command_hist;  // the commands we've executed in the past
+ 
+   unsigned char   compressing;                 /* MCCP support */
+   z_stream      * out_compress;                /* MCCP support */
+@@ -755,12 +756,13 @@
+ //
+ //*****************************************************************************
+ void deleteSocket(SOCKET_DATA *sock) {
+-  if(sock->hostname)       free(sock->hostname);
+-  if(sock->page_string)    free(sock->page_string);
+-  if(sock->text_editor)    deleteBuffer(sock->text_editor);
+-  if(sock->input_handlers) deleteListWith(sock->input_handlers, free);
+-  if(sock->input)          deleteListWith(sock->input, free);
+-  if(sock->auxiliary)      deleteAuxiliaryData(sock->auxiliary);
++  if(sock->hostname)         free(sock->hostname);
++  if(sock->page_string)      free(sock->page_string);
++  if(sock->text_editor)      deleteBuffer(sock->text_editor);
++  if(sock->input_handlers)   deleteListWith(sock->input_handlers, free);
++  if(sock->input)            deleteListWith(sock->input, free);
++  if(sock->command_hist)     deleteListWith(sock->command_hist, free);
++  if(sock->auxiliary)        deleteAuxiliaryData(sock->auxiliary);
+   free(sock);
+ }
+ 
+@@ -771,11 +773,13 @@
+   if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, free);
+   if(sock_new->auxiliary)      deleteAuxiliaryData(sock_new->auxiliary);
+   if(sock_new->input)          deleteListWith(sock_new->input, free);
++  if(sock_new->command_hist)   deleteListWith(sock_new->command_hist, free);
+ 
+   bzero(sock_new, sizeof(*sock_new));
+   sock_new->auxiliary = newAuxiliaryData(AUXILIARY_TYPE_SOCKET);
+   sock_new->input_handlers = newList();
+   sock_new->input          = newList();
++  sock_new->command_hist   = newList();
+   socketPushInputHandler(sock_new, handle_new_connections, NULL);
+   sock_new->control        = sock;
+   sock_new->lookup_status  = TSTATE_LOOKUP;
+@@ -964,6 +968,9 @@
+     /* Is there a new command pending ? */
+     if (sock->cmd_read) {
+       socketGetInputHandler(sock)(sock, sock->next_command);
++      listPut(sock->command_hist, strdup(sock->next_command));
++      if(listSize(sock->command_hist) > 100)
++	free(listRemoveNum(sock->command_hist, 100));
+       sock->next_command[0] = '\0';
+       sock->cmd_read = FALSE;
+     }
+@@ -1123,7 +1130,7 @@
+   sprintf(buf, "\n\r <*>            The world starts spinning             <*>\n\r");
+ 
+   // execute our shutdown hooks
+-  hookRun("shutdown", NULL, NULL, NULL);
++  hookRun("shutdown");
+ 
+   // For each playing descriptor, save its character and account
+   ITERATE_LIST(sock, sock_i) {
+@@ -1192,6 +1199,13 @@
+   pair->handler = handler;
+   pair->prompt  = prompt;
+   listPush(socket->input_handlers, pair);
++}
++
++const char *socketGetLastCmd(SOCKET_DATA *sock) {
++  if(listSize(sock->command_hist) == 0)
++    return "";
++  else
++    return listHead(sock->command_hist);
+ }
+ 
+ void socketPopInputHandler   ( SOCKET_DATA *socket) {
+diff -ruN ../nakedmudv3.0/src/socket.h src/socket.h
+--- ../nakedmudv3.0/src/socket.h	Fri Oct  7 14:15:55 2005
++++ src/socket.h	Sun Dec  4 20:03:08 2005
+@@ -55,5 +55,6 @@
+ void socketQueueCommand       ( SOCKET_DATA *sock, const char *cmd);
+ 
+ void socketBustPrompt         ( SOCKET_DATA *sock);
++const char *socketGetLastCmd  ( SOCKET_DATA *sock);
+ 
+ #endif // SOCKET_H
+diff -ruN ../nakedmudv3.0/src/time/time.c src/time/time.c
+--- ../nakedmudv3.0/src/time/time.c	Fri Oct  7 14:15:55 2005
++++ src/time/time.c	Sun Dec  4 20:03:07 2005
+@@ -26,7 +26,9 @@
+ //*****************************************************************************
+ // mandatory modules
+ //*****************************************************************************
++#include "../scripts/scripts.h"
+ #include "../scripts/pyroom.h"
++#include "../scripts/pymud.h"
+ 
+ 
+ 
+@@ -190,12 +192,37 @@
+ 
+ 
+ //*****************************************************************************
++// Python methods
++//*****************************************************************************
++PyObject *PyMud_GetHour(PyObject *self) {
++  return Py_BuildValue("i", get_hour());
++}
++
++PyObject *PyMud_IsMorning(PyObject *self) {
++  return Py_BuildValue("i", is_morning());
++}
++
++PyObject *PyMud_IsAfternoon(PyObject *self) {
++  return Py_BuildValue("i", is_afternoon());
++}
++
++PyObject *PyMud_IsEvening(PyObject *self) {
++  return Py_BuildValue("i", is_evening());
++}
++
++PyObject *PyMud_IsNight(PyObject *self) {
++  return Py_BuildValue("i", is_night());
++}
++
++
++
++//*****************************************************************************
+ // time handling functions
+ //*****************************************************************************
+ 
+ //
+ // If it's in the night, swap out our desc for the room's night desc
+-void room_nightdesc_hook(BUFFER *desc, ROOM_DATA *room, void *none) {
++void room_nightdesc_hook(BUFFER *desc, ROOM_DATA *room, CHAR_DATA *looker) {
+   if((is_evening() || is_night()) && *roomGetNightDesc(room)) {
+     // if it's the room desc and not an edesc, cat the night desc...
+     if(!strcasecmp(bufferString(desc), roomGetDesc(room))) {
+@@ -269,10 +296,20 @@
+   // add a nightdesc get-setter to rooms
+   PyRoom_addGetSetter("ndesc", PyRoom_getndesc, PyRoom_setndesc,
+ 		      "the room's night desc");
++  PyRoom_addGetSetter("night_desc", PyRoom_getndesc, PyRoom_setndesc,
++		      "the room's night desc");
++
++  // add our mud methods
++  PyMud_addMethod("get_hour",     PyMud_GetHour,     METH_NOARGS, NULL);
++  PyMud_addMethod("is_morning",   PyMud_IsMorning,   METH_NOARGS, NULL);
++  PyMud_addMethod("is_afternoon", PyMud_IsAfternoon, METH_NOARGS, NULL);
++  PyMud_addMethod("is_evening",   PyMud_IsEvening,   METH_NOARGS, NULL);
++  PyMud_addMethod("is_night",     PyMud_IsNight,     METH_NOARGS, NULL);
+   
+   // add our set fields
+ #ifdef MODULE_SET_VAL
+-  add_set("ndesc", SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
++  add_set("ndesc",      SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
++  add_set("night_desc", SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
+ #endif
+ 
+   // add the time command
+diff -ruN ../nakedmudv3.0/src/utils.c src/utils.c
+--- ../nakedmudv3.0/src/utils.c	Fri Oct  7 14:15:55 2005
++++ src/utils.c	Sun Dec  4 20:03:08 2005
+@@ -251,9 +251,7 @@
+       }
+       break;
+     }
+-  }
+-
+-  deleteListIterator(mob_i);
++  } deleteListIterator(mob_i);
+   return dMob;
+ }
+ 
+@@ -524,10 +522,14 @@
+ 
+ 
+ //
+-// Calculates how many characters until we hit the next space
+-//
++// Calculates how many characters until we hit the next whitespace. Newlines,
++// tabs, and spaces are treated as whitespace.
+ int next_space_in(const char *string) {
+-  return next_letter_in(string, ' ');
++  int i = 0;
++  for(i = 0; string[i] != '\0'; i++)
++    if(isspace(string[i]))
++      return i;
++  return -1; // none found
+ }
+ 
+ 
+@@ -681,30 +683,45 @@
+ //
+ // Return 0 if the head of the string does not match any of our
+ // keywords. Returns the length of the keyword if it does match
+-//
+ int find_keyword(const char *keywords, const char *string) {
+-  int i, len = 0, num_keywords = 0;
+-  char **words = parse_keywords(keywords, &num_keywords);
++  LIST           *words = parse_keywords(keywords);
++  LIST_ITERATOR *word_i = newListIterator(words);
++  char            *word = NULL;
++  int               len = 0;
+ 
+   // try to find the longest keyword
+-  for(i = 0; i < num_keywords; i++) {
+-    int word_len = strlen(words[i]);
+-    if(!strncasecmp(words[i], string, word_len) && word_len > len)
++  ITERATE_LIST(word, word_i) {
++    int word_len = strlen(word);
++    if(!strncasecmp(word, string, word_len) && word_len > len)
+       len = word_len;
+-    free(words[i]);
+-  }
+-  if(words) free(words);
++  } deleteListIterator(word_i);
++  deleteListWith(words, free);
+ 
+   return len;
+ }
+ 
++//
++// returns whether or not a keyword exists twice in the list
++bool dup_keywords_exist(const char *keywords) {
++  LIST           *keys = parse_keywords(keywords);
++  char            *key = NULL;
++  bool       dup_found = FALSE;
++
++  while( !dup_found && (key = listPop(keys)) != NULL) {
++    if(listGetWith(keys, key, strcasecmp) != NULL)
++      dup_found = TRUE;
++    free(key);
++  } deleteListWith(keys, free);
++
++  return dup_found;
++}
+ 
+ //
+ // Return a list of all the strings in this list. String are separated by the
+-// delimeter.
+-char **parse_strings(const char *string, char delimeter, int *num_strings) {
+-  // we assume none to start off with
+-  *num_strings = 0;
++// delimeter. The list and contents must be deleted after use.
++LIST *parse_strings(const char *string, char delimeter) {
++  // make our list that we will be returning
++  LIST *list = newList();
+ 
+   // first, we check if the string have any non-spaces
+   int i;
+@@ -718,34 +735,29 @@
+ 
+   // we didn't find any non-spaces. Return NULL
+   if(!nonspace_found)
+-    return NULL;
++    return list;
+ 
+-  *num_strings = count_letters(string, delimeter, strlen(string)) + 1;
+-  if(*num_strings == 0)
+-    return NULL;
+-
+-  char **string_names = malloc(sizeof(char *) * *num_strings);
+-
+-  int string_count = 0;
+-  while(string_count < *num_strings - 1) {
++  // find all of our keywords
++  while(*string != '\0') {
+     i = 0;
+     // find the endpoint
+-    while(string[i] != delimeter)
++    while(string[i] != delimeter && string[i] != '\0')
+       i++;
+ 
+     char buf[i+1];
+     strncpy(buf, string, i); buf[i] = '\0';
+     trim(buf); // skip all whitespaces
+-    string_names[string_count] = strdup(buf);
+-    // skip everything we just copied
+-    string = &string[i+1];
+-    string_count++;
+-  }
+-  // get the last one, and trim it
+-  string_names[*num_strings - 1] = strdup(string);
+-  trim(string_names[*num_strings - 1]);
+ 
+-  return string_names;
++    // make sure something still exists. If it does, queue it
++    if(*buf != '\0')
++      listQueue(list, strdup(buf));
++
++    // skip everything we just copied, plus our delimeter
++    string = &string[i+(string[i] != '\0' ? 1 : 0)];
++  }
++
++  // return whatever we found
++  return list;
+ }
+ 
+ 
+@@ -753,54 +765,61 @@
+ // return a list of all the unique keywords found in the keywords string
+ // keywords can be more than one word long (e.g. blue flame) and each
+ // keyword must be separated by a comma
+-//
+-char **parse_keywords(const char *keywords, int *num_keywords) {
+-  return parse_strings(keywords, ',', num_keywords);
++LIST *parse_keywords(const char *keywords) {
++  return parse_strings(keywords, ',');
+ }
+ 
+ 
+ //
+ // If the keyword does not already exist, add it to the keyword list
+ // keywords may be freed and re-built in the process, to make room
+-//
+ void add_keyword(char **keywords_ptr, const char *word) {
+   // if it's already a keyword, do nothing
+   if(!is_keyword(*keywords_ptr, word, FALSE)) {
+-    char buf[MAX_BUFFER];
+-    // copy everything over
+-    strcpy(buf, *keywords_ptr);
+-    // print the new word
+-    strcat(buf, ", ");
+-    strcat(buf, word);
+-    // free the old string
++    BUFFER *buf = newBuffer(MAX_BUFFER);
++    // make our new keyword list
++    bprintf(buf, "%s%s%s", *keywords_ptr, (**keywords_ptr ? ", " : ""), word);
++    // free the old string, copy the new one
+     free(*keywords_ptr);
+-    // copy the new one
+-    *keywords_ptr = strdup(buf);
++    *keywords_ptr = strdup(bufferString(buf));
++    // clean up our garbage
++    deleteBuffer(buf);
+   }
+ }
+ 
+ 
+ //
+-// go through the keywords and if word is found, remove it
+-//
++// go through the keywords and if the word is found, remove it
+ void remove_keyword(char *keywords, const char *word) {
+-  int i, key_i = 0, num_keywords = 0;
+-  char **words = parse_keywords(keywords, &num_keywords);
++  LIST *words = parse_keywords(keywords);
++  char  *copy = NULL;
++  int   count = 0;
++
++  // remove all copies of it
++  while( (copy = listRemoveWith(words, word, strcasecmp)) != NULL) {
++    free(copy);
++    count++;
++  }
++
++  // did we find a copy of the bad keyword?
++  if(count > 0) {
++    LIST_ITERATOR *word_i = newListIterator(words);
++    int             key_i = 0;
++    count = 0;
+ 
+-  // clear the current list... we will rebuild it
+-  *keywords = '\0';
++    // clear the current keywords... we'll rebuild them
++    *keywords = '\0';
+ 
+-  // go through and add them all back into keywords. If we
+-  // ever encounter word, then leave it out
+-  for(i = 0; i < num_keywords; i++) {
+-    if(strcasecmp(words[i], word) != 0) {
+-      key_i += sprintf(keywords+key_i, "%s", words[i]);
+-      if(i < num_keywords-1 && strcasecmp(words[i+1], word) != 0)
++    ITERATE_LIST(copy, word_i) {
++      count++;
++      key_i += sprintf(keywords+key_i, "%s", copy);
++      if(count < listSize(words) - 1)
+ 	key_i += sprintf(keywords+key_i, ", ");
+-    }
+-    free(words[i]);
++    } deleteListIterator(word_i);
+   }
+-  free(words);
++
++  // clean up our garbage
++  deleteListWith(words, free);
+ }
+ 
+ 
+diff -ruN ../nakedmudv3.0/src/utils.h src/utils.h
+--- ../nakedmudv3.0/src/utils.h	Fri Oct  7 14:15:55 2005
++++ src/utils.h	Sun Dec  4 20:03:08 2005
+@@ -103,8 +103,9 @@
+ #define AN(string)         (strchr("AEIOU", toupper(*string)) ? "an" : "a")
+ #define strdupsafe(string) strdup(string ? string : "")
+ 
+-char **parse_strings      (const char *string, char delimeter,int *num_strings);
+-char **parse_keywords     (const char *keywords, int *num_keywords);
++LIST *parse_strings       (const char *string, char delimeter);
++LIST *parse_keywords      (const char *keywords);
++bool dup_keywords_exist   (const char *keywords);
+ bool is_keyword           (const char *keywords, const char *word, 
+ 			   bool abbrev_ok);
+ int  find_keyword         (const char *keywords, const char *string);
+diff -ruN ../nakedmudv3.0/src/zone.c src/zone.c
+--- ../nakedmudv3.0/src/zone.c	Fri Oct  7 14:15:55 2005
++++ src/zone.c	Sun Dec  4 20:03:08 2005
+@@ -124,7 +124,7 @@
+   zone->pulse--;
+   if(zone->pulse == 0) {
+     zone->pulse = zone->pulse_timer;
+-    hookRun("reset", zone, NULL, NULL);
++    hookRun("reset", zone);
+   }
+ }
+ 

@@ -136,7 +136,9 @@ PyObject *PyRoom_getexnames(PyRoom *self, void *closure) {
   LIST_ITERATOR *ex_i = newListIterator(ex_list);
   char           *dir = NULL;
   ITERATE_LIST(dir, ex_i) {
-    PyList_Append(list, Py_BuildValue("s", dir));
+    PyObject    *cont = Py_BuildValue("s", dir);
+    PyList_Append(list, cont);
+    Py_DECREF(cont);
   } deleteListIterator(ex_i);
   deleteListWith(ex_list, free);
   return list;
@@ -153,9 +155,11 @@ PyObject *PyRoom_getchars(PyRoom *self, PyObject *args) {
 
     // for each char in the room list, add him to a Python list
     ITERATE_LIST(ch, char_i)
-      PyList_Append(list, newPyChar(ch));
+      PyList_Append(list, charGetPyFormBorrowed(ch));
     deleteListIterator(char_i);
-    return Py_BuildValue("O", list);
+    PyObject *retval = Py_BuildValue("O", list);
+    Py_DECREF(list);
+    return retval;
   }
 }
 
@@ -170,10 +174,18 @@ PyObject *PyRoom_getobjs(PyRoom *self, PyObject *args) {
 
     // for each obj in the room list, add him to a Python list
     ITERATE_LIST(obj, obj_i)
-      PyList_Append(list, newPyObj(obj));
+      PyList_Append(list, objGetPyFormBorrowed(obj));
     deleteListIterator(obj_i);
-    return Py_BuildValue("O", list);
+    PyObject *retval = Py_BuildValue("O", list);
+    Py_DECREF(list);
+    return retval;
   }
+}
+
+PyObject *PyRoom_getbits(PyRoom *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room!=NULL) return Py_BuildValue("s", bitvectorGetBits(roomGetBits(room)));
+  else           return NULL;
 }
 
 
@@ -245,6 +257,24 @@ int PyRoom_setterrain(PyRoom *self, PyObject *value, void *closure) {
   ROOM_DATA *room;
   PYROOM_CHECK_ROOM_EXISTS(self->uid, room);
   roomSetTerrain(room, terrainGetNum(PyString_AsString(value)));
+  return 0;
+}
+
+int PyRoom_setbits(PyRoom *self, PyObject *value, void *closure) {
+  if(value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete room's bits");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "Room bits must be strings");
+    return -1;
+  }
+
+  ROOM_DATA *room;
+  PYROOM_CHECK_ROOM_EXISTS(self->uid, room);
+  bitClear(roomGetBits(room));
+  bitSet(roomGetBits(room), PyString_AsString(value));
   return 0;
 }
 
@@ -326,8 +356,12 @@ PyObject *PyRoom_get_exit(PyRoom *self, PyObject *value) {
     cdir = dirGetName(dirGetAbbrevNum(dir));
 
   EXIT_DATA *exit = roomGetExit(room, cdir);
-  if(exit != NULL)
-    return Py_BuildValue("O", newPyExit(exit));
+  if(exit != NULL) {
+    PyObject   *pyex = newPyExit(exit);
+    PyObject *retval = Py_BuildValue("O", pyex);
+    Py_DECREF(pyex);
+    return retval;
+  }
   else
     return Py_None;
 }
@@ -435,7 +469,10 @@ PyObject *PyRoom_dig(PyRoom *self, PyObject *value) {
 			"player", TRUE, TRUE));
   }
 
-  return Py_BuildValue("O", newPyExit(exit));
+  PyObject   *pyex = newPyExit(exit);
+  PyObject *retval = Py_BuildValue("O", pyex);
+  Py_DECREF(pyex);
+  return retval;
 }
 
 
@@ -656,7 +693,7 @@ init_PyRoom(void) {
 			"the room's name");
     PyRoom_addGetSetter("desc",    PyRoom_getdesc,     PyRoom_setdesc, 
 			"the room's desc");
-    PyRoom_addGetSetter("class",   PyRoom_getclass,    NULL, 
+    PyRoom_addGetSetter("proto",   PyRoom_getclass,    NULL, 
 			"The room's class");
     PyRoom_addGetSetter("chars",   PyRoom_getchars,    NULL, 
 			"chars in the room");
@@ -670,6 +707,8 @@ init_PyRoom(void) {
 			"the room's uid");
     PyRoom_addGetSetter("terrain", PyRoom_getterrain,  PyRoom_setterrain,
 			"the room's terrain type");
+    PyRoom_addGetSetter("bits",    PyRoom_getbits,     PyRoom_setbits,
+			"the room's bits");
 
     // add all of the basic methods
     PyRoom_addMethod("attach", PyRoom_attach, METH_VARARGS,

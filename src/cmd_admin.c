@@ -82,9 +82,8 @@ COMMAND(cmd_pulserate) {
     send_to_char(ch,"The mud currently has %d pulses per second.\r\n", 
 		 PULSES_PER_SECOND);
   else {
-    int pulserate = 0;
-    if(!parse_args(ch, FALSE, cmd, arg, "int",  &pulserate) ||
-       (1000 % pulserate != 0))
+    int pulserate = atoi(arg);
+    if(pulserate == 0 || 1000 % pulserate != 0)
       send_to_char(ch, "The number of pulses per second must divide 1000.\r\n");
     else {
       mudsettingSetInt("pulses_per_second", pulserate);

@@ -25,4 +25,12 @@ void init_pyplugs();
 // lists can each be NULL if there are no getsetters or methods, respectively
 void makePyType(PyTypeObject *type, LIST *getsetters, LIST *methods);
 
+//
+// makes an array of get/setters
+PyGetSetDef *makePyGetSetters(LIST *getsetters);
+
+//
+// makes an array of python methods
+PyMethodDef *makePyMethods(LIST *methods);
+
 #endif // PYPLUGS_H

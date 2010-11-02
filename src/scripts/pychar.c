@@ -37,6 +37,7 @@
 //*****************************************************************************
 #include "../char_vars/char_vars.h"
 #include "../items/items.h"
+#include "../items/worn.h"
 
 
 
@@ -163,7 +164,7 @@ PyObject *PyChar_getposition(PyChar *self, void *closure) {
 
 PyObject *PyChar_getroom(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
-  if(ch != NULL) return Py_BuildValue("O", newPyRoom(charGetRoom(ch)));
+  if(ch != NULL) return Py_BuildValue("O", roomGetPyFormBorrowed(charGetRoom(ch)));
   else           return NULL;
 }
 
@@ -172,7 +173,7 @@ PyObject *PyChar_getlastroom(PyChar *self, void *closure) {
   if(ch == NULL)
     return NULL;
   else if(charGetLastRoom(ch) != NULL)
-    return Py_BuildValue("O", newPyRoom(charGetLastRoom(ch)));
+    return Py_BuildValue("O", roomGetPyFormBorrowed(charGetLastRoom(ch)));
   else {
     Py_INCREF(Py_None);
     return Py_None;
@@ -216,7 +217,7 @@ PyObject *PyChar_geton(PyChar *self, void *closure) {
   else if(charGetFurniture(ch) == NULL)
     return Py_None;
   else 
-    return Py_BuildValue("i", newPyObj(charGetFurniture(ch)));
+    return Py_BuildValue("O", objGetPyFormBorrowed(charGetFurniture(ch)));
 }
 
 PyObject *PyChar_getuid(PyChar *self, void *closure) {
@@ -241,9 +242,28 @@ PyObject *PyChar_getinv(PyChar *self, PyObject *args) {
   
   // for each obj in the inventory, add it to the Python list
   ITERATE_LIST(obj, inv_i)
-    PyList_Append(list, newPyObj(obj));
+    PyList_Append(list, objGetPyFormBorrowed(obj));
   deleteListIterator(inv_i);
-  return Py_BuildValue("O", list);
+  PyObject *retval = Py_BuildValue("O", list);
+  Py_DECREF(list);
+  return retval;
+}
+
+PyObject *PyChar_geteq(PyChar *self, PyObject *args) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch == NULL)
+    return NULL;
+
+  PyObject      *list = PyList_New(0);
+  LIST      *equipped = bodyGetAllEq(charGetBody(ch));
+  LIST_ITERATOR *eq_i = newListIterator(equipped);
+  OBJ_DATA        *eq = NULL;
+  ITERATE_LIST(eq, eq_i) {
+    PyList_Append(list, objGetPyFormBorrowed(eq));
+  } deleteListIterator(eq_i);
+  PyObject *retval = Py_BuildValue("O", list);
+  Py_DECREF(list);
+  return retval;
 }
 
 
@@ -384,6 +404,7 @@ int PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
   CHAR_DATA *ch;
   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
   charSetRace(ch, race);
+  charResetBody(ch);
   return 0;
 }
 
@@ -606,7 +627,10 @@ PyObject *PyChar_act(PyChar *self, PyObject *value) {
 
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch) {
-    do_cmd(ch, act, FALSE);
+    // do not send the actual act - if we edit it, things go awry
+    char *working_act = strdupsafe(act);
+    do_cmd(ch, working_act, FALSE);
+    free(working_act);
     return Py_BuildValue("i", 1);
   }
   else {
@@ -825,7 +849,7 @@ PyObject *PyChar_equip(PyChar *self, PyObject *args) {
   }
 
   // try equipping the object. If we fail, put it back wherever it came from
-  if(!objIsType(obj, "worn") || !try_equip(ch, obj, pos)) {
+  if(!objIsType(obj, "worn") || !try_equip(ch, obj, pos,wornGetPositions(obj))){
     if(old_room != NULL)
       obj_to_room(obj, old_room);
     else if(old_cont != NULL)
@@ -833,7 +857,7 @@ PyObject *PyChar_equip(PyChar *self, PyObject *args) {
     else if(old_carrier != NULL)
       obj_to_char(obj, old_carrier);
     else if(old_wearer != NULL)
-      try_equip(ch, obj, old_pos);
+      try_equip(ch, obj, old_pos, NULL);
     PyErr_Format(PyExc_StandardError,
 		 "Character is already equipped in all possible positions!");
     return NULL;
@@ -1049,7 +1073,9 @@ PyObject *PyChar_get_auxiliary(PyChar *self, PyObject *args) {
     printf("Data is NULL for %s!!\r\n", keyword);
     data = Py_None;
   }
-  return Py_BuildValue("O", data);
+  PyObject *retval = Py_BuildValue("O", data);
+  Py_DECREF(data);
+  return retval;
 }
 
 
@@ -1208,10 +1234,84 @@ PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
   }
 
   // create a python object for the new char, and return it
-  PyChar *py_mob = (PyChar *)newPyChar(mob);
-  return Py_BuildValue("O", py_mob);
+  return Py_BuildValue("O", charGetPyFormBorrowed(mob));
 }
 
+PyObject *PyChar_find_char_key(PyObject *self, PyObject *args) {
+  CHAR_DATA     *ch = NULL;
+  PyObject    *pych = NULL;
+  LIST       *where = mobile_list;
+  PyObject *pywhere = NULL;
+  char         *key = NULL;
+  bool     must_see = TRUE;
+  bool     multiple = FALSE;
+  ROOM_DATA   *room = NULL;
+
+  // figure out our arguments
+  if(!PyArg_ParseTuple(args, "Os|Obb",&pych,&key,&pywhere,&must_see,&multiple)){
+    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to find_char");
+    return NULL;
+  }
+
+  // make sure ch exists, if we supplied one
+  if(pych == Py_None)
+    ch = NULL;
+  else if(PyChar_Check(pych)) {
+    ch = PyChar_AsChar(pych);
+    if(ch == NULL) {
+      PyErr_Format(PyExc_StandardError, "character does not exist");
+      return NULL;
+    }
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, "first arg must be a Char, or None");
+    return NULL;
+  }
+
+  // figoure out our room if we supply one
+  if(pywhere != NULL) {
+    if(PyRoom_Check(pywhere))
+      room = PyRoom_AsRoom(pywhere);
+    else if(PyString_Check(pywhere))
+      room = worldGetRoom(gameworld, 
+			  get_fullkey_relative(PyString_AsString(pywhere),
+					       get_script_locale()));
+    else if(pywhere == Py_None)
+      room = NULL;
+    else {
+      PyErr_Format(PyExc_TypeError, "search scope must be a room or room key");
+      return NULL;
+    }
+  }
+
+  // if we've got a room, look in it
+  if(room != NULL)
+    where = roomGetCharacters(room);
+
+  // do the searching for a single thing
+  if(multiple == FALSE) {
+    CHAR_DATA *found = find_char(ch, where, 1, NULL, 
+				 get_fullkey_relative(key, get_script_locale()),
+				 must_see);
+    return Py_BuildValue("O", (found ? charGetPyFormBorrowed(found) : Py_None));
+  }
+  // search for multiple occurences
+  else {
+    LIST *found = find_all_chars(ch, where, NULL,
+				 get_fullkey_relative(key, get_script_locale()),
+				 must_see);
+    PyObject         *list = PyList_New(0);
+    LIST_ITERATOR *found_i = newListIterator(found);
+    CHAR_DATA   *one_found = NULL;
+    ITERATE_LIST(one_found, found_i) {
+      PyList_Append(list, charGetPyForm(one_found));
+    } deleteListIterator(found_i);
+    deleteList(found);
+    PyObject *retval = Py_BuildValue("O", list);
+    Py_DECREF(list);
+    return retval;
+  }
+}
 
 PyObject *PyChar_count_mobs(PyObject *self, PyObject *args) {
   LIST            *list = NULL;
@@ -1261,9 +1361,11 @@ PyObject *PyChar_all_chars(PyObject *self) {
   LIST_ITERATOR *ch_i = newListIterator(mobile_list);
   CHAR_DATA       *ch = NULL;
   ITERATE_LIST(ch, ch_i)
-    PyList_Append(list, newPyChar(ch));
+    PyList_Append(list, charGetPyForm(ch));
   deleteListIterator(ch_i);
-  return Py_BuildValue("O", list);
+  PyObject *retval = Py_BuildValue("O", list);
+  Py_DECREF(list);
+  return retval;
 }
 
 PyObject *PyChar_all_sockets(PyObject *self) {
@@ -1273,9 +1375,11 @@ PyObject *PyChar_all_sockets(PyObject *self) {
   ITERATE_LIST(sock, sock_i) {
     // only add sockets with attached characters who are in game
     if(socketGetChar(sock) && charGetRoom(socketGetChar(sock)))
-      PyList_Append(list, newPyChar(socketGetChar(sock)));
+      PyList_Append(list, charGetPyForm(socketGetChar(sock)));
   } deleteListIterator(sock_i);
-  return Py_BuildValue("O", list);
+  PyObject *retval = Py_BuildValue("O", list);
+  Py_DECREF(list);
+  return retval;
 }
 
 PyMethodDef char_module_methods[] = {
@@ -1288,6 +1392,9 @@ PyMethodDef char_module_methods[] = {
   { "count_mobs", PyChar_count_mobs, METH_VARARGS,
     "count how many occurances of a mobile there are in the specified scope. "
     "prototype or name can be used." },
+  { "find_char_key", PyChar_find_char_key, METH_VARARGS,
+    "finds a character (or group of chars) by their prototype. Finding by "
+    "keywords is done with generic_find()" },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -1333,6 +1440,8 @@ PyMODINIT_FUNC init_PyChar(void) {
 		      "returns a list of objects in the char's inventory");
   PyChar_addGetSetter("objs", PyChar_getinv, NULL,
 		      "returns a list of objects in the char's inventory");
+  PyChar_addGetSetter("eq",   PyChar_geteq,  NULL,
+		      "returns a list of the character's equipment");
   PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
 		      "handle the character's name");
   PyChar_addGetSetter("mname", PyChar_getmname, PyChar_setmname,
@@ -1399,6 +1508,8 @@ PyMODINIT_FUNC init_PyChar(void) {
   PyChar_addMethod("hasvar", PyChar_hasvar, METH_VARARGS,
 		   "return whether or not the character has a given variable.");
   PyChar_addMethod("deletevar", PyChar_deletevar, METH_VARARGS,
+		   "delete a variable from the character's variable table.");
+  PyChar_addMethod("delvar", PyChar_deletevar, METH_VARARGS,
 		   "delete a variable from the character's variable table.");
   PyChar_addMethod("equip", PyChar_equip, METH_VARARGS,
 		   "equips a character with the given item. Removes the item "

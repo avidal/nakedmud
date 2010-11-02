@@ -161,20 +161,22 @@ void save_help() {
 // add a helpfile to the help table. Assocciate all of its keywords with it
 //
 void add_help(HELP_DATA *help) {
-  int num_keywords = 0;
-  char  **keywords = parse_keywords(help->keywords, &num_keywords);
-  int i;
-  for(i = 0; i < num_keywords; i++) {
-    LIST *row = help_table[helpbucket(keywords[i])];
-    HELP_ENTRY *new_entry = newHelpEntry(keywords[i], help);
+  LIST       *keywords = parse_keywords(help->keywords);
+  LIST_ITERATOR *key_i = newListIterator(keywords);
+  char            *key = NULL;
+
+  ITERATE_LIST(key, key_i) {
+    LIST *row = help_table[helpbucket(key)];
+    HELP_ENTRY *new_entry = newHelpEntry(key, help);
     HELP_ENTRY *old_entry = NULL;
     // make sure we're not already in the help table
     if((old_entry = listRemoveWith(row, new_entry, hentrycmp)) != NULL)
       deleteHelpEntry(old_entry);
     listPutWith(row, new_entry, hentrycmp);
-    free(keywords[i]);
-  }
-  free(keywords);
+  } deleteListIterator(key_i);
+
+  // garbage collection
+  deleteListWith(keywords, free);
 }
 
 

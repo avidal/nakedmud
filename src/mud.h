@@ -118,7 +118,7 @@ typedef unsigned char                     bool;
 #define EXE_FILE           "../src/NakedMud"      /* the name of the mud binary         */
 #define DEFAULT_PORT       4000                   /* the default port we run on */
 #define SCREEN_WIDTH       80                     // the width of a term screen
-#define PARA_INDENT        3                      // num of spaces to start para
+#define PARA_INDENT        0                      // num of spaces to start para
 
 /* Thread States */
 #define TSTATE_LOOKUP          0  /* Socket is in host_lookup        */

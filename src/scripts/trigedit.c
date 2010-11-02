@@ -91,18 +91,20 @@ struct trigger_type_usable_list {
 
 // a table of allowable trigger types
 struct trigger_type_usable_list trigger_types[] = {
-  { "speech",  "mob, room" },
-  { "greet",   "mob"       },
-  { "enter",   "mob, room" },
-  { "exit",    "mob, room" },
-  { "move",    "mob"       },
-  { "drop",    "obj, room" },
-  { "get",     "obj, room" },
-  { "give",    "obj, mob"  },
-  { "receive", "mob"       },
-  { "wear",    "mob"       },
-  { "remove",  "obj, mob"  },
-  { "reset",   "room"      },
+  { "speech",         "mob, room" },
+  { "greet",          "mob"       },
+  { "enter",          "mob, room" },
+  { "exit",           "mob, room" },
+  { "move",           "mob"       },
+  { "drop",           "obj, room" },
+  { "get",            "obj, room" },
+  { "give",           "obj, mob"  },
+  { "receive",        "mob"       },
+  { "wear",           "mob"       },
+  { "remove",         "obj, mob"  },
+  { "reset",          "room"      },
+  { "combat",         "mob"       },
+  { "open",           "obj, room" },
   { "", "" },
 };
 
@@ -185,6 +187,7 @@ bool tedit_parser(SOCKET_DATA *sock, TRIGGER_DATA *trigger, int choice,
 }
 
 void save_trigger(TRIGGER_DATA *trigger) {
+  format_script_buffer(triggerGetCodeBuffer(trigger));
   worldSaveType(gameworld, "trigger", triggerGetKey(trigger));
 }
 

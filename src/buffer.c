@@ -25,6 +25,7 @@ struct buffer_data {
 
 BUFFER    *newBuffer   (int start_capacity) {
   BUFFER *buf = malloc(sizeof(BUFFER));
+  if(start_capacity <= 0) start_capacity = 1;
   buf->data   = malloc(sizeof(char) * start_capacity);
   *buf->data  = '\0';
   buf->maxlen = start_capacity;
@@ -206,7 +207,6 @@ int bufferReplaceLine(BUFFER *buf, const char *newline, int line) {
     return 0;
 }
 
-
 void bufferFormat(BUFFER *buf, int max_width, int indent) {
   char formatted[(buf->len * 3)/2];
   bool needs_capital = TRUE, needs_indent = FALSE;
@@ -225,13 +225,12 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
       buf_i++;
   }
 
-
   for(; buf->data[buf_i] != '\0'; buf_i++) {
     // we have to put a newline in because the word won't fit on the line
     next_space = next_space_in(buf->data + buf_i);
     if(next_space == -1)
       next_space = buf->len - buf_i;
-    if(col + next_space > max_width-2) {
+    if(col + next_space > max_width-1) {
       formatted[fmt_i] = '\r'; fmt_i++;
       formatted[fmt_i] = '\n'; fmt_i++;
       col = 0;
@@ -239,8 +238,8 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
 
     char ch = buf->data[buf_i];
 
-    // no spaces on newlines
-    if(isspace(ch) && col == 0)
+    // no spaces on newlines or ends of lines
+    if(isspace(ch) && (col == 0 || col == max_width-1))
       continue;
     // we will do our own sentance formatting
     else if(needs_capital && isspace(ch))
@@ -259,7 +258,7 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
     }
     // if someone is putting more than 1 sentence delimiter, we
     // need to catch it so we will still capitalize the next word
-    else if(strchr("?!.", ch)) {
+    else if(strchr("?!.", ch) && isspace(buf->data[buf_i + 1])) {
       needs_capital = TRUE;
       needs_indent  = TRUE;
       formatted[fmt_i] = ch;
@@ -273,7 +272,7 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
       next_space = next_space_in(buf->data + buf_i);
       if(next_space == -1)
 	next_space = buf->len - buf_i;
-      if(col + 2 + next_space > max_width-2) {
+      if(col + 2 + next_space > max_width-1) {
 	formatted[fmt_i] = '\r'; fmt_i++;
 	formatted[fmt_i] = '\n'; fmt_i++;
 	col = 0;
@@ -292,7 +291,11 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
     }
     else {
       formatted[fmt_i] = ch;
-      col++;
+     
+      // if we're adding a { or our last character was an {, don't increase
+      // our columns, because these are colour codes
+      if(ch != '{' && (fmt_i == 0 || formatted[fmt_i-1] != '{'))
+	col++;
     }
 
     fmt_i++;
@@ -305,6 +308,12 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
   }
 
   formatted[fmt_i] = '\0';
+
+  // if all we have are spaces and newlines, erase it all
+  if(fmt_i == 2 + indent) {
+    formatted[0] = '\0';
+    fmt_i = 0;
+  }
 
   // make sure we have enough room to copy everything over
   if(fmt_i >= buf->maxlen)

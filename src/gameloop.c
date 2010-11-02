@@ -23,6 +23,7 @@
 #include "auxiliary.h"
 #include "storage.h"
 #include "races.h"
+#include "inform.h"
 #include "hooks.h"
 
 
@@ -172,6 +173,9 @@ int main(int argc, char **argv)
   log_string("Initializing races and default bodies.");
   init_races();
 
+  log_string("Initializing inform system.");
+  init_inform();
+
   log_string("Initializing room resets.");
   init_room_reset();
 
@@ -299,7 +303,7 @@ int main(int argc, char **argv)
   game_loop(control);
 
   // run our finalize hooks
-  hookRun("shutdown", NULL, NULL, NULL);
+  hookRun("shutdown");
 
   // close down the socket
   close(control);

@@ -148,6 +148,12 @@ void listSortWith(LIST *L, void *func);
 LIST *listCopyWith(LIST *L, void *func);
 
 
+//
+// Parses out the first n arguments of the list, and assigns them to the 
+// pointers supplied as arguments in the elipsis. Assumes n <= listSize(L)
+void listParse(LIST *L, int n, ...);
+
+
 
 //*****************************************************************************
 // list iterator function prototypes

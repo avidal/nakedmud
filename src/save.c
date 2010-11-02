@@ -171,9 +171,11 @@ void load_ofile(CHAR_DATA *ch) {
   // and then equipped items
   list = read_list(set, "equipment");
   while( (obj_set = storage_list_next(list)) != NULL) {
-    obj = objRead(obj_set);
-    if(!try_equip(ch, obj, read_string(obj_set, "equipped")))
-      obj_to_char(obj, ch);
+    if(storage_contains(obj_set, "object")) {
+      obj = objRead(read_set(obj_set, "object"));
+      if(!try_equip(ch, obj, read_string(obj_set, "equipped"), NULL))
+	obj_to_char(obj, ch);
+    }
   }
 
   storage_close(set);
@@ -190,8 +192,9 @@ void save_objfile(CHAR_DATA *ch) {
   LIST *eq_list = bodyGetAllEq(charGetBody(ch));
   OBJ_DATA *obj = NULL;
   while((obj = listPop(eq_list)) != NULL) {
-    STORAGE_SET *eq_set = objStore(obj);
-    store_string(set, "equipped", bodyEquippedWhere(charGetBody(ch), obj));
+    STORAGE_SET *eq_set = new_storage_set();
+    store_string(eq_set, "equipped", bodyEquippedWhere(charGetBody(ch), obj));
+    store_set   (eq_set, "object",   objStore(obj));
     storage_list_put(list, eq_set);
   }
   deleteList(eq_list);

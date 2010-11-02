@@ -100,7 +100,7 @@ EXIT_DATA *try_move(CHAR_DATA *ch, const char *dir) {
     look_at_room(ch, charGetRoom(ch));
 
     // now try all of our entrance hooks
-    hookRun("enter", ch, to, NULL);
+    hookRun("enter", ch, to);
 
     return exit;
   }

@@ -103,8 +103,9 @@ void        print_bits(bitvector_t bits, const char **names, char *buf);
 #define AN(string)         (strchr("AEIOU", toupper(*string)) ? "an" : "a")
 #define strdupsafe(string) strdup(string ? string : "")
 
-char **parse_strings      (const char *string, char delimeter,int *num_strings);
-char **parse_keywords     (const char *keywords, int *num_keywords);
+LIST *parse_strings       (const char *string, char delimeter);
+LIST *parse_keywords      (const char *keywords);
+bool dup_keywords_exist   (const char *keywords);
 bool is_keyword           (const char *keywords, const char *word, 
 			   bool abbrev_ok);
 int  find_keyword         (const char *keywords, const char *string);

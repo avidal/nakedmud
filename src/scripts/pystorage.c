@@ -76,11 +76,16 @@ PyObject *PyStorageList_sets(PyObject *self, PyObject *args) {
   PyObject             *list = PyList_New(0);
 
   // add in all of the elements
-  while( (set = storage_list_next(set_list)) != NULL)
-    PyList_Append(list, newPyStorageSet(set));
+  while( (set = storage_list_next(set_list)) != NULL) {
+    PyObject *pyset = newPyStorageSet(set);
+    PyList_Append(list, pyset);
+    Py_DECREF(pyset);
+  }
 
   // return the new list
-  return Py_BuildValue("O", list);
+  PyObject *retval = Py_BuildValue("O", list);
+  Py_DECREF(list);
+  return retval;
 }
 
 //
@@ -269,24 +274,30 @@ PyObject *PyStorageSet_readBool  (PyObject *self, PyObject *args) {
 // read a storage list from the storage set
 PyObject *PyStorageSet_readList  (PyObject *self, PyObject *args) { 
   char *key = PyStorageSet_readParseKey(args);
-  if(key != NULL) 
-    return Py_BuildValue("O", 
-			 newPyStorageList(read_list(((PyStorageSet*)self)->set, 
-						   key)));
-  else
+  if(key == NULL)
     return NULL;
+  else {
+    PyObject *pylist =
+      newPyStorageList(read_list(((PyStorageSet*)self)->set, key));
+    PyObject *retval = Py_BuildValue("O", pylist);
+    Py_DECREF(pylist);
+    return retval;
+  }
 }
 
 //
 // read a storage set from within the set
 PyObject *PyStorageSet_readSet   (PyObject *self, PyObject *args) { 
   char *key = PyStorageSet_readParseKey(args);
-  if(key != NULL) 
-    return Py_BuildValue("O", 
-			 newPyStorageSet(read_set(((PyStorageSet *)self)->set, 
-						  key)));
-  else
+  if(key == NULL)
     return NULL;
+  else {
+    PyObject *pyset = 
+      newPyStorageSet(read_set(((PyStorageSet *)self)->set, key));
+    PyObject *retval = Py_BuildValue("O", pyset);
+    Py_DECREF(pyset);
+    return retval;
+  }
 }
 
 

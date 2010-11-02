@@ -83,17 +83,17 @@ void gen_do_trig(TRIGGER_DATA *trig,
     Py_DECREF(pyarg);
   }
   if(ch) {
-    PyObject *pych = newPyChar(ch);
+    PyObject *pych = charGetPyForm(ch);
     PyDict_SetItemString(dict, "ch", pych);
     Py_DECREF(pych);
   }
   if(room) {
-    PyObject *pyroom = newPyRoom(room);
+    PyObject *pyroom = roomGetPyForm(room);
     PyDict_SetItemString(dict, "room", pyroom);
     Py_DECREF(pyroom);
   }    
   if(obj) {
-    PyObject *pyobj = newPyObj(obj);
+    PyObject *pyobj = objGetPyForm(obj);
     PyDict_SetItemString(dict, "obj", pyobj);
     Py_DECREF(pyobj);
   }
@@ -107,9 +107,9 @@ void gen_do_trig(TRIGGER_DATA *trig,
   if(me) {
     PyObject *pyme = NULL;
     switch(me_type) {
-    case VARTYPE_CHAR:  pyme = newPyChar(me); break;
-    case VARTYPE_OBJ:   pyme = newPyObj(me);  break;
-    case VARTYPE_ROOM:  pyme = newPyRoom(me); break;
+    case VARTYPE_CHAR:  pyme = charGetPyForm(me); break;
+    case VARTYPE_OBJ:   pyme = objGetPyForm(me);  break;
+    case VARTYPE_ROOM:  pyme = roomGetPyForm(me); break;
     }
     PyDict_SetItemString(dict, "me", pyme);
     Py_DECREF(pyme);
@@ -123,9 +123,9 @@ void gen_do_trig(TRIGGER_DATA *trig,
     ITERATE_LIST(opt, opt_i) {
       pyopt = NULL;
       switch(opt->type) {
-      case VARTYPE_CHAR:  pyopt = newPyChar(opt->data); break;
-      case VARTYPE_OBJ:   pyopt = newPyObj(opt->data);  break;
-      case VARTYPE_ROOM:  pyopt = newPyRoom(opt->data); break;
+      case VARTYPE_CHAR:  pyopt = charGetPyForm(opt->data); break;
+      case VARTYPE_OBJ:   pyopt = objGetPyForm(opt->data);  break;
+      case VARTYPE_ROOM:  pyopt = roomGetPyForm(opt->data); break;
       }
       PyDict_SetItemString(dict, opt->name, pyopt);
       Py_XDECREF(pyopt);
@@ -133,7 +133,7 @@ void gen_do_trig(TRIGGER_DATA *trig,
   }
 
   // run the script, then kill our dictionary
-  run_script(dict, triggerGetCode(trig), get_key_locale(triggerGetKey(trig)));
+  triggerRun(trig, dict);
   Py_DECREF(dict);
 }
 
@@ -221,6 +221,8 @@ void do_obj_trigs(OBJ_DATA *obj, const char *type, void *thing, void *arg) {
 	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
 	else if(!strcasecmp(type, "remove"))
 	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
+	else if(!strcasecmp(type, "open"))
+	  gen_do_trig(trig,obj,VARTYPE_OBJ,thing,NULL,NULL,NULL,NULL,NULL,NULL);
 	else {
 	  log_string("Unrecognized trigger type %s attached to %s, uid %d.\r\n",
 		     type, objGetClass(obj), objGetUID(obj));
@@ -264,6 +266,8 @@ void do_room_trigs(ROOM_DATA *rm, const char *type, void *thing, void *arg){
 	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,NULL,NULL,arg,NULL);
 	else if(!strcasecmp(type, "reset"))
 	  gen_do_trig(trig,rm,VARTYPE_ROOM,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+	else if(!strcasecmp(type, "open"))
+	  gen_do_trig(trig,rm,VARTYPE_ROOM,thing,NULL,NULL,arg,NULL,NULL,NULL);
 	else {
 	  log_string("Unrecognized trigger type %s attached to %s, uid %d.\r\n",
 		     type, roomGetClass(rm), roomGetUID(rm));
@@ -287,17 +291,17 @@ void do_give_trighooks(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
   do_obj_trigs (obj,  "give",    ch,  recv);
 }
 
-void do_get_trighooks(CHAR_DATA *ch, OBJ_DATA *obj, void *none) {
+void do_get_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
   do_obj_trigs (obj,             "get", ch, NULL);
   do_room_trigs(charGetRoom(ch), "get", ch, obj);
 }
 
-void do_drop_trighooks(CHAR_DATA *ch, OBJ_DATA *obj, void *none) {
+void do_drop_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
   do_obj_trigs (obj,             "drop", ch, NULL);
   do_room_trigs(charGetRoom(ch), "drop", ch,  obj);
 }
 
-void do_enter_trighooks(CHAR_DATA *ch, ROOM_DATA *room, void *none) {
+void do_enter_trighooks(CHAR_DATA *ch, ROOM_DATA *room) {
   LIST_ITERATOR *mob_i = newListIterator(roomGetCharacters(room));
   CHAR_DATA       *mob = NULL;
   ITERATE_LIST(mob, mob_i) {
@@ -322,7 +326,7 @@ void do_ask_trighooks(CHAR_DATA *ch, CHAR_DATA *listener, char *speech) {
   do_char_trigs(listener, "speech", ch, speech);
 }
 
-void do_say_trighooks(CHAR_DATA *ch, void *none, char *speech) {
+void do_say_trighooks(CHAR_DATA *ch, char *speech) {
   LIST_ITERATOR *mob_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
   CHAR_DATA       *mob = NULL;
   ITERATE_LIST(mob, mob_i) {
@@ -332,21 +336,21 @@ void do_say_trighooks(CHAR_DATA *ch, void *none, char *speech) {
   do_room_trigs(charGetRoom(ch), "speech", ch, speech);
 }
 
-void do_greet_trighooks(CHAR_DATA *ch, CHAR_DATA *greeted, void *none) {
+void do_greet_trighooks(CHAR_DATA *ch, CHAR_DATA *greeted) {
   do_char_trigs(greeted, "greet", ch, NULL);
 }
 
-void do_wear_trighooks(CHAR_DATA *ch, OBJ_DATA *obj, void *none) {
+void do_wear_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
   do_char_trigs(ch,  "wear", obj, NULL);
   do_obj_trigs (obj, "wear", ch,  NULL);
 }
 
-void do_remove_trighooks(CHAR_DATA *ch, OBJ_DATA *obj, void *none) {
+void do_remove_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
   do_char_trigs(ch,  "remove", obj, NULL);
   do_obj_trigs (obj, "remove", ch,  NULL);
 }
 
-void do_reset_trighooks(ZONE_DATA *zone, void *none1, void *none2) {
+void do_reset_trighooks(ZONE_DATA *zone) {
   LIST_ITERATOR *res_i = newListIterator(zoneGetResettable(zone));
   char           *name = NULL;
   const char   *locale = zoneGetKey(zone);
@@ -357,6 +361,14 @@ void do_reset_trighooks(ZONE_DATA *zone, void *none1, void *none2) {
   } deleteListIterator(res_i);
 }
 
+void do_open_door_trighooks(CHAR_DATA *ch, EXIT_DATA *ex) {
+  do_room_trigs(charGetRoom(ch), "open", ch, ex);
+}
+
+void do_open_obj_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+  do_obj_trigs(obj, "open", ch, NULL);
+}
+
 
 
 //*****************************************************************************
@@ -364,15 +376,17 @@ void do_reset_trighooks(ZONE_DATA *zone, void *none1, void *none2) {
 //*****************************************************************************
 void init_trighooks(void) {
   // add all of our hooks to the game
-  hookAdd("give",   do_give_trighooks);
-  hookAdd("get",    do_get_trighooks);
-  hookAdd("drop",   do_drop_trighooks);
-  hookAdd("enter",  do_enter_trighooks);
-  hookAdd("exit",   do_exit_trighooks);
-  hookAdd("ask",    do_ask_trighooks);
-  hookAdd("say",    do_say_trighooks);
-  hookAdd("greet",  do_greet_trighooks);
-  hookAdd("wear",   do_wear_trighooks);
-  hookAdd("remove", do_remove_trighooks);
-  hookAdd("reset",  do_reset_trighooks);
+  hookAdd("give",      do_give_trighooks);
+  hookAdd("get",       do_get_trighooks);
+  hookAdd("drop",      do_drop_trighooks);
+  hookAdd("enter",     do_enter_trighooks);
+  hookAdd("exit",      do_exit_trighooks);
+  hookAdd("ask",       do_ask_trighooks);
+  hookAdd("say",       do_say_trighooks);
+  hookAdd("greet",     do_greet_trighooks);
+  hookAdd("wear",      do_wear_trighooks);
+  hookAdd("remove",    do_remove_trighooks);
+  hookAdd("reset",     do_reset_trighooks);
+  hookAdd("open_door", do_open_door_trighooks);
+  hookAdd("open_obj",  do_open_obj_trighooks);
 }

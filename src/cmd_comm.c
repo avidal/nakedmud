@@ -89,7 +89,7 @@ COMMAND(cmd_say) {
     send_to_char(ch, "Say what?\n\r");
   else {
     communicate(ch, arg, COMM_LOCAL);
-    hookRun("say", ch, NULL, arg);
+    hookRun("say", ch, arg);
   }
 }
 
@@ -107,10 +107,10 @@ COMMAND(cmd_greet) {
   if(!parse_args(ch, TRUE, cmd, arg, "ch.room.noself", &tgt))
     return;
 
-  message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, "{wYou greet $N.");
-  message(ch, tgt, NULL, NULL, FALSE, TO_VICT, "{w$n greets you.");
+  message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, "You greet $N.");
+  message(ch, tgt, NULL, NULL, FALSE, TO_VICT, "$n greets you.");
   message(ch, tgt, NULL, NULL, FALSE, TO_ROOM, "$n greets $N.");
-  hookRun("greet", ch, tgt, NULL);
+  hookRun("greet", ch, tgt);
 }
 
 

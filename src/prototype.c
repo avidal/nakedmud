@@ -24,6 +24,7 @@
 // mandatory modules
 //*****************************************************************************
 #include "scripts/scripts.h"
+#include "scripts/pyplugs.h"
 #include "scripts/pychar.h"
 #include "scripts/pyroom.h"
 #include "scripts/pyobj.h"
@@ -38,6 +39,7 @@ struct prototype_data {
   char   *parents;
   bool   abstract;
   BUFFER  *script;
+  PyObject  *code;
 };
 
 
@@ -51,6 +53,7 @@ PROTO_DATA *newProto(void) {
   data->parents  = strdup("");
   data->abstract = TRUE;
   data->script   = newBuffer(1);
+  data->code     = NULL;
   return data;
 }
 
@@ -58,6 +61,7 @@ void deleteProto(PROTO_DATA *data) {
   if(data->key)     free(data->key);
   if(data->parents) free(data->parents);
   if(data->script)  deleteBuffer(data->script);
+  Py_XDECREF(data->code);
   free(data);
 }
 
@@ -66,6 +70,9 @@ void protoCopyTo(PROTO_DATA *from, PROTO_DATA *to) {
   protoSetParents(to,  protoGetParents(from));
   protoSetScript(to,   protoGetScript(from));
   protoSetAbstract(to, protoIsAbstract(from));
+  Py_XDECREF(to->code);
+  Py_XINCREF(from->code);
+  to->code = from->code;
 }
 
 PROTO_DATA *protoCopy(PROTO_DATA *data) {
@@ -103,6 +110,8 @@ void  protoSetParents(PROTO_DATA *data, const char *parents) {
 void   protoSetScript(PROTO_DATA *data, const char *script) {
   bufferClear(data->script);
   bufferCat(data->script, script);
+  Py_XDECREF(data->code);
+  data->code = NULL;
 }
 
 void protoSetAbstract(PROTO_DATA *data, bool abstract) {
@@ -131,37 +140,44 @@ BUFFER *protoGetScriptBuffer(PROTO_DATA *data) {
 
 bool protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc, 
 	      void *protoaddfunc, void *protoclassfunc, void *me) {
-  // parse all of our parents
-  int i, num_parents = 0;
-  char     **parents = parse_keywords(proto->parents, &num_parents);
-  bool    parents_ok = TRUE;
-  for(i = 0; i < num_parents && parents_ok; i++) {
+  // parse and run all of our parents
+  LIST           *parents = parse_keywords(proto->parents);
+  LIST_ITERATOR *parent_i = newListIterator(parents);
+  char        *one_parent = NULL;
+  bool         parents_ok = TRUE;
+
+  // try to run each parent
+  ITERATE_LIST(one_parent, parent_i) {
     PROTO_DATA *parent = NULL;
     // does our parent have a locale? If so, find it. If not, use ours
-    int separator_pos = next_letter_in(parents[i], '@');
+    int separator_pos = next_letter_in(one_parent, '@');
     if(separator_pos == -1)
       parent = worldGetType(gameworld, type, 
-			    get_fullkey(parents[i],get_key_locale(proto->key)));
+			    get_fullkey(one_parent,get_key_locale(proto->key)));
     else
-      parent = worldGetType(gameworld, type, parents[i]);
-    if(parent == NULL || !protoRun(parent, type, pynewfunc, protoaddfunc, 
-				   protoclassfunc, me))
+      parent = worldGetType(gameworld, type, one_parent);
+    
+    if(parent == NULL) {
+      log_string("ERROR: could not find parent %s for %s %s.", one_parent,
+		 type, protoGetKey(proto));
       parents_ok = FALSE;
-    free(parents[i]);
-  }
+    }
+    else if(!protoRun(parent, type, pynewfunc, protoaddfunc, protoclassfunc,me))
+      parents_ok = FALSE;
 
-  // finish cleaning up our parent keys
-  for(; i < num_parents; i++)
-    free(parents[i]);
-  free(parents);
+    // if we had a problem running the proto, report it
+    if(parents_ok == FALSE)
+      break;
+  } deleteListIterator(parent_i);
+
+  // do garbage collection for our parent list
+  deleteListWith(parents, free);
 
   // did we encounter a problem w/ our parents?
   if(parents_ok == FALSE)
     return FALSE;
 
   // now, do us
-  extern PyObject *newScriptDict();
-  extern void      start_script(PyObject *dict, const char *script);
   PyObject *dict = restricted_script_dict();
   PyObject *pyme = ((PyObject *(*)(void *))pynewfunc)(me);
   if(protoaddfunc)
@@ -170,8 +186,25 @@ bool protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc,
     ((void (*)(void *, const char *))protoclassfunc)(me, protoGetKey(proto));
 
   PyDict_SetItemString(dict, "me", pyme);
-  run_script(dict, bufferString(proto->script), 
-	     get_key_locale(protoGetKey(proto)));
+
+  // do we have our own code already, or do we need to compile from source?
+  if(proto->code == NULL) {
+    proto->code = run_script_forcode(dict, bufferString(proto->script),
+				     get_key_locale(protoGetKey(proto)));
+  }
+  // we already have a code object. Evaluate it.
+  else {
+    run_code(proto->code, dict, get_key_locale(protoGetKey(proto)));
+    
+    if(!last_script_ok()) {
+      char *tb = getPythonTraceback();
+      log_string("Prototype %s terminated with an error:\r\n%s\r\n"
+		 "\r\nTraceback is:\r\n%s\r\n", 
+		 proto->key, bufferString(proto->script), tb);
+      free(tb);
+    }
+  }
+
   Py_DECREF(dict);
   Py_DECREF(pyme);
   return last_script_ok();
@@ -182,7 +215,7 @@ CHAR_DATA *protoMobRun(PROTO_DATA *proto) {
     return NULL;
   CHAR_DATA *ch = newMobile();
   char_to_game(ch);
-  if(!protoRun(proto, "mproto", newPyChar, charAddPrototype, charSetClass, ch)){
+  if(!protoRun(proto, "mproto", charGetPyForm, charAddPrototype, charSetClass, ch)){
     extract_mobile(ch);
     ch = NULL;
   }

@@ -392,7 +392,8 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool aliases_ok)  {
 #endif
 
   // first try room commands then world commands
-  if(!try_use_cmd_table(ch,roomGetCmdTable(charGetRoom(ch)),command,arg,FALSE))
+  if(!charGetRoom(ch) || 
+     !try_use_cmd_table(ch,roomGetCmdTable(charGetRoom(ch)),command,arg,FALSE))
     if(!try_use_cmd_table(ch, cmd_table, command, arg, TRUE))
       text_to_char(ch, "No such command.\r\n");
 }

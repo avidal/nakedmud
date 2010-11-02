@@ -85,9 +85,11 @@ PyObject *pyAuxiliaryDataRead(const char *keyword, STORAGE_SET *set) {
     return NULL;
   else {
     // build our arguments and keywords
+    PyObject  *pystore = newPyStorageSet(set);
     PyObject     *args = Py_BuildValue("(O)", newPyStorageSet(set));
     PyObject *instance = PyInstance_New(proto, args, NULL);
     Py_DECREF(args);
+    Py_DECREF(pystore);
     return instance;
   }
 }

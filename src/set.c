@@ -15,8 +15,10 @@
 
 struct set_data {
   int    num_buckets;
-  int    size;
-  LIST **buckets;
+  int           size;
+  LIST     **buckets;
+  int  (* cmp)(const void *, const void *);
+  int (* hash)(const void *);
 };
 
 struct set_iterator {
@@ -32,12 +34,22 @@ struct set_iterator {
 //*****************************************************************************
 
 //
-// Find the bucket the set element belongs to
-int set_elem_bucket(void *elem, int num_buckets) {
-  // simple for now: just take the modulo
-  return ((int)elem < 0 ? -1 * (int)elem : (int)elem) % num_buckets;
-};
+// compre two elements for equality
+int gen_set_cmp(const void *key1, const void *key2) {
+  int val = (key2 - key1);
+  if(val < 0)      return -1;
+  else if(val > 0) return  1;
+  else             return  0;
+  return val;
+}
 
+//
+// hash an item
+int gen_set_hash(const void *key) {
+  int val = (int)key;
+  if(val < 0) return -val;
+  else        return  val;
+}
 
 //
 // expand a set to the new number of buckets
@@ -60,7 +72,7 @@ void setExpand(SET *set, int size) {
 
   // now, we put all of our entries back into the new buckets
   while((entry = listPop(entries)) != NULL) {
-    int bucket = set_elem_bucket(entry, set->num_buckets);
+    int bucket = set->hash(entry) % set->num_buckets;
     if(set->buckets[bucket] == NULL) set->buckets[bucket] = newList();
     listPut(set->buckets[bucket], entry);
   }
@@ -77,6 +89,8 @@ SET *newSet(void) {
   set->buckets     = calloc(DEFAULT_SET_SIZE, sizeof(LIST *));
   set->num_buckets = DEFAULT_SET_SIZE;
   set->size        = 0;
+  set->cmp         = gen_set_cmp;
+  set->hash        = gen_set_hash;
   return set;
 }
 
@@ -105,7 +119,7 @@ void setPut(SET *set, void *elem) {
     setExpand(set, (set->num_buckets * 150)/100);
 
   // find out what bucket we belong to
-  int hash_bucket = set_elem_bucket(elem, set->num_buckets);
+  int hash_bucket = set->hash(elem) % set->num_buckets;
 
   // add us to the bucket
   if(set->buckets[hash_bucket] == NULL)
@@ -117,20 +131,20 @@ void setPut(SET *set, void *elem) {
 
 void setRemove(SET *set, void *elem) {
   // find out what bucket we belong to
-  int hash_bucket = set_elem_bucket(elem, set->num_buckets);
+  int hash_bucket = set->hash(elem) % set->num_buckets;
 
   // see if the bucket exists
   if(set->buckets[hash_bucket] != NULL)
-    if(listRemove(set->buckets[hash_bucket], elem))
+    if(listRemoveWith(set->buckets[hash_bucket], elem, set->cmp))
       set->size--;
 }
 
-int setIn(SET *set, void *elem) {
+int setIn(SET *set, const void *elem) {
   // find out what bucket we belong to
-  int hash_bucket = set_elem_bucket(elem, set->num_buckets);
+  int hash_bucket = set->hash(elem) % set->num_buckets;
 
   if(set->buckets[hash_bucket] != NULL)
-    return listIn(set->buckets[hash_bucket], elem);
+    return (listGetWith(set->buckets[hash_bucket], elem, set->cmp) != NULL);
   else
     return 0;
 }
@@ -143,15 +157,16 @@ LIST *setCollect(SET *set) {
     if(set->buckets[i] == NULL) continue;
     LIST_ITERATOR *list_i = newListIterator(set->buckets[i]);
     void            *elem = NULL;
-    for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
+    ITERATE_LIST(elem, list_i) {
       listPut(list, elem);
-    deleteListIterator(list_i);
+    } deleteListIterator(list_i);
   }
   return list;
 }
 
 SET  *setCopy(SET *set) {
   SET *newset = newSet();
+  setChangeHashing(newset, set->cmp, set->hash);
   setExpand(newset, set->num_buckets);
   SET_ITERATOR *set_i = newSetIterator(set);
   void          *elem = NULL;
@@ -203,6 +218,11 @@ SET  *setIntersection(SET *set1, SET *set2) {
       setRemove(intersection, elem);
   } deleteSetIterator(set_i);
   return intersection;
+}
+
+void setChangeHashing(SET *set, void *cmp_func, void *hash_func) {
+  set->cmp  = cmp_func;
+  set->hash = hash_func;
 }
 
 

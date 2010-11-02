@@ -14,4 +14,12 @@
 PyMODINIT_FUNC
 init_PyMud(void);
 
+//
+// Adds a new method function (i.e. void *f) to the Mud module. Name is the name
+// of the function, f is the PyCFunction implementing the new method, flags is
+// the type of method beings used (almost always METH_VARARGS), and doc is an
+// (optional) description of what the method does. For examples on how to add
+// new methods, see pymud.c
+void PyMud_addMethod(const char *name, void *f, int flags, const char *doc);
+
 #endif //__PYMUD_H

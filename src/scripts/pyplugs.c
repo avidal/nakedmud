@@ -222,31 +222,36 @@ char* getPythonTraceback(void) {
     return chrRetval;
 }
 
+PyGetSetDef *makePyGetSetters(LIST *getsetters) {
+  PyGetSetDef *getsets = calloc(listSize(getsetters)+1,sizeof(PyGetSetDef));
+  LIST_ITERATOR  *gs_i = newListIterator(getsetters);
+  PyGetSetDef      *gs = NULL;
+  int i                = 0;
+  ITERATE_LIST(gs, gs_i) {
+    getsets[i] = *gs;
+    i++;
+  } deleteListIterator(gs_i);
+  return getsets;
+}
+
+PyMethodDef *makePyMethods(LIST *methods) {
+  PyMethodDef  *meth = calloc(listSize(methods)+1, sizeof(PyMethodDef));
+  LIST_ITERATOR *m_i = newListIterator(methods);
+  PyMethodDef     *m = NULL;
+  int i              = 0;
+  ITERATE_LIST(m, m_i) {
+    meth[i] = *m;
+    i++;
+  } deleteListIterator(m_i);
+  return meth;
+}
 
 void makePyType(PyTypeObject *type, LIST *getsetters, LIST *methods) {
   // build up the array of getsetters for this object
-  if(getsetters != NULL) {
-    PyGetSetDef *getsets = calloc(listSize(getsetters)+1,sizeof(PyGetSetDef));
-    LIST_ITERATOR  *gs_i = newListIterator(getsetters);
-    PyGetSetDef      *gs = NULL;
-    int i                = 0;
-    ITERATE_LIST(gs, gs_i) {
-      getsets[i] = *gs;
-      i++;
-    } deleteListIterator(gs_i);
-    type->tp_getset = getsets;
-  }
+  if(getsetters != NULL)
+    type->tp_getset = makePyGetSetters(getsetters);
   
   // build up the array of methods for this object
-  if(methods != NULL) {
-    PyMethodDef *meth  = calloc(listSize(methods)+1, sizeof(PyMethodDef));
-    LIST_ITERATOR *m_i = newListIterator(methods);
-    PyMethodDef     *m = NULL;
-    int i              = 0;
-    ITERATE_LIST(m, m_i) {
-      meth[i] = *m;
-      i++;
-    } deleteListIterator(m_i);
-    type->tp_methods = meth;
-  }
+  if(methods != NULL)
+    type->tp_methods = makePyMethods(methods);
 }

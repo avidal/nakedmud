@@ -112,23 +112,27 @@ BODYPART *bodypartCopy(BODYPART *P) {
 //*****************************************************************************
 
 char *list_postypes(const BODY_DATA *B, const char *posnames) {
-  int i, found, part, num_names = 0;
-  char **names  = parse_keywords(posnames, &num_names);
-  char types[MAX_BUFFER] = "\0";
+  LIST           *names = parse_keywords(posnames);
+  LIST_ITERATOR *name_i = newListIterator(names);
+  BUFFER           *buf = newBuffer(MAX_BUFFER);
+  char            *name = NULL;
+  char          *retval = NULL;
+  int             found = 0;
 
-  for(i = found = 0; i < num_names; i++) {
-    part = bodyGetPart(B, names[i]);
-    free(names[i]);
+  ITERATE_LIST(name, name_i) {
+    int part = bodyGetPart(B, name);
     if(part != BODYPOS_NONE) {
       found++;
       if(found != 1)
-	strcat(types, ", ");
-      strcat(types, bodyposGetName(part));
+	bufferCat(buf, ", ");
+      bufferCat(buf, bodyposGetName(part));
     }
-  }
-  if(names) free(names);
+  } deleteListIterator(name_i);
+  deleteListWith(names, free);
 
-  return strdup(types);
+  retval = strdup(bufferString(buf));
+  deleteBuffer(buf);
+  return retval;
 }
 
 const char *bodysizeGetName(int size) {
@@ -282,8 +286,7 @@ const char *bodyRandPart(const BODY_DATA *B, const char *pos) {
     if(pos && *pos && !is_keyword(pos, part->name, FALSE))
       continue;
     size_sum += part->size;
-  }
-  // dont' delete the iterator... we use it again below after resetting
+  } deleteListIterator(part_i);
 
   // nothing that can be hit was found
   if(size_sum <= 1) {
@@ -294,7 +297,7 @@ const char *bodyRandPart(const BODY_DATA *B, const char *pos) {
   pos_roll = rand_number(1, size_sum);
   
   // find the position the roll corresponds to
-  listIteratorReset(part_i);
+  part_i = newListIterator(B->parts);
   ITERATE_LIST(part, part_i) {
     // if we have a list of positions to draw from, only factor in those
     if(pos && *pos && !is_keyword(pos, part->name, FALSE))
@@ -304,8 +307,7 @@ const char *bodyRandPart(const BODY_DATA *B, const char *pos) {
       name = part->name;
       break;
     }
-  }
-  deleteListIterator(part_i);
+  } deleteListIterator(part_i);
   return name;
 }
 
@@ -333,8 +335,7 @@ const char **bodyGetParts(const BODY_DATA *B, bool sort, int *num_pos) {
       parts[i] = part->name;
       pos[i]   = part->type;
       i++;
-    }
-    deleteListIterator(part_i);
+    } deleteListIterator(part_i);
 
     // now sort everything in the array
     for(i = 0; i < *num_pos; i++) {
@@ -365,72 +366,88 @@ const char **bodyGetParts(const BODY_DATA *B, bool sort, int *num_pos) {
 
 
 bool bodyEquipPostypes(BODY_DATA *B, OBJ_DATA *obj, const char *types) {
-  int i, num_positions = 0;
-  char **pos_list = parse_keywords(types, &num_positions);
-  LIST     *parts = newList();
+  LIST  *pos_list = parse_keywords(types);
+  LIST     *parts = NULL;
   BODYPART  *part = NULL;
+  bool    success = TRUE;
 
   // make sure we have more than zero positions
-  if(num_positions < 1)
+  if(listSize(pos_list) == 0) {
+    deleteList(pos_list);
     return FALSE;
+  }
+
+  // create our list of parts
+  parts = newList();
 
   // get a list of all open slots in the list provided ...
   // equip them as we go along, incase we more than one of a piece.
   // if we don't do it this way, findFreeBodypart might find the same
   // piece multiple times (e.g. the same ear when it's looking for two ears)
-  for(i = 0; i < num_positions; i++) {
-    part = findFreeBodypart(B, pos_list[i]);
+  LIST_ITERATOR *pos_i = newListIterator(pos_list);
+  char            *pos = NULL;
+
+  ITERATE_LIST(pos, pos_i) {
+    part = findFreeBodypart(B, pos);
     if(part && !part->equipment) {
       part->equipment = obj;
       listPut(parts, part);
     }
-    free(pos_list[i]);
-  }
-  if(pos_list) free(pos_list);
+  } deleteListIterator(pos_i);
 
-  // make sure we supplied valid names
-  if(listSize(parts) != num_positions) {
-    // remove everything we put on
+  // make sure we supplied a valid number of empty positions
+  if(listSize(pos_list) != listSize(parts)) {
+    // remove equipment for every part we put it on
     while((part = listPop(parts)) != NULL)
       part->equipment = NULL;
-    deleteList(parts);
-    return FALSE;
+    success = FALSE;
   }
 
+  // garbage collection
+  deleteListWith(pos_list, free);
   deleteList(parts);
-  return TRUE;
+
+  return success;
 }
 
 
 bool bodyEquipPosnames(BODY_DATA *B, OBJ_DATA *obj, const char *positions) {
-  int i, num_positions = 0;
-  char **pos_list = parse_keywords(positions, &num_positions);
-  LIST  *parts = newList();
+  LIST *pos_list = parse_keywords(positions);
+  LIST    *parts = NULL;
   BODYPART *part = NULL;
+  bool   success = TRUE;
 
   // make sure we have more than zero positions
-  if(num_positions < 1)
+  if(listSize(pos_list) == 0) {
+    deleteList(pos_list);
     return FALSE;
+  }
+
+  // create our list of parts
+  parts = newList();
 
   // get a list of all open slots in the list provided
-  for(i = 0; i < num_positions; i++) {
-    part = findBodypart(B, pos_list[i]);
-    if(part && !part->equipment) listPut(parts, part);
-    free(pos_list[i]);
-  }
-  if(pos_list) free(pos_list);
+  LIST_ITERATOR *pos_i = newListIterator(pos_list);
+  char            *pos = NULL;
+  ITERATE_LIST(pos, pos_i) {
+    part = findBodypart(B, pos);
+    if(part && !part->equipment && !listIn(parts, part))
+      listPut(parts, part);
+  } deleteListIterator(pos_i);
 
-  // make sure we supplied valid names
-  if(listSize(parts) != num_positions || listSize(parts) < 1) {
-    deleteList(parts);
-    return FALSE;
-  }
+  // make sure we found the right amount of parts
+  if(listSize(parts) != listSize(pos_list) || listSize(parts) == 0)
+    success = FALSE;
 
   // fill in all of the parts that need to be filled
   while( (part = listPop(parts)) != NULL)
     part->equipment = obj;
+
+  // clean up our garbage
+  deleteListWith(pos_list, free);
   deleteList(parts);
-  return TRUE;
+
+  return success;
 }
 
 const char *bodyEquippedWhere(BODY_DATA *B, OBJ_DATA *obj) {
@@ -455,7 +472,7 @@ const char *bodyEquippedWhere(BODY_DATA *B, OBJ_DATA *obj) {
 
 OBJ_DATA *bodyGetEquipment(BODY_DATA *B, const char *pos) {
   BODYPART *part = findBodypart(B, pos);
-  return part->equipment;
+  return (part ? part->equipment : NULL);
 }
 
 bool bodyUnequip(BODY_DATA *B, const OBJ_DATA *obj) {

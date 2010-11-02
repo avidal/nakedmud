@@ -218,19 +218,28 @@ COMMAND(cmd_zreset) {
 // Functions for deleting different prototype
 //*****************************************************************************
 COMMAND(cmd_rdelete) {
-  if(do_delete(ch, "rproto", deleteProto, arg)) {
-    do_delete(ch, "reset", deleteResetList, arg);
+  char *name = NULL;
+  if(!parse_args(ch, TRUE, cmd, arg, "word", &name))
+    return;
+  if(do_delete(ch, "rproto", deleteProto, name)) {
+    do_delete(ch, "reset", deleteResetList, name);
     send_to_char(ch, "If the room has already been used, do not forget to "
 		 "also purge the current instance of it.\r\n");
   }
 }
 
 COMMAND(cmd_mdelete) {
-  do_delete(ch, "mproto", deleteProto, arg);
+  char *name = NULL;
+  if(!parse_args(ch, TRUE, cmd, arg, "word", &name))
+    return;
+  do_delete(ch, "mproto", deleteProto, name);
 }
 
 COMMAND(cmd_odelete) {
-  do_delete(ch, "oproto", deleteProto, arg);
+  char *name = NULL;
+  if(!parse_args(ch, TRUE, cmd, arg, "word", &name))
+    return;
+  do_delete(ch, "oproto", deleteProto, name);
 }
 
 
@@ -242,7 +251,7 @@ COMMAND(cmd_odelete) {
 // returns yes/no if the prototype is abstract or not
 const char *prototype_list_info(PROTO_DATA *data) {
   static char buf[SMALL_BUFFER];
-  sprintf(buf, "%-40s %13s", 
+  sprintf(buf, "%-50s %3s", 
 	  (*protoGetParents(data) ? protoGetParents(data) : "-------"),
 	  (protoIsAbstract(data)  ? "yes" : "no"));
   return buf;
@@ -269,25 +278,28 @@ COMMAND(cmd_olist) {
 }
 
 COMMAND(cmd_mrename) {
-  char from[SMALL_BUFFER];
-  arg = one_arg(arg, from);
-  do_rename(ch, "mproto", from, arg);
+  char *from = NULL, *to = NULL;
+  if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
+    return;
+  do_rename(ch, "mproto", from, to);
 }
 
 COMMAND(cmd_rrename) {
-  char from[SMALL_BUFFER];
-  arg = one_arg(arg, from);
-  if(do_rename(ch, "rproto", from, arg)) {
-    do_rename(ch, "reset", from, arg);
+  char *from = NULL, *to = NULL;
+  if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
+    return;
+  if(do_rename(ch, "rproto", from, to)) {
+    do_rename(ch, "reset", from, to);
     send_to_char(ch, "No not forget to purge any instances of %s already "
 		 "loaded.\r\n", from); 
   }
 }
 
 COMMAND(cmd_orename) {
-  char from[SMALL_BUFFER];
-  arg = one_arg(arg, from);
-  do_rename(ch, "oproto", from, arg);
+  char *from = NULL, *to = NULL;
+  if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
+    return;
+  do_rename(ch, "oproto", from, to);
 }
 
 COMMAND(cmd_zlist) {

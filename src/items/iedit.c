@@ -75,9 +75,9 @@ void iedit_show_types(SOCKET_DATA *sock, OBJ_DATA *obj) {
 
   text_to_buffer(sock, "{wEditable item types:{g\r\n");
   ITERATE_LIST(type, list_i) {
+    col++;
     send_to_socket(sock, "  %s%-14s%s", (objIsType(obj, type) ? "{y" : "{g"),
 		   type, ((col != 0 && col % 4 == 0) ? "\r\n": "   "));
-    col++;
   }
   deleteListIterator(list_i);
   deleteListWith(list, free);

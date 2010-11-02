@@ -478,18 +478,20 @@ SOCIAL_DATA *get_social(const char *cmd) {
 void add_social(SOCIAL_DATA *social) {
   // for each of our keywords, go through and 
   // unlink all of the current socials and link the new one
-  int i, num_cmds = 0;
-  char **cmd_list = parse_keywords(social->cmds, &num_cmds);
+  LIST       *cmd_list = parse_keywords(social->cmds);
+  LIST_ITERATOR *cmd_i = newListIterator(cmd_list);
+  char            *cmd = NULL;
 
-  for(i = 0; i < num_cmds; i++) {
-    unlink_social(cmd_list[i]);
-    hashPut(social_table, cmd_list[i], social);
+  ITERATE_LIST(cmd, cmd_i) {
+    unlink_social(cmd);
+    hashPut(social_table, cmd, social);
     // add the new command to the game
-    add_cmd(cmd_list[i], NULL, cmd_social, social->min_pos, social->max_pos,
+    add_cmd(cmd, NULL, cmd_social, social->min_pos, social->max_pos,
 	    "player", TRUE, FALSE);
-    free(cmd_list[i]);
-  }
-  free(cmd_list);
+  } deleteListIterator(cmd_i);
+
+  // garbage collection
+  deleteListWith(cmd_list, free);
 
   // save changes
   if(!in_social_init)

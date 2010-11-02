@@ -251,9 +251,7 @@ CHAR_DATA *check_reconnect(const char *player) {
       }
       break;
     }
-  }
-
-  deleteListIterator(mob_i);
+  } deleteListIterator(mob_i);
   return dMob;
 }
 
@@ -524,10 +522,14 @@ int next_letter_in(const char *string, char marker) {
 
 
 //
-// Calculates how many characters until we hit the next space
-//
+// Calculates how many characters until we hit the next whitespace. Newlines,
+// tabs, and spaces are treated as whitespace.
 int next_space_in(const char *string) {
-  return next_letter_in(string, ' ');
+  int i = 0;
+  for(i = 0; string[i] != '\0'; i++)
+    if(isspace(string[i]))
+      return i;
+  return -1; // none found
 }
 
 
@@ -681,30 +683,45 @@ bool is_keyword(const char *keywords, const char *word, bool abbrev_ok) {
 //
 // Return 0 if the head of the string does not match any of our
 // keywords. Returns the length of the keyword if it does match
-//
 int find_keyword(const char *keywords, const char *string) {
-  int i, len = 0, num_keywords = 0;
-  char **words = parse_keywords(keywords, &num_keywords);
+  LIST           *words = parse_keywords(keywords);
+  LIST_ITERATOR *word_i = newListIterator(words);
+  char            *word = NULL;
+  int               len = 0;
 
   // try to find the longest keyword
-  for(i = 0; i < num_keywords; i++) {
-    int word_len = strlen(words[i]);
-    if(!strncasecmp(words[i], string, word_len) && word_len > len)
+  ITERATE_LIST(word, word_i) {
+    int word_len = strlen(word);
+    if(!strncasecmp(word, string, word_len) && word_len > len)
       len = word_len;
-    free(words[i]);
-  }
-  if(words) free(words);
+  } deleteListIterator(word_i);
+  deleteListWith(words, free);
 
   return len;
 }
 
+//
+// returns whether or not a keyword exists twice in the list
+bool dup_keywords_exist(const char *keywords) {
+  LIST           *keys = parse_keywords(keywords);
+  char            *key = NULL;
+  bool       dup_found = FALSE;
+
+  while( !dup_found && (key = listPop(keys)) != NULL) {
+    if(listGetWith(keys, key, strcasecmp) != NULL)
+      dup_found = TRUE;
+    free(key);
+  } deleteListWith(keys, free);
+
+  return dup_found;
+}
 
 //
 // Return a list of all the strings in this list. String are separated by the
-// delimeter.
-char **parse_strings(const char *string, char delimeter, int *num_strings) {
-  // we assume none to start off with
-  *num_strings = 0;
+// delimeter. The list and contents must be deleted after use.
+LIST *parse_strings(const char *string, char delimeter) {
+  // make our list that we will be returning
+  LIST *list = newList();
 
   // first, we check if the string have any non-spaces
   int i;
@@ -718,34 +735,29 @@ char **parse_strings(const char *string, char delimeter, int *num_strings) {
 
   // we didn't find any non-spaces. Return NULL
   if(!nonspace_found)
-    return NULL;
+    return list;
 
-  *num_strings = count_letters(string, delimeter, strlen(string)) + 1;
-  if(*num_strings == 0)
-    return NULL;
-
-  char **string_names = malloc(sizeof(char *) * *num_strings);
-
-  int string_count = 0;
-  while(string_count < *num_strings - 1) {
+  // find all of our keywords
+  while(*string != '\0') {
     i = 0;
     // find the endpoint
-    while(string[i] != delimeter)
+    while(string[i] != delimeter && string[i] != '\0')
       i++;
 
     char buf[i+1];
     strncpy(buf, string, i); buf[i] = '\0';
     trim(buf); // skip all whitespaces
-    string_names[string_count] = strdup(buf);
-    // skip everything we just copied
-    string = &string[i+1];
-    string_count++;
-  }
-  // get the last one, and trim it
-  string_names[*num_strings - 1] = strdup(string);
-  trim(string_names[*num_strings - 1]);
 
-  return string_names;
+    // make sure something still exists. If it does, queue it
+    if(*buf != '\0')
+      listQueue(list, strdup(buf));
+
+    // skip everything we just copied, plus our delimeter
+    string = &string[i+(string[i] != '\0' ? 1 : 0)];
+  }
+
+  // return whatever we found
+  return list;
 }
 
 
@@ -753,54 +765,61 @@ char **parse_strings(const char *string, char delimeter, int *num_strings) {
 // return a list of all the unique keywords found in the keywords string
 // keywords can be more than one word long (e.g. blue flame) and each
 // keyword must be separated by a comma
-//
-char **parse_keywords(const char *keywords, int *num_keywords) {
-  return parse_strings(keywords, ',', num_keywords);
+LIST *parse_keywords(const char *keywords) {
+  return parse_strings(keywords, ',');
 }
 
 
 //
 // If the keyword does not already exist, add it to the keyword list
 // keywords may be freed and re-built in the process, to make room
-//
 void add_keyword(char **keywords_ptr, const char *word) {
   // if it's already a keyword, do nothing
   if(!is_keyword(*keywords_ptr, word, FALSE)) {
-    char buf[MAX_BUFFER];
-    // copy everything over
-    strcpy(buf, *keywords_ptr);
-    // print the new word
-    strcat(buf, ", ");
-    strcat(buf, word);
-    // free the old string
+    BUFFER *buf = newBuffer(MAX_BUFFER);
+    // make our new keyword list
+    bprintf(buf, "%s%s%s", *keywords_ptr, (**keywords_ptr ? ", " : ""), word);
+    // free the old string, copy the new one
     free(*keywords_ptr);
-    // copy the new one
-    *keywords_ptr = strdup(buf);
+    *keywords_ptr = strdup(bufferString(buf));
+    // clean up our garbage
+    deleteBuffer(buf);
   }
 }
 
 
 //
-// go through the keywords and if word is found, remove it
-//
+// go through the keywords and if the word is found, remove it
 void remove_keyword(char *keywords, const char *word) {
-  int i, key_i = 0, num_keywords = 0;
-  char **words = parse_keywords(keywords, &num_keywords);
+  LIST *words = parse_keywords(keywords);
+  char  *copy = NULL;
+  int   count = 0;
 
-  // clear the current list... we will rebuild it
-  *keywords = '\0';
-
-  // go through and add them all back into keywords. If we
-  // ever encounter word, then leave it out
-  for(i = 0; i < num_keywords; i++) {
-    if(strcasecmp(words[i], word) != 0) {
-      key_i += sprintf(keywords+key_i, "%s", words[i]);
-      if(i < num_keywords-1 && strcasecmp(words[i+1], word) != 0)
-	key_i += sprintf(keywords+key_i, ", ");
-    }
-    free(words[i]);
+  // remove all copies of it
+  while( (copy = listRemoveWith(words, word, strcasecmp)) != NULL) {
+    free(copy);
+    count++;
   }
-  free(words);
+
+  // did we find a copy of the bad keyword?
+  if(count > 0) {
+    LIST_ITERATOR *word_i = newListIterator(words);
+    int             key_i = 0;
+    count = 0;
+
+    // clear the current keywords... we'll rebuild them
+    *keywords = '\0';
+
+    ITERATE_LIST(copy, word_i) {
+      count++;
+      key_i += sprintf(keywords+key_i, "%s", copy);
+      if(count < listSize(words) - 1)
+	key_i += sprintf(keywords+key_i, ", ");
+    } deleteListIterator(word_i);
+  }
+
+  // clean up our garbage
+  deleteListWith(words, free);
 }
 
 

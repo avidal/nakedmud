@@ -143,40 +143,34 @@ BITVECTOR   *bitvectorCopy(BITVECTOR *v) {
 }
 
 bool bitIsSet(BITVECTOR *v, const char *bit) {
-  // first, parse all of the names
-  bool found = FALSE;
-  int i, num_names = 0;
-  char **bits = parse_keywords(bit, &num_names);
+  LIST    *bits = parse_keywords(bit);
+  char *one_bit = NULL; 
+  bool    found = FALSE;
 
   // check for one
-  for(i = 0; i < num_names && !found; i++) {
-    found = bitIsOneSet(v, bits[i]);
-    free(bits[i]);
+  while( !found && (one_bit = listPop(bits)) != NULL) {
+    found = bitIsOneSet(v, one_bit);
+    free(one_bit);
   }
-
-  // continue our clean up
-  for(; i < num_names; i++)
-    free(bits[i]);
-  free(bits);
+  
+  // clean up our mess
+  deleteListWith(bits, free);
   return found;
 }
 
 bool bitIsAllSet(BITVECTOR *v, const char *bit) {
-  // first, parse all of the names
-  bool found = TRUE;
-  int i, num_names = 0;
-  char **bits = parse_keywords(bit, &num_names);
+  LIST    *bits = parse_keywords(bit);
+  char *one_bit = NULL;
+  bool    found = TRUE;
 
   // check for each one
-  for(i = 0; i < num_names && found; i++) {
-    found = bitIsOneSet(v, bits[i]);
-    free(bits[i]);
+  while( found && (one_bit = listPop(bits)) != NULL) {
+    found = bitIsOneSet(v, one_bit);
+    free(one_bit);
   }
 
-  // continue our clean up
-  for(; i < num_names; i++)
-    free(bits[i]);
-  free(bits);
+  // clean up our mess
+  deleteListWith(bits, free);
   return found;
 }
 
@@ -186,19 +180,20 @@ bool bitIsOneSet(BITVECTOR *v, const char *bit) {
 }
 
 void bitSet(BITVECTOR *v, const char *name) {
-  // first, parse all of the names
-  int i, num_names = 0;
-  char **bits = parse_keywords(name, &num_names);
+  LIST    *bits = parse_keywords(name);
+  char *one_bit = NULL;
 
   // set each one
-  for(i = 0; i < num_names; i++) {
-    int val = (int)hashGet(v->data->bitmap, bits[i]);
-    free(bits[i]);
+  while( (one_bit = listPop(bits)) != NULL) {
+    int val = (int)hashGet(v->data->bitmap, one_bit);
+    free(one_bit);
     // 0 is a filler meaning 'this is not an actual name for a bit'
     if(val == 0) continue;
     SET_BIT(v->bits[val/8], (1 << (val % 8)));
   }
-  free(bits);
+
+  // garbage collection
+  deleteListWith(bits, free);
 }
 
 void bitClear(BITVECTOR *v) {
@@ -208,33 +203,35 @@ void bitClear(BITVECTOR *v) {
 }
 
 void bitRemove(BITVECTOR *v, const char *name) {
-  // first, parse all of the names
-  int i, num_names = 0;
-  char **bits = parse_keywords(name, &num_names);
+  LIST    *bits = parse_keywords(name);
+  char *one_bit = NULL;
 
-  // set each one
-  for(i = 0; i < num_names; i++) {
-    int val = (int)hashGet(v->data->bitmap, bits[i]);
+  // remove each one
+  while( (one_bit = listPop(bits)) != NULL) {
+    int val = (int)hashGet(v->data->bitmap, one_bit);
     REMOVE_BIT(v->bits[val/8], (1 << (val % 8)));
-    free(bits[i]);
+    free(one_bit);
   }
-  free(bits);
+
+  // garbage collection
+  deleteListWith(bits, free);
 }
 
 void bitToggle(BITVECTOR *v, const char *name) {
-  // first, parse all of the names
-  int i, num_names = 0;
-  char **bits = parse_keywords(name, &num_names);
+  LIST    *bits = parse_keywords(name);
+  char *one_bit = NULL;
 
-  // set each one
-  for(i = 0; i < num_names; i++) {
-    int val = (int)hashGet(v->data->bitmap, bits[i]);
-    free(bits[i]);
+  // toggle each one
+  while( (one_bit = listPop(bits)) != NULL) {
+    int val = (int)hashGet(v->data->bitmap, one_bit);
+    free(one_bit);
     // 0 is a filler meaning 'this is not an actual name for a bit'
     if(val == 0) continue;
     TOGGLE_BIT(v->bits[val/8], (1 << (val % 8)));
   }
-  free(bits);
+
+  // garbage collection
+  deleteListWith(bits, free);
 }
 
 const char *bitvectorGetBits(BITVECTOR *v) {

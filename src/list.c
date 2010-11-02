@@ -14,6 +14,7 @@
 //*****************************************************************************
 
 #include <stdlib.h>
+#include <stdarg.h>
 #include "list.h"
 
 #ifndef FALSE
@@ -435,6 +436,16 @@ LIST *listCopyWith(LIST *L, void *func) {
 
   return newlist;
 }
+
+void listParse(LIST *L, int n, ...) {
+  int i;
+  va_list args;
+  va_start(args, n);
+  for(i = 0; i < n; i++)
+    *va_arg(args, void **) = listGet(L, i);
+  va_end(args);
+}
+
 
 
 //*****************************************************************************

@@ -40,6 +40,15 @@ void hashExpand(HASHTABLE *table, int size);
 // must be deleted after use. Try: deleteListWith(list, free)
 LIST *hashCollect(HASHTABLE *table);
 
+//
+// clears all of the contents of the hashtable
+void hashClear(HASHTABLE *table);
+
+//
+// clears all of the contents of the hashtable, and deletes the vals with the
+// specified function. NULL indicates no delection
+void hashClearWith(HASHTABLE *table, void *func);
+
 
 
 //*****************************************************************************

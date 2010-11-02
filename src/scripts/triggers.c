@@ -12,6 +12,7 @@
 #include "../storage.h"
 
 #include "scripts.h"
+#include "pyplugs.h"
 
 
 
@@ -19,10 +20,11 @@
 // local datastructures, functions, and defines
 //*****************************************************************************
 struct trigger_data {
-  char   *name; // a short description of what the trigger is intended for
-  char   *type; // what type of hook does this trigger install itself as?
-  char    *key; // our unique key for lookup in the world database
-  BUFFER *code; // the python script that is executed
+  char       *name; // a short description of what the trigger is intended for
+  char       *type; // what type of hook does this trigger install itself as?
+  char        *key; // our unique key for lookup in the world database
+  BUFFER     *code; // the python script that is executed
+  PyObject *pycode; // the compiled version of our python code
 };
 
 
@@ -36,6 +38,7 @@ TRIGGER_DATA  *newTrigger(void) {
   data->type         = strdup("");
   data->key          = strdup("");
   data->code         = newBuffer(1);
+  data->pycode       = NULL;
   return data;
 }
 
@@ -43,6 +46,8 @@ void deleteTrigger(TRIGGER_DATA *trigger) {
   if(trigger->name) free(trigger->name);
   if(trigger->type) free(trigger->type);
   if(trigger->key)  free(trigger->key);
+  deleteBuffer(trigger->code);
+  Py_XDECREF(trigger->pycode);
 }
 
 STORAGE_SET *triggerStore(TRIGGER_DATA *trigger) {
@@ -92,6 +97,8 @@ void triggerSetKey(TRIGGER_DATA *trigger, const char *key) {
 void triggerSetCode(TRIGGER_DATA *trigger, const char *code) {
   bufferClear(trigger->code);
   bufferCat(trigger->code, code);
+  Py_XDECREF(trigger->pycode);
+  trigger->pycode = NULL;
 }
 
 const char *triggerGetName(TRIGGER_DATA *trigger) {
@@ -112,4 +119,24 @@ const char *triggerGetCode(TRIGGER_DATA *trigger) {
 
 BUFFER *triggerGetCodeBuffer(TRIGGER_DATA *trigger) {
   return trigger->code;
+}
+
+void triggerRun(TRIGGER_DATA *trigger, PyObject *dict) {
+  // if we haven't yet run the trigger, compile the source code
+  if(trigger->pycode == NULL)
+    trigger->pycode = 
+      run_script_forcode(dict, bufferString(trigger->code),
+			 get_key_locale(triggerGetKey(trigger)));
+  // run right from the code
+  else {
+    run_code(trigger->pycode, dict, get_key_locale(triggerGetKey(trigger)));
+    
+    if(!last_script_ok()) {
+      char *tb = getPythonTraceback();
+      log_string("Trigger %s terminated with an error:\r\n%s\r\n"
+		 "\r\nTraceback is:\r\n%s\r\n", 
+		 trigger->key, bufferString(trigger->code), tb);
+      free(tb);
+    }
+  }
 }

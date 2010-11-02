@@ -26,7 +26,9 @@
 //*****************************************************************************
 // mandatory modules
 //*****************************************************************************
+#include "../scripts/scripts.h"
 #include "../scripts/pyroom.h"
+#include "../scripts/pymud.h"
 
 
 
@@ -190,12 +192,37 @@ int PyRoom_setndesc(PyObject *self, PyObject *value, void *closure) {
 
 
 //*****************************************************************************
+// Python methods
+//*****************************************************************************
+PyObject *PyMud_GetHour(PyObject *self) {
+  return Py_BuildValue("i", get_hour());
+}
+
+PyObject *PyMud_IsMorning(PyObject *self) {
+  return Py_BuildValue("i", is_morning());
+}
+
+PyObject *PyMud_IsAfternoon(PyObject *self) {
+  return Py_BuildValue("i", is_afternoon());
+}
+
+PyObject *PyMud_IsEvening(PyObject *self) {
+  return Py_BuildValue("i", is_evening());
+}
+
+PyObject *PyMud_IsNight(PyObject *self) {
+  return Py_BuildValue("i", is_night());
+}
+
+
+
+//*****************************************************************************
 // time handling functions
 //*****************************************************************************
 
 //
 // If it's in the night, swap out our desc for the room's night desc
-void room_nightdesc_hook(BUFFER *desc, ROOM_DATA *room, void *none) {
+void room_nightdesc_hook(BUFFER *desc, ROOM_DATA *room, CHAR_DATA *looker) {
   if((is_evening() || is_night()) && *roomGetNightDesc(room)) {
     // if it's the room desc and not an edesc, cat the night desc...
     if(!strcasecmp(bufferString(desc), roomGetDesc(room))) {
@@ -269,10 +296,20 @@ void init_time() {
   // add a nightdesc get-setter to rooms
   PyRoom_addGetSetter("ndesc", PyRoom_getndesc, PyRoom_setndesc,
 		      "the room's night desc");
+  PyRoom_addGetSetter("night_desc", PyRoom_getndesc, PyRoom_setndesc,
+		      "the room's night desc");
+
+  // add our mud methods
+  PyMud_addMethod("get_hour",     PyMud_GetHour,     METH_NOARGS, NULL);
+  PyMud_addMethod("is_morning",   PyMud_IsMorning,   METH_NOARGS, NULL);
+  PyMud_addMethod("is_afternoon", PyMud_IsAfternoon, METH_NOARGS, NULL);
+  PyMud_addMethod("is_evening",   PyMud_IsEvening,   METH_NOARGS, NULL);
+  PyMud_addMethod("is_night",     PyMud_IsNight,     METH_NOARGS, NULL);
   
   // add our set fields
 #ifdef MODULE_SET_VAL
-  add_set("ndesc", SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
+  add_set("ndesc",      SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
+  add_set("night_desc", SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
 #endif
 
   // add the time command

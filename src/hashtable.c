@@ -63,7 +63,7 @@ HASH_ENTRY *hashGetEntry(HASHTABLE *table, const char *key){
     return NULL;
   else {
     LIST_ITERATOR *list_i = newListIterator(table->buckets[bucket]);
-    HASH_ENTRY *elem = NULL;
+    HASH_ENTRY      *elem = NULL;
 
     for(;(elem = listIteratorCurrent(list_i)) != NULL; listIteratorNext(list_i))
       if(!strcasecmp(key, elem->key))
@@ -227,25 +227,7 @@ void *hashRemove (HASHTABLE *table, const char *key) {
 }
 
 int   hashIn     (HASHTABLE *table, const char *key) {
-  int bucket = hash(key) % table->num_buckets;
-
-  if(table->buckets[bucket] == NULL)
-    return 0;
-  else {
-    int found  = 0;
-    LIST_ITERATOR *list_i = newListIterator(table->buckets[bucket]);
-    HASH_ENTRY *elem = NULL;
-
-    for(;(elem = listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i)){
-      if(!strcasecmp(key, elem->key)) {
-	found = 1;
-	break;
-      }
-    }
-    deleteListIterator(list_i);
-
-    return found;
-  }
+  return (hashGetEntry(table, key) != NULL);
 }
 
 int   hashSize   (HASHTABLE *table) {
@@ -265,6 +247,25 @@ LIST *hashCollect(HASHTABLE *table) {
     deleteListIterator(list_i);
   }
   return list;
+}
+
+void hashClear(HASHTABLE *table) {
+  hashClearWith(table, NULL);
+}
+
+void hashClearWith(HASHTABLE *table, void *func) {
+  void (* free_func)(void *) = func;
+  int i;
+
+  for(i = 0; i < table->num_buckets; i++) {
+    if(table->buckets[i] == NULL) continue;
+    HASH_ENTRY *elem = NULL;
+    while( (elem = listPop(table->buckets[i])) != NULL) {
+      if(free_func && elem->val)
+	free_func(elem->val);
+      deleteHashtableEntry(elem);
+    }
+  }
 }
 
 

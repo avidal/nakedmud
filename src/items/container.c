@@ -13,6 +13,8 @@
 #include "../world.h"
 #include "../socket.h"
 #include "../utils.h"
+#include "../hooks.h"
+#include "../inform.h"
 #include "../olc2/olc.h"
 
 #include "items.h"
@@ -495,6 +497,31 @@ void container_to_proto(CONTAINER_DATA *data, BUFFER *buf) {
 
 
 //*****************************************************************************
+// hooks
+//*****************************************************************************
+void container_append_hook(BUFFER *desc, OBJ_DATA *obj, CHAR_DATA *ch) {
+  if(objIsType(obj, "container")) {
+    bprintf(desc, " It is %s%s.", (containerIsClosed(obj) ? "closed":"open"),
+	    (containerIsLocked(obj) ? " and locked" : ""));
+  }
+}
+
+void container_look_hook(OBJ_DATA *obj, CHAR_DATA *ch) {
+  if(objIsType(obj, "container") && !containerIsClosed(obj)) {
+    LIST *vis_contents = find_all_objs(ch, objGetContents(obj), "", 
+				       NULL, TRUE);
+      // make sure we can still see things
+      if(listSize(vis_contents) > 0) {
+	send_to_char(ch, "It contains:\r\n");
+	show_list(ch, vis_contents, objGetName, objGetMultiName);
+      }
+      deleteList(vis_contents);
+  }
+}
+
+
+
+//*****************************************************************************
 // install the container item type
 //*****************************************************************************
 
@@ -505,6 +532,10 @@ void init_container(void) {
   		newContainerData, deleteContainerData,
   		containerDataCopyTo, containerDataCopy, 
   		containerDataStore, containerDataRead);
+
+  // add our hooks
+  hookAdd("append_obj_desc", container_append_hook);
+  hookAdd("look_at_obj",     container_look_hook);
 
   // set up the container OLC too
   item_add_olc("container", iedit_container_menu, iedit_container_chooser, 

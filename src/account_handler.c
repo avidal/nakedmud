@@ -189,8 +189,11 @@ void account_verify_password(SOCKET_DATA *sock, char *arg) {
 
     // account created. Register it, and plop it into the account menu. If it
     // is already created, we're just editing the password. So save changes.
-    if(!account_exists(accountGetName(socketGetAccount(sock))))
+    if(!account_exists(accountGetName(socketGetAccount(sock)))) {
+      // run hooks for creating our account for the first time
+      hookRun("create_account", socketGetAccount(sock));
       register_account(socketGetAccount(sock));
+    }
     else
       save_account(socketGetAccount(sock));
     socketReplaceInputHandler(sock, account_handle_menu, account_menu);
@@ -245,7 +248,7 @@ void account_load_char(SOCKET_DATA *sock, int ch_num) {
 	socketSetChar(sock, NULL);
 	return;
       }
-
+      
       // try putting the character into the game. Pop the input handler
       // if we cannot
       if(try_enter_game(ch)) {
@@ -258,7 +261,7 @@ void account_load_char(SOCKET_DATA *sock, int ch_num) {
 	look_at_room(ch, charGetRoom(ch));
 
 	// run entrance hooks
-	hookRun("enter", ch, charGetRoom(ch), NULL);
+	hookRun("enter", ch, charGetRoom(ch));
       }
       else {
 	text_to_buffer(sock, "There was a problem entering the game. Try again later!\r\n");

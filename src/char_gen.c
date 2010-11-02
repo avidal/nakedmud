@@ -167,6 +167,9 @@ void char_ask_race(SOCKET_DATA *sock, char *arg) {
     // we should do some checks here to make sure the start room exists
     char_to_room(socketGetChar(sock), worldGetRoom(gameworld, START_ROOM));
     look_at_room(socketGetChar(sock), charGetRoom(socketGetChar(sock)));
+
+    // run any hooks for creating the player for the first time
+    hookRun("create_player", socketGetChar(sock));
     
     // and register him as a valid player
     register_player(socketGetChar(sock));
@@ -180,7 +183,7 @@ void char_ask_race(SOCKET_DATA *sock, char *arg) {
 
     // run entrance hooks
     ROOM_DATA      *room = charGetRoom(socketGetChar(sock));
-    hookRun("enter", socketGetChar(sock), room, NULL);
+    hookRun("enter", socketGetChar(sock), room);
   }
 }
 

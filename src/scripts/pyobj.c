@@ -33,6 +33,7 @@
 // mandatory modules
 //*****************************************************************************
 #include "../items/items.h"
+#include "../items/worn.h"
 
 
 
@@ -172,9 +173,11 @@ PyObject *PyObj_getcontents(PyObj *self, PyObject *args) {
   
   // for each obj in the contentory, add it to the Python list
   ITERATE_LIST(cont, cont_i)
-    PyList_Append(list, newPyObj(cont));
+    PyList_Append(list, objGetPyFormBorrowed(cont));
   deleteListIterator(cont_i);
-  return Py_BuildValue("O", list);
+  PyObject *retval = Py_BuildValue("O", list);
+  Py_DECREF(list);
+  return retval;
 }
 
 PyObject *PyObj_getchars(PyObj *self, PyObject *args) {
@@ -188,9 +191,11 @@ PyObject *PyObj_getchars(PyObj *self, PyObject *args) {
   
   // for each obj in the contentory, add it to the Python list
   ITERATE_LIST(ch, char_i)
-    PyList_Append(list, newPyChar(ch));
+    PyList_Append(list, charGetPyFormBorrowed(ch));
   deleteListIterator(char_i);
-  return Py_BuildValue("O", list);
+  PyObject *retval = Py_BuildValue("O", list);
+  Py_DECREF(list);
+  return retval;
 }
 
 PyObject *PyObj_getcarrier(PyObj *self, void *closure) {
@@ -199,7 +204,7 @@ PyObject *PyObj_getcarrier(PyObj *self, void *closure) {
     return NULL;
   if(objGetCarrier(obj) == NULL)
     return Py_None;
-  return Py_BuildValue("O", newPyChar(objGetCarrier(obj)));
+  return Py_BuildValue("O", charGetPyFormBorrowed(objGetCarrier(obj)));
 }
 
 PyObject *PyObj_getroom(PyObj *self, void *closure) {
@@ -208,7 +213,7 @@ PyObject *PyObj_getroom(PyObj *self, void *closure) {
     return NULL;
   if(objGetRoom(obj) == NULL)
     return Py_None;
-  return Py_BuildValue("O", newPyRoom(objGetRoom(obj)));
+  return Py_BuildValue("O", roomGetPyFormBorrowed(objGetRoom(obj)));
 }
 
 PyObject *PyObj_getcontainer(PyObj *self, void *closure) {
@@ -217,7 +222,7 @@ PyObject *PyObj_getcontainer(PyObj *self, void *closure) {
     return NULL;
   if(objGetContainer(obj) == NULL)
     return Py_None;
-  return Py_BuildValue("O", newPyObj(objGetContainer(obj)));
+  return Py_BuildValue("O", objGetPyFormBorrowed(objGetContainer(obj)));
 }
 
 //
@@ -743,16 +748,25 @@ PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
   else if(cont != NULL)
     obj_to_obj(obj, cont);
   else if(ch != NULL) {
-    // see if we're trying to equip the object
-    if(equip_to && !try_equip(ch, obj, equip_to))
-      obj_to_char(obj, ch);
+    // if we have supplied locations, equip to those
+    if(equip_to && *equip_to) {
+      if(!try_equip(ch, obj, equip_to, NULL))
+	obj_to_char(obj, ch);
+    }
+
+    // otherwise, assume it's worn equipemnt
+    else if(objIsType(obj, "worn")) {
+      if(!try_equip(ch, obj, NULL, wornGetPositions(obj)))
+	obj_to_char(obj, ch);
+    }
+
+    // failed. Just give it to us
     else
       obj_to_char(obj, ch);
   }
 
   // create a python object for the new obj, and return it
-  PyObj *py_obj = (PyObj *)newPyObj(obj);
-  return Py_BuildValue("O", py_obj);
+  return Py_BuildValue("O", objGetPyFormBorrowed(obj));
 }
 
 
@@ -850,7 +864,7 @@ PyObject *PyObj_find_obj(PyObject *self, PyObject *args) {
     OBJ_DATA *obj    = find_obj(looker_ch, list, count, name, NULL, 
 				(looker_ch ? TRUE : FALSE));
     PyObject *py_obj = Py_None;
-    if(obj) py_obj = newPyObj(obj);
+    if(obj) py_obj = objGetPyFormBorrowed(obj);
     return Py_BuildValue("O", py_obj);
   }
   // otherwise, return everything that meets our critereon
@@ -908,7 +922,7 @@ PyObject *PyObj_find_obj_key(PyObject *self, PyObject *args) {
     OBJ_DATA *obj    = find_obj(looker_ch, list, count, NULL, key,
 				(looker_ch ? TRUE : FALSE));
     PyObject *py_obj = Py_None;
-    if(obj) py_obj = newPyObj(obj);
+    if(obj) py_obj = objGetPyFormBorrowed(obj);
     return Py_BuildValue("O", py_obj);
   }
   // otherwise, return everything that meets our critereon

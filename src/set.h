@@ -15,12 +15,13 @@ SET  *newSet         (void);
 void  deleteSet      (SET *set);
 void  setPut         (SET *set, void *elem);
 void  setRemove      (SET *set, void *elem);
-int   setIn          (SET *set, void *elem);
+int   setIn          (SET *set, const void *elem);
 int   setSize        (SET *set);
 LIST *setCollect     (SET *set);
 SET  *setCopy        (SET *set);
 SET  *setUnion       (SET *set1, SET *set2);
 SET  *setIntersection(SET *set1, SET *set2);
+void setChangeHashing(SET *set, void *cmp_func, void *hash_func);
 
 
 

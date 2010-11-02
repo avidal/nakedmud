@@ -884,18 +884,28 @@ PARSE_VAR *use_one_parse_token(CHAR_DATA *looker, PARSE_TOKEN *tok,
     break;
 
     // parse out a single word
-  case PARSE_TOKEN_WORD:
+  case PARSE_TOKEN_WORD: {
     var = newParseVar(PARSE_VAR_POINTER);
-    var->ptr_val = arg;
+    var->ptr_val    = arg;
+    bool multi_word = FALSE;
+
+    // are we using quotation marks to specify multiple words?
+    if(*arg == '\"') {
+      multi_word = TRUE;
+      arg++;
+      var->ptr_val = arg;
+    }
+
     // go through arg to the next space, and delimit the word
-    for(;*arg != '\0'; arg++) {
-      if(isspace(*arg)) {
+    for(; *arg != '\0'; arg++) {
+      if((multi_word && *arg == '\"') || (!multi_word && isspace(*arg))) {
 	*arg = '\0';
 	arg++;
 	break;
       }
     }
     break;
+  }
 
     // copies whatever is left
   case PARSE_TOKEN_STRING:

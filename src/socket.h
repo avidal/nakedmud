@@ -55,5 +55,6 @@ BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock);
 void socketQueueCommand       ( SOCKET_DATA *sock, const char *cmd);
 
 void socketBustPrompt         ( SOCKET_DATA *sock);
+const char *socketGetLastCmd  ( SOCKET_DATA *sock);
 
 #endif // SOCKET_H

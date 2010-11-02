@@ -10,6 +10,11 @@
 //
 //*****************************************************************************
 
+//
+// lots of informative stuff needs to be initialized. Do that before the
+// information functions are used.
+void init_inform(void);
+
 
 
 //********************

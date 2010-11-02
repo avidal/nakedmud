@@ -10,9 +10,11 @@
 #include "../mud.h"
 #include "../utils.h"
 #include "../storage.h"
+#include "../character.h"
 #include "../object.h"
 #include "../world.h"
 #include "../socket.h"
+#include "../hooks.h"
 #include "../olc2/olc.h"
 
 #include "items.h"
@@ -271,6 +273,38 @@ int PyObj_setfurntype(PyObject *self, PyObject *value, void *closure) {
 
 
 //*****************************************************************************
+// hooks
+//*****************************************************************************
+void furniture_append_hook(BUFFER *buf, OBJ_DATA *obj, CHAR_DATA *ch) {
+  if(objIsType(obj, "furniture")) {
+    int num_sitters = listSize(objGetUsers(obj));
+
+    // print out how much room there is left on the furniture
+    int seats_left = (furnitureGetCapacity(obj) - num_sitters);
+    if(seats_left > 0)
+      bprintf(buf, " It looks like it could fit %d more %s.\r\n",
+		   seats_left, (seats_left == 1 ? "person" : "people"));
+
+    // print character names
+    if(num_sitters > 0) {
+      LIST *can_see = find_all_chars(ch, objGetUsers(obj), "", NULL, TRUE);
+      listRemove(can_see, ch);
+
+      char *chars = print_list(can_see, charGetName, charGetMultiName);
+      if(*chars) bprintf(buf, "%s %s %s %s%s.\r\n",
+			 chars, (listSize(can_see) == 1 ? "is" : "are"),
+			 (furnitureGetType(obj) == FURNITURE_AT ? "at":"on"),
+			 see_obj_as(ch, obj),
+			 (charGetFurniture(ch) == obj ? " with you" : ""));
+      deleteList(can_see);
+      free(chars);
+    }
+  }
+}
+
+
+
+//*****************************************************************************
 // install the furniture item type
 //*****************************************************************************
 
@@ -281,6 +315,9 @@ void init_furniture(void) {
   		newFurnitureData, deleteFurnitureData,
   		furnitureDataCopyTo, furnitureDataCopy, 
   		furnitureDataStore, furnitureDataRead);
+
+  // add our hooks
+  hookAdd("append_obj_desc", furniture_append_hook);
 
   // set up the furniture OLC too
   item_add_olc("furniture", iedit_furniture_menu, iedit_furniture_chooser, 

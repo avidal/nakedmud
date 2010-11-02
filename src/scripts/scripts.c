@@ -10,11 +10,13 @@
 // actions when items are received.. you know... that sort of stuff. 
 //
 //*****************************************************************************
+
 #include "../mud.h"
 #include "../utils.h"
 #include "../world.h"
 #include "../character.h"
 #include "../room.h"
+#include "../exit.h"
 #include "../object.h"
 #include "../socket.h"
 #include "../auxiliary.h"
@@ -38,23 +40,33 @@
 #include "../editor/editor.h"
 #include "script_editor.h"
 
+// Python stuff
+#include <compile.h>
+#include <eval.h>
+
 
 
 //*****************************************************************************
 // auxiliary data
 //*****************************************************************************
 typedef struct {
-  LIST *triggers;
+  LIST   *triggers;
+  PyObject *pyform;
 } TRIGGER_AUX_DATA;
 
 TRIGGER_AUX_DATA *newTriggerAuxData(void) {
   TRIGGER_AUX_DATA *data = malloc(sizeof(TRIGGER_AUX_DATA));
   data->triggers         = newList();
+  data->pyform           = NULL;
   return data;
 }
 
 void deleteTriggerAuxData(TRIGGER_AUX_DATA *data) {
   deleteListWith(data->triggers, free);
+  if(data->pyform && data->pyform->ob_refcnt > 1)
+    log_string("LEAK: Memory leak (%d refcnt) on someone or something's pyform",
+	       data->pyform->ob_refcnt);
+  Py_XDECREF(data->pyform);
   free(data);
 }
 
@@ -64,8 +76,8 @@ void triggerAuxDataCopyTo(TRIGGER_AUX_DATA *from, TRIGGER_AUX_DATA *to) {
 }
 
 TRIGGER_AUX_DATA *triggerAuxDataCopy(TRIGGER_AUX_DATA *data) {
-  TRIGGER_AUX_DATA *newdata = malloc(sizeof(TRIGGER_AUX_DATA));
-  newdata->triggers = listCopyWith(data->triggers, strdup);
+  TRIGGER_AUX_DATA *newdata = newTriggerAuxData();
+  triggerAuxDataCopyTo(data, newdata);
   return newdata;
 }
 
@@ -76,6 +88,7 @@ char *read_one_trigger(STORAGE_SET *set) {
 TRIGGER_AUX_DATA *triggerAuxDataRead(STORAGE_SET *set) {
   TRIGGER_AUX_DATA *data = malloc(sizeof(TRIGGER_AUX_DATA));
   data->triggers = gen_read_list(read_list(set, "triggers"), read_one_trigger);
+  data->pyform   = NULL;
   return data;
 }
 
@@ -112,124 +125,44 @@ int script_loop_depth   = 0;
 // a local variable used for storing whether or not the last script ran fine
 bool script_ok = TRUE;
 
-
-//
-// looks for dynamic descs and expands them out as needed. Dynamic descs are
-// bits of code that are embedded within descriptions, and surrounded by [ and
-// ]. They can be anything that returns a  (string or numeric) value. Code must
-// be a single statement. To perform conditional output, it is common to use 
-// the ite() (if, then, else) function, which takes 2 arguments and an optional
-// third.Here would be some valid dynamic descriptions (assuming that the 
-// variables I made up exist in your mud):
-//   You see [me.getvar("flowers")] flowers blooming here.
-//   [ite(ch.perception >10, "There is a large bird's nest on the east cliff.")]
-//   [ite(ch.name=="Bob", "You are in your house.", "You are in Bob's house.")]
-//   You are in [ite(ch.name == "Bob", "your", ch.name + "'s")] house.
-void expand_dynamic_descs(BUFFER *desc, PyObject *me, CHAR_DATA *ch) {
-  // make a new temp buffer to hold all of the expanded data
-  BUFFER *new_desc = newBuffer(bufferLength(desc)*2);
-  char code[SMALL_BUFFER];
-  PyObject   *dict = NULL;
-
-  int start, end, i, size = bufferLength(desc);
-  for(i = 0; i < size; i++) {
-    // figure out when our next dynamic desc is.
-    start = next_letter_in(bufferString(desc) + i, '[');
-
-    // no more
-    if(start == -1) {
-      // copy the rest and skip to the end of the buffer
-      bprintf(new_desc, "%s", bufferString(desc) + i);
-      i = size - 1;
-    }
-    // we have another desc
-    else {
-      // copy everything up to start
-      while(start > 0) {
-	bprintf(new_desc, "%c", *(bufferString(desc) + i));
-	start--;
-	i++;
-      }
-
-      // skip the start marker
-      i++;
-
-      // find our end
-      end = next_letter_in(bufferString(desc) + i, ']');
-
-      // make sure we have it
-      if(end == -1)
-	break;
-
-      // copy everything between start and end
-      strncpy(code, bufferString(desc) + i, end);
-      code[end] = '\0';
-
-      // skip i up to the end
-      i = i + end;
-
-      // if we haven't already created a dict, do it now
-      if(dict == NULL) {
-	PyObject *pych = newPyChar(ch);
-	dict = restricted_script_dict();
-	PyDict_SetItemString(dict, "me", me);
-	PyDict_SetItemString(dict, "ch", pych);
-	Py_DECREF(pych);
-      }
-
-      // evaluate the code
-      PyObject *retval = PyRun_String(code, Py_eval_input, dict, dict);
-
-      // did we encounter an error?
-      if(retval == NULL) {
-	char *tb = getPythonTraceback();
-	log_string("Dynamic desc terminated with an error:\r\n%s\r\n"
-		   "\r\nTraceback is:\r\n%s\r\n", code, tb);
-	free(tb);
-	break;
-      }
-      // append the output
-      else if(PyString_Check(retval))
-	bprintf(new_desc, "%s", PyString_AsString(retval));
-      else if(PyInt_Check(retval))
-	bprintf(new_desc, "%ld", PyInt_AsLong(retval));
-      else if(PyFloat_Check(retval))
-	bprintf(new_desc, "%lf", PyFloat_AsDouble(retval));
-      // invalid return type...
-      else if(retval != Py_None)
-	log_string("dynamic desc had invalid evaluation: %s", code);
-
-      Py_XDECREF(retval);
-    }
-  }
-
-  // copy over the changes, and free our buffer
-  bufferCopyTo(new_desc, desc);
-  deleteBuffer(new_desc);
-
-  // free up our dictionary
-  Py_XDECREF(dict);
-}
-
 void expand_char_dynamic_descs(BUFFER *desc, CHAR_DATA *me, CHAR_DATA *ch) {
-  PyObject *pyme = newPyChar(me);
-  expand_dynamic_descs(desc, pyme, ch);
-  Py_DECREF(pyme);
+  // if we're an NPC, do some special work for displaying us. We don't do 
+  // dynamic descs for PCs because they will probably be describing themselves,
+  // and we don't want to give them access to the scripting language.
+  if(charIsNPC(me)) {
+    PyObject *pyme = charGetPyForm(me);
+    char   *locale = strdup(get_key_locale(charGetClass(me))); 
+    expand_dynamic_descs(desc, pyme, ch, locale);
+    Py_DECREF(pyme);
+    free(locale);
+  }
 }
 
-void  expand_obj_dynamic_descs(BUFFER *desc, OBJ_DATA *me,  CHAR_DATA *ch) {
-  PyObject *pyme = newPyObj(me);
-  expand_dynamic_descs(desc, pyme, ch);
+void  expand_obj_dynamic_descs(BUFFER *desc, OBJ_DATA *me, CHAR_DATA *ch) {
+  PyObject *pyme = objGetPyForm(me);
+  char   *locale = strdup(get_key_locale(objGetClass(me))); 
+  expand_dynamic_descs(desc, pyme, ch, locale);
   Py_DECREF(pyme);
+  free(locale);
 }
 
 void expand_room_dynamic_descs(BUFFER *desc, ROOM_DATA *me, CHAR_DATA *ch) {
-  PyObject *pyme = newPyRoom(me);
-  expand_dynamic_descs(desc, pyme, ch);
+  PyObject *pyme = roomGetPyForm(me);
+  char   *locale = strdup(get_key_locale(roomGetClass(me))); 
+  expand_dynamic_descs(desc, pyme, ch, locale);
   Py_DECREF(pyme);
+  free(locale);
 }
 
-void finalize_scripts(void *none1, void *none2, void *none3) {
+void expand_exit_dynamic_descs(BUFFER *desc, EXIT_DATA *me, CHAR_DATA *ch) {
+  PyObject *pyme = newPyExit(me);
+  char   *locale = strdup(get_key_locale(roomGetClass(exitGetRoom(me)))); 
+  expand_dynamic_descs(desc, pyme, ch, locale);
+  Py_DECREF(pyme);
+  free(locale);
+}
+
+void finalize_scripts(void) {
   Py_Finalize();
 }
 
@@ -353,15 +286,18 @@ COMMAND(cmd_tlist) {
 }
 
 COMMAND(cmd_tdelete) {
-  do_delete(ch, "trigger", deleteTrigger, arg);
+  char *name = NULL;
+  if(!parse_args(ch, TRUE, cmd, arg, "word", &name))
+    return;
+  do_delete(ch, "trigger", deleteTrigger, name);
 }
 
 COMMAND(cmd_trename) {
-  char from[SMALL_BUFFER];
-  arg = one_arg(arg, from);
-  do_rename(ch, "trigger", from, arg);
+  char *from = NULL, *to = NULL;
+  if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
+    return;
+  do_rename(ch, "trigger", from, to);
 }
-
 
 
 
@@ -408,6 +344,7 @@ void init_scripts(void) {
   hookAdd("preprocess_room_desc", expand_room_dynamic_descs);
   hookAdd("preprocess_char_desc", expand_char_dynamic_descs);
   hookAdd("preprocess_obj_desc",  expand_obj_dynamic_descs);
+  hookAdd("preprocess_exit_desc", expand_exit_dynamic_descs);
   hookAdd("shutdown",             finalize_scripts);
 
   /*
@@ -496,29 +433,276 @@ PyObject *unrestricted_script_dict(void) {
   return dict;
 }
 
-void run_script(PyObject *dict, const char *script, const char *locale) {
-  if(script_loop_depth >= MAX_LOOP_DEPTH)
+void run_code(PyObject *code, PyObject *dict, const char *locale) {
+  if(script_loop_depth >= MAX_LOOP_DEPTH) {
+    // should we flag some sort of error, here?
+    //***********
+    // FINISH ME
+    //***********
+
     script_ok = FALSE;
+  }
   else {
     listPush(locale_stack, strdupsafe(locale));
 
-    script_loop_depth++;
-    PyObject* compileRetval = PyRun_String(script, Py_file_input, dict, dict);
-    script_loop_depth--;
+    // try executing the code
     script_ok = TRUE;
-    // we threw an error and it wasn't an intentional
-    // system exit error. Now print the backtrace
-    if(compileRetval == NULL && PyErr_Occurred() != PyExc_SystemExit) {
-      char *tb = getPythonTraceback();
-      log_string("Script terminated with an error:\r\n%s\r\n"
-		 "\r\nTraceback is:\r\n%s\r\n", script, tb);
-      free(tb);
+    script_loop_depth++;
+    PyObject *retval = PyEval_EvalCode((PyCodeObject *)code, dict, dict);
+    script_loop_depth--;
+
+    // did we throw an error?
+    if(retval == NULL && PyErr_Occurred() != PyExc_SystemExit)
       script_ok = FALSE;
+
+    // garbage collection
+    free(listPop(locale_stack));
+    Py_XDECREF(retval);
+  }
+}
+
+PyObject *run_script_forcode(PyObject *dict, const char *script, 
+			     const char *locale) {
+  // try compiling the code
+  PyObject *retval = Py_CompileString(script, "<string>", Py_file_input);
+
+  // try running the code
+  if(retval != NULL)
+    run_code(retval, dict, locale);
+  
+  // did we end up with an error?
+  if(retval == NULL || !last_script_ok()) {
+    char *tb = getPythonTraceback();
+    log_string("Script terminated with an error:\r\n%s\r\n"
+	       "\r\nTraceback is:\r\n%s\r\n", script, tb);
+    free(tb);
+  }
+
+  // return our code object
+  return retval;
+}
+
+void run_script(PyObject *dict, const char *script, const char *locale) {
+  PyObject *code = run_script_forcode(dict, script, locale);
+  Py_XDECREF(code);
+}
+
+PyObject *eval_script(PyObject *dict, const char *statement,const char *locale){
+  listPush(locale_stack, strdupsafe(locale));
+ 
+  // run the statement
+  PyObject *retval = PyRun_String(statement, Py_eval_input, dict, dict);
+
+  // did we encounter an error?
+  if(retval == NULL) {
+    char *tb = getPythonTraceback();
+    log_string("eval_script terminated with an error:\r\n%s\r\n"
+	       "\r\nTraceback is:\r\n%s\r\n", statement, tb);
+    free(tb);
+  }
+
+  free(listPop(locale_stack));
+  return retval;
+}
+
+//
+// Tries to expand out a conditional statement. Returns whatever is expanded.
+// Moves i to the proper place after the conditional has been expanded in the
+// originating buffer.
+BUFFER *expand_dynamic_conditional(BUFFER *desc,     PyObject *dict, 
+				   PyObject *retval, const char *locale,
+				   int *pos) {
+  BUFFER *new_desc = newBuffer(bufferLength(desc)*2);
+  BUFFER     *code = newBuffer(1); // code we have to evaluate
+  int         j, i = *pos + 1;     // +1 to skip the current closing ]
+  bool       match = PyObject_IsTrue(retval);
+
+  while(TRUE) {
+    // copy over all of our contents for the new desc and increment i
+    while(*(bufferString(desc)+i) &&
+	  !startswith(bufferString(desc)+i, "[else]") &&
+	  !startswith(bufferString(desc)+i, "[elif ") &&
+	  !startswith(bufferString(desc)+i, "[/if]")) {
+      if(match == TRUE)
+	bprintf(new_desc, "%c", *(bufferString(desc) + i));
+      i++;
     }
 
-    Py_XDECREF(compileRetval);
-    free(listPop(locale_stack));
+    // did we terminate?
+    if(match == TRUE || startswith(bufferString(desc)+i, "[/if]"))
+      break;
+    // we haven't had a match yet. Are we trying an else or elif?
+    else if(startswith(bufferString(desc)+i, "[else]")) {
+      match  = TRUE;
+      i     += 6;
+    }
+    else if(startswith(bufferString(desc)+i, "[elif ")) {
+      // skip the elif and spaces
+      i += 6;
+      while(isspace(*(bufferString(desc)+i)))
+	i++;
+
+      // find our end
+      int end = next_letter_in(bufferString(desc) + i, ']');
+
+      // make sure we have it
+      if(end == -1)
+	break;
+
+      // copy everything between start and end, and format the code
+      bufferClear(code);
+      for(j = 0; j < end; j++)
+	bprintf(code, "%c", *(bufferString(desc) + i + j));
+      bufferReplace(code, "\n", "", TRUE);
+
+      // skip i up to and beyond the ] marker
+      i = i + end + 1;
+      
+      // evaluate the code
+      PyObject *retval = eval_script(dict, bufferString(code), locale);
+      match            = retval && PyObject_IsTrue(retval);
+
+      // did we encounter an error?
+      if(retval == NULL)
+	break;
+    }
   }
+
+  // skip everything up to our closing [/if]
+  while(*(bufferString(desc)+i) && !startswith(bufferString(desc)+i, "[/if]"))
+    i++;
+  if(startswith(bufferString(desc)+i, "[/if]"))
+    i += 4; // put us at the closing ], not the end of the ending if block
+
+  // garbage collection
+  deleteBuffer(code);
+ 
+  // return our expansion and move our i
+  *pos = i;
+  return new_desc;
+}
+
+void expand_dynamic_descs_dict(BUFFER *desc, PyObject *dict,const char *locale){
+  // make our new buffer
+  BUFFER *new_desc = newBuffer(bufferLength(desc)*2);
+  BUFFER     *code = newBuffer(1); // for things we have to evaluate
+  bool   proc_cond = FALSE; // are we processing a conditional statement?
+
+  // copy over all of our description that is not dynamic text
+  int start, end, i, j, size = bufferLength(desc);
+  for(i = 0; i < size; i++) {
+    // figure out when our next dynamic desc is.
+    start = next_letter_in(bufferString(desc) + i, '[');
+
+    // no more
+    if(start == -1) {
+      // copy the rest and skip to the end of the buffer
+      bprintf(new_desc, "%s", bufferString(desc) + i);
+      i = size - 1;
+    }
+    // we have another desc
+    else {
+      // copy everything up to start
+      while(start > 0) {
+	bprintf(new_desc, "%c", *(bufferString(desc) + i));
+	start--;
+	i++;
+      }
+
+      // skip the start marker
+      i++;
+
+      // find our end
+      end = next_letter_in(bufferString(desc) + i, ']');
+
+      // make sure we have it
+      if(end == -1)
+	break;
+
+      // copy everything between start and end, and format the code
+      bufferClear(code);
+      for(j = 0; j < end; j++)
+	bprintf(code, "%c", *(bufferString(desc) + i + j));
+      bufferReplace(code, "\n", "", TRUE);
+
+      // skip i up to the end
+      i = i + end;
+
+      // are we trying to process a conditional statement?
+      if(!strncasecmp(bufferString(code), "if ", 3)) {
+	// strip out the leading if and whitespace
+	char *code_copy = strdup(bufferString(code));
+	char       *ptr = code_copy + 3;
+	while(isspace(*ptr)) ptr++;
+	
+	// copy over the cleaned-up code, signal we're processing a conditional
+	bufferClear(code);
+	bufferCat(code, ptr);
+	proc_cond = TRUE;
+
+	// garbage collection
+	free(code_copy);
+      }
+
+      // evaluate the code
+      PyObject *retval = eval_script(dict, bufferString(code), locale);
+
+      // did we encounter an error?
+      if(retval == NULL)
+	break;
+      // are we evaluating a conditional or no?
+      else if(proc_cond) {
+	BUFFER *cond_retval =
+	  expand_dynamic_conditional(desc, dict, retval, locale, &i);
+
+	// if we have something to print, expand its embedded python
+	if(*bufferString(cond_retval))
+	  expand_dynamic_descs_dict(cond_retval, dict, locale);
+
+	bufferCat(new_desc, bufferString(cond_retval));
+	deleteBuffer(cond_retval);
+	proc_cond = FALSE;
+      }
+      // append the output
+      else if(PyString_Check(retval))
+	bprintf(new_desc, "%s", PyString_AsString(retval));
+      else if(PyInt_Check(retval))
+	bprintf(new_desc, "%ld", PyInt_AsLong(retval));
+      else if(PyFloat_Check(retval))
+	bprintf(new_desc, "%lf", PyFloat_AsDouble(retval));
+      // invalid return type...
+      else if(retval != Py_None)
+	log_string("dynamic desc had invalid evaluation: %s", 
+		   bufferString(code));
+
+      // oddly, freeing retval here corrupt memory. 
+      // And not freeing it doesn't cause a memory leak. So bizarre...
+      //   Py_XDECREF(retval);
+    }
+  }
+
+  // copy over our contents
+  bufferCopyTo(new_desc, desc);
+
+  // garbage collection
+  deleteBuffer(code);
+  deleteBuffer(new_desc);
+}
+
+void expand_dynamic_descs(BUFFER *desc, PyObject *me, CHAR_DATA *ch, 
+			  const char *locale) {
+  // set up our dictionary
+  PyObject *dict = restricted_script_dict();
+  PyObject *pych = charGetPyForm(ch);
+  PyDict_SetItemString(dict, "me", me);
+  PyDict_SetItemString(dict, "ch", pych);
+
+  // expand the dynamic description
+  expand_dynamic_descs_dict(desc, dict, locale);
+
+  // garbage collection
+  Py_XDECREF(dict);
+  Py_XDECREF(pych);
 }
 
 const char *get_script_locale(void) {
@@ -546,6 +730,45 @@ LIST *objGetTriggers (OBJ_DATA  *obj) {
 LIST *roomGetTriggers(ROOM_DATA *room) {
   TRIGGER_AUX_DATA *data = roomGetAuxiliaryData(room, "trigger_data");
   return data->triggers;
+}
+
+PyObject *charGetPyFormBorrowed(CHAR_DATA *ch) {
+  TRIGGER_AUX_DATA *data = charGetAuxiliaryData(ch, "trigger_data");
+  if(data->pyform == NULL)
+    data->pyform = newPyChar(ch);
+  return data->pyform;
+}
+
+PyObject *objGetPyFormBorrowed(OBJ_DATA  *obj) {
+  TRIGGER_AUX_DATA *data = objGetAuxiliaryData(obj, "trigger_data");
+  if(data->pyform == NULL)
+    data->pyform = newPyObj(obj);
+  return data->pyform;
+}
+
+PyObject *roomGetPyFormBorrowed(ROOM_DATA *room) {
+  TRIGGER_AUX_DATA *data = roomGetAuxiliaryData(room, "trigger_data");
+  if(data->pyform == NULL)
+    data->pyform = newPyRoom(room);
+  return data->pyform;
+}
+
+PyObject *charGetPyForm(CHAR_DATA *ch) {
+  PyObject *pyform = charGetPyFormBorrowed(ch);
+  Py_INCREF(pyform);
+  return pyform;
+}
+
+PyObject *objGetPyForm(OBJ_DATA *obj) {
+  PyObject *pyform = objGetPyFormBorrowed(obj);
+  Py_INCREF(pyform);
+  return pyform; 
+}
+
+PyObject *roomGetPyForm(ROOM_DATA *room) {
+  PyObject *pyform = roomGetPyFormBorrowed(room);
+  Py_INCREF(pyform);
+  return pyform;
 }
 
 void triggerListAdd(LIST *list, const char *trigger) {
@@ -695,9 +918,14 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
   }
 
   line[line_i] = '\0';
+
   // send the last line
-  if(*line)
-    send_to_socket(sock, "{c%2d]{g  %s{n\r\n", line_num, line);
+  if(*line) {
+    if(show_line_nums)
+      send_to_socket(sock, "{c%2d]{g  %s{n\r\n", line_num, line);
+    else
+      send_to_socket(sock, "%s{n\r\n", line);
+  }
 
   // and kill any color that is leaking
   //  send_to_socket(sock, "{n");

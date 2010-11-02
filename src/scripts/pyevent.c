@@ -151,6 +151,7 @@ PyMethodDef event_module_methods[] = {
    "itself to the event queue after completion."},
   {"interrupt_events_involving",  PyEvent_interrupt_event, METH_VARARGS,
    "Interrupt all of the events involving the given object, room, or char."},
+  {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
 

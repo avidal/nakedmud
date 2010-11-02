@@ -34,6 +34,9 @@
 // global variables we have set.
 PyObject  *globals = NULL;
 
+// a list of methods to add to the mud module
+LIST *pymud_methods = NULL;
+
 
 
 //*****************************************************************************
@@ -205,12 +208,27 @@ PyObject *mud_generic_find(PyObject *self, PyObject *args) {
   int found_type = FOUND_NONE;
   void    *found = generic_find(looker, arg, type, scope, all_ok, &found_type);
 
-  if(found_type == FOUND_CHAR)
-    return Py_BuildValue("Os", newPyChar(found), "char");
-  else if(found_type == FOUND_OBJ)
-    return Py_BuildValue("Os", newPyObj(found), "obj");
-  else if(found_type == FOUND_IN_OBJ)
-    return Py_BuildValue("Os", newPyObj(found), "in");
+  if(found_type == FOUND_CHAR) {
+    // were we searching for one type, or multiple types?
+    if(!strcasecmp("char", type_str))
+      return Py_BuildValue("O", charGetPyFormBorrowed(found));
+    else
+      return Py_BuildValue("Os", charGetPyFormBorrowed(found), "char");
+  }
+  else if(found_type == FOUND_OBJ) {
+    // were we searching for one type, or multiple types?
+    if(!strcasecmp("obj", type_str))
+      return Py_BuildValue("O", objGetPyFormBorrowed(found));
+    else
+      return Py_BuildValue("Os", objGetPyFormBorrowed(found), "obj");
+  }
+  else if(found_type == FOUND_IN_OBJ) {
+    // were we searching for one type, or multiple types?
+    if(!strcasecmp("in", type_str))
+      return Py_BuildValue("O", objGetPyFormBorrowed(found));
+    else
+      return Py_BuildValue("Os", objGetPyFormBorrowed(found), "in");
+  }
   // now it gets a bit more tricky... we have to see what other bit was set
   else if(found_type == FOUND_LIST) {
     PyObject         *list = PyList_New(0);
@@ -218,15 +236,17 @@ PyObject *mud_generic_find(PyObject *self, PyObject *args) {
     void        *one_found = NULL;
     if(IS_SET(type, FIND_TYPE_CHAR)) {
       ITERATE_LIST(one_found, found_i)
-	PyList_Append(list, newPyChar(one_found));
+	PyList_Append(list, charGetPyFormBorrowed(one_found));
     }
     else if(IS_SET(type, FIND_TYPE_OBJ | FIND_TYPE_IN_OBJ)) {
       ITERATE_LIST(one_found, found_i)
-	PyList_Append(list, newPyChar(one_found));
+	PyList_Append(list, charGetPyFormBorrowed(one_found));
     }
     deleteListIterator(found_i);
     deleteList(found);
-    return Py_BuildValue("Os", list, "list");
+    PyObject *retval = Py_BuildValue("Os", list, "list");
+    Py_DECREF(list);
+    return retval;
   }
 
   // nothing was found...
@@ -362,45 +382,74 @@ PyObject *mud_ite(PyObject *self, PyObject *args) {
     return false_act;
 }
 
+//
+// returns whether or not two database keys have the same name. Locale sensitive
+PyObject *mud_keys_equal(PyObject *self, PyObject *args) {
+  char *key1 = NULL;
+  char *key2 = NULL;
+  if(!PyArg_ParseTuple(args, "ss", &key1, &key2)) {
+    PyErr_Format(PyExc_TypeError, "keys_equal takes two string arguments");
+    return NULL;
+  }
+
+  char *fullkey1 = strdup(get_fullkey_relative(key1, get_script_locale()));
+  char *fullkey2 = strdup(get_fullkey_relative(key2, get_script_locale()));
+  bool        ok = !strcasecmp(fullkey1, fullkey2);
+  free(fullkey1);
+  free(fullkey2);
+  return Py_BuildValue("i", ok);
+}
+
 
 
 //*****************************************************************************
 // MUD module
 //*****************************************************************************
-PyMethodDef mud_module_methods[] = {
-    {"get_global",  mud_get_global, METH_VARARGS,
-     "Get the value of a global variable."},
-    {"set_global",  mud_set_global, METH_VARARGS,
-     "Set the value of a global variable."},
-    {"erase_global",  mud_erase_global, METH_VARARGS,
-     "Erase the value of a global variable."},
-    {"add_cmd", mud_add_cmd, METH_VARARGS,
-     "Add a new command to the game."},
-    {"message", mud_message, METH_VARARGS,
-     "plugs into the message() function from inform.h" },
-    {"format_string", mud_format_string, METH_VARARGS,
-     "format a string to be 80 chars wide and indented. Like a desc."},
-    {"generic_find",  mud_generic_find, METH_VARARGS,
-     "Python wrapper around the generic_find() function"},
-    {"extract", mud_extract, METH_VARARGS,
-    "extracts an object or character from the game. This method is dangerous, "
-    "since the object may still be needed in whichever function called the "
-    "script that activated this method" },
-    {"ite", mud_ite, METH_VARARGS,
-     "A functional form of an if-then-else statement. Takes 2 arguments "
-     "(condition, if action) and an optional third (else action). If no else "
-     "action is specified and the condition is false, None is returned." },
-    {NULL, NULL, 0, NULL}        /* Sentinel */
-};
+void PyMud_addMethod(const char *name, void *f, int flags, const char *doc) {
+  // make sure our list of methods is created
+  if(pymud_methods == NULL) pymud_methods = newList();
+
+  // make the Method def
+  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
+  def->ml_name     = strdup(name);
+  def->ml_meth     = (PyCFunction)f;
+  def->ml_flags    = flags;
+  def->ml_doc      = (doc ? strdup(doc) : NULL);
+  listPut(pymud_methods, def);
+}
 
 
 PyMODINIT_FUNC
 init_PyMud(void) {
-  PyObject *m;
+  // add all of our methods
+  PyMud_addMethod("get_global", mud_get_global, METH_VARARGS,
+		  "Get the value of a global variable.");
+  PyMud_addMethod("set_global", mud_set_global, METH_VARARGS,
+		  "Set the value of a global variable.");
+  PyMud_addMethod("erase_global",  mud_erase_global, METH_VARARGS,
+		  "Erase the value of a global variable.");
+  PyMud_addMethod("add_cmd", mud_add_cmd, METH_VARARGS,
+		  "Add a new command to the game.");
+  PyMud_addMethod("message", mud_message, METH_VARARGS,
+		  "plugs into the message() function from inform.h");
+  PyMud_addMethod("format_string", mud_format_string, METH_VARARGS,
+		  "format a string to be 80 chars wide and indented.");
+  PyMud_addMethod("generic_find",  mud_generic_find, METH_VARARGS,
+		  "Python wrapper around the generic_find() function");
+  PyMud_addMethod("extract", mud_extract, METH_VARARGS,
+		  "extracts an object or character from the game.");
+  PyMud_addMethod("keys_equal", mud_keys_equal, METH_VARARGS,
+		  "Returns whether or not two db keys are equal, given the ."
+		  "locale that the script is running in.");
+  PyMud_addMethod("ite", mud_ite, METH_VARARGS,
+		  "A functional form of an if-then-else statement. Takes 2 "
+		  "arguments (condition, if action) and an optional third "
+		  "(else action). If no else action is specified and the "
+		  "condition is false, None is returned.");
+
+  Py_InitModule3("mud", makePyMethods(pymud_methods),
+		 "The mud module, for all MUD misc mud utils.");
 
   globals = PyDict_New();
   Py_INCREF(globals);
-
-  m = Py_InitModule3("mud", mud_module_methods,
-		     "The mud module, for all MUD misc mud utils.");
 }

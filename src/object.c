@@ -313,7 +313,7 @@ void objSetClass(OBJ_DATA *obj, const char *prototype) {
 
 void objSetPrototypes(OBJ_DATA *obj, const char *prototypes) {
   if(obj->prototypes) free(obj->prototypes);
-  obj->prototypes = strdupsafe(obj->prototypes);
+  obj->prototypes = strdupsafe(prototypes);
 }
 
 void objAddPrototype(OBJ_DATA *obj, const char *prototype) {

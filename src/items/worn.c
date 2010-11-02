@@ -29,6 +29,7 @@
 #include "../object.h"
 #include "../inform.h"
 #include "../handler.h"
+#include "../hooks.h"
 
 #include "../olc2/olc.h"
 #include "iedit.h"
@@ -71,6 +72,15 @@ void deleteWornEntry(WORN_ENTRY *entry) {
 const char *wornTypeGetPositions(const char *type) {
   WORN_ENTRY *entry = hashGet(worn_table, type);
   return (entry ? entry->positions : "");
+}
+
+//
+// append information about where the item can be worn
+void append_worn_hook(BUFFER *desc, OBJ_DATA *obj, CHAR_DATA *ch) {
+  if(objIsType(obj, "worn")) {
+    bprintf(desc, "When worn, this item covers bodyparts: %s.", 
+	    wornGetPositions(obj));
+  }
 }
 
 
@@ -163,13 +173,13 @@ void iedit_worn_show_types(SOCKET_DATA *sock) {
 
   text_to_buffer(sock, "{wEditable item types:{g\r\n");
   ITERATE_LIST(key, type_i) {
-    send_to_socket(sock, "  %-14s%s",
-		   key, ((col != 0 && col % 3 == 0) ? "\r\n": "   "));
     col++;
+    send_to_socket(sock, "  %-14s%s",
+		   key, ((col != 0 && col % 4 == 0) ? "\r\n": "   "));
   }
   deleteListIterator(type_i);
   deleteListWith(types, free);
-  if(col % 3 != 0) text_to_buffer(sock, "\r\n");
+  if(col % 4 != 0) text_to_buffer(sock, "\r\n");
 }
 
 
@@ -293,6 +303,9 @@ void init_worn(void) {
   // set up the worn OLC too
   item_add_olc("worn", iedit_worn_menu, iedit_worn_chooser, iedit_worn_parser,
 	       worn_from_proto, worn_to_proto);
+
+  // attach our hooks to display worn info on look
+  hookAdd("append_obj_desc", append_worn_hook);
 
   // add our new python get/setters
   PyObj_addGetSetter("worn_type", PyObj_getworntype, PyObj_setworntype,

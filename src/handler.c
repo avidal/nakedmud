@@ -44,7 +44,7 @@ void obj_to_game(OBJ_DATA *obj) {
   propertyTablePut(obj_table, obj);
 
   // execute all of our to_game hooks
-  hookRun("obj_to_game", obj, NULL, NULL);
+  hookRun("obj_to_game", obj);
 
   // also add all contents
   if(listSize(objGetContents(obj)) > 0) {
@@ -61,7 +61,7 @@ void room_to_game(ROOM_DATA *room) {
   propertyTablePut(room_table, room);
 
   // execute all of our to_game hooks
-  hookRun("room_to_game", room, NULL, NULL);
+  hookRun("room_to_game", room);
 
   // add contents
   if(listSize(roomGetContents(room)) > 0) {
@@ -100,7 +100,7 @@ void char_to_game(CHAR_DATA *ch) {
   propertyTablePut(mob_table, ch);
 
   // execute all of our to_game hooks
-  hookRun("char_to_game", ch, NULL, NULL);
+  hookRun("char_to_game", ch);
 
   // also add inventory
   if(listSize(charGetInventory(ch)) > 0) {
@@ -132,7 +132,7 @@ void obj_from_game(OBJ_DATA *obj) {
   propertyTableRemove(obj_table, objGetUID(obj));
 
   // go through all of our fromgame hooks
-  hookRun("obj_from_game", obj, NULL, NULL);
+  hookRun("obj_from_game", obj);
 
   // also remove everything that is contained within the object
   if(listSize(objGetContents(obj)) > 0) {
@@ -149,7 +149,7 @@ void room_from_game(ROOM_DATA *room) {
   propertyTableRemove(room_table, roomGetUID(room));
 
   // go through all of our fromgame hooks
-  hookRun("room_from_game", room, NULL, NULL);
+  hookRun("room_from_game", room);
 
   // also remove all the objects contained within the room
   if(listSize(roomGetContents(room)) > 0) {
@@ -184,7 +184,7 @@ void char_from_game(CHAR_DATA *ch) {
   propertyTableRemove(mob_table, charGetUID(ch));
 
   // go through all of our fromgame hooks
-  hookRun("char_from_game", ch, NULL, NULL);
+  hookRun("char_from_game", ch);
 
   // also remove inventory
   if(listSize(charGetInventory(ch)) > 0) {
@@ -292,7 +292,7 @@ void do_get(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
 	    "$n gets $o.");
     obj_from_room(obj);
     obj_to_char(obj, ch);
-    hookRun("get", ch, obj, NULL);
+    hookRun("get", ch, obj);
   }
 }
 
@@ -334,13 +334,12 @@ void do_give(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
 
 void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
   send_to_char(ch, "You drop %s.\r\n", objGetName(obj));
-  message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
-	  "$n drops $o.");
+  message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n drops $o.");
   obj_from_char(obj);
   obj_to_room(obj, charGetRoom(ch));
 
   // run all of our drop hooks
-  hookRun("drop", ch, obj, NULL);
+  hookRun("drop", ch, obj);
 }
 
 
@@ -349,8 +348,10 @@ void do_wear(CHAR_DATA *ch, OBJ_DATA *obj, const char *where) {
     send_to_char(ch, "You cannot wear %s!\r\n", objGetName(obj));
   else {
     obj_from_char(obj);
-    if(try_equip(ch, obj, where))
-      send_to_char(ch, "You equip %s.\r\n", objGetName(obj));
+    if(try_equip(ch, obj, where, wornGetPositions(obj))) {
+      message(ch, NULL, obj, NULL, TRUE, TO_CHAR, "You equip $o.");
+      message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n equips $o.");
+    }
     else {
       send_to_char(ch, "You could not equip %s.\r\n", objGetName(obj));
       obj_to_char(obj, ch);
@@ -361,7 +362,8 @@ void do_wear(CHAR_DATA *ch, OBJ_DATA *obj, const char *where) {
 
 void do_remove(CHAR_DATA *ch, OBJ_DATA *obj) {
   if(try_unequip(ch, obj)) {
-    send_to_char(ch, "You remove %s.\r\n", objGetName(obj));
+    message(ch, NULL, obj, NULL, TRUE, TO_CHAR, "You remove $o.");
+    message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n removes $o.");
     obj_to_char(obj, ch);
   }
   else
@@ -373,73 +375,62 @@ void do_remove(CHAR_DATA *ch, OBJ_DATA *obj) {
 //*****************************************************************************
 // functions related to equipping and unequipping items
 //*****************************************************************************
-bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *poslist) {
-  if(!objIsType(obj, "worn"))
-    return FALSE;
+bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *wanted_pos,
+	       const char *required_pos) {
+  bool success = FALSE;
 
-  bool success       = FALSE;
-  char *wanted       = NULL;
-  const char *needed = NULL;
+  // if we don't need any specific places, try equipping to our wanted spots
+  if(!required_pos || !*required_pos)
+    success = bodyEquipPosnames(charGetBody(ch), obj, wanted_pos);
 
-  // get a list of the position types we need to equip to
+  // if we don't want any specific places, equip to whatever is open
+  else if(!wanted_pos || !*wanted_pos)
+    success = bodyEquipPostypes(charGetBody(ch), obj, required_pos);
 
-  // see where we _want_ to equip to
-  if(poslist && *poslist)
-    wanted = list_postypes(charGetBody(ch), poslist);
-  needed = wornGetPositions(obj);
-
-  // just equip to the first free slots
-  if(!wanted)
-    success = bodyEquipPostypes(charGetBody(ch), obj, needed);
-  // check to see if all the positions we want to equip to match up with
-  // what we need to equip to
-  else {
+  // otherwise, see if the places we want to equip to match what we need,
+  // and also make sure we're not trying to equip the same position twice
+  else if(!dup_keywords_exist(wanted_pos)) {
     // build lists of what we want and what we need, and compare
-    int i, j, num_want = 0, num_need = 0;
-    char **want_names, **need_names;
-    bool match = FALSE;
-    want_names = parse_keywords(wanted, &num_want);
-    need_names = parse_keywords(needed, &num_need); 
+    char *want_type_list = list_postypes(charGetBody(ch), wanted_pos);
+    LIST     *want_types = parse_keywords(want_type_list); 
+    LIST     *need_types = parse_keywords(required_pos);
+    bool           match = TRUE;
 
-    // try to match it all up
-    if(num_want == num_need) {
-      // assume true, and try to find two that mismatch
-      match = TRUE;
-      for(i = 0; i < num_want; i++) {
-	bool found = FALSE;
-	for(j = 0; j < num_need; j++) {
-	  if(need_names[j] && !strcmp(want_names[i], need_names[j])) {
-	    // use one up
-	    free(need_names[j]); 
-	    need_names[j] = NULL;
-	    found = TRUE;
-	    break;
-	  }
-	}
-	if(!found) {
-	  match = FALSE;
+    // make sure we have both wanted and needed positions
+    // and then try to match it all up
+    if(listSize(want_types) != listSize(need_types))
+      match = FALSE;
+    else {
+      LIST_ITERATOR *need_i = newListIterator(need_types);
+      char        *one_need = NULL;
+
+      // now, make sure that each our our needed positions is represented
+      ITERATE_LIST(one_need, need_i) {
+	char *found = listRemoveWith(want_types, one_need, strcasecmp);
+	// if we found it, free the memory. Otherwise, break out and fail
+	if(found == NULL)
 	  break;
-	}
-      }
+	else
+	  free(found);
+      } deleteListIterator(need_i);
+
+      // make sure we accounted for all of our needed positions
+      match = (listSize(want_types) == 0);
     }
 
-    // try to equip
-    if(match)
-      success = bodyEquipPosnames(charGetBody(ch), obj, poslist);
+    // garbage collection
+    if(want_type_list) free(want_type_list);
+    deleteListWith(want_types, free);
+    deleteListWith(need_types, free);
 
-    // free everything up
-    for(i = 0; i < num_want || i < num_need; i++) {
-      if(want_names[i]) free(want_names[i]);
-      if(need_names[i]) free(need_names[i]);
-    }
-    if(want_names) free(want_names);
-    if(need_names) free(need_names);
+    // if we didn't run into problems, try equipping
+    if(match == TRUE)
+      success = bodyEquipPosnames(charGetBody(ch), obj, wanted_pos);
   }
 
-  if(wanted) free(wanted);
-  if(success) {
+  if(success == TRUE) {
     objSetWearer(obj, ch);
-    hookRun("wear", ch, obj, NULL);
+    hookRun("wear", ch, obj);
   }
   return success;
 }
@@ -447,7 +438,7 @@ bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *poslist) {
 bool try_unequip(CHAR_DATA *ch, OBJ_DATA *obj) {
   if(bodyUnequip(charGetBody(ch), obj)) {
     objSetWearer(obj, NULL);
-    hookRun("remove", ch, obj, NULL);
+    hookRun("remove", ch, obj);
     return TRUE;
   }
   return FALSE;
@@ -462,7 +453,7 @@ void unequip_all(CHAR_DATA *ch) {
   while( (obj = listPop(eq)) != NULL) {
     if(bodyUnequip(charGetBody(ch), obj)) {
       objSetWearer(obj, NULL);
-      hookRun("remove", ch, obj, NULL);
+      hookRun("remove", ch, obj);
       obj_to_char(obj, ch);
     }
   } deleteList(eq);

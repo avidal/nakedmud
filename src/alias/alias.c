@@ -158,7 +158,7 @@ BUFFER *expand_alias(CHAR_DATA *ch, const char *alias, const char *arg) {
   BUFFER *cmd = newBuffer(SMALL_BUFFER);
   func_depth++;
 
-  BUFFER *filled_alias = newBuffer(1);
+  BUFFER *filled_alias = newBuffer(MAX_BUFFER);
   bufferCat(filled_alias, alias);
   // now, replace all of our parameters 
   int i;
@@ -312,25 +312,25 @@ bool try_alias(CHAR_DATA *ch, char *command, char *arg) {
     if(alias == NULL)
       return FALSE;
     else {
-      BUFFER     *buf = expand_alias(ch, alias, arg);
-      int i, num_cmds = 0;
       // break the buffer contents up into multiple commands, if there are any
-      char     **cmds = parse_strings(bufferString(buf), ';', &num_cmds);
+      BUFFER     *buf = expand_alias(ch, alias, arg);
+      LIST      *cmds = parse_strings(bufferString(buf), ';');
+      char     *first = listPop(cmds);
       
       // queue all of our commands after the first onto the command list
-      if(charGetSocket(ch) && num_cmds > 1) {
-	for(i = 1; i < num_cmds; i++)
-	  socketQueueCommand(charGetSocket(ch), cmds[i]);
-	// note how many commands we got out of this alias
-	charSetAliasesQueued(ch, num_cmds);
+      if(charGetSocket(ch) && listSize(cmds) > 0) {
+	LIST_ITERATOR *cmd_i = newListIterator(cmds);
+	char            *cmd = NULL;
+	ITERATE_LIST(cmd, cmd_i) {
+	  socketQueueCommand(charGetSocket(ch), cmd);
+	} deleteListIterator(cmd_i);
+	charSetAliasesQueued(ch, listSize(cmds) + 1);
       }
-      if(num_cmds > 0)
-	do_cmd(ch, cmds[0], FALSE);
-      
-      // clean up our mess
-      for(i = 0; i < num_cmds; i++)
-	free(cmds[i]);
-      free(cmds);
+      if(first != NULL)
+	do_cmd(ch, first, FALSE);
+
+      deleteListWith(cmds, free);
+      if(first) free(first);
       deleteBuffer(buf);
       return TRUE;
     }

@@ -7,15 +7,14 @@
 //
 //*****************************************************************************
 
-#include <Python.h>
-#include <structmember.h>
-
 #include "../mud.h"
 #include "../utils.h"
 #include "../object.h"
 #include "../room.h"
 #include "../exit.h"
+#include "../world.h"
 
+#include "scripts.h"
 #include "pyroom.h"
 #include "pyobj.h"
 #include "pyplugs.h"
@@ -103,8 +102,11 @@ PyObject *PyExit_getkey(PyObject *self, void *closure) {
 
 PyObject *PyExit_getdest(PyObject *self, void *closure) {
   EXIT_DATA *ex = PyExit_AsExit((PyObject *)self);
-  if(ex != NULL) return Py_BuildValue("s", exitGetTo(ex));
-  else           return NULL;  
+  if(ex == NULL) return NULL;
+  else {
+    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(ex));
+    return Py_BuildValue("O", (dest ? roomGetPyFormBorrowed(dest) : Py_None));
+  }
 }
 
 PyObject *PyExit_getspotdiff(PyObject *self, void *closure) {
@@ -172,6 +174,17 @@ PyObject *PyExit_getlocked(PyObject *self, void *closure) {
   if(ex != NULL) return Py_BuildValue("b", exitIsLocked(ex));
   else           return NULL;  
 }
+
+PyObject *PyExit_getroom(PyObject *self, void *closure) {
+  EXIT_DATA *ex = PyExit_AsExit((PyObject *)self);
+  if(ex == NULL) 
+    return NULL;
+  else
+    return Py_BuildValue("O", (exitGetRoom(ex) ? 
+			       roomGetPyFormBorrowed(exitGetRoom(ex)) : 
+			       Py_None));
+}
+
 
 
 //
@@ -434,6 +447,7 @@ PyObject *PyExit_makedoor(PyExit *self, PyObject *value) {
     exitSetName(ex, name);
   if(kwds != NULL)
     exitSetKeywords(ex, kwds);
+  exitSetClosable(ex, TRUE);
 
   // if we pulled up an opposite, we know we probably also got closed and locked
   // status. Not always, but close enough...
@@ -620,6 +634,8 @@ init_PyExit(void) {
 			"true or false if the exit is closed.");
     PyExit_addGetSetter("is_locked", PyExit_getlocked, NULL,
 			"true or false if the exit is locked.");
+    PyExit_addGetSetter("room", PyExit_getroom, NULL,
+			"the room we are attached to.");
 
     // add all of the basic methods
     PyExit_addMethod("makedoor", PyExit_makedoor, METH_VARARGS,

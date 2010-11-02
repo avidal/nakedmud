@@ -17,6 +17,7 @@
 #include "world.h"
 #include "room.h"
 #include "object.h"
+#include "hooks.h"
 
 
 
@@ -126,8 +127,7 @@ COMMAND(cmd_lock) {
       exitSetLocked(found, TRUE);
 
       // and try the other side
-      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found),
-			   TRUE);
+      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found), TRUE);
     }
   }
 
@@ -181,8 +181,7 @@ COMMAND(cmd_unlock) {
       exitSetLocked(found, FALSE);
 
       // and try the other side
-      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found),
-			   FALSE);
+      try_manip_other_exit(charGetRoom(ch), found, exitIsClosed(found), FALSE);
     }
   }
 
@@ -283,6 +282,7 @@ COMMAND(cmd_open) {
 
       // try opening the other side
       try_manip_other_exit(charGetRoom(ch), found, FALSE, exitIsLocked(found));
+      hookRun("open_door", ch, found);
     }
   }
 
@@ -299,6 +299,7 @@ COMMAND(cmd_open) {
       send_to_char(ch, "You open %s.\r\n", objGetName(found));
       message(ch, NULL, found, NULL, FALSE, TO_ROOM, "$n opens $o.");
       containerSetClosed(found, FALSE);
+      hookRun("open_obj", ch, found);
     }
   }
 }
@@ -523,7 +524,7 @@ COMMAND(cmd_wear) {
   bool multiple = FALSE;
   char   *where = NULL;
 
-  if(!parse_args(ch, TRUE, cmd, arg, "[the] obj.inv.multiple | [on my] string", 
+  if(!parse_args(ch, TRUE, cmd, arg, "[the] obj.inv.multiple | [on] string", 
 		 &found, &multiple, &where))
     return;
 

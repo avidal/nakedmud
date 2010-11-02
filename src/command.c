@@ -21,6 +21,7 @@
 //*****************************************************************************
 // mandatory modules
 //*****************************************************************************
+#include "scripts/scripts.h"
 #include "scripts/pyplugs.h"
 #include "scripts/pychar.h"
 
@@ -207,7 +208,8 @@ bool charTryCmd(CHAR_DATA *ch, CMD_DATA *cmd, char *arg) {
     if(cmd->func)
       (cmd->func)(ch, cmd->name, arg);
     else {
-      PyObject *arglist = Py_BuildValue("Oss", newPyChar(ch), cmd->name, arg);
+      PyObject *arglist = Py_BuildValue("Oss", charGetPyFormBorrowed(ch), 
+					cmd->name, arg);
       PyObject *retval  = PyEval_CallObject(cmd->pyfunc, arglist);
       // check for an error:
       if(retval == NULL) {
@@ -218,6 +220,8 @@ bool charTryCmd(CHAR_DATA *ch, CMD_DATA *cmd, char *arg) {
 	  free(tb);
 	}
       }
+
+      // garbage collection
       Py_XDECREF(retval);
       Py_XDECREF(arglist);
     }

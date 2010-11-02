@@ -96,11 +96,6 @@ void run_event(EVENT_DATA *event) {
     event->on_complete(event->owner, event->data, event->arg);
 }
 
-// the hook for interrupting events when something is removed from game
-void interrupt_events_hook(void *thing, void *none1, void *none2) {
-  interrupt_events_involving(thing);
-}
-
 
 
 //*****************************************************************************
@@ -115,9 +110,9 @@ void init_events() {
 
   // make sure all events involving the object/char are cancelled when
   // either is extracted from the game
-  hookAdd("obj_from_game",  interrupt_events_hook);
-  hookAdd("char_from_game", interrupt_events_hook);
-  hookAdd("room_from_game", interrupt_events_hook);
+  hookAdd("obj_from_game",  interrupt_events_involving);
+  hookAdd("char_from_game", interrupt_events_involving);
+  hookAdd("room_from_game", interrupt_events_involving);
 }
 
 void interrupt_event(EVENT_DATA *event) {

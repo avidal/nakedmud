@@ -220,7 +220,7 @@ void *mapRemove (MAP *map, const void *key) {
 }
 
 int   mapIn     (MAP *map, const void *key) {
-  return (mapGet(map, key) != NULL);
+  return (mapGetEntry(map, key) != NULL);
 }
 
 int   mapSize   (MAP *map) {

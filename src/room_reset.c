@@ -32,6 +32,7 @@
 #include "items/items.h"
 #include "items/container.h"
 #include "items/furniture.h"
+#include "items/worn.h"
 
 
 
@@ -355,7 +356,8 @@ bool try_reset_load_object(RESET_DATA *reset, void *initiator,
   // equip the mobile
   else if(initiator_type == INITIATOR_ON_MOB) {
     // see if we can equip it
-    bool equipped = try_equip(initiator, obj, NULL);
+    bool equipped = (objIsType(obj, "worn") && 
+		     try_equip(initiator, obj, NULL, wornGetPositions(obj)));
     // we failed! Extract the object
     if(!equipped) {
       extract_obj(obj);
@@ -375,7 +377,9 @@ bool try_reset_load_object(RESET_DATA *reset, void *initiator,
     else if(objGetCarrier(initiator))
       obj_to_char(obj, objGetCarrier(initiator));
     else if(objGetWearer(initiator)) {
-      bool equipped = try_equip(objGetWearer(initiator), obj, NULL);
+      bool equipped = (objIsType(obj, "worn") && 
+		       try_equip(objGetWearer(initiator), obj, NULL, 
+				 wornGetPositions(obj)));
       // we failed! Extract the object
       if(!equipped) {
 	extract_obj(obj);
@@ -709,7 +713,7 @@ bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type,
 
 //
 // room reset hook. Whenever a room is reset, apply all of its reset rules
-void room_reset_hook(ZONE_DATA *zone, void *none1, void *none2) {
+void room_reset_hook(ZONE_DATA *zone) {
   LIST_ITERATOR *res_i = newListIterator(zoneGetResettable(zone));
   char           *name = NULL;
   const char   *locale = zoneGetKey(zone);

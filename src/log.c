@@ -132,19 +132,18 @@ void try_log(const char *file, const char *string) {
       found = TRUE;
     // for each key, see if it exists in the string
     else {
-      int i, num_keys = 0;
-      char **keys = NULL;
-      keys = parse_keywords(keywords, &num_keys);
-      for(i = 0; i < num_keys; i++) {
+      LIST           *keys = parse_keywords(keywords);
+      LIST_ITERATOR *key_i = newListIterator(keys);
+      char            *key = NULL;
+
+      ITERATE_LIST(key, key_i) {
 	// found one
-	if(strstr(string, keys[i])) {
+	if(strstr(string, key)) {
 	  found = TRUE;
 	  break;
 	}
-      }
-      // free all of the keys
-      for(i = 0; i < num_keys; i++)
-	free(keys[i]);
+      } deleteListIterator(key_i);
+      deleteListWith(keys, free);
     }
 
     if(found) {

@@ -30,8 +30,6 @@
 // mandatory modules
 //*****************************************************************************
 #include "items/items.h"
-#include "items/portal.h"
-#include "items/container.h"
 #include "items/furniture.h"
 
 
@@ -137,86 +135,54 @@ void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj) {
   // do all of the preprocessing on the new descriptions
   hookRun("preprocess_obj_desc", new_desc, obj, ch);
 
+  // append anything that might also go onto it
+  hookRun("append_obj_desc", new_desc, obj, ch);
+
   // colorize all of the edescs
   edescTagDesc(new_desc, objGetEdescs(obj), "{c", "{g");
 
   // format the desc, and send it
   bufferFormat(new_desc, SCREEN_WIDTH, PARA_INDENT);
-  send_to_char(ch, "{g%s", bufferString(new_desc));
+
+  if(bufferLength(new_desc) == 0)
+    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
+  else
+    send_to_char(ch, "{g%s", bufferString(new_desc));
 
   // free up our mess
   deleteBuffer(new_desc);
 
-  // list container-related stuff
-  if(objIsType(obj, "container")) {
-    send_to_char(ch, "{g%s is %s%s.\r\n",
-		 objGetName(obj), 
-		 (containerIsClosed(obj) ? "closed" : "opened"),
-		 (containerIsLocked(obj) ? " and locked"  : ""));
-
-    // print all of our contents
-    if(listSize(objGetContents(obj)) > 0 && !containerIsClosed(obj)) {
-      LIST *vis_contents = find_all_objs(ch, objGetContents(obj), "", 
-					 NULL, TRUE);
-      // make sure we can still see things
-      if(listSize(vis_contents) > 0) {
-	send_to_char(ch, "It contains:\r\n");
-	show_list(ch, vis_contents, objGetName, objGetMultiName);
-      }
-      deleteList(vis_contents);
-    }
-  }
-
-  // list furniture-related stuff
-  else if(objIsType(obj, "furniture")) {
-    int num_sitters = listSize(objGetUsers(obj));
-
-    send_to_char(ch, "\r\n");
-
-    // print character names
-    if(num_sitters > 0) {
-      LIST *can_see = find_all_chars(ch, objGetUsers(obj), "", NULL, TRUE);
-      listRemove(can_see, ch);
-
-      char *chars = print_list(can_see, charGetName, charGetMultiName);
-      if(*chars) send_to_char(ch, "{g%s %s %s %s%s.\r\n",
-			      chars, (listSize(can_see) == 1 ? "is" : "are"),
-			      (furnitureGetType(obj)==FURNITURE_AT ? "at":"on"),
-			      objGetName(obj),
-			      (charGetFurniture(ch) == obj ? " with you" : ""));
-      deleteList(can_see);
-      free(chars);
-    }
-
-    // print out how much room there is left on the furniture
-    int seats_left = (furnitureGetCapacity(obj) - num_sitters);
-    if(seats_left > 0)
-      send_to_char(ch, "{g%s looks like it could fit %d more %s.\r\n",
-		   objGetName(obj), seats_left, 
-		   (seats_left == 1 ? "person" : "people"));
-  }
+  hookRun("look_at_obj", obj, ch);
+  send_to_char(ch, "{n");
 }
 
 
 void look_at_exit(CHAR_DATA *ch, EXIT_DATA *exit) {
-  send_to_char(ch, "{g%s", (*exitGetDesc(exit) ? exitGetDesc(exit) :
-			    NOTHING_SPECIAL"\r\n"));
-  // we have a door ... gotta print it's status
-  if(exitIsClosable(exit)) {
-    if(!*exitGetName(exit))
-      send_to_char(ch, "It is %s.\r\n", (exitIsClosed(exit) ? "closed":"open"));
-    else {
-      send_to_char(ch, "You see %s. (%s)\r\n", 
-		   exitGetName(exit), (exitIsClosed(exit) ? "closed":"open"));
-    }
-  }
+  // make the working copy of the description, and fill it up with info
+  BUFFER *desc = bufferCopy(exitGetDescBuffer(exit));
 
-  // the door is not closed, list off the people we can see as well
-  if(!exitIsClosed(exit)) {
-    ROOM_DATA *room = worldGetRoom(gameworld, exitGetTo(exit));
-    if(room != NULL)
-      list_room_contents(ch, room);
-  }
+  // do all of our preprocessing of the description before we show it
+  hookRun("preprocess_exit_desc", desc, exit, ch);
+
+  // append anything that might also go onto it
+  hookRun("append_exit_desc", desc, exit, ch);
+
+  // colorize all of the edescs
+  edescTagDesc(desc, roomGetEdescs(exitGetRoom(exit)), "{c", "{g");
+
+  // format our description
+  bufferFormat(desc, SCREEN_WIDTH, PARA_INDENT);
+
+  // if the buffer has nothing in it, send a "nothing special" message
+  if(bufferLength(desc) == 0)
+    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
+  else
+    send_to_char(ch, "{g%s", bufferString(desc));
+
+  deleteBuffer(desc);
+
+  hookRun("look_at_exit", exit, ch);
+  send_to_char(ch, "{n");
 }
 
 //
@@ -292,27 +258,25 @@ void show_body(CHAR_DATA *ch, BODY_DATA *body) {
 
 
 void look_at_char(CHAR_DATA *ch, CHAR_DATA *vict) {
-  // if we're an NPC, do some special work for displaying us. We don't do 
-  // dynamic descs for PCs because they will probably be describing themselves,
-  // and we don't want to give them access to the scripting language.
-  if(!charIsNPC(vict))
-    send_to_char(ch, "{g%s{n", (*charGetDesc(vict) ? 
-				charGetDesc(vict) : NOTHING_SPECIAL"\r\n"));
-  else {
-    BUFFER *new_desc = bufferCopy(charGetDescBuffer(vict));
+  BUFFER *new_desc = bufferCopy(charGetDescBuffer(vict));
 
-    // preprocess our desc before it it sent to the person
-    hookRun("preprocess_char_desc", new_desc, vict, ch);
+  // preprocess our desc before it it sent to the person
+  hookRun("preprocess_char_desc", new_desc, vict, ch);
+
+  // append anything that might also go onto it
+  hookRun("append_char_desc", new_desc, vict, ch);
     
-    // format and send it
-    bufferFormat(new_desc, SCREEN_WIDTH, PARA_INDENT);
-    send_to_char(ch, "{g%s{n", (bufferLength(new_desc) > 0 ?
-				bufferString(new_desc): NOTHING_SPECIAL"\r\n"));
+  // format and send it
+  bufferFormat(new_desc, SCREEN_WIDTH, PARA_INDENT);
 
-    // clean up our mess
-    deleteBuffer(new_desc);
-  }
-  show_body(ch, charGetBody(vict));
+  if(bufferLength(new_desc) == 0)
+    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
+  else
+    send_to_char(ch, "{g%s{n", bufferString(new_desc));
+  
+  // clean up our mess
+  deleteBuffer(new_desc);
+  hookRun("look_at_char", vict, ch);
 }
 
 
@@ -329,19 +293,24 @@ void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
   // do all of our preprocessing of the description before we show it
   hookRun("preprocess_room_desc", desc, room, ch);
 
+  // append anything that might also go onto it
+  hookRun("append_room_desc", desc, room, ch);
+
   // colorize all of the edescs
   edescTagDesc(desc, roomGetEdescs(room), "{c", "{g");
 
   // format our description
   bufferFormat(desc, SCREEN_WIDTH, PARA_INDENT);
 
-  send_to_char(ch, "{g%s", bufferString(desc));
-  list_room_exits(ch, room);
-  list_room_contents(ch, room);
+  if(bufferLength(desc) == 0)
+    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
+  else
+    send_to_char(ch, "{g%s", bufferString(desc));
 
-  send_to_char(ch, "{n");
   deleteBuffer(desc);
-};
+  hookRun("look_at_room", room, ch);
+  send_to_char(ch, "{n");
+}
 
 
 
@@ -534,40 +503,8 @@ COMMAND(cmd_look) {
     }
 
     // is it an item?
-    else if(found_type == FOUND_OBJ)
+    else if(found_type == FOUND_OBJ || found_type == FOUND_IN_OBJ)
       look_at_obj(ch, found);
-
-    // is it something inside of an object?
-    else if(found_type == FOUND_IN_OBJ) {
-      // show the destination we're peering at
-      if(objIsType(found, "portal")) {
-	ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(found));
-	if(dest) {
-	  send_to_char(ch, "You peer inside %s.\r\n", see_obj_as(ch, found));
-	  look_at_room(ch, dest);
-	}
-	else
-	  send_to_char(ch, 
-		       "%s is murky, and you cannot "
-		       "make out anything on the other side.\r\n",
-		       see_obj_as(ch, found));
-      }
-      else if(!objIsType(found, "container"))
-	send_to_char(ch, "%s is not a container or portal.\r\n",
-		     objGetName(found));
-      else if(containerIsClosed(found))
-	send_to_char(ch, "%s is closed.\r\n", objGetName(found));
-      else if(listSize(objGetContents(found)) == 0)
-	send_to_char(ch, "There is nothing inside of %s.\r\n", 
-		     objGetName(found));
-      else {
-	send_to_char(ch, "You peer inside of %s:\r\n", objGetName(found));
-	LIST *vis_objs = find_all_objs(ch, objGetContents(found), "", NULL,
-				       TRUE);
-	show_list(ch, vis_objs, objGetName, objGetMultiName);
-	deleteList(vis_objs);
-      }
-    }
 
     // is it another character?
     else if(found_type == FOUND_CHAR)
@@ -840,4 +777,163 @@ void mssgprintf(CHAR_DATA *ch, CHAR_DATA *vict,
     va_end(args);
     message(ch, vict, obj, vobj, hide_nosee, range, buf);
   }
+}
+
+
+
+//*****************************************************************************
+// hooks
+//*****************************************************************************
+
+//
+// appends all of our exit extra descriptions to the room description.
+void exit_append_room_hook(BUFFER *buf, ROOM_DATA *room, CHAR_DATA *ch) {
+  LIST       *exnames = roomGetExitNames(room);
+  LIST       *ex_same = newList(); // leads to room w/ same name
+  LIST       *ex_diff = newList(); // leads to room w/ diff name
+  LIST     *ex_closed = newList(); // there is a closed door blocking us
+  LIST_ITERATOR *ex_i = newListIterator(exnames);
+  char            *ex = NULL;
+
+  // figure out our exits that lead to same-room-name 
+  // or different-room-name destinations.
+  ITERATE_LIST(ex, ex_i) {
+    EXIT_DATA *exit = roomGetExit(room, ex);
+    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(exit));
+    if(dest && can_see_exit(ch, exit) && dirGetNum(ex) != DIR_NONE) {
+      if(exitIsClosed(exit))
+	listPut(ex_closed, ex);
+      else if(!strcasecmp(roomGetName(room), roomGetName(dest)))
+	listPush(ex_same, ex);
+      else
+	listQueue(ex_diff, ex);
+    }
+  } deleteListIterator(ex_i);
+
+  // append info for dirs that are blocked by doors
+  ex_i = newListIterator(ex_closed);
+  ITERATE_LIST(ex, ex_i) {
+    EXIT_DATA *exit = roomGetExit(room, ex);
+    bprintf(buf, " %s%s, you see %s.",
+	    (dirGetNum(ex) == DIR_NONE ? "At the exit " : ""), ex,
+	    (*exitGetName(exit) ? exitGetName(exit) : "a door"));
+  } deleteListIterator(ex_i);
+
+  // append info for dirs that exit to other room names
+  ex_i = newListIterator(ex_diff);
+  ITERATE_LIST(ex, ex_i) {
+    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(roomGetExit(room, ex)));
+    bprintf(buf, " Continuing %s would take you to %s.", ex, roomGetName(dest));
+  } deleteListIterator(ex_i);
+
+  // and now print stuff for exits that go to rooms with the name name
+  if(listSize(ex_same) > 0) {
+    // if we just have a couple exits, list them off
+    if(listSize(ex_same) <= 3) {
+      char *list = print_list(ex_same, identity_func, NULL);
+      bprintf(buf, " %s continues %s.", roomGetName(room), list);
+      free(list);
+    }
+    // else display in bulk
+    else {
+      bprintf(buf, " All %sdiretions continue to %s.", 
+	      (listSize(ex_same) == listSize(exnames) ? "" : "other "),
+	      roomGetName(room));
+    }
+  }
+
+  // clean up our garbage
+  deleteList(ex_diff);
+  deleteList(ex_same);
+  deleteList(ex_closed);
+  deleteListWith(exnames, free);
+}
+
+void exit_append_hook(BUFFER *buf, EXIT_DATA *exit, CHAR_DATA *ch) {
+  // before anything, figure out some basic information like our dir and dest
+  ROOM_DATA     *room = exitGetRoom(exit);
+  ROOM_DATA     *dest = worldGetRoom(gameworld, exitGetTo(exit));
+  LIST       *exnames = roomGetExitNames(room);
+  LIST_ITERATOR *ex_i = newListIterator(exnames);
+  char            *ex = NULL;
+  char           *dir = NULL;
+
+  // figure out which direction we came from
+  ITERATE_LIST(ex, ex_i) {
+    if(roomGetExit(room, ex) == exit) {
+      dir = strdup(ex);
+      break;
+    }
+  } deleteListIterator(ex_i);
+  deleteListWith(exnames, free);
+
+  // tell us where it would take us
+  if(dest && !*exitGetDesc(exit) && !exitIsClosed(exit)) {
+    if(!strcasecmp(roomGetName(dest), roomGetName(room)))
+      bprintf(buf, " %s continues %s.", roomGetName(dest), dir);
+    else 
+      bprintf(buf, " Continuing %s would take you to %s.", dir, 
+	      roomGetName(dest));
+  }
+
+  // we have a door ... gotta print its status
+  if(exitIsClosable(exit)) {
+    bprintf(buf, " %s%s, you see %s which is currently %s.",
+	    (dirGetNum(dir) == DIR_NONE ? "At the exit " : ""), dir,
+	    (*exitGetName(exit) ? exitGetName(exit) : "a door"),
+	    (exitIsClosed(exit) ? "closed" : "open"));
+  }
+
+  // garbage collection
+  if(dir) free(dir);
+}
+
+void exit_look_hook(EXIT_DATA *exit, CHAR_DATA *ch) {
+  // the door is not closed, list off the people we can see as well
+  if(!exitIsClosed(exit)) {
+    ROOM_DATA *room = worldGetRoom(gameworld, exitGetTo(exit));
+    if(room != NULL)
+      list_room_contents(ch, room);
+  }
+}
+
+void body_look_hook(CHAR_DATA *vict, CHAR_DATA *ch) {
+  send_to_char(ch, "\r\n{g%s %s wearing:\r\n", 
+	       (ch == vict ? "You" : HESHE(vict)),
+	       (ch == vict ? "are" : "is"));
+  show_body(ch, charGetBody(vict));
+}
+
+void room_look_hook(ROOM_DATA *room, CHAR_DATA *ch) {
+  list_room_exits(ch, room);
+  list_room_contents(ch, room);
+}
+
+
+
+//*****************************************************************************
+// initialization of inform.h
+//*****************************************************************************
+void init_inform(void) {
+  // add all of our hook types
+  hook_add_handler("preprocess_room_desc", hook_handler_3_args);
+  hook_add_handler("preprocess_obj_desc",  hook_handler_3_args);
+  hook_add_handler("preprocess_char_desc", hook_handler_3_args);
+  hook_add_handler("preprocess_exit_desc", hook_handler_3_args);
+  hook_add_handler("append_room_desc",     hook_handler_3_args);
+  hook_add_handler("append_obj_desc",      hook_handler_3_args);
+  hook_add_handler("append_char_desc",     hook_handler_3_args);
+  hook_add_handler("append_exit_desc",     hook_handler_3_args);
+  hook_add_handler("look_at_room",         hook_handler_2_args);
+  hook_add_handler("look_at_obj",          hook_handler_2_args);
+  hook_add_handler("look_at_char",         hook_handler_2_args);
+  hook_add_handler("look_at_exit",         hook_handler_2_args);
+
+  // attach hooks
+  hookAdd("append_exit_desc", exit_append_hook);
+  // enable if you want exits to append to the end of room descs
+  //  hookAdd("append_room_desc", exit_append_room_hook);
+  hookAdd("look_at_exit",     exit_look_hook);
+  hookAdd("look_at_char",     body_look_hook);
+  hookAdd("look_at_room",     room_look_hook);
 }

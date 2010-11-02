@@ -151,6 +151,8 @@ OBJ_OLC *objOLCFromProto(PROTO_DATA *proto) {
       while(*lptr != '\"') lptr++; lptr++;
       lptr[strlen(lptr)-1] = '\0'; // kill the ending "
       objSetDesc(obj, lptr);
+      // replace our \"s with "
+      bufferReplace(objGetDescBuffer(obj), "\\\"", "\"", TRUE);
       bufferFormat(objGetDescBuffer(obj), SCREEN_WIDTH, PARA_INDENT);
     }
     else if(!strncmp(lptr, "me.keywords", 11)) {
@@ -211,8 +213,9 @@ OBJ_OLC *objOLCFromProto(PROTO_DATA *proto) {
     }
     else if(!strcmp(lptr, "### begin extra code")) {
       code = strcpyto(line, code, '\n');
-      while(*line && strcmp(line, "### end extra code") != 0) {
+      while(strcmp(line, "### end extra code") != 0) {
 	bprintf(objOLCGetExtraCode(data), "%s\n", line);
+	if(!*code) break;
 	code = strcpyto(line, code, '\n');
       }
     }
@@ -252,6 +255,7 @@ PROTO_DATA *objOLCToProto(OBJ_OLC *data) {
     BUFFER *desc_copy = bufferCopy(objGetDescBuffer(obj));
     bufferReplace(desc_copy, "\n", " ", TRUE);
     bufferReplace(desc_copy, "\r", "",  TRUE);
+    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
     bprintf(buf, "me.desc     = me.desc + \" \" + \"%s\"\n", 
 	    bufferString(desc_copy));
     deleteBuffer(desc_copy);

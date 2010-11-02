@@ -12,10 +12,14 @@
 
 //
 // return the key of the room that the portal leads to
-const char *portalGetDest(OBJ_DATA *obj);
+const char      *portalGetDest(OBJ_DATA *obj);
+const char *portalGetLeaveMssg(OBJ_DATA *obj);
+const char *portalGetEnterMssg(OBJ_DATA *obj);
 
 //
 // set the destination of the portal
-void portalSetDest(OBJ_DATA *obj, const char *dest);
+void      portalSetDest(OBJ_DATA *obj, const char *dest);
+void portalSetLeaveMssg(OBJ_DATA *obj, const char *mssg);
+void portalSetEnterMssg(OBJ_DATA *obj, const char *mssg);
 
 #endif // PORTAL_H

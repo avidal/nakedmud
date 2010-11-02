@@ -299,6 +299,7 @@ void roomAddObj(ROOM_DATA *room, OBJ_DATA *obj) {
 //*****************************************************************************
 void roomSetExit(ROOM_DATA *room, const char *dir, EXIT_DATA *exit) {
   hashPut(room->exits, dir, exit);
+  exitSetRoom(exit, room);
 }
 
 EXIT_DATA *roomGetExit(ROOM_DATA *room, const char *dir) {
@@ -306,7 +307,9 @@ EXIT_DATA *roomGetExit(ROOM_DATA *room, const char *dir) {
 }
 
 EXIT_DATA *roomRemoveExit(ROOM_DATA *room, const char *dir) {
-  return hashRemove(room->exits, dir);
+  EXIT_DATA *exit = hashRemove(room->exits, dir);
+  if(exit != NULL) exitSetRoom(exit, NULL);
+  return exit;
 }
 
 const char *roomGetExitDir(ROOM_DATA *room, EXIT_DATA *exit) {

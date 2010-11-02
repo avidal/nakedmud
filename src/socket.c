@@ -57,6 +57,7 @@ struct socket_data {
 
   LIST          * input_handlers;// a stack of our input handlers and prompts
   LIST          * input;         // lines of input we have received
+  LIST          * command_hist;  // the commands we've executed in the past
 
   unsigned char   compressing;                 /* MCCP support */
   z_stream      * out_compress;                /* MCCP support */
@@ -755,12 +756,13 @@ bool flush_output(SOCKET_DATA *dsock)
 //
 //*****************************************************************************
 void deleteSocket(SOCKET_DATA *sock) {
-  if(sock->hostname)       free(sock->hostname);
-  if(sock->page_string)    free(sock->page_string);
-  if(sock->text_editor)    deleteBuffer(sock->text_editor);
-  if(sock->input_handlers) deleteListWith(sock->input_handlers, free);
-  if(sock->input)          deleteListWith(sock->input, free);
-  if(sock->auxiliary)      deleteAuxiliaryData(sock->auxiliary);
+  if(sock->hostname)         free(sock->hostname);
+  if(sock->page_string)      free(sock->page_string);
+  if(sock->text_editor)      deleteBuffer(sock->text_editor);
+  if(sock->input_handlers)   deleteListWith(sock->input_handlers, free);
+  if(sock->input)            deleteListWith(sock->input, free);
+  if(sock->command_hist)     deleteListWith(sock->command_hist, free);
+  if(sock->auxiliary)        deleteAuxiliaryData(sock->auxiliary);
   free(sock);
 }
 
@@ -771,11 +773,13 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
   if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, free);
   if(sock_new->auxiliary)      deleteAuxiliaryData(sock_new->auxiliary);
   if(sock_new->input)          deleteListWith(sock_new->input, free);
+  if(sock_new->command_hist)   deleteListWith(sock_new->command_hist, free);
 
   bzero(sock_new, sizeof(*sock_new));
   sock_new->auxiliary = newAuxiliaryData(AUXILIARY_TYPE_SOCKET);
   sock_new->input_handlers = newList();
   sock_new->input          = newList();
+  sock_new->command_hist   = newList();
   socketPushInputHandler(sock_new, handle_new_connections, NULL);
   sock_new->control        = sock;
   sock_new->lookup_status  = TSTATE_LOOKUP;
@@ -964,6 +968,9 @@ void socket_handler() {
     /* Is there a new command pending ? */
     if (sock->cmd_read) {
       socketGetInputHandler(sock)(sock, sock->next_command);
+      listPut(sock->command_hist, strdup(sock->next_command));
+      if(listSize(sock->command_hist) > 100)
+	free(listRemoveNum(sock->command_hist, 100));
       sock->next_command[0] = '\0';
       sock->cmd_read = FALSE;
     }
@@ -1123,7 +1130,7 @@ void do_copyover(CHAR_DATA *ch) {
   sprintf(buf, "\n\r <*>            The world starts spinning             <*>\n\r");
 
   // execute our shutdown hooks
-  hookRun("shutdown", NULL, NULL, NULL);
+  hookRun("shutdown");
 
   // For each playing descriptor, save its character and account
   ITERATE_LIST(sock, sock_i) {
@@ -1192,6 +1199,13 @@ void socketPushInputHandler  ( SOCKET_DATA *socket,
   pair->handler = handler;
   pair->prompt  = prompt;
   listPush(socket->input_handlers, pair);
+}
+
+const char *socketGetLastCmd(SOCKET_DATA *sock) {
+  if(listSize(sock->command_hist) == 0)
+    return "";
+  else
+    return listHead(sock->command_hist);
 }
 
 void socketPopInputHandler   ( SOCKET_DATA *socket) {

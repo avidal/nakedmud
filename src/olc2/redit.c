@@ -92,6 +92,27 @@ void deleteReslistOLC(RESLIST_OLC *data) {
 
 
 //*****************************************************************************
+// utility functions
+//*****************************************************************************
+
+//
+// reload a room. used whenever a room is edited and saved
+void reload_room(const char *key) {
+  if(worldRoomLoaded(gameworld, key)) {
+    PROTO_DATA   *proto = worldGetType(gameworld, "rproto", key);
+    ROOM_DATA *old_room = worldGetRoom(gameworld, key);
+    ROOM_DATA *new_room = protoRoomRun(proto);
+    if(new_room != NULL) {
+      do_mass_transfer(old_room, new_room, TRUE, TRUE, TRUE);
+      extract_room(old_room);
+      worldPutRoom(gameworld, key, new_room);
+    }
+  }
+}
+
+
+
+//*****************************************************************************
 // functions for printing room reset data
 //*****************************************************************************
 const char *write_reset_arg(int type, const char *arg, const char *locale) {
@@ -480,7 +501,7 @@ void exedit_menu(SOCKET_DATA *sock, EXIT_DATA *exit) {
 		 "{c%s\r\n"
 		 "{g6) Exits to    : {c%s\r\n"
 		 "{g8) Key         : {c%s\r\n"
-		 "{g7) Closable    : {y[{c%6s{y]\r\n"
+		 "{g7) Closable    : {y[{c%6s{y]%s\r\n"
 		 "{g9) Pick diff   : {y[{c%6d{y]\r\n"
 		 "{g0) Spot diff   : {y[{c%6d{y]\r\n"
 		 "{gO) Opposite dir: {c%s{n\r\n",
@@ -492,6 +513,7 @@ void exedit_menu(SOCKET_DATA *sock, EXIT_DATA *exit) {
 		 exitGetTo(exit),
 		 exitGetKey(exit),
 		 (exitIsClosable(exit) ? "Yes" : "No" ),
+		 (exitIsClosable(exit) && (!*exitGetName(exit) || !*exitGetKeywords(exit)) ? " {r* exit also needs name and keywords{n" : ""),
 		 exitGetPickLev(exit),
 		 exitGetHidden(exit),
 		 (*exitGetOpposite(exit) ? exitGetOpposite(exit) : "<DEFAULT>")
@@ -708,8 +730,10 @@ void exit_from_proto(EXIT_DATA *exit, BUFFER *buf) {
     else if(!strncmp(lptr, "exit.desc", 9)) {
       while(*lptr != '\"') lptr++;
       lptr++;                                  // kill the leading "
-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
+      lptr[strlen(lptr) - 1] = '\0';           // kill the ending "
       exitSetDesc(exit, lptr);
+      // replace our \"s with "
+      bufferReplace(exitGetDescBuffer(exit), "\\\"", "\"", TRUE);
       bufferFormat(exitGetDescBuffer(exit), SCREEN_WIDTH, PARA_INDENT);
     }
     else if(!strncmp(lptr, "exit.pick_diff", 14)) {
@@ -753,10 +777,12 @@ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
       while(*lptr != '\"') lptr++; lptr++;
       lptr[strlen(lptr)-1] = '\0'; // kill the ending "
       roomSetDesc(room, lptr);
+      // replace our \"s with "
+      bufferReplace(roomGetDescBuffer(room), "\\\"", "\"", TRUE);
       bufferFormat(roomGetDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
     }
 #ifdef MODULE_TIME
-    else if(!strncmp(lptr, "me.night_desc",  13)) {
+    else if(!strncmp(lptr, "me.ndesc",  13)) {
       // we have three "'s to skip by, because this lptr will take the form:
       // me.desc = me.desc + " " + "..."
       while(*lptr != '\"') lptr++; lptr++;
@@ -764,6 +790,8 @@ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
       while(*lptr != '\"') lptr++; lptr++;
       lptr[strlen(lptr)-1] = '\0'; // kill the ending "
       roomSetDesc(room, lptr);
+      // replace our \"s with "
+      bufferReplace(roomGetNightDescBuffer(room), "\\\"", "\"", TRUE);
       bufferFormat(roomGetNightDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
     }
 #endif
@@ -780,8 +808,11 @@ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
       lptr[next_letter_in(lptr, '\"')] = '\0';             // kill the ending "
       while(*desc_start != '\"') desc_start++;
       desc_start++;                                        // kill start and end
-      desc_start[next_letter_in(desc_start, '\"')] = '\0'; // "s for desc too
-      edescSetPut(roomGetEdescs(room), newEdesc(lptr, desc_start));
+      desc_start[strlen(desc_start)-2] = '\0';             // "s for desc too
+      EDESC_DATA *edesc = newEdesc(lptr, desc_start);
+      // replace our \"s with "
+      bufferReplace(edescGetDescBuffer(edesc), "\\\"", "\"", TRUE);
+      edescSetPut(roomGetEdescs(room), edesc);
     }
     else if(!strncmp(lptr, "me.attach(\"", 11)) {
       char trigname[SMALL_BUFFER];
@@ -820,10 +851,11 @@ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
       deleteBuffer(ex_buf);
     }
 
-    else if(!strcmp(lptr, "\n### begin extra code")) {
+    else if(!strcmp(lptr, "### begin extra code")) {
       code = strcpyto(line, code, '\n');
-      while(*line && strcmp(line, "### end extra code") != 0) {
+      while(strcmp(line, "### end extra code") != 0) {
 	bprintf(roomOLCGetExtraCode(data), "%s\n", line);
+	if(!*code) break;
 	code = strcpyto(line, code, '\n');
       }
     }
@@ -850,6 +882,7 @@ void exit_to_proto(EXIT_DATA *exit, BUFFER *buf) {
     BUFFER *desc_copy = bufferCopy(exitGetDescBuffer(exit));
     bufferReplace(desc_copy, "\n", " ", TRUE);
     bufferReplace(desc_copy, "\r", "",  TRUE);
+    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
     bprintf(buf, "exit.desc       = \"%s\"\n", bufferString(desc_copy));
     deleteBuffer(desc_copy);
   }
@@ -885,6 +918,7 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
     BUFFER *desc_copy = bufferCopy(roomGetDescBuffer(room));
     bufferReplace(desc_copy, "\n", " ", TRUE);
     bufferReplace(desc_copy, "\r", "",  TRUE);
+    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
     bprintf(buf, "me.desc       = me.desc + \" \" + \"%s\"\n", 
 	    bufferString(desc_copy));
     deleteBuffer(desc_copy);
@@ -892,9 +926,10 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
 #ifdef MODULE_TIME
   if(*roomGetNightDesc(room)) {
     BUFFER *desc_copy = bufferCopy(roomGetNightDescBuffer(room));
-    bufferReplace(desc_copy, "\n", " ", TRUE);
-    bufferReplace(desc_copy, "\r", "",  TRUE);
-    bprintf(buf, "me.night_desc = me.night_desc + \" \" + \"%s\"\n", 
+    bufferReplace(desc_copy, "\n", " ",    TRUE);
+    bufferReplace(desc_copy, "\r", "",     TRUE);
+    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+    bprintf(buf, "me.ndesc = me.ndesc + \" \" + \"%s\"\n", 
 	    bufferString(desc_copy));
     deleteBuffer(desc_copy);
   }
@@ -910,6 +945,7 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
       BUFFER *desc_copy = bufferCopy(edescGetDescBuffer(edesc));
       bufferReplace(desc_copy, "\n", " ", TRUE);
       bufferReplace(desc_copy, "\r", "",  TRUE);
+      bufferReplace(desc_copy, "\"", "\\\"", TRUE);
       bprintf(buf, "me.edesc(\"%s\", \"%s\")\n", 
 	      edescGetKeywords(edesc), bufferString(desc_copy));
       deleteBuffer(desc_copy);
@@ -1239,6 +1275,9 @@ void save_room_olc(ROOM_OLC *data) {
   worldSaveType(gameworld, "rproto", roomOLCGetKey(data));
   worldSaveType(gameworld, "reset",  roomOLCGetKey(data));
   zoneSave(zone);
+
+  // force-reset our room
+  reload_room(roomOLCGetKey(data));
 }
 
 

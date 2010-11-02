@@ -28,6 +28,7 @@ struct exit_data {
   char *to;                // where do we exit to?
   char *key;               // what is the key's prototype?
   BUFFER *desc;            // what does a person see when they look at us?
+  ROOM_DATA *room;         // the room we're attached to
 
   char *spec_enter;        // the message when we enter from this exit
   char *spec_leave;        // the message when we leave through this exit
@@ -56,6 +57,7 @@ EXIT_DATA *newExit() {
   exit->pick_lev    = 0;
   exit->status      = 0;
   exit->closable    = FALSE;
+  exit->room        = NULL;
   exit->uid         = next_exit_uid++;
   return exit;
 };
@@ -200,6 +202,10 @@ BUFFER *exitGetDescBuffer(const EXIT_DATA *exit) {
   return exit->desc;
 }
 
+ROOM_DATA *exitGetRoom(const EXIT_DATA *exit) {
+  return exit->room;
+}
+
 void        exitSetClosable(EXIT_DATA *exit, bool closable) {
   exit->closable = (closable != 0);
 }
@@ -260,4 +266,8 @@ void        exitSetSpecEnter(EXIT_DATA *exit, const char *enter) {
 void        exitSetSpecLeave(EXIT_DATA *exit, const char *leave) {
   if(exit->spec_leave)  free(exit->spec_leave);
   exit->spec_leave    = strdupsafe(leave);
+}
+
+void exitSetRoom(EXIT_DATA *exit, ROOM_DATA *room) {
+  exit->room = room;
 }
