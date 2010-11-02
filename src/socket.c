@@ -596,6 +596,13 @@ void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
     return;
   }
 
+  // if we're at the head of the outbuf and haven't entered a command, 
+  // also copy a newline so we're not printing in front of the prompt
+  if(dsock->top_output == 0 && !dsock->bust_prompt) {
+    strcpy(dsock->outbuf, "\r\n");
+    dsock->top_output += 2;
+  }
+
   /* add data to buffer */
   strcpy(dsock->outbuf + dsock->top_output, output);
   dsock->top_output += iPtr;

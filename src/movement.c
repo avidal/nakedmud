@@ -40,8 +40,7 @@ bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
 		 exitGetName(exit));
   else {
     if(*exitGetSpecLeave(exit))
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	      exitGetSpecLeave(exit));
+      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, exitGetSpecLeave(exit));
     else if(dir != DIR_NONE)
       send_around_char(ch, TRUE, "%s leaves %s.\r\n",
 		       charGetName(ch), dirGetName(dir));
@@ -53,8 +52,7 @@ bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
     look_at_room(ch, to);
 
     if(*exitGetSpecEnter(exit))
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	      exitGetSpecEnter(exit));
+      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, exitGetSpecEnter(exit));
     else if(dir != DIR_NONE)
       send_around_char(ch, TRUE, "%s arrives from the %s.\r\n",
 		       charGetName(ch), dirGetName(dirGetOpposite(dir)));
@@ -202,7 +200,7 @@ bool try_use_furniture(CHAR_DATA *ch, char *arg, int pos) {
     if(charGetFurniture(ch)) {
       send_to_char(ch, "You stand up from %s.\r\n", 
 		   objGetName(charGetFurniture(ch)));
-      message(ch, NULL, charGetFurniture(ch), NULL,TRUE, TO_ROOM | TO_NOTCHAR,
+      message(ch, NULL, charGetFurniture(ch), NULL,TRUE, TO_ROOM,
 	      "$n stands up from $o.");
       char_from_furniture(ch);
     }
@@ -212,7 +210,7 @@ bool try_use_furniture(CHAR_DATA *ch, char *arg, int pos) {
     sprintf(other_buf, "$n %s %s $o.",	
 	    posGetActionOther(pos),
 	    (furnitureGetType(furniture) == FURNITURE_ON ? "on" : "at"));
-    message(ch, NULL, furniture, NULL, TRUE, TO_ROOM | TO_NOTCHAR, other_buf);
+    message(ch, NULL, furniture, NULL, TRUE, TO_ROOM, other_buf);
 
     send_to_char(ch, "You %s %s %s.\r\n",
 		 posGetActionSelf(pos),

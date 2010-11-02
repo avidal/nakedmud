@@ -186,14 +186,14 @@ void do_get(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
   else if(container) {
     send_to_char(ch, "You get %s from %s.\r\n", 
 		 objGetName(obj), objGetName(container));
-    message(ch, NULL, obj, container, TRUE, TO_ROOM | TO_NOTCHAR,
+    message(ch, NULL, obj, container, TRUE, TO_ROOM,
 	    "$n gets $o from $O.");
     obj_from_obj(obj);
     obj_to_char(obj, ch);
   }
   else {
     send_to_char(ch, "You get %s.\r\n", objGetName(obj));
-    message(ch, NULL, obj, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+    message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
 	    "$n gets $o.");
     obj_from_room(obj);
     obj_to_char(obj, ch);
@@ -218,19 +218,16 @@ void do_put(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
     obj_to_obj(obj, container);
     send_to_char(ch, "You put %s into %s.\r\n", 
 		 see_obj_as(ch, obj), see_obj_as(ch, container));
-    message(ch, NULL, obj, container, TRUE, TO_ROOM | TO_NOTCHAR,
+    message(ch, NULL, obj, container, TRUE, TO_ROOM,
 	    "$n puts $o into $O.");
   }
 }
 
 
 void do_give(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
-  message(ch, recv, obj, NULL, TRUE, TO_ROOM | TO_NOTVICT | TO_NOTCHAR,
-	  "$n gives $o to $N.");
-  message(ch, recv, obj, NULL, TRUE, TO_VICT,
-	  "$n gives $o to you.");
-  message(ch, recv, obj, NULL, TRUE, TO_CHAR,
-	  "You give $o to $N.");
+  message(ch, recv, obj, NULL, TRUE, TO_ROOM, "$n gives $o to $N.");
+  message(ch, recv, obj, NULL, TRUE, TO_VICT, "$n gives $o to you.");
+  message(ch, recv, obj, NULL, TRUE, TO_CHAR, "You give $o to $N.");
   obj_from_char(obj);
   obj_to_char(obj, recv);
 

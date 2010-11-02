@@ -84,9 +84,9 @@ bool PyModule_Reload(char *fname, char *mname) {
 // takes the name of a python module, and loads that module into the game
 COMMAND(cmd_pyload) {
   if(!*arg)
-    send_to_char(ch, "Which module did you want to load?\r\n");
+    send_to_char(ch, "Which module or package would you like to load?\r\n");
   else {
-    char fname[strlen(arg) + 6 + 4];
+    static char fname[SMALL_BUFFER];
     sprintf(fname, "%s/%s.py", PYMOD_LIB, arg);
     // make sure the file exists
     if(!file_exists(fname))
@@ -105,8 +105,8 @@ COMMAND(cmd_pyload) {
 // about any other feature of the mud can be.
 void init_py_modules() {
   // build a list of all the files in this directory
-  static char fname[SMALL_BUFFER];
-  static char mname[SMALL_BUFFER];
+  static char mname[SMALL_BUFFER]; // module name
+  static char fname[SMALL_BUFFER]; // the name of the file
   DIR *dir = opendir(PYMOD_LIB);
   struct dirent *entry;
 
@@ -122,13 +122,26 @@ void init_py_modules() {
 
   // go through each of our python modules, and add them to the pymod package
   for(entry = readdir(dir); entry; entry = readdir(dir)) {
-    // if it doesn't end in .py, ignore it
+    // two cases: it's a package, or it's a module file. Packages will
+    // be directories, and modules will be .py files. Check for both cases,
+    // and then ignore all of the rest:
     int nlen = strlen(entry->d_name);
-    if(nlen < 4 || strcasecmp(".py", entry->d_name + nlen-3) != 0)
-      continue;
     sprintf(fname, "%s/%s", PYMOD_LIB, entry->d_name);
-    sprintf(mname, "%s",    entry->d_name);
-    mname[strlen(mname)-3] = '\0';
+
+    // skip ourself and our parent
+    if(!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+      continue;
+    // python file == module
+    else if(nlen >= 4 && !strcasecmp(".py", entry->d_name + nlen-3)) {
+      sprintf(mname, "%s", entry->d_name);
+      mname[strlen(mname)-3] = '\0';
+    }
+    // directory == package
+    else if(dir_exists(fname))
+      sprintf(mname, "%s", entry->d_name);
+    // nothing we can use
+    else
+      continue;
 
     // Load the module if it hasn't been loaded yet
     PyObject *mod = PyImport_ImportModule(mname);

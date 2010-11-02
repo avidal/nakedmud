@@ -270,6 +270,7 @@ long    fread_long            ( FILE *fp );                 /* a long integer */
 /* strings.c */
 char   *one_arg               ( char *fStr, char *bStr );
 char   *two_args              ( char *from, char *arg1, char *arg2);
+char   *three_args            ( char *from, char *arg1, char *arg2, char *arg3);
 void    arg_num               ( const char *from, char *to, int num); 
 bool    compares              ( const char *aStr, const char *bStr );
 bool    is_prefix             ( const char *aStr, const char *bStr );

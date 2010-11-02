@@ -87,8 +87,7 @@ COMMAND(cmd_lock) {
       send_to_char(ch, "You cannot seem to find the key.\r\n");
     else {
       send_to_char(ch, "You lock %s.\r\n", objGetName(found));
-      message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	      "$n locks $o.");
+      message(ch, NULL, found, NULL, TRUE, TO_ROOM, "$n locks $o.");
       containerSetLocked(found, TRUE);
     }
   }
@@ -143,8 +142,7 @@ COMMAND(cmd_unlock) {
       send_to_char(ch, "You cannot seem to find the key.\r\n");
     else {
       send_to_char(ch, "You unlock %s.\r\n", objGetName(found));
-      message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-	      "$n unlocks $o.");
+      message(ch, NULL, found, NULL, TRUE, TO_ROOM, "$n unlocks $o.");
       containerSetLocked(found, FALSE);
     }
   }
@@ -250,7 +248,7 @@ COMMAND(cmd_open) {
       char other_buf[SMALL_BUFFER];
       sprintf(other_buf, "$n opens %s.", (*exitGetName(found) ?
 					  exitGetName(found) : "an exit"));
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
+      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, other_buf);
       send_to_char(ch, "You open %s.\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
       exitSetClosed(found, FALSE);
@@ -268,8 +266,7 @@ COMMAND(cmd_open) {
       send_to_char(ch, "It appears to be locked.\r\n");
     else {
       send_to_char(ch, "You open %s.\r\n", objGetName(found));
-      message(ch, NULL, found, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	      "$n opens $o.");
+      message(ch, NULL, found, NULL, FALSE, TO_ROOM, "$n opens $o.");
       containerSetClosed(found, FALSE);
     }
   }
@@ -312,7 +309,7 @@ COMMAND(cmd_close) {
       char other_buf[SMALL_BUFFER];
       sprintf(other_buf, "$n closes %s.", (*exitGetName(found) ?
 					   exitGetName(found) : "an exit"));
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
+      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, other_buf);
       send_to_char(ch, "You close %s.\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
       exitSetClosed(found, TRUE);
@@ -328,8 +325,7 @@ COMMAND(cmd_close) {
       send_to_char(ch, "It is already closed.\r\n");
     else {
       send_to_char(ch, "You close %s.\r\n", objGetName(found));
-      message(ch, NULL, found, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
-	      "$n closes $o.");
+      message(ch, NULL, found, NULL, FALSE, TO_ROOM, "$n closes $o.");
       containerSetClosed(found, TRUE);
     }
   }

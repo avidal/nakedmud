@@ -327,7 +327,9 @@ int rrledit_chooser(SOCKET_DATA *sock, LIST *list, const char *option) {
     return MENU_NOCHOICE;
   }
   case 'E':
-    text_to_buffer(sock, "Which entry do you want to edit: ");
+    if(listSize(list) == 0)
+      return MENU_CHOICE_INVALID;
+    text_to_buffer(sock, "Which entry do you want to edit (-1 for none): ");
     return RRLEDIT_EDIT;
   case 'D':
     text_to_buffer(sock, "Which entry do you want to delete: ");
@@ -342,6 +344,8 @@ bool rrledit_parser(SOCKET_DATA *sock, LIST *list, int choice, const char *arg){
   switch(choice) {
   case RRLEDIT_EDIT: {
     RESET_DATA *reset = NULL;
+    if(atoi(arg) == NOTHING)
+      return TRUE;
     if(!isdigit(*arg) || (reset = listGet(list, atoi(arg))) == NULL)
       return FALSE;
     do_olc(sock, resedit_menu, resedit_chooser, resedit_parser, 
@@ -615,6 +619,9 @@ bool redit_parser(SOCKET_DATA *sock, ROOM_DATA *room, int choice,
   case REDIT_EXIT: {
     EXIT_DATA *exit = NULL;
     int dir = dirGetNum(arg);
+    // did we supply an arg?
+    if(!*arg)
+      return TRUE;
     // find the exit. Create a new one if none exists
     if(dir != DIR_NONE) {
       if((exit = roomGetExit(room, dir)) == NULL)

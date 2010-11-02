@@ -99,19 +99,43 @@ int PyObj_compare(PyObj *obj1, PyObj *obj2) {
 PyObject *PyObj_getname(PyObj *self, void *closure) {
   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj != NULL) return Py_BuildValue("s", objGetName(obj));
-  else           return NULL;
+  else            return NULL;
+}
+
+PyObject *PyObj_getmname(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) return Py_BuildValue("s", objGetMultiName(obj));
+  else            return NULL;
+}
+
+PyObject *PyObj_getbits(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) return Py_BuildValue("s", bitvectorGetBits(objGetBits(obj)));
+  else            return NULL;
+}
+
+PyObject *PyObj_getkeywords(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) return Py_BuildValue("s", objGetKeywords(obj));
+  else            return NULL;
 }
 
 PyObject *PyObj_getdesc(PyObj *self, void *closure) {
   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj != NULL) return Py_BuildValue("s", objGetDesc(obj));
-  else           return NULL;
+  else            return NULL;
 }
 
 PyObject *PyObj_getrdesc(PyObj *self, void *closure) {
   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj != NULL) return Py_BuildValue("s", objGetRdesc(obj));
-  else           return NULL;
+  else            return NULL;
+}
+
+PyObject *PyObj_getmdesc(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) return Py_BuildValue("s", objGetMultiRdesc(obj));
+  else            return NULL;
 }
 
 PyObject *PyObj_getuid(PyObj *self, void *closure) {
@@ -122,6 +146,12 @@ PyObject *PyObj_getvnum(PyObj *self, void *closure) {
   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj != NULL) return Py_BuildValue("i", objGetVnum(obj));
   else           return NULL;
+}
+
+PyObject *PyObj_getweight(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) return Py_BuildValue("d", objGetWeight(obj));
+  else            return NULL;
 }
 
 PyObject *PyObj_getcontents(PyObj *self, PyObject *args) {
@@ -187,6 +217,61 @@ int PyObj_setname(PyObj *self, PyObject *value, void *closure) {
   return 0;
 }
 
+int PyObj_setmname(PyObj *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete object's multi-name");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Object multi-names must be strings");
+    return -1;
+  }
+
+  OBJ_DATA *obj;
+  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+  objSetMultiName(obj, PyString_AsString(value));
+  return 0;
+}
+
+int PyObj_setbits(PyObj *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete object's bits");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Object bits must be strings");
+    return -1;
+  }
+
+  OBJ_DATA *obj;
+  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+  bitClear(objGetBits(obj));
+  bitSet(objGetBits(obj), PyString_AsString(value));
+  return 0;
+}
+
+int PyObj_setkeywords(PyObj *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete object's keywords");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Object keywords must be strings");
+    return -1;
+  }
+
+  OBJ_DATA *obj;
+  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+  objSetKeywords(obj, PyString_AsString(value));
+  return 0;
+}
+
 int PyObj_setdesc(PyObj *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete object's description");
@@ -220,6 +305,42 @@ int PyObj_setrdesc(PyObj *self, PyObject *value, void *closure) {
   OBJ_DATA *obj;
   PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
   objSetRdesc(obj, PyString_AsString(value));
+  return 0;
+}
+
+int PyObj_setmdesc(PyObj *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete object's multi-rdesc");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Object multi-rdescs must be strings");
+    return -1;
+  }
+
+  OBJ_DATA *obj;
+  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+  objSetMultiRdesc(obj, PyString_AsString(value));
+  return 0;
+}
+
+int PyObj_setweight(PyObj *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete object's weight");
+    return 0;
+  }
+
+  if (!PyFloat_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Object weight must be a double");
+    return -1;
+  }
+
+  OBJ_DATA *obj;
+  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+  objSetWeightRaw(obj, PyFloat_AsDouble(value));
   return 0;
 }
 
@@ -581,14 +702,24 @@ init_PyObj(void) {
 		       "the characters sitting on/riding the object");
     PyObj_addGetSetter("name", PyObj_getname, PyObj_setname,
 		       "the object's name");
+    PyObj_addGetSetter("mname", PyObj_getmname, PyObj_setmname,
+		       "the object's multi-name");
     PyObj_addGetSetter("desc", PyObj_getdesc, PyObj_setdesc,
 		       "the object's long description");
     PyObj_addGetSetter("rdesc", PyObj_getrdesc, PyObj_setrdesc,
 		       "the object's room description");
+    PyObj_addGetSetter("mdesc", PyObj_getmdesc, PyObj_setmdesc,
+		       "the object's multi room description");
+    PyObj_addGetSetter("keywords", PyObj_getkeywords, PyObj_setkeywords,
+		       "the object's keywords");
+    PyObj_addGetSetter("weight", PyObj_getweight, PyObj_setweight,
+		       "the object's weight (minus contents)");
     PyObj_addGetSetter("uid", PyObj_getuid, NULL,
 		       "the object's unique identification number");
     PyObj_addGetSetter("vnum", PyObj_getvnum, NULL,
 		       "the virtual number for the object.");
+    PyObj_addGetSetter("bits", PyObj_getbits, PyObj_setbits,
+		       "the object's basic bitvector.");
 
     // methods
     PyObj_addMethod("attach", PyObj_attach, METH_VARARGS,

@@ -643,10 +643,10 @@ COMMAND(cmd_who)
     if ((plr = socketGetChar(dsock)) == NULL) continue;
     playing_count++;
     bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n",
-	    (bitIsSet(charGetUserGroups(ch), "admin") ? "admin" :
-	     (bitIsSet(charGetUserGroups(ch), "scripter") ? "scripter" :
-	      (bitIsSet(charGetUserGroups(ch), "builder") ? "builder"  :
-	       (bitIsSet(charGetUserGroups(ch), "player") ? "player" : 
+	    (bitIsSet(charGetUserGroups(plr), "admin") ? "admin" :
+	     (bitIsSet(charGetUserGroups(plr), "scripter") ? "scripter" :
+	      (bitIsSet(charGetUserGroups(plr), "builder") ? "builder"  :
+	       (bitIsSet(charGetUserGroups(plr), "player") ? "player" : 
 		"noone!")))),
 	    raceGetAbbrev(charGetRace(plr)),
 	    charGetName(plr), socketGetHostname(dsock));
@@ -796,25 +796,27 @@ void message(CHAR_DATA *ch,  CHAR_DATA *vict,
       ((!ch || can_see_char(vict, ch)) &&
        (ch  || (!obj || can_see_obj(vict, obj))))))
     send_message(vict, mssg, ch, vict, obj, vobj);
-  // characters can always see themselves. No need to do checks here
-  else if(IS_SET(range, TO_CHAR))
-    send_message(ch, mssg, ch, vict, obj, vobj);
-  else {
-    LIST *recipients = NULL;
-    // check if the scope of this message is everyone in the world
-    if(IS_SET(range, TO_WORLD))
-      recipients = mobile_list;
-    else
-      recipients = roomGetCharacters(charGetRoom(ch));
 
+  // characters can always see themselves. No need to do checks here
+  if(IS_SET(range, TO_CHAR))
+    send_message(ch, mssg, ch, vict, obj, vobj);
+
+  LIST *recipients = NULL;
+  // check if the scope of this message is everyone in the world
+  if(IS_SET(range, TO_WORLD))
+    recipients = mobile_list;
+  else if(IS_SET(range, TO_ROOM))
+    recipients = roomGetCharacters(charGetRoom(ch));
+
+  // if we have a list to send the message to, do it
+  if(recipients != NULL) {
     LIST_ITERATOR *rec_i = newListIterator(recipients);
     CHAR_DATA *rec = NULL;
 
     // go through everyone in the list
     ITERATE_LIST(rec, rec_i) {
-      if(IS_SET(range, TO_NOTVICT) && rec == vict)
-	continue;
-      if(IS_SET(range, TO_NOTCHAR) && rec == ch)
+      // if we wanted to send to ch or vict, we would have already...
+      if(rec == vict || rec == ch)
 	continue;
       if(rec == ch ||
 	 (!hide_nosee ||
@@ -823,8 +825,7 @@ void message(CHAR_DATA *ch,  CHAR_DATA *vict,
 	  ((!ch || can_see_char(rec, ch)) &&
 	   (ch  || (!obj || can_see_obj(rec, obj))))))
       send_message(rec, mssg, ch, vict, obj, vobj);
-    }
-    deleteListIterator(rec_i);
+    } deleteListIterator(rec_i);
   }
 }
 

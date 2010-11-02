@@ -53,6 +53,7 @@
 #endif
 
 
+
 /* local procedures */
 void game_loop    ( int control );
 bool gameloop_end = FALSE;

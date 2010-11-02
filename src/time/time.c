@@ -6,6 +6,9 @@
 //
 //*****************************************************************************
 
+#include <Python.h>        // to add nightdesc
+#include <structmember.h>
+
 #include "../mud.h"
 #include "../utils.h"
 #include "../inform.h"
@@ -18,6 +21,17 @@
 #include "mudtime.h"
 
 
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../scripts/pyroom.h"
+
+
+
+//*****************************************************************************
+// local defines, variables, and structs
+//*****************************************************************************
 #define TIME_FILE   "../lib/misc/time"  // where do we keep time data?
 #define TIME_UPDATE_DELAY   1 MUD_HOUR  // how long is an in-game hour?
 #define HOURS_PER_DAY               24  // how many hours are in a day?
@@ -130,10 +144,43 @@ void roomSetNightDesc(ROOM_DATA *room, const char *desc) {
 }
 
 
+
 //*****************************************************************************
-//
+// Python getters and setters
+//*****************************************************************************
+PyObject *PyRoom_getndesc(PyObject *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom(self);
+  if(room != NULL)  return Py_BuildValue("s", roomGetNightDesc(room));
+  else              return NULL;
+}
+
+int PyRoom_setndesc(PyObject *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete room's night desc");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Room night descs must be strings");
+    return -1;
+  }
+
+  ROOM_DATA *room = PyRoom_AsRoom(self);
+  if(room == NULL) {
+    PyErr_Format(PyExc_TypeError,
+		 "Tried to modify nonexistent room, %d", PyRoom_AsVnum(self));
+    return -1;                                                                
+  }
+
+  roomSetNightDesc(room, PyString_AsString(value));
+  return 0;
+}
+
+
+
+//*****************************************************************************
 // time handling functions
-//
 //*****************************************************************************
 
 //
@@ -197,6 +244,9 @@ void init_time() {
   else
     curr_hour = curr_day_of_week = curr_day_of_month = curr_month = curr_year = 0;
 
+  // add a nightdesc get-setter to rooms
+  PyRoom_addGetSetter("ndesc", PyRoom_getndesc, PyRoom_setndesc,
+		      "the room's night desc");
 
   // add the time command
   add_cmd("time", NULL, cmd_time, 0, POS_SITTING,  POS_FLYING,

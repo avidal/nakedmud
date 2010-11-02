@@ -97,7 +97,6 @@ struct char_data {
 
   BODY_DATA            * body;
   char                 * race;
-  //  int                    race;
 
   SOCKET_DATA          * socket;
   ROOM_DATA            * room;

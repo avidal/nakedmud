@@ -15,13 +15,10 @@
 //********************
 // Use with message()
 //********************
-#define TO_ROOM 	(1 << 0) // everyone in the room of ch
+#define TO_ROOM 	(1 << 0) // everyone in the room except ch and vict
 #define TO_VICT		(1 << 1) // just to the victim
-#define TO_NOTVICT	(1 << 2) // never send the message to vict
-#define TO_CHAR		(1 << 3) // to the character
-#define TO_NOTCHAR      (1 << 4) // never send the message to char
-#define TO_WORLD        (1 << 5) // combines with flags above, but
-                                 // changes scope to entire world
+#define TO_CHAR		(1 << 2) // just the character
+#define TO_WORLD        (1 << 3) // like TO_ROOM, but to all chars
 
 //
 // Send a message out

@@ -91,6 +91,10 @@ char *two_args(char *from, char *arg1, char *arg2) {
   return one_arg(one_arg(from, arg1), arg2);
 }
 
+char *three_args(char *from, char *arg1, char *arg2, char *arg3) {
+  return one_arg(one_arg(one_arg(from, arg1), arg2), arg3);
+}
+
 //
 // pull out the argument of the specified number
 //

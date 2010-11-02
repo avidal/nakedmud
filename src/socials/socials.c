@@ -378,11 +378,9 @@ COMMAND(cmd_social) {
     // no target was supplied
     else if(!tgt) {
       if(*data->to_char_notgt)
-	message(ch, NULL, NULL, NULL, TRUE, TO_CHAR, 
-		data->to_char_notgt);
+	message(ch, NULL, NULL, NULL, TRUE, TO_CHAR, data->to_char_notgt);
       if(*data->to_room_notgt)
-	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR, 
-		data->to_room_notgt);
+	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, data->to_room_notgt);
     }
 
     // a target was supplied, and it was us
@@ -392,11 +390,9 @@ COMMAND(cmd_social) {
       else if(*data->to_char_notgt)
 	message(ch, NULL, NULL, NULL, TRUE, TO_CHAR, data->to_char_notgt);
       if(*data->to_room_self)
-	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR, 
-		data->to_room_self);
+	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, data->to_room_self);
       else if(*data->to_room_notgt)
-	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR, 
-		data->to_room_notgt);
+	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, data->to_room_notgt);
     }
 
     // a target was supplied and it was not us
@@ -406,8 +402,7 @@ COMMAND(cmd_social) {
       if(*data->to_vict_tgt)
 	message(ch, tgt, NULL, NULL, TRUE, TO_VICT, data->to_vict_tgt);
       if(*data->to_room_tgt)
-	message(ch, tgt, NULL, NULL, TRUE, TO_ROOM | TO_NOTVICT | TO_NOTCHAR,
-		data->to_room_tgt);
+	message(ch, tgt, NULL, NULL, TRUE, TO_ROOM, data->to_room_tgt);
     }
   }
   else

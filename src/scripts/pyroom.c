@@ -101,6 +101,43 @@ PyObject *PyRoom_getvnum(PyRoom *self, void *closure) {
   else             return NULL;
 }
 
+PyObject *PyRoom_getname(PyRoom *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL)  return Py_BuildValue("s", roomGetName(room));
+  else              return NULL;
+}
+
+PyObject *PyRoom_getdesc(PyRoom *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL)  return Py_BuildValue("s", roomGetDesc(room));
+  else              return NULL;
+}
+
+PyObject *PyRoom_getexnames(PyRoom *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room == NULL)  return NULL;
+  
+  PyObject  *list = PyList_New(0);
+  EXIT_DATA *exit = NULL;
+  int           i = 0;
+  // normal exits
+  for(i = 0; i < NUM_DIRS; i++) {
+    if((exit = roomGetExit(room, i)) == NULL)
+      continue;
+    PyList_Append(list, Py_BuildValue("s", dirGetName(i)));
+  }
+
+  // special exits
+  int num_spec_exits = 0;
+  const char **names = roomGetExitNames(room, &num_spec_exits);
+  for(i = 0; i < num_spec_exits; i++)
+    PyList_Append(list, Py_BuildValue("s", names[i]));
+  if(names) free(names);
+
+  return list;
+}
+
+
 PyObject *PyRoom_getchars(PyRoom *self, PyObject *args) {
   ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
   if(room == NULL)
@@ -134,6 +171,56 @@ PyObject *PyRoom_getobjs(PyRoom *self, PyObject *args) {
     return Py_BuildValue("O", list);
   }
 }
+
+
+//
+// Standard check to make sure the room exists when trying to set a value for 
+// it. If successful, assign the room to rm. Otherwise, return -1 (error)
+#define PYROOM_CHECK_ROOM_EXISTS(vnum, room)                                   \
+  room = worldGetRoom(gameworld, vnum);					       \
+  if(room == NULL) {                                                           \
+    PyErr_Format(PyExc_TypeError,                                              \
+		    "Tried to modify nonexistent room, %d", vnum);             \
+    return -1;                                                                 \
+  }                                                                            
+
+int PyRoom_setname(PyRoom *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete room's name");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Room names must be strings");
+    return -1;
+  }
+
+  ROOM_DATA *room;
+  PYROOM_CHECK_ROOM_EXISTS(self->vnum, room);
+  roomSetName(room, PyString_AsString(value));
+  return 0;
+}
+
+int PyRoom_setdesc(PyRoom *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete room's desc");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Room descs must be strings");
+    return -1;
+  }
+
+  ROOM_DATA *room;
+  PYROOM_CHECK_ROOM_EXISTS(self->vnum, room);
+  roomSetDesc(room, PyString_AsString(value));
+  return 0;
+}
+
+
 
 
 
@@ -517,10 +604,20 @@ init_PyRoom(void) {
     PyObject* module = NULL;
 
     // add all of the basic getsetters
-    PyRoom_addGetSetter("vnum",  PyRoom_getvnum,   NULL, "The room's vnum");
-    PyRoom_addGetSetter("chars", PyRoom_getchars,  NULL, "chars in the room");
-    PyRoom_addGetSetter("objs",  PyRoom_getobjs,   NULL, "objects in the room");
-    PyRoom_addGetSetter("contents",PyRoom_getobjs, NULL, "objects in the room");
+    PyRoom_addGetSetter("name",    PyRoom_getname,     PyRoom_setname, 
+			"the room's name");
+    PyRoom_addGetSetter("desc",    PyRoom_getdesc,     PyRoom_setdesc, 
+			"the room's desc");
+    PyRoom_addGetSetter("vnum",    PyRoom_getvnum,     NULL, 
+			"The room's vnum");
+    PyRoom_addGetSetter("chars",   PyRoom_getchars,    NULL, 
+			"chars in the room");
+    PyRoom_addGetSetter("objs",  PyRoom_getobjs,       NULL, 
+			"objects in the room");
+    PyRoom_addGetSetter("contents",PyRoom_getobjs,     NULL, 
+			"objects in the room");
+    PyRoom_addGetSetter("exnames", PyRoom_getexnames,  NULL, 
+			"the room's exits");
 
     // add all of the basic methods
     PyRoom_addMethod("attach", PyRoom_attach, METH_VARARGS,

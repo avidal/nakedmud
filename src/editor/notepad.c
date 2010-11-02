@@ -50,7 +50,7 @@ COMMAND(cmd_write) {
   if(!charGetSocket(ch))
     text_to_char(ch, "You need an attached socket for that!\r\n");
   else {
-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR, 
+    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, 
 	    "$n pulls out a pen and begins jotting notes down.");
     socketStartNotepad(charGetSocket(ch));
   }

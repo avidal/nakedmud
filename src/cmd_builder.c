@@ -236,7 +236,7 @@ COMMAND(cmd_purge) {
     CHAR_DATA *vict;
 
     send_to_char(ch, "You purge the room.\r\n");
-    message(ch, NULL, NULL, NULL, FALSE, TO_NOTCHAR,
+    message(ch, NULL, NULL, NULL, FALSE, TO_ROOM,
 	    "$n raises $s arms, and white flames engulf the entire room.");
 
     // purge all the objects. 
@@ -278,7 +278,7 @@ COMMAND(cmd_purge) {
 		     HIMHER(found), HESHE(found));
       else {
 	send_to_char(ch, "You purge %s.\r\n", charGetName(found));
-	message(ch, found, NULL, NULL, FALSE, TO_NOTVICT | TO_NOTCHAR,
+	message(ch, found, NULL, NULL, FALSE, TO_ROOM,
 		"$n raises $s arms, and white flames engulf $N.");
 	extract_mobile(found);
       }
@@ -287,7 +287,7 @@ COMMAND(cmd_purge) {
     // purge objects
     else if(found_type == FOUND_OBJ) {
       send_to_char(ch, "You purge %s.\r\n", objGetName(found));
-      message(ch, NULL, found, NULL, FALSE, TO_NOTCHAR,
+      message(ch, NULL, found, NULL, FALSE, TO_ROOM,
 	      "$n raises $s arms, and white flames engulf $o.");
       obj_from_room(found);
       extract_obj(found);

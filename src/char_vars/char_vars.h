@@ -44,4 +44,7 @@ void         charSetLong      (CHAR_DATA *ch, const char *key, long val);
 void         charSetDouble    (CHAR_DATA *ch, const char *key, double val);
 void         charSetString    (CHAR_DATA *ch, const char *key, const char *val);
 
+bool         charHasVar       (CHAR_DATA *ch, const char *key);
+void         charDeleteVar    (CHAR_DATA *ch, const char *key);
+
 #endif // __CHAR_VARS_H

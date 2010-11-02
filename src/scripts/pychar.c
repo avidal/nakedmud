@@ -109,6 +109,12 @@ PyObject *PyChar_getname(PyChar *self, void *closure) {
   else           return NULL;
 }
 
+PyObject *PyChar_getmname(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) return Py_BuildValue("s", charGetMultiName(ch));
+  else           return NULL;
+}
+
 PyObject *PyChar_getdesc(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", charGetDesc(ch));
@@ -118,6 +124,12 @@ PyObject *PyChar_getdesc(PyChar *self, void *closure) {
 PyObject *PyChar_getrdesc(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", charGetRdesc(ch));
+  else           return NULL;
+}
+
+PyObject *PyChar_getmdesc(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) return Py_BuildValue("s", charGetMultiRdesc(ch));
   else           return NULL;
 }
 
@@ -226,6 +238,24 @@ int PyChar_setname(PyChar *self, PyObject *value, void *closure) {
   return 0;
 }
 
+int PyChar_setmname(PyChar *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete character's multi-name");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Character multi-names must be strings");
+    return -1;
+  }
+
+  CHAR_DATA *ch;
+  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+  charSetMultiName(ch, PyString_AsString(value));
+  return 0;
+}
+
 int PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete character's description");
@@ -259,6 +289,24 @@ int PyChar_setrdesc(PyChar *self, PyObject *value, void *closure) {
   CHAR_DATA *ch;
   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
   charSetRdesc(ch, PyString_AsString(value));
+  return 0;
+}
+
+int PyChar_setmdesc(PyChar *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete character's multi-rdesc");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Character multi-rdescs must be strings");
+    return -1;
+  }
+
+  CHAR_DATA *ch;
+  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+  charSetMultiRdesc(ch, PyString_AsString(value));
   return 0;
 }
 
@@ -874,10 +922,14 @@ PyMODINIT_FUNC init_PyChar(void) {
 		      "returns a list of objects in the char's inventory");
   PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
 		      "handle the character's name");
+  PyChar_addGetSetter("mname", PyChar_getmname, PyChar_setmname,
+		      "handle the character's multi-name");
   PyChar_addGetSetter("desc", PyChar_getdesc, PyChar_setdesc,
 		      "handle the character's description");
   PyChar_addGetSetter("rdesc", PyChar_getrdesc, PyChar_setrdesc,
 		      "handle the character's room description");
+  PyChar_addGetSetter("mdesc", PyChar_getmdesc, PyChar_setmdesc,
+		      "handle the character's multi room description");
   PyChar_addGetSetter("sex", PyChar_getsex, PyChar_setsex,
 		      "handle the character's gender");
   PyChar_addGetSetter("race", PyChar_getrace, PyChar_setrace,

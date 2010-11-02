@@ -200,12 +200,9 @@ COMMAND(cmd_greet) {
 		   "You shake your left hand with your right hand and say, "
 		   "'nice to meet you, self'\r\n");
     else {
-      message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, 
-	      "{wYou greet $N.");
-      message(ch, tgt, NULL, NULL, FALSE, TO_VICT, 
-	      "{w$n greets you.");
-      message(ch, tgt, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR | TO_NOTVICT, 
-	      "$n greets $N.");
+      message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, "{wYou greet $N.");
+      message(ch, tgt, NULL, NULL, FALSE, TO_VICT, "{w$n greets you.");
+      message(ch, tgt, NULL, NULL, FALSE, TO_ROOM, "$n greets $N.");
       
       // see if the NPC has something to say in return
       if(charIsNPC(tgt)) {
@@ -253,7 +250,7 @@ COMMAND(cmd_emote) {
     else
       sprintf(buf, "$n %s", arg);
 
-    message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, buf);
+    message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_CHAR, buf);
   }
 }
 
@@ -267,11 +264,11 @@ COMMAND(cmd_gemote) {
   else {
     char buf[MAX_BUFFER];
     if(strfind(arg, "$n"))
-      sprintf(buf, "{bGLOBAL:{c %s", arg);
+      sprintf(buf, "{bGLOBAL:{c %s{n", arg);
     else
-      sprintf(buf, "{bGLOBAL:{c $n %s", arg);
+      sprintf(buf, "{bGLOBAL:{c $n %s{n", arg);
 
-    message(ch, NULL, NULL, NULL, FALSE, TO_WORLD, buf);
+    message(ch, NULL, NULL, NULL, FALSE, TO_WORLD | TO_CHAR, buf);
   }
 }
 

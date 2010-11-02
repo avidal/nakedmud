@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <dirent.h> 
 
 /* include main header file */
 #include "mud.h"
@@ -119,7 +120,7 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
     char other_buf[MAX_BUFFER];
     sprintf(other_buf, "{y$n says, '%s'{n", txt);
     send_to_char(dMob, "{yYou say, '%s'{n\r\n", txt);
-    message(dMob, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
+    message(dMob, NULL, NULL, NULL, FALSE, TO_ROOM, other_buf);
     try_dialog_all(dMob, roomGetCharacters(charGetRoom(dMob)), txt);
     try_speech_script(dMob, NULL, txt);
     break;
@@ -129,7 +130,7 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
     char other_buf[MAX_BUFFER];
     sprintf(other_buf, "{c$n chats, '%s'{n", txt);
     send_to_char(dMob, "{cYou chat, '%s'{n\r\n", txt);
-    message(dMob, NULL, NULL, NULL, FALSE, TO_WORLD | TO_NOTCHAR, other_buf);
+    message(dMob, NULL, NULL, NULL, FALSE, TO_WORLD, other_buf);
     break;
   }
 
@@ -890,9 +891,14 @@ double rand_percent(void) {
   return rnd / (double)RAND_MAX;
 }
 
-double gaussian(void) {
+double rand_gaussian(void) {
   return sqrt(-2.0 * log(rand_percent())) * cos(2.0 * PI * rand_percent());
 }
+
+double sigmoid(double val) {
+  return 1.0 / (1.0 + pow(e, -val));
+}
+
 
 //
 // returns "st", "nd", "rd", or "th", based on the number passed in
@@ -1282,15 +1288,23 @@ bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2) {
 		       bitvectorGetBits(charGetUserGroups(ch1))));
 }
 
-bool file_exists(char *fname) {
+bool file_exists(const char *fname) {
   FILE *fl = fopen(fname, "r");
   if(fl == NULL) return FALSE;
   fclose(fl);
   return TRUE;
 }
 
+bool dir_exists(const char *dname) {
+  DIR *dir = opendir(dname);
+  if(dir == NULL) return FALSE;
+  closedir(dir);
+  return TRUE;
+}
+
 void show_prompt(SOCKET_DATA *socket) {
-  text_to_buffer(socket, custom_prompt(socketGetChar(socket)));
+  if(socketGetChar(socket))
+    text_to_buffer(socket, custom_prompt(socketGetChar(socket)));
 }
 
 const char *custom_prompt(CHAR_DATA *ch) {
@@ -1299,4 +1313,3 @@ const char *custom_prompt(CHAR_DATA *ch) {
   strcat(prompt, "\r\n{nprompt> ");    
   return prompt;
 }
-

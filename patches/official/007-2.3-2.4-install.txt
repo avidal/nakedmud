@@ -1,0 +1,11 @@
+--- PATCH INSTRUCTIONS FROM v2.3 TO v2.4
+
+The bulk of the patch from version 2.3 to 2.4 is pretty easy. Simply enter
+your MUD's root directory (the one that has the src/ and lib/ and doc/
+directories) and then run the patch file:
+  patch -p0 < nakedmudv2.3-to-nakedmudv2.4.patch
+
+in addition to this, you will also have to create a new backup directory:
+  mkdir backup
+
+complete!

@@ -15,6 +15,7 @@
 #include <structmember.h>
 
 #include "../mud.h"
+#include "../utils.h"
 #include "../character.h"
 
 #include "script.h"
@@ -164,6 +165,25 @@ mud_add_cmd(PyObject *self, PyObject *args) {
 }
 
 
+//
+// format a string to be into a typical description style
+static PyObject *
+mud_format_string(PyObject *self, PyObject *args) {
+  char *string = NULL;
+
+  // parse all of the values
+  if (!PyArg_ParseTuple(args, "s", &string)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Can not format non-string values.");
+    return NULL;
+  }
+
+  format_string(&string, 80, MAX_BUFFER, TRUE);
+  PyObject *ret = Py_BuildValue("s", string);
+  free(string);
+  return ret;
+}
+
 
 
 //*****************************************************************************
@@ -179,7 +199,9 @@ static PyMethodDef mud_module_methods[] = {
     {"erase_global",  mud_erase_global, METH_VARARGS,
      "Erase the value of a global variable."},
     {"add_cmd", mud_add_cmd, METH_VARARGS,
-     "Add a new command to the game,"},
+     "Add a new command to the game."},
+    {"format_string", mud_format_string, METH_VARARGS,
+     "format a string to be 80 chars wide and indented. Like a desc."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 

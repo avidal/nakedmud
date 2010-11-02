@@ -9,7 +9,6 @@
 
 // script stuff
 #include <Python.h>
-#include <structmember.h>
 
 // mud stuff
 #include "../mud.h"
@@ -60,7 +59,8 @@ COMMAND(cmd_scrun) {
       send_to_char(ch, "No script with that vnum exists!\r\n");
     else if(scriptGetType(script) != SCRIPT_TYPE_RUNNABLE)
       send_to_char(ch, "That script is not runnable!\r\n");
-    else if(!bitIsSet(charGetUserGroups(ch), mudsettingGetString("lockdown")))
+    else if(*scriptGetArgs(script) && 
+	    !bitIsSet(charGetUserGroups(ch), scriptGetArgs(script)))
       send_to_char(ch, "You do not have the priviledges to run that script!\r\n");
     else {
       send_to_char(ch, "Ok.\r\n");
@@ -646,6 +646,9 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
   // there was nothing on the first line
   else if(line_num == 1)
     send_to_socket(sock, "The buffer is empty.\r\n");
+
+  // and kill any color that is leaking
+  send_to_socket(sock, "{n");
 
   if(ptr[strlen(ptr)-1] != '\n')
     send_to_socket(sock, "Buffer does not end in newline!\r\n");

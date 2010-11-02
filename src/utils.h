@@ -15,6 +15,7 @@
 //*****************************************************************************
 #define MAX_INT               214743647
 #define PI                    3.14159265
+#define e                     2.71828182
 
 #define UMIN(a, b)	      ((a) < (b) ? (a) : (b))
 #define MIN(a, b)             ((a) < (b) ? (a) : (b))
@@ -26,15 +27,17 @@
 // between the two bounds
 int rand_number(int min, int max);
 
-
 //
 // Returns a random number between 0 and 1. Numbers are evenly distributed
 double rand_percent(void);
 
 //
 // Return a random number pulled from N(0, 1)
-double gaussian(void);
+double rand_gaussian(void);
 
+//
+// Returns a sigmoid transformation of the specified number
+double sigmoid(double val);
 
 //
 // return the rd, th, nd, for a number
@@ -51,7 +54,7 @@ const char *numth(int num);
 			       (charGetSex(ch) == SEX_FEMALE ? "her" : "it"))
 
 #define HISHERS(ch)           (charGetSex(ch) == SEX_MALE ? "his" : \
-			       (charGetSex(ch) == SEX_FEMALE ? "hers" : "its"))
+			       (charGetSex(ch) == SEX_FEMALE ? "her" : "its"))
 
 #define HESHE(ch)             (charGetSex(ch) == SEX_MALE ? "he" : \
 			       (charGetSex(ch) == SEX_FEMALE ? "she" : "it"))
@@ -96,8 +99,9 @@ void        print_bits(bitvector_t bits, const char **names, char *buf);
 //*****************************************************************************
 // String utilities.
 //*****************************************************************************
-#define CLEAR_SCREEN      "\033[H\033[J"
-#define AN(string)        (strchr("AEIOU", toupper(*string)) ? "an" : "a")
+#define CLEAR_SCREEN       "\033[H\033[J"
+#define AN(string)         (strchr("AEIOU", toupper(*string)) ? "an" : "a")
+#define strdupsafe(string) strdup(string ? string : "")
 
 char **parse_keywords     (const char *keywords, int *num_keywords);
 bool is_keyword           (const char *keywords, const char *word, 
@@ -157,8 +161,9 @@ bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2);
 void *identity_func(void *data);
 
 //
-// checks to see if a file exists
-bool file_exists(char *fname);
+// checks to see if a file or directory exists
+bool file_exists(const char *fname);
+bool dir_exists (const char *dname);
 
 // iterate across all the elements in a list
 #define ITERATE_LIST(val, it) \

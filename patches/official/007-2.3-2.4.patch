@@ -1,0 +1,1455 @@
+Binary files ../nakedmudv2.3/src/.DS_Store and src/.DS_Store differ
+diff -ruN ../nakedmudv2.3/src/Makefile src/Makefile
+--- ../nakedmudv2.3/src/Makefile	Fri May 27 01:36:47 2005
++++ src/Makefile	Sat Jun  4 23:44:07 2005
+@@ -1,7 +1,7 @@
+ ###############################################################################
+-# Makefile for nakedmud
++# makefile for nakedmud
+ #
+-# Many thanks go out to Tyche for suggesting I read "Recursive Make Considered
++# many thanks go out to Tyche for suggesting I read "Recursive Make Considered
+ # Harmful" by Peter Miller. Many of the make conventions used in this makefile
+ # were taken from Miller's article. The reference is:
+ # 
+@@ -13,20 +13,30 @@
+ # compiler to use
+ CC = gcc
+ 
++# the name of the binary file created that you will run to start your mud
++BINARY  := NakedMud
++
++# the name of the project - essentially, the executable sans capital letters
++PROJECT := $(shell echo $(BINARY) | tr A-Z a-z)
++
++# we'd like some messages we print out to be in color. Here is the string for
++# the color (cyan) that we print all important messages in. Any echos that use
++# color must also have the -e option (e.g. @echo -e "echo here")
++COLOR   := \x1B[36m
++NOCOLOR := \x1B[0m
++
+ # the modules we have installed -- mandatory modules go here
+ MODULES := char_vars set_val olc2 editor items scripts
+ 
+ # optional modules go on this line
+ MODULES += time socials alias help
+ 
+-
+ # flags to use during compilation
+ C_FLAGS := -Wall -g -ggdb -O2
+ 
+ # extra libraries if required
+ LIBS    := -lz -lpthread -lcrypt
+ 
+-
+ # each module will add to this from its module.mk file
+ SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c movement.c \
+ 	   action.c mccp.c save.c socket.c io.c strings.c event.c \
+@@ -54,10 +64,30 @@
+ 
+ 
+ ################################################################################
++# variables involved in creating backups of the mud
++################################################################################
++
++# when performing a backup, these are the directories we'd like to include
++BACKUP_DIRS := src lib doc
++
++# the name of the backup file we will be creating (time-stamping added)
++BACKUP_FILE := backup/$(PROJECT)-$(shell date +%Y-%m-%d-%Hh%Mm).tar.tgz
++
++
++
++################################################################################
+ # make commands
+ ################################################################################
+ all: $(O_FILES)
+-	$(CC) -o NakedMud $(O_FILES) $(LIBS)
++	@$(CC) -o $(BINARY) $(O_FILES) $(LIBS)
++	@echo -e "$(COLOR)$(BINARY) successfully compiled."\
++		 "To run your mud, use ./$(BINARY) [port] &$(NOCOLOR)\n"\
++
++# back up everything worth backing up
++backup: clean
++	@echo "Backing up: $(BACKUP_DIRS)"
++	@(cd ..; tar -zcf $(BACKUP_FILE) $(BACKUP_DIRS))
++	@echo -e "$(COLOR)New backup created: $(BACKUP_FILE)$(NOCOLOR)"
+ 
+ # make the object files. The modules are sort of annoying, in that 
+ # if we do not use -o, the object files will be compiled in this directory,
+@@ -65,17 +95,20 @@
+ # because they are not in their home directory. So... we have to explicitly
+ # say where the .o files need to go
+ .c.o: all
+-	$(CC) -c $(C_FLAGS) -o $(patsubst %.c,%.o, $<) $<
++	@echo "Compiling $<"
++	@$(CC) -c $(C_FLAGS) -o $(patsubst %.c,%.o, $<) $<
+ 
+ # clear all of the .o files and all of the save files that emacs makes
+ clean:
+-	rm -f NakedMud
+-	rm -f *.o $(patsubst %,%/*.o, $(MODULES))
+-	rm -f *~ $(patsubst %,%/*~, $(MODULES))
++	@rm -f $(BINARY)
++	@rm -f *.o $(patsubst %,%/*.o, $(MODULES))
++	@rm -f *~ $(patsubst %,%/*~, $(MODULES))
++	@echo "$(PROJECT) source files cleaned"
+ 
+ # include all of our dependencies
+ include $(patsubst %.c,%.d, $(SRC))
+ 
+ # calculate all of our dependencies
+ %.d: %.c
+-	./depend.sh $(patsubst %.d,%.c, $@) > $@
++	@echo "Building dependencies for $(patsubst %.d,%.c, $@)"
++	@./depend.sh $(patsubst %.d,%.c, $@) > $@
+diff -ruN ../nakedmudv2.3/src/char_vars/char_vars.c src/char_vars/char_vars.c
+--- ../nakedmudv2.3/src/char_vars/char_vars.c	Fri May 27 01:30:57 2005
++++ src/char_vars/char_vars.c	Sat Jun  4 23:40:29 2005
+@@ -331,3 +331,14 @@
+   if(*val != '\0')
+     hashPut(data->char_vars, key, newCharVarString(val));
+ }
++
++bool charHasVar(CHAR_DATA *ch, const char *key) {
++  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
++  return (data->char_vars ? hashIn(data->char_vars, key) : FALSE);
++}
++
++void charDeleteVar(CHAR_DATA *ch, const char *key) {
++  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
++  CHAR_VAR *var = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
++  if(var != NULL) deleteCharVar(var);
++}
+diff -ruN ../nakedmudv2.3/src/char_vars/char_vars.h src/char_vars/char_vars.h
+--- ../nakedmudv2.3/src/char_vars/char_vars.h	Fri May 27 01:30:57 2005
++++ src/char_vars/char_vars.h	Sat Jun  4 23:40:29 2005
+@@ -44,4 +44,7 @@
+ void         charSetDouble    (CHAR_DATA *ch, const char *key, double val);
+ void         charSetString    (CHAR_DATA *ch, const char *key, const char *val);
+ 
++bool         charHasVar       (CHAR_DATA *ch, const char *key);
++void         charDeleteVar    (CHAR_DATA *ch, const char *key);
++
+ #endif // __CHAR_VARS_H
+diff -ruN ../nakedmudv2.3/src/character.c src/character.c
+--- ../nakedmudv2.3/src/character.c	Fri May 27 01:30:58 2005
++++ src/character.c	Sat Jun  4 23:40:29 2005
+@@ -97,7 +97,6 @@
+ 
+   BODY_DATA            * body;
+   char                 * race;
+-  //  int                    race;
+ 
+   SOCKET_DATA          * socket;
+   ROOM_DATA            * room;
+diff -ruN ../nakedmudv2.3/src/cmd_admin.c src/cmd_admin.c
+--- ../nakedmudv2.3/src/cmd_admin.c	Fri May 27 01:30:58 2005
++++ src/cmd_admin.c	Sat Jun  4 23:40:29 2005
+@@ -177,12 +177,12 @@
+     else if(room == charGetRoom(ch))
+       send_to_char(ch, "You're already here, boss.\r\n");
+     else {
+-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
++      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
+ 	      "$n disappears in a puff of smoke.");
+       char_from_room(ch);
+       char_to_room(ch, room);
+       look_at_room(ch, room);
+-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
++      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
+ 	      "$n arrives in a puff of smoke.");
+     }
+   }
+@@ -197,12 +197,12 @@
+     if(ch == tgt)
+       send_to_char(ch, "You're already here, boss.\r\n");
+     else if(tgt != NULL) {
+-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
++      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
+ 	      "$n disappears in a puff of smoke.");
+       char_from_room(ch);
+       char_to_room(ch, charGetRoom(tgt));
+       look_at_room(ch, charGetRoom(ch));
+-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
++      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
+ 	      "$n arrives in a puff of smoke.");
+     }
+     else
+@@ -231,12 +231,12 @@
+     else if(tgt != NULL) {
+       message(ch, tgt, NULL, NULL, TRUE, TO_VICT,
+ 	      "$n has transferred you!");
+-      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
++      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
+ 	      "$n disappears in a puff of smoke.");
+       char_from_room(tgt);
+       char_to_room(tgt, charGetRoom(ch));
+       look_at_room(tgt, charGetRoom(tgt));
+-      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
++      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
+ 	      "$n arrives in a puff of smoke.");
+     }
+     else
+diff -ruN ../nakedmudv2.3/src/cmd_builder.c src/cmd_builder.c
+--- ../nakedmudv2.3/src/cmd_builder.c	Fri May 27 01:30:58 2005
++++ src/cmd_builder.c	Sat Jun  4 23:40:29 2005
+@@ -236,7 +236,7 @@
+     CHAR_DATA *vict;
+ 
+     send_to_char(ch, "You purge the room.\r\n");
+-    message(ch, NULL, NULL, NULL, FALSE, TO_NOTCHAR,
++    message(ch, NULL, NULL, NULL, FALSE, TO_ROOM,
+ 	    "$n raises $s arms, and white flames engulf the entire room.");
+ 
+     // purge all the objects. 
+@@ -278,7 +278,7 @@
+ 		     HIMHER(found), HESHE(found));
+       else {
+ 	send_to_char(ch, "You purge %s.\r\n", charGetName(found));
+-	message(ch, found, NULL, NULL, FALSE, TO_NOTVICT | TO_NOTCHAR,
++	message(ch, found, NULL, NULL, FALSE, TO_ROOM,
+ 		"$n raises $s arms, and white flames engulf $N.");
+ 	extract_mobile(found);
+       }
+@@ -287,7 +287,7 @@
+     // purge objects
+     else if(found_type == FOUND_OBJ) {
+       send_to_char(ch, "You purge %s.\r\n", objGetName(found));
+-      message(ch, NULL, found, NULL, FALSE, TO_NOTCHAR,
++      message(ch, NULL, found, NULL, FALSE, TO_ROOM,
+ 	      "$n raises $s arms, and white flames engulf $o.");
+       obj_from_room(found);
+       extract_obj(found);
+diff -ruN ../nakedmudv2.3/src/cmd_comm.c src/cmd_comm.c
+--- ../nakedmudv2.3/src/cmd_comm.c	Fri May 27 01:30:58 2005
++++ src/cmd_comm.c	Sat Jun  4 23:40:29 2005
+@@ -200,12 +200,9 @@
+ 		   "You shake your left hand with your right hand and say, "
+ 		   "'nice to meet you, self'\r\n");
+     else {
+-      message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, 
+-	      "{wYou greet $N.");
+-      message(ch, tgt, NULL, NULL, FALSE, TO_VICT, 
+-	      "{w$n greets you.");
+-      message(ch, tgt, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR | TO_NOTVICT, 
+-	      "$n greets $N.");
++      message(ch, tgt, NULL, NULL, FALSE, TO_CHAR, "{wYou greet $N.");
++      message(ch, tgt, NULL, NULL, FALSE, TO_VICT, "{w$n greets you.");
++      message(ch, tgt, NULL, NULL, FALSE, TO_ROOM, "$n greets $N.");
+       
+       // see if the NPC has something to say in return
+       if(charIsNPC(tgt)) {
+@@ -253,7 +250,7 @@
+     else
+       sprintf(buf, "$n %s", arg);
+ 
+-    message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, buf);
++    message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_CHAR, buf);
+   }
+ }
+ 
+@@ -267,11 +264,11 @@
+   else {
+     char buf[MAX_BUFFER];
+     if(strfind(arg, "$n"))
+-      sprintf(buf, "{bGLOBAL:{c %s", arg);
++      sprintf(buf, "{bGLOBAL:{c %s{n", arg);
+     else
+-      sprintf(buf, "{bGLOBAL:{c $n %s", arg);
++      sprintf(buf, "{bGLOBAL:{c $n %s{n", arg);
+ 
+-    message(ch, NULL, NULL, NULL, FALSE, TO_WORLD, buf);
++    message(ch, NULL, NULL, NULL, FALSE, TO_WORLD | TO_CHAR, buf);
+   }
+ }
+ 
+diff -ruN ../nakedmudv2.3/src/cmd_manip.c src/cmd_manip.c
+--- ../nakedmudv2.3/src/cmd_manip.c	Fri May 27 01:30:58 2005
++++ src/cmd_manip.c	Sat Jun  4 23:40:29 2005
+@@ -87,8 +87,7 @@
+       send_to_char(ch, "You cannot seem to find the key.\r\n");
+     else {
+       send_to_char(ch, "You lock %s.\r\n", objGetName(found));
+-      message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+-	      "$n locks $o.");
++      message(ch, NULL, found, NULL, TRUE, TO_ROOM, "$n locks $o.");
+       containerSetLocked(found, TRUE);
+     }
+   }
+@@ -143,8 +142,7 @@
+       send_to_char(ch, "You cannot seem to find the key.\r\n");
+     else {
+       send_to_char(ch, "You unlock %s.\r\n", objGetName(found));
+-      message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+-	      "$n unlocks $o.");
++      message(ch, NULL, found, NULL, TRUE, TO_ROOM, "$n unlocks $o.");
+       containerSetLocked(found, FALSE);
+     }
+   }
+@@ -250,7 +248,7 @@
+       char other_buf[SMALL_BUFFER];
+       sprintf(other_buf, "$n opens %s.", (*exitGetName(found) ?
+ 					  exitGetName(found) : "an exit"));
+-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
++      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, other_buf);
+       send_to_char(ch, "You open %s.\r\n",
+ 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
+       exitSetClosed(found, FALSE);
+@@ -268,8 +266,7 @@
+       send_to_char(ch, "It appears to be locked.\r\n");
+     else {
+       send_to_char(ch, "You open %s.\r\n", objGetName(found));
+-      message(ch, NULL, found, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
+-	      "$n opens $o.");
++      message(ch, NULL, found, NULL, FALSE, TO_ROOM, "$n opens $o.");
+       containerSetClosed(found, FALSE);
+     }
+   }
+@@ -312,7 +309,7 @@
+       char other_buf[SMALL_BUFFER];
+       sprintf(other_buf, "$n closes %s.", (*exitGetName(found) ?
+ 					   exitGetName(found) : "an exit"));
+-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
++      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, other_buf);
+       send_to_char(ch, "You close %s.\r\n",
+ 		   (*exitGetName(found) ? exitGetName(found) : "the exit"));
+       exitSetClosed(found, TRUE);
+@@ -328,8 +325,7 @@
+       send_to_char(ch, "It is already closed.\r\n");
+     else {
+       send_to_char(ch, "You close %s.\r\n", objGetName(found));
+-      message(ch, NULL, found, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
+-	      "$n closes $o.");
++      message(ch, NULL, found, NULL, FALSE, TO_ROOM, "$n closes $o.");
+       containerSetClosed(found, TRUE);
+     }
+   }
+diff -ruN ../nakedmudv2.3/src/editor/notepad.c src/editor/notepad.c
+--- ../nakedmudv2.3/src/editor/notepad.c	Fri May 27 01:30:57 2005
++++ src/editor/notepad.c	Sat Jun  4 23:40:29 2005
+@@ -50,7 +50,7 @@
+   if(!charGetSocket(ch))
+     text_to_char(ch, "You need an attached socket for that!\r\n");
+   else {
+-    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR, 
++    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, 
+ 	    "$n pulls out a pen and begins jotting notes down.");
+     socketStartNotepad(charGetSocket(ch));
+   }
+diff -ruN ../nakedmudv2.3/src/gameloop.c src/gameloop.c
+--- ../nakedmudv2.3/src/gameloop.c	Fri May 27 01:33:01 2005
++++ src/gameloop.c	Sat Jun  4 23:40:29 2005
+@@ -53,6 +53,7 @@
+ #endif
+ 
+ 
++
+ /* local procedures */
+ void game_loop    ( int control );
+ bool gameloop_end = FALSE;
+diff -ruN ../nakedmudv2.3/src/handler.c src/handler.c
+--- ../nakedmudv2.3/src/handler.c	Fri May 27 01:30:58 2005
++++ src/handler.c	Sat Jun  4 23:40:29 2005
+@@ -186,14 +186,14 @@
+   else if(container) {
+     send_to_char(ch, "You get %s from %s.\r\n", 
+ 		 objGetName(obj), objGetName(container));
+-    message(ch, NULL, obj, container, TRUE, TO_ROOM | TO_NOTCHAR,
++    message(ch, NULL, obj, container, TRUE, TO_ROOM,
+ 	    "$n gets $o from $O.");
+     obj_from_obj(obj);
+     obj_to_char(obj, ch);
+   }
+   else {
+     send_to_char(ch, "You get %s.\r\n", objGetName(obj));
+-    message(ch, NULL, obj, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
++    message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
+ 	    "$n gets $o.");
+     obj_from_room(obj);
+     obj_to_char(obj, ch);
+@@ -218,19 +218,16 @@
+     obj_to_obj(obj, container);
+     send_to_char(ch, "You put %s into %s.\r\n", 
+ 		 see_obj_as(ch, obj), see_obj_as(ch, container));
+-    message(ch, NULL, obj, container, TRUE, TO_ROOM | TO_NOTCHAR,
++    message(ch, NULL, obj, container, TRUE, TO_ROOM,
+ 	    "$n puts $o into $O.");
+   }
+ }
+ 
+ 
+ void do_give(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
+-  message(ch, recv, obj, NULL, TRUE, TO_ROOM | TO_NOTVICT | TO_NOTCHAR,
+-	  "$n gives $o to $N.");
+-  message(ch, recv, obj, NULL, TRUE, TO_VICT,
+-	  "$n gives $o to you.");
+-  message(ch, recv, obj, NULL, TRUE, TO_CHAR,
+-	  "You give $o to $N.");
++  message(ch, recv, obj, NULL, TRUE, TO_ROOM, "$n gives $o to $N.");
++  message(ch, recv, obj, NULL, TRUE, TO_VICT, "$n gives $o to you.");
++  message(ch, recv, obj, NULL, TRUE, TO_CHAR, "You give $o to $N.");
+   obj_from_char(obj);
+   obj_to_char(obj, recv);
+ 
+diff -ruN ../nakedmudv2.3/src/inform.c src/inform.c
+--- ../nakedmudv2.3/src/inform.c	Fri May 27 01:30:58 2005
++++ src/inform.c	Sat Jun  4 23:40:29 2005
+@@ -643,10 +643,10 @@
+     if ((plr = socketGetChar(dsock)) == NULL) continue;
+     playing_count++;
+     bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n",
+-	    (bitIsSet(charGetUserGroups(ch), "admin") ? "admin" :
+-	     (bitIsSet(charGetUserGroups(ch), "scripter") ? "scripter" :
+-	      (bitIsSet(charGetUserGroups(ch), "builder") ? "builder"  :
+-	       (bitIsSet(charGetUserGroups(ch), "player") ? "player" : 
++	    (bitIsSet(charGetUserGroups(plr), "admin") ? "admin" :
++	     (bitIsSet(charGetUserGroups(plr), "scripter") ? "scripter" :
++	      (bitIsSet(charGetUserGroups(plr), "builder") ? "builder"  :
++	       (bitIsSet(charGetUserGroups(plr), "player") ? "player" : 
+ 		"noone!")))),
+ 	    raceGetAbbrev(charGetRace(plr)),
+ 	    charGetName(plr), socketGetHostname(dsock));
+@@ -796,25 +796,27 @@
+       ((!ch || can_see_char(vict, ch)) &&
+        (ch  || (!obj || can_see_obj(vict, obj))))))
+     send_message(vict, mssg, ch, vict, obj, vobj);
++
+   // characters can always see themselves. No need to do checks here
+-  else if(IS_SET(range, TO_CHAR))
++  if(IS_SET(range, TO_CHAR))
+     send_message(ch, mssg, ch, vict, obj, vobj);
+-  else {
+-    LIST *recipients = NULL;
+-    // check if the scope of this message is everyone in the world
+-    if(IS_SET(range, TO_WORLD))
+-      recipients = mobile_list;
+-    else
+-      recipients = roomGetCharacters(charGetRoom(ch));
+ 
++  LIST *recipients = NULL;
++  // check if the scope of this message is everyone in the world
++  if(IS_SET(range, TO_WORLD))
++    recipients = mobile_list;
++  else if(IS_SET(range, TO_ROOM))
++    recipients = roomGetCharacters(charGetRoom(ch));
++
++  // if we have a list to send the message to, do it
++  if(recipients != NULL) {
+     LIST_ITERATOR *rec_i = newListIterator(recipients);
+     CHAR_DATA *rec = NULL;
+ 
+     // go through everyone in the list
+     ITERATE_LIST(rec, rec_i) {
+-      if(IS_SET(range, TO_NOTVICT) && rec == vict)
+-	continue;
+-      if(IS_SET(range, TO_NOTCHAR) && rec == ch)
++      // if we wanted to send to ch or vict, we would have already...
++      if(rec == vict || rec == ch)
+ 	continue;
+       if(rec == ch ||
+ 	 (!hide_nosee ||
+@@ -823,8 +825,7 @@
+ 	  ((!ch || can_see_char(rec, ch)) &&
+ 	   (ch  || (!obj || can_see_obj(rec, obj))))))
+       send_message(rec, mssg, ch, vict, obj, vobj);
+-    }
+-    deleteListIterator(rec_i);
++    } deleteListIterator(rec_i);
+   }
+ }
+ 
+diff -ruN ../nakedmudv2.3/src/inform.h src/inform.h
+--- ../nakedmudv2.3/src/inform.h	Fri May 27 01:30:58 2005
++++ src/inform.h	Sat Jun  4 23:40:29 2005
+@@ -15,13 +15,10 @@
+ //********************
+ // Use with message()
+ //********************
+-#define TO_ROOM 	(1 << 0) // everyone in the room of ch
++#define TO_ROOM 	(1 << 0) // everyone in the room except ch and vict
+ #define TO_VICT		(1 << 1) // just to the victim
+-#define TO_NOTVICT	(1 << 2) // never send the message to vict
+-#define TO_CHAR		(1 << 3) // to the character
+-#define TO_NOTCHAR      (1 << 4) // never send the message to char
+-#define TO_WORLD        (1 << 5) // combines with flags above, but
+-                                 // changes scope to entire world
++#define TO_CHAR		(1 << 2) // just the character
++#define TO_WORLD        (1 << 3) // like TO_ROOM, but to all chars
+ 
+ //
+ // Send a message out
+diff -ruN ../nakedmudv2.3/src/items/portal.c src/items/portal.c
+--- ../nakedmudv2.3/src/items/portal.c	Fri May 27 01:30:57 2005
++++ src/items/portal.c	Sat Jun  4 23:40:29 2005
+@@ -112,12 +112,12 @@
+ 		       "but dark forces prevent you!\r\n");
+ 	else {
+ 	  send_to_char(ch, "You step through %s.\r\n", see_obj_as(ch, found));
+-	  message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
++	  message(ch, NULL, found, NULL, TRUE, TO_ROOM,
+ 		  "$n steps through $o.");
+ 	  char_from_room(ch);
+ 	  char_to_room(ch, dest);
+ 	  look_at_room(ch, dest);
+-	  message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
++	  message(ch, NULL, found, NULL, TRUE, TO_ROOM,
+ 		  "$n arrives after travelling through $o.");
+ 	}
+       }
+diff -ruN ../nakedmudv2.3/src/movement.c src/movement.c
+--- ../nakedmudv2.3/src/movement.c	Fri May 27 01:30:58 2005
++++ src/movement.c	Sat Jun  4 23:40:30 2005
+@@ -40,8 +40,7 @@
+ 		 exitGetName(exit));
+   else {
+     if(*exitGetSpecLeave(exit))
+-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+-	      exitGetSpecLeave(exit));
++      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, exitGetSpecLeave(exit));
+     else if(dir != DIR_NONE)
+       send_around_char(ch, TRUE, "%s leaves %s.\r\n",
+ 		       charGetName(ch), dirGetName(dir));
+@@ -53,8 +52,7 @@
+     look_at_room(ch, to);
+ 
+     if(*exitGetSpecEnter(exit))
+-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
+-	      exitGetSpecEnter(exit));
++      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, exitGetSpecEnter(exit));
+     else if(dir != DIR_NONE)
+       send_around_char(ch, TRUE, "%s arrives from the %s.\r\n",
+ 		       charGetName(ch), dirGetName(dirGetOpposite(dir)));
+@@ -202,7 +200,7 @@
+     if(charGetFurniture(ch)) {
+       send_to_char(ch, "You stand up from %s.\r\n", 
+ 		   objGetName(charGetFurniture(ch)));
+-      message(ch, NULL, charGetFurniture(ch), NULL,TRUE, TO_ROOM | TO_NOTCHAR,
++      message(ch, NULL, charGetFurniture(ch), NULL,TRUE, TO_ROOM,
+ 	      "$n stands up from $o.");
+       char_from_furniture(ch);
+     }
+@@ -212,7 +210,7 @@
+     sprintf(other_buf, "$n %s %s $o.",	
+ 	    posGetActionOther(pos),
+ 	    (furnitureGetType(furniture) == FURNITURE_ON ? "on" : "at"));
+-    message(ch, NULL, furniture, NULL, TRUE, TO_ROOM | TO_NOTCHAR, other_buf);
++    message(ch, NULL, furniture, NULL, TRUE, TO_ROOM, other_buf);
+ 
+     send_to_char(ch, "You %s %s %s.\r\n",
+ 		 posGetActionSelf(pos),
+diff -ruN ../nakedmudv2.3/src/mud.h src/mud.h
+--- ../nakedmudv2.3/src/mud.h	Fri May 27 01:33:10 2005
++++ src/mud.h	Sat Jun  4 23:40:30 2005
+@@ -270,6 +270,7 @@
+ /* strings.c */
+ char   *one_arg               ( char *fStr, char *bStr );
+ char   *two_args              ( char *from, char *arg1, char *arg2);
++char   *three_args            ( char *from, char *arg1, char *arg2, char *arg3);
+ void    arg_num               ( const char *from, char *to, int num); 
+ bool    compares              ( const char *aStr, const char *bStr );
+ bool    is_prefix             ( const char *aStr, const char *bStr );
+diff -ruN ../nakedmudv2.3/src/olc2/redit.c src/olc2/redit.c
+--- ../nakedmudv2.3/src/olc2/redit.c	Fri May 27 01:30:57 2005
++++ src/olc2/redit.c	Sat Jun  4 23:40:29 2005
+@@ -327,7 +327,9 @@
+     return MENU_NOCHOICE;
+   }
+   case 'E':
+-    text_to_buffer(sock, "Which entry do you want to edit: ");
++    if(listSize(list) == 0)
++      return MENU_CHOICE_INVALID;
++    text_to_buffer(sock, "Which entry do you want to edit (-1 for none): ");
+     return RRLEDIT_EDIT;
+   case 'D':
+     text_to_buffer(sock, "Which entry do you want to delete: ");
+@@ -342,6 +344,8 @@
+   switch(choice) {
+   case RRLEDIT_EDIT: {
+     RESET_DATA *reset = NULL;
++    if(atoi(arg) == NOTHING)
++      return TRUE;
+     if(!isdigit(*arg) || (reset = listGet(list, atoi(arg))) == NULL)
+       return FALSE;
+     do_olc(sock, resedit_menu, resedit_chooser, resedit_parser, 
+@@ -615,6 +619,9 @@
+   case REDIT_EXIT: {
+     EXIT_DATA *exit = NULL;
+     int dir = dirGetNum(arg);
++    // did we supply an arg?
++    if(!*arg)
++      return TRUE;
+     // find the exit. Create a new one if none exists
+     if(dir != DIR_NONE) {
+       if((exit = roomGetExit(room, dir)) == NULL)
+diff -ruN ../nakedmudv2.3/src/scripts/pychar.c src/scripts/pychar.c
+--- ../nakedmudv2.3/src/scripts/pychar.c	Fri May 27 01:30:57 2005
++++ src/scripts/pychar.c	Sat Jun  4 23:40:29 2005
+@@ -109,6 +109,12 @@
+   else           return NULL;
+ }
+ 
++PyObject *PyChar_getmname(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) return Py_BuildValue("s", charGetMultiName(ch));
++  else           return NULL;
++}
++
+ PyObject *PyChar_getdesc(PyChar *self, void *closure) {
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("s", charGetDesc(ch));
+@@ -121,6 +127,12 @@
+   else           return NULL;
+ }
+ 
++PyObject *PyChar_getmdesc(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) return Py_BuildValue("s", charGetMultiRdesc(ch));
++  else           return NULL;
++}
++
+ PyObject *PyChar_getrace(PyChar *self, void *closure) {
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) return Py_BuildValue("s", charGetRace(ch));
+@@ -226,6 +238,24 @@
+   return 0;
+ }
+ 
++int PyChar_setmname(PyChar *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete character's multi-name");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Character multi-names must be strings");
++    return -1;
++  }
++
++  CHAR_DATA *ch;
++  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
++  charSetMultiName(ch, PyString_AsString(value));
++  return 0;
++}
++
+ int PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete character's description");
+@@ -262,6 +292,24 @@
+   return 0;
+ }
+ 
++int PyChar_setmdesc(PyChar *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete character's multi-rdesc");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Character multi-rdescs must be strings");
++    return -1;
++  }
++
++  CHAR_DATA *ch;
++  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
++  charSetMultiRdesc(ch, PyString_AsString(value));
++  return 0;
++}
++
+ int PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete a character's race");
+@@ -874,10 +922,14 @@
+ 		      "returns a list of objects in the char's inventory");
+   PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
+ 		      "handle the character's name");
++  PyChar_addGetSetter("mname", PyChar_getmname, PyChar_setmname,
++		      "handle the character's multi-name");
+   PyChar_addGetSetter("desc", PyChar_getdesc, PyChar_setdesc,
+ 		      "handle the character's description");
+   PyChar_addGetSetter("rdesc", PyChar_getrdesc, PyChar_setrdesc,
+ 		      "handle the character's room description");
++  PyChar_addGetSetter("mdesc", PyChar_getmdesc, PyChar_setmdesc,
++		      "handle the character's multi room description");
+   PyChar_addGetSetter("sex", PyChar_getsex, PyChar_setsex,
+ 		      "handle the character's gender");
+   PyChar_addGetSetter("race", PyChar_getrace, PyChar_setrace,
+diff -ruN ../nakedmudv2.3/src/scripts/pymud.c src/scripts/pymud.c
+--- ../nakedmudv2.3/src/scripts/pymud.c	Fri May 27 01:30:57 2005
++++ src/scripts/pymud.c	Sat Jun  4 23:40:29 2005
+@@ -15,6 +15,7 @@
+ #include <structmember.h>
+ 
+ #include "../mud.h"
++#include "../utils.h"
+ #include "../character.h"
+ 
+ #include "script.h"
+@@ -164,6 +165,25 @@
+ }
+ 
+ 
++//
++// format a string to be into a typical description style
++static PyObject *
++mud_format_string(PyObject *self, PyObject *args) {
++  char *string = NULL;
++
++  // parse all of the values
++  if (!PyArg_ParseTuple(args, "s", &string)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Can not format non-string values.");
++    return NULL;
++  }
++
++  format_string(&string, 80, MAX_BUFFER, TRUE);
++  PyObject *ret = Py_BuildValue("s", string);
++  free(string);
++  return ret;
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -179,7 +199,9 @@
+     {"erase_global",  mud_erase_global, METH_VARARGS,
+      "Erase the value of a global variable."},
+     {"add_cmd", mud_add_cmd, METH_VARARGS,
+-     "Add a new command to the game,"},
++     "Add a new command to the game."},
++    {"format_string", mud_format_string, METH_VARARGS,
++     "format a string to be 80 chars wide and indented. Like a desc."},
+     {NULL, NULL, 0, NULL}        /* Sentinel */
+ };
+ 
+diff -ruN ../nakedmudv2.3/src/scripts/pymud.d src/scripts/pymud.d
+--- ../nakedmudv2.3/src/scripts/pymud.d	Fri May 27 02:08:24 2005
++++ src/scripts/pymud.d	Sat Jun  4 23:40:29 2005
+@@ -1,3 +1,4 @@
+ scripts/pymud.d scripts/pymud.o: scripts/pymud.c mud.h wrapsock.h property_table.h list.h map.h \
+-  hashtable.h set.h buffer.h bitvector.h character.h scripts/script.h \
+-  scripts/pyroom.h scripts/pychar.h scripts/pyobj.h scripts/pyplugs.h
++  hashtable.h set.h buffer.h bitvector.h utils.h character.h \
++  scripts/script.h scripts/pyroom.h scripts/pychar.h scripts/pyobj.h \
++  scripts/pyplugs.h
+diff -ruN ../nakedmudv2.3/src/scripts/pyobj.c src/scripts/pyobj.c
+--- ../nakedmudv2.3/src/scripts/pyobj.c	Fri May 27 01:30:57 2005
++++ src/scripts/pyobj.c	Sat Jun  4 23:40:29 2005
+@@ -99,19 +99,43 @@
+ PyObject *PyObj_getname(PyObj *self, void *closure) {
+   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj != NULL) return Py_BuildValue("s", objGetName(obj));
+-  else           return NULL;
++  else            return NULL;
++}
++
++PyObject *PyObj_getmname(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL) return Py_BuildValue("s", objGetMultiName(obj));
++  else            return NULL;
++}
++
++PyObject *PyObj_getbits(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL) return Py_BuildValue("s", bitvectorGetBits(objGetBits(obj)));
++  else            return NULL;
++}
++
++PyObject *PyObj_getkeywords(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL) return Py_BuildValue("s", objGetKeywords(obj));
++  else            return NULL;
+ }
+ 
+ PyObject *PyObj_getdesc(PyObj *self, void *closure) {
+   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj != NULL) return Py_BuildValue("s", objGetDesc(obj));
+-  else           return NULL;
++  else            return NULL;
+ }
+ 
+ PyObject *PyObj_getrdesc(PyObj *self, void *closure) {
+   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj != NULL) return Py_BuildValue("s", objGetRdesc(obj));
+-  else           return NULL;
++  else            return NULL;
++}
++
++PyObject *PyObj_getmdesc(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL) return Py_BuildValue("s", objGetMultiRdesc(obj));
++  else            return NULL;
+ }
+ 
+ PyObject *PyObj_getuid(PyObj *self, void *closure) {
+@@ -124,6 +148,12 @@
+   else           return NULL;
+ }
+ 
++PyObject *PyObj_getweight(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL) return Py_BuildValue("d", objGetWeight(obj));
++  else            return NULL;
++}
++
+ PyObject *PyObj_getcontents(PyObj *self, PyObject *args) {
+   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+   if(obj == NULL) 
+@@ -187,6 +217,61 @@
+   return 0;
+ }
+ 
++int PyObj_setmname(PyObj *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete object's multi-name");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Object multi-names must be strings");
++    return -1;
++  }
++
++  OBJ_DATA *obj;
++  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
++  objSetMultiName(obj, PyString_AsString(value));
++  return 0;
++}
++
++int PyObj_setbits(PyObj *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete object's bits");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Object bits must be strings");
++    return -1;
++  }
++
++  OBJ_DATA *obj;
++  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
++  bitClear(objGetBits(obj));
++  bitSet(objGetBits(obj), PyString_AsString(value));
++  return 0;
++}
++
++int PyObj_setkeywords(PyObj *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete object's keywords");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Object keywords must be strings");
++    return -1;
++  }
++
++  OBJ_DATA *obj;
++  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
++  objSetKeywords(obj, PyString_AsString(value));
++  return 0;
++}
++
+ int PyObj_setdesc(PyObj *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete object's description");
+@@ -223,6 +308,42 @@
+   return 0;
+ }
+ 
++int PyObj_setmdesc(PyObj *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete object's multi-rdesc");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Object multi-rdescs must be strings");
++    return -1;
++  }
++
++  OBJ_DATA *obj;
++  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
++  objSetMultiRdesc(obj, PyString_AsString(value));
++  return 0;
++}
++
++int PyObj_setweight(PyObj *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete object's weight");
++    return 0;
++  }
++
++  if (!PyFloat_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Object weight must be a double");
++    return -1;
++  }
++
++  OBJ_DATA *obj;
++  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
++  objSetWeightRaw(obj, PyFloat_AsDouble(value));
++  return 0;
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -581,14 +702,24 @@
+ 		       "the characters sitting on/riding the object");
+     PyObj_addGetSetter("name", PyObj_getname, PyObj_setname,
+ 		       "the object's name");
++    PyObj_addGetSetter("mname", PyObj_getmname, PyObj_setmname,
++		       "the object's multi-name");
+     PyObj_addGetSetter("desc", PyObj_getdesc, PyObj_setdesc,
+ 		       "the object's long description");
+     PyObj_addGetSetter("rdesc", PyObj_getrdesc, PyObj_setrdesc,
+ 		       "the object's room description");
++    PyObj_addGetSetter("mdesc", PyObj_getmdesc, PyObj_setmdesc,
++		       "the object's multi room description");
++    PyObj_addGetSetter("keywords", PyObj_getkeywords, PyObj_setkeywords,
++		       "the object's keywords");
++    PyObj_addGetSetter("weight", PyObj_getweight, PyObj_setweight,
++		       "the object's weight (minus contents)");
+     PyObj_addGetSetter("uid", PyObj_getuid, NULL,
+ 		       "the object's unique identification number");
+     PyObj_addGetSetter("vnum", PyObj_getvnum, NULL,
+ 		       "the virtual number for the object.");
++    PyObj_addGetSetter("bits", PyObj_getbits, PyObj_setbits,
++		       "the object's basic bitvector.");
+ 
+     // methods
+     PyObj_addMethod("attach", PyObj_attach, METH_VARARGS,
+diff -ruN ../nakedmudv2.3/src/scripts/pyplugs.c src/scripts/pyplugs.c
+--- ../nakedmudv2.3/src/scripts/pyplugs.c	Fri May 27 01:30:57 2005
++++ src/scripts/pyplugs.c	Sat Jun  4 23:40:29 2005
+@@ -84,9 +84,9 @@
+ // takes the name of a python module, and loads that module into the game
+ COMMAND(cmd_pyload) {
+   if(!*arg)
+-    send_to_char(ch, "Which module did you want to load?\r\n");
++    send_to_char(ch, "Which module or package would you like to load?\r\n");
+   else {
+-    char fname[strlen(arg) + 6 + 4];
++    static char fname[SMALL_BUFFER];
+     sprintf(fname, "%s/%s.py", PYMOD_LIB, arg);
+     // make sure the file exists
+     if(!file_exists(fname))
+@@ -105,8 +105,8 @@
+ // about any other feature of the mud can be.
+ void init_py_modules() {
+   // build a list of all the files in this directory
+-  static char fname[SMALL_BUFFER];
+-  static char mname[SMALL_BUFFER];
++  static char mname[SMALL_BUFFER]; // module name
++  static char fname[SMALL_BUFFER]; // the name of the file
+   DIR *dir = opendir(PYMOD_LIB);
+   struct dirent *entry;
+ 
+@@ -122,13 +122,26 @@
+ 
+   // go through each of our python modules, and add them to the pymod package
+   for(entry = readdir(dir); entry; entry = readdir(dir)) {
+-    // if it doesn't end in .py, ignore it
++    // two cases: it's a package, or it's a module file. Packages will
++    // be directories, and modules will be .py files. Check for both cases,
++    // and then ignore all of the rest:
+     int nlen = strlen(entry->d_name);
+-    if(nlen < 4 || strcasecmp(".py", entry->d_name + nlen-3) != 0)
+-      continue;
+     sprintf(fname, "%s/%s", PYMOD_LIB, entry->d_name);
+-    sprintf(mname, "%s",    entry->d_name);
+-    mname[strlen(mname)-3] = '\0';
++
++    // skip ourself and our parent
++    if(!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
++      continue;
++    // python file == module
++    else if(nlen >= 4 && !strcasecmp(".py", entry->d_name + nlen-3)) {
++      sprintf(mname, "%s", entry->d_name);
++      mname[strlen(mname)-3] = '\0';
++    }
++    // directory == package
++    else if(dir_exists(fname))
++      sprintf(mname, "%s", entry->d_name);
++    // nothing we can use
++    else
++      continue;
+ 
+     // Load the module if it hasn't been loaded yet
+     PyObject *mod = PyImport_ImportModule(mname);
+diff -ruN ../nakedmudv2.3/src/scripts/pyroom.c src/scripts/pyroom.c
+--- ../nakedmudv2.3/src/scripts/pyroom.c	Fri May 27 01:30:57 2005
++++ src/scripts/pyroom.c	Sat Jun  4 23:40:29 2005
+@@ -101,6 +101,43 @@
+   else             return NULL;
+ }
+ 
++PyObject *PyRoom_getname(PyRoom *self, void *closure) {
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room != NULL)  return Py_BuildValue("s", roomGetName(room));
++  else              return NULL;
++}
++
++PyObject *PyRoom_getdesc(PyRoom *self, void *closure) {
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room != NULL)  return Py_BuildValue("s", roomGetDesc(room));
++  else              return NULL;
++}
++
++PyObject *PyRoom_getexnames(PyRoom *self, void *closure) {
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room == NULL)  return NULL;
++  
++  PyObject  *list = PyList_New(0);
++  EXIT_DATA *exit = NULL;
++  int           i = 0;
++  // normal exits
++  for(i = 0; i < NUM_DIRS; i++) {
++    if((exit = roomGetExit(room, i)) == NULL)
++      continue;
++    PyList_Append(list, Py_BuildValue("s", dirGetName(i)));
++  }
++
++  // special exits
++  int num_spec_exits = 0;
++  const char **names = roomGetExitNames(room, &num_spec_exits);
++  for(i = 0; i < num_spec_exits; i++)
++    PyList_Append(list, Py_BuildValue("s", names[i]));
++  if(names) free(names);
++
++  return list;
++}
++
++
+ PyObject *PyRoom_getchars(PyRoom *self, PyObject *args) {
+   ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+   if(room == NULL)
+@@ -136,6 +173,56 @@
+ }
+ 
+ 
++//
++// Standard check to make sure the room exists when trying to set a value for 
++// it. If successful, assign the room to rm. Otherwise, return -1 (error)
++#define PYROOM_CHECK_ROOM_EXISTS(vnum, room)                                   \
++  room = worldGetRoom(gameworld, vnum);					       \
++  if(room == NULL) {                                                           \
++    PyErr_Format(PyExc_TypeError,                                              \
++		    "Tried to modify nonexistent room, %d", vnum);             \
++    return -1;                                                                 \
++  }                                                                            
++
++int PyRoom_setname(PyRoom *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete room's name");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Room names must be strings");
++    return -1;
++  }
++
++  ROOM_DATA *room;
++  PYROOM_CHECK_ROOM_EXISTS(self->vnum, room);
++  roomSetName(room, PyString_AsString(value));
++  return 0;
++}
++
++int PyRoom_setdesc(PyRoom *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete room's desc");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Room descs must be strings");
++    return -1;
++  }
++
++  ROOM_DATA *room;
++  PYROOM_CHECK_ROOM_EXISTS(self->vnum, room);
++  roomSetDesc(room, PyString_AsString(value));
++  return 0;
++}
++
++
++
++
+ 
+ //*****************************************************************************
+ // methods for the room class
+@@ -517,10 +604,20 @@
+     PyObject* module = NULL;
+ 
+     // add all of the basic getsetters
+-    PyRoom_addGetSetter("vnum",  PyRoom_getvnum,   NULL, "The room's vnum");
+-    PyRoom_addGetSetter("chars", PyRoom_getchars,  NULL, "chars in the room");
+-    PyRoom_addGetSetter("objs",  PyRoom_getobjs,   NULL, "objects in the room");
+-    PyRoom_addGetSetter("contents",PyRoom_getobjs, NULL, "objects in the room");
++    PyRoom_addGetSetter("name",    PyRoom_getname,     PyRoom_setname, 
++			"the room's name");
++    PyRoom_addGetSetter("desc",    PyRoom_getdesc,     PyRoom_setdesc, 
++			"the room's desc");
++    PyRoom_addGetSetter("vnum",    PyRoom_getvnum,     NULL, 
++			"The room's vnum");
++    PyRoom_addGetSetter("chars",   PyRoom_getchars,    NULL, 
++			"chars in the room");
++    PyRoom_addGetSetter("objs",  PyRoom_getobjs,       NULL, 
++			"objects in the room");
++    PyRoom_addGetSetter("contents",PyRoom_getobjs,     NULL, 
++			"objects in the room");
++    PyRoom_addGetSetter("exnames", PyRoom_getexnames,  NULL, 
++			"the room's exits");
+ 
+     // add all of the basic methods
+     PyRoom_addMethod("attach", PyRoom_attach, METH_VARARGS,
+diff -ruN ../nakedmudv2.3/src/scripts/script.c src/scripts/script.c
+--- ../nakedmudv2.3/src/scripts/script.c	Fri May 27 01:30:57 2005
++++ src/scripts/script.c	Sat Jun  4 23:40:29 2005
+@@ -9,7 +9,6 @@
+ 
+ // script stuff
+ #include <Python.h>
+-#include <structmember.h>
+ 
+ // mud stuff
+ #include "../mud.h"
+@@ -60,7 +59,8 @@
+       send_to_char(ch, "No script with that vnum exists!\r\n");
+     else if(scriptGetType(script) != SCRIPT_TYPE_RUNNABLE)
+       send_to_char(ch, "That script is not runnable!\r\n");
+-    else if(!bitIsSet(charGetUserGroups(ch), mudsettingGetString("lockdown")))
++    else if(*scriptGetArgs(script) && 
++	    !bitIsSet(charGetUserGroups(ch), scriptGetArgs(script)))
+       send_to_char(ch, "You do not have the priviledges to run that script!\r\n");
+     else {
+       send_to_char(ch, "Ok.\r\n");
+@@ -646,6 +646,9 @@
+   // there was nothing on the first line
+   else if(line_num == 1)
+     send_to_socket(sock, "The buffer is empty.\r\n");
++
++  // and kill any color that is leaking
++  send_to_socket(sock, "{n");
+ 
+   if(ptr[strlen(ptr)-1] != '\n')
+     send_to_socket(sock, "Buffer does not end in newline!\r\n");
+diff -ruN ../nakedmudv2.3/src/socials/socials.c src/socials/socials.c
+--- ../nakedmudv2.3/src/socials/socials.c	Fri May 27 01:30:57 2005
++++ src/socials/socials.c	Sat Jun  4 23:40:29 2005
+@@ -378,11 +378,9 @@
+     // no target was supplied
+     else if(!tgt) {
+       if(*data->to_char_notgt)
+-	message(ch, NULL, NULL, NULL, TRUE, TO_CHAR, 
+-		data->to_char_notgt);
++	message(ch, NULL, NULL, NULL, TRUE, TO_CHAR, data->to_char_notgt);
+       if(*data->to_room_notgt)
+-	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR, 
+-		data->to_room_notgt);
++	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, data->to_room_notgt);
+     }
+ 
+     // a target was supplied, and it was us
+@@ -392,11 +390,9 @@
+       else if(*data->to_char_notgt)
+ 	message(ch, NULL, NULL, NULL, TRUE, TO_CHAR, data->to_char_notgt);
+       if(*data->to_room_self)
+-	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR, 
+-		data->to_room_self);
++	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, data->to_room_self);
+       else if(*data->to_room_notgt)
+-	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR, 
+-		data->to_room_notgt);
++	message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, data->to_room_notgt);
+     }
+ 
+     // a target was supplied and it was not us
+@@ -406,8 +402,7 @@
+       if(*data->to_vict_tgt)
+ 	message(ch, tgt, NULL, NULL, TRUE, TO_VICT, data->to_vict_tgt);
+       if(*data->to_room_tgt)
+-	message(ch, tgt, NULL, NULL, TRUE, TO_ROOM | TO_NOTVICT | TO_NOTCHAR,
+-		data->to_room_tgt);
++	message(ch, tgt, NULL, NULL, TRUE, TO_ROOM, data->to_room_tgt);
+     }
+   }
+   else
+diff -ruN ../nakedmudv2.3/src/socket.c src/socket.c
+--- ../nakedmudv2.3/src/socket.c	Fri May 27 01:30:58 2005
++++ src/socket.c	Sat Jun  4 23:40:30 2005
+@@ -596,6 +596,13 @@
+     return;
+   }
+ 
++  // if we're at the head of the outbuf and haven't entered a command, 
++  // also copy a newline so we're not printing in front of the prompt
++  if(dsock->top_output == 0 && !dsock->bust_prompt) {
++    strcpy(dsock->outbuf, "\r\n");
++    dsock->top_output += 2;
++  }
++
+   /* add data to buffer */
+   strcpy(dsock->outbuf + dsock->top_output, output);
+   dsock->top_output += iPtr;
+diff -ruN ../nakedmudv2.3/src/strings.c src/strings.c
+--- ../nakedmudv2.3/src/strings.c	Fri May 27 01:30:58 2005
++++ src/strings.c	Sat Jun  4 23:40:30 2005
+@@ -91,6 +91,10 @@
+   return one_arg(one_arg(from, arg1), arg2);
+ }
+ 
++char *three_args(char *from, char *arg1, char *arg2, char *arg3) {
++  return one_arg(one_arg(one_arg(from, arg1), arg2), arg3);
++}
++
+ //
+ // pull out the argument of the specified number
+ //
+diff -ruN ../nakedmudv2.3/src/time/time.c src/time/time.c
+--- ../nakedmudv2.3/src/time/time.c	Fri May 27 01:30:58 2005
++++ src/time/time.c	Sat Jun  4 23:40:29 2005
+@@ -6,6 +6,9 @@
+ //
+ //*****************************************************************************
+ 
++#include <Python.h>        // to add nightdesc
++#include <structmember.h>
++
+ #include "../mud.h"
+ #include "../utils.h"
+ #include "../inform.h"
+@@ -18,6 +21,17 @@
+ #include "mudtime.h"
+ 
+ 
++
++//*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../scripts/pyroom.h"
++
++
++
++//*****************************************************************************
++// local defines, variables, and structs
++//*****************************************************************************
+ #define TIME_FILE   "../lib/misc/time"  // where do we keep time data?
+ #define TIME_UPDATE_DELAY   1 MUD_HOUR  // how long is an in-game hour?
+ #define HOURS_PER_DAY               24  // how many hours are in a day?
+@@ -130,10 +144,43 @@
+ }
+ 
+ 
++
++//*****************************************************************************
++// Python getters and setters
++//*****************************************************************************
++PyObject *PyRoom_getndesc(PyObject *self, void *closure) {
++  ROOM_DATA *room = PyRoom_AsRoom(self);
++  if(room != NULL)  return Py_BuildValue("s", roomGetNightDesc(room));
++  else              return NULL;
++}
++
++int PyRoom_setndesc(PyObject *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete room's night desc");
++    return -1;
++  }
++  
++  if (!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Room night descs must be strings");
++    return -1;
++  }
++
++  ROOM_DATA *room = PyRoom_AsRoom(self);
++  if(room == NULL) {
++    PyErr_Format(PyExc_TypeError,
++		 "Tried to modify nonexistent room, %d", PyRoom_AsVnum(self));
++    return -1;                                                                
++  }
++
++  roomSetNightDesc(room, PyString_AsString(value));
++  return 0;
++}
++
++
++
+ //*****************************************************************************
+-//
+ // time handling functions
+-//
+ //*****************************************************************************
+ 
+ //
+@@ -197,6 +244,9 @@
+   else
+     curr_hour = curr_day_of_week = curr_day_of_month = curr_month = curr_year = 0;
+ 
++  // add a nightdesc get-setter to rooms
++  PyRoom_addGetSetter("ndesc", PyRoom_getndesc, PyRoom_setndesc,
++		      "the room's night desc");
+ 
+   // add the time command
+   add_cmd("time", NULL, cmd_time, 0, POS_SITTING,  POS_FLYING,
+diff -ruN ../nakedmudv2.3/src/time/time.d src/time/time.d
+--- ../nakedmudv2.3/src/time/time.d	Fri May 27 02:08:23 2005
++++ src/time/time.d	Sat Jun  4 23:40:29 2005
+@@ -1,3 +1,3 @@
+ time/time.d time/time.o: time/time.c mud.h wrapsock.h property_table.h list.h map.h \
+   hashtable.h set.h buffer.h bitvector.h utils.h inform.h character.h \
+-  room.h event.h storage.h auxiliary.h time/mudtime.h
++  room.h event.h storage.h auxiliary.h time/mudtime.h scripts/pyroom.h
+diff -ruN ../nakedmudv2.3/src/utils.c src/utils.c
+--- ../nakedmudv2.3/src/utils.c	Fri May 27 01:30:58 2005
++++ src/utils.c	Sat Jun  4 23:40:30 2005
+@@ -8,6 +8,7 @@
+ #include <stdio.h>
+ #include <ctype.h>
+ #include <unistd.h>
++#include <dirent.h> 
+ 
+ /* include main header file */
+ #include "mud.h"
+@@ -119,7 +120,7 @@
+     char other_buf[MAX_BUFFER];
+     sprintf(other_buf, "{y$n says, '%s'{n", txt);
+     send_to_char(dMob, "{yYou say, '%s'{n\r\n", txt);
+-    message(dMob, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
++    message(dMob, NULL, NULL, NULL, FALSE, TO_ROOM, other_buf);
+     try_dialog_all(dMob, roomGetCharacters(charGetRoom(dMob)), txt);
+     try_speech_script(dMob, NULL, txt);
+     break;
+@@ -129,7 +130,7 @@
+     char other_buf[MAX_BUFFER];
+     sprintf(other_buf, "{c$n chats, '%s'{n", txt);
+     send_to_char(dMob, "{cYou chat, '%s'{n\r\n", txt);
+-    message(dMob, NULL, NULL, NULL, FALSE, TO_WORLD | TO_NOTCHAR, other_buf);
++    message(dMob, NULL, NULL, NULL, FALSE, TO_WORLD, other_buf);
+     break;
+   }
+ 
+@@ -890,10 +891,15 @@
+   return rnd / (double)RAND_MAX;
+ }
+ 
+-double gaussian(void) {
++double rand_gaussian(void) {
+   return sqrt(-2.0 * log(rand_percent())) * cos(2.0 * PI * rand_percent());
+ }
+ 
++double sigmoid(double val) {
++  return 1.0 / (1.0 + pow(e, -val));
++}
++
++
+ //
+ // returns "st", "nd", "rd", or "th", based on the number passed in
+ //
+@@ -1282,15 +1288,23 @@
+ 		       bitvectorGetBits(charGetUserGroups(ch1))));
+ }
+ 
+-bool file_exists(char *fname) {
++bool file_exists(const char *fname) {
+   FILE *fl = fopen(fname, "r");
+   if(fl == NULL) return FALSE;
+   fclose(fl);
+   return TRUE;
+ }
+ 
++bool dir_exists(const char *dname) {
++  DIR *dir = opendir(dname);
++  if(dir == NULL) return FALSE;
++  closedir(dir);
++  return TRUE;
++}
++
+ void show_prompt(SOCKET_DATA *socket) {
+-  text_to_buffer(socket, custom_prompt(socketGetChar(socket)));
++  if(socketGetChar(socket))
++    text_to_buffer(socket, custom_prompt(socketGetChar(socket)));
+ }
+ 
+ const char *custom_prompt(CHAR_DATA *ch) {
+@@ -1299,4 +1313,3 @@
+   strcat(prompt, "\r\n{nprompt> ");    
+   return prompt;
+ }
+-
+diff -ruN ../nakedmudv2.3/src/utils.h src/utils.h
+--- ../nakedmudv2.3/src/utils.h	Fri May 27 01:30:58 2005
++++ src/utils.h	Sat Jun  4 23:40:30 2005
+@@ -15,6 +15,7 @@
+ //*****************************************************************************
+ #define MAX_INT               214743647
+ #define PI                    3.14159265
++#define e                     2.71828182
+ 
+ #define UMIN(a, b)	      ((a) < (b) ? (a) : (b))
+ #define MIN(a, b)             ((a) < (b) ? (a) : (b))
+@@ -26,15 +27,17 @@
+ // between the two bounds
+ int rand_number(int min, int max);
+ 
+-
+ //
+ // Returns a random number between 0 and 1. Numbers are evenly distributed
+ double rand_percent(void);
+ 
+ //
+ // Return a random number pulled from N(0, 1)
+-double gaussian(void);
++double rand_gaussian(void);
+ 
++//
++// Returns a sigmoid transformation of the specified number
++double sigmoid(double val);
+ 
+ //
+ // return the rd, th, nd, for a number
+@@ -51,7 +54,7 @@
+ 			       (charGetSex(ch) == SEX_FEMALE ? "her" : "it"))
+ 
+ #define HISHERS(ch)           (charGetSex(ch) == SEX_MALE ? "his" : \
+-			       (charGetSex(ch) == SEX_FEMALE ? "hers" : "its"))
++			       (charGetSex(ch) == SEX_FEMALE ? "her" : "its"))
+ 
+ #define HESHE(ch)             (charGetSex(ch) == SEX_MALE ? "he" : \
+ 			       (charGetSex(ch) == SEX_FEMALE ? "she" : "it"))
+@@ -96,8 +99,9 @@
+ //*****************************************************************************
+ // String utilities.
+ //*****************************************************************************
+-#define CLEAR_SCREEN      "\033[H\033[J"
+-#define AN(string)        (strchr("AEIOU", toupper(*string)) ? "an" : "a")
++#define CLEAR_SCREEN       "\033[H\033[J"
++#define AN(string)         (strchr("AEIOU", toupper(*string)) ? "an" : "a")
++#define strdupsafe(string) strdup(string ? string : "")
+ 
+ char **parse_keywords     (const char *keywords, int *num_keywords);
+ bool is_keyword           (const char *keywords, const char *word, 
+@@ -157,8 +161,9 @@
+ void *identity_func(void *data);
+ 
+ //
+-// checks to see if a file exists
+-bool file_exists(char *fname);
++// checks to see if a file or directory exists
++bool file_exists(const char *fname);
++bool dir_exists (const char *dname);
+ 
+ // iterate across all the elements in a list
+ #define ITERATE_LIST(val, it) \

@@ -177,12 +177,12 @@ COMMAND(cmd_goto) {
     else if(room == charGetRoom(ch))
       send_to_char(ch, "You're already here, boss.\r\n");
     else {
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
 	      "$n disappears in a puff of smoke.");
       char_from_room(ch);
       char_to_room(ch, room);
       look_at_room(ch, room);
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
 	      "$n arrives in a puff of smoke.");
     }
   }
@@ -197,12 +197,12 @@ COMMAND(cmd_goto) {
     if(ch == tgt)
       send_to_char(ch, "You're already here, boss.\r\n");
     else if(tgt != NULL) {
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
 	      "$n disappears in a puff of smoke.");
       char_from_room(ch);
       char_to_room(ch, charGetRoom(tgt));
       look_at_room(ch, charGetRoom(ch));
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
 	      "$n arrives in a puff of smoke.");
     }
     else
@@ -231,12 +231,12 @@ COMMAND(cmd_transfer) {
     else if(tgt != NULL) {
       message(ch, tgt, NULL, NULL, TRUE, TO_VICT,
 	      "$n has transferred you!");
-      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
 	      "$n disappears in a puff of smoke.");
       char_from_room(tgt);
       char_to_room(tgt, charGetRoom(ch));
       look_at_room(tgt, charGetRoom(tgt));
-      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
 	      "$n arrives in a puff of smoke.");
     }
     else

@@ -112,12 +112,12 @@ COMMAND(cmd_enter) {
 		       "but dark forces prevent you!\r\n");
 	else {
 	  send_to_char(ch, "You step through %s.\r\n", see_obj_as(ch, found));
-	  message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+	  message(ch, NULL, found, NULL, TRUE, TO_ROOM,
 		  "$n steps through $o.");
 	  char_from_room(ch);
 	  char_to_room(ch, dest);
 	  look_at_room(ch, dest);
-	  message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+	  message(ch, NULL, found, NULL, TRUE, TO_ROOM,
 		  "$n arrives after travelling through $o.");
 	}
       }

@@ -331,3 +331,14 @@ void charSetString(CHAR_DATA *ch, const char *key, const char *val) {
   if(*val != '\0')
     hashPut(data->char_vars, key, newCharVarString(val));
 }
+
+bool charHasVar(CHAR_DATA *ch, const char *key) {
+  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+  return (data->char_vars ? hashIn(data->char_vars, key) : FALSE);
+}
+
+void charDeleteVar(CHAR_DATA *ch, const char *key) {
+  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+  CHAR_VAR *var = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+  if(var != NULL) deleteCharVar(var);
+}
