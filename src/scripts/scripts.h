@@ -85,16 +85,20 @@ LIST *roomGetTriggers(ROOM_DATA *room);
 // from the first time the python form is created. Before the pyform is 
 // returned, it is increfed. Therefore, users must decref after they are done
 // to avoid memory leaks.
-PyObject *charGetPyForm(CHAR_DATA *ch);
-PyObject *roomGetPyForm(ROOM_DATA *room);
-PyObject  *objGetPyForm(OBJ_DATA  *obj);
+PyObject    *charGetPyForm(CHAR_DATA    *ch);
+PyObject    *roomGetPyForm(ROOM_DATA    *room);
+PyObject     *objGetPyForm(OBJ_DATA     *obj);
+PyObject  *socketGetPyForm(SOCKET_DATA  *sock);
+PyObject *accountGetPyForm(ACCOUNT_DATA *acc);
 
 //
 // The same as above, but returns a borrowed reference so no incref/decref are
 // needed
-PyObject *charGetPyFormBorrowed(CHAR_DATA *ch);
-PyObject *roomGetPyFormBorrowed(ROOM_DATA *room);
-PyObject  *objGetPyFormBorrowed(OBJ_DATA  *obj);
+PyObject    *charGetPyFormBorrowed(CHAR_DATA    *ch);
+PyObject    *roomGetPyFormBorrowed(ROOM_DATA    *room);
+PyObject     *objGetPyFormBorrowed(OBJ_DATA     *obj);
+PyObject  *socketGetPyFormBorrowed(SOCKET_DATA  *sock);
+PyObject *accountGetPyFormBorrowed(ACCOUNT_DATA *acc);
 
 //
 // returns a Python form of the given list

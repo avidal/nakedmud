@@ -35,7 +35,7 @@ void PyEvent_on_complete(void *owner, PyObject *tuple, const char *arg) {
   }
 
   // decrease the reference on our function and data
-  //  Py_DECREF(tuple);
+  Py_XDECREF(tuple);
 }
 
 
@@ -111,7 +111,9 @@ PyObject *PyEvent_start_event(PyObject *self, PyObject *args) {
 //
 // start a new update (event that re-queues itself after completion)
 PyObject *PyEvent_start_update(PyObject *self, PyObject *args) {
-  return PyEvent_start(self, args, start_update);
+  PyErr_Format(PyExc_StandardError, "start_update is deprecated. Use start_event.");
+  return NULL;
+  /* return PyEvent_start(self, args, start_update); */
 }
 
 //

@@ -208,6 +208,7 @@ extern  PROPERTY_TABLE     *mob_table; // a mapping between uid and mob
 extern  PROPERTY_TABLE     *obj_table; // a mapping between uid and obj
 extern  PROPERTY_TABLE    *room_table; // a mapping between uid and room
 extern  PROPERTY_TABLE    *exit_table; // a mapping between uid and exit
+extern  PROPERTY_TABLE    *sock_table; // a mapping between uid and socket
 
 extern  bool                shut_down; // used for shutdown
 extern  int                   mudport; // What port are we running on?
@@ -240,12 +241,6 @@ char  *crypt                  ( const char *key, const char *salt );
 
 /* interpret.c */
 void  handle_cmd_input        ( SOCKET_DATA *dsock, char *arg );
-
-/* account_hanlder.c */
-void account_handle_menu      ( SOCKET_DATA *sock, char *arg);
-void account_menu             ( SOCKET_DATA *sock);
-
-
 void  do_cmd                  ( CHAR_DATA *ch, char *arg, bool aliases_ok);
 
 /* io.c */

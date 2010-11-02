@@ -24,6 +24,7 @@
 #include "room.h"
 #include "exit.h"
 #include "account.h"
+#include "socket.h"
 #include "hooks.h"
 
 
@@ -114,6 +115,8 @@ const char *hookBuildInfo(const char *format, ...) {
       bprintf(info_buf, "rm.%d", roomGetUID(va_arg(vargs, ROOM_DATA *)));
     else if(!strcasecmp(token, "ex") || !strcasecmp(token, "exit"))
       bprintf(info_buf, "ex.%d", exitGetUID(va_arg(vargs, EXIT_DATA *)));
+    else if(!strcasecmp(token, "sk") || !strcasecmp(token, "sock"))
+      bprintf(info_buf, "sk.%d", socketGetUID(va_arg(vargs, SOCKET_DATA *)));
     else if(!strcasecmp(token, "str"))
       bprintf(info_buf, "%c%s%c", HOOK_STR_MARKER, va_arg(vargs, char *), HOOK_STR_MARKER);
     else if(!strcasecmp(token, "int"))
@@ -208,6 +211,14 @@ void hookParseInfo(const char *info, ...) {
     else if(startswith(token, "exit")) {
       sscanf(token, "exit.%d", &id);
       *va_arg(vargs, EXIT_DATA **) = propertyTableGet(exit_table, id);
+    }
+    else if(startswith(token, "sk")) {
+      sscanf(token, "sk.%d", &id);
+      *va_arg(vargs, SOCKET_DATA **) = propertyTableGet(sock_table, id);
+    }
+    else if(startswith(token, "sock")) {
+      sscanf(token, "sk.%d", &id);
+      *va_arg(vargs, SOCKET_DATA **) = propertyTableGet(sock_table, id);
     }
     else if(*token == HOOK_STR_MARKER) {
       char *str = strdup(token + 1);

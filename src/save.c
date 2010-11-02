@@ -309,13 +309,32 @@ void unreference_player(CHAR_DATA *ch) {
   }
 }
 
+
+void reference_account(ACCOUNT_DATA *account) {
+  SAVE_REF_DATA *ref_data = hashGet(account_table, accountGetName(account));
+  if(ref_data == NULL)
+    log_string("ERROR: Tried referencing account '%s' that is not loaded!",
+	       accountGetName(account));
+  else
+    ref_data->refcnt++;
+}
+
+void reference_player(CHAR_DATA *ch) {
+  SAVE_REF_DATA *ref_data = hashGet(player_table, charGetName(ch));
+  if(ref_data == NULL)
+    log_string("ERROR: Tried referencing player '%s' that is not loaded!",
+	       charGetName(ch));
+  else
+    ref_data->refcnt++;
+}
+
 void register_account(ACCOUNT_DATA *account) {
   if(account_exists(accountGetName(account)))
     log_string("ERROR: Tried to register already-registered account, '%s'",
 	       accountGetName(account));
   else {
-    save_account(account);
     hashPut(account_table, accountGetName(account), newSaveRefData(account));
+    save_account(account);
   }
 }
 
@@ -324,8 +343,8 @@ void register_player(CHAR_DATA *ch) {
     log_string("ERROR: Tried to register already-registered player, '%s'",
 	       charGetName(ch));
   else {
-    save_player(ch);
     hashPut(player_table, charGetName(ch), newSaveRefData(ch));
+    save_player(ch);
   }
 }
 

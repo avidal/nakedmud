@@ -7,7 +7,7 @@
 #
 ################################################################################
 from mud import *
-import utils, char, hooks
+import utils, char, hooks, mudsock
 
 
 
@@ -51,15 +51,21 @@ def build_who():
     buf = "--------------------------------------------------------------------------------\r\n"
 
     # build character info
-    count = len(char.socket_list())
-    for ch in char.socket_list():
-        buf = buf+(" %-16s %-15s %45s "%(ch.name,ch.race,ch.user_groups))+"\r\n"
+    count   = len(mudsock.socket_list())
+    playing = 0
+    for sock in mudsock.socket_list():
+        if not (sock.ch == None or sock.ch.room == None):
+            buf = buf+(" %-16s %-15s %45s "
+                       % (sock.ch.name,sock.ch.race,sock.ch.user_groups))+"\r\n"
+            playing = playing + 1
 
     conn_end = "s"
     if count == 1: conn_end = ""
+    play_end = "s"
+    if playing == 1: play_end = ""
 
     # build our footer
-    buf = buf + "--------------------------------------------------------------------------------\r\n" + (" %d player" % count)  + conn_end + " currently logged in.\r\n" + "--------------------------------------------------------------------------------\r\n"
+    buf = buf + "--------------------------------------------------------------------------------\r\n" + (" %d socket" % count)  + conn_end + " logged in." + (" %d player" % playing) + play_end + " currently playing.\r\n" + "--------------------------------------------------------------------------------\r\n"
     
     return buf
 

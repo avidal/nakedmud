@@ -170,10 +170,20 @@ void init_py_modules() {
       log_string("loading python module, %s", mname);
     // oops... something went wrong. Let's get the traceback
     else {
+      // we now abandon bootup if we fail to load a Python module, because it
+      // can have potentially dangerous affects on the loading of other modules
+      // Thanks to Thirsteh for pointing this out.
+      BUFFER *buf = newBuffer(1);
       char *tb = getPythonTraceback();
-      log_string("Error loading module, %s:\r\n%s\r\n",
-		 mname, tb);
+      bprintf(buf, "Error loading module, %s:\r\n%s\r\n"
+	           "Bootup aborted. MUD shutting down.", mname, tb);
+      log_string(bufferString(buf));
+      printf("%s", bufferString(buf));
+      
+      deleteBuffer(buf);
       free(tb);
+      closedir(dir);
+      exit(1);
     }
   }
   closedir(dir);

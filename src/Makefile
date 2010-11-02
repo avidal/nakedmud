@@ -43,7 +43,7 @@ SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c \
 	   \
 	   races.c \
 	   \
-	   log.c auxiliary.c account_handler.c char_gen.c \
+	   log.c auxiliary.c \
 	   \
 	   world.c character.c room.c exit.c extra_descs.c object.c body.c \
 	   zone.c room_reset.c account.c \

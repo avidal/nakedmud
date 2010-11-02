@@ -107,7 +107,7 @@ def show_list(ch, list, s_func, m_func = None):
             # display our item(s)
             if count == 1:
                 ch.send(s_func(thing))
-            elif m_func == None:
+            elif m_func == None or m_func(thing) == "":
                 ch.send("(" + str(count) + ") " + s_func(thing))
             else:
                 ch.send(m_func(thing) % count)

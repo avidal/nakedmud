@@ -15,6 +15,7 @@
 #include "pychar.h"
 #include "pyobj.h"
 #include "pyexit.h"
+#include "pysocket.h"
 #include "pyplugs.h"
 #include "pyhooks.h"
 
@@ -98,6 +99,14 @@ PyObject *PyHooks_BuildInfo(PyObject *self, PyObject *args) {
       }
       bprintf(buf, "ex.%d", PyExit_AsUid(var));
     }
+    else if(!strcasecmp(token, "sk") || !strcasecmp(token, "sock")) {
+      var = PyTuple_GetItem(vars, i);
+      if(!PySocket_Check(var)) {
+	PyErr_Format(PyExc_TypeError, "arg %d was not Mudsock", i);
+	break;
+      }
+      bprintf(buf, "sk.%d", PySocket_AsUid(var));
+    }
     else if(!strcasecmp(token, "str")) {
       var = PyTuple_GetItem(vars, i);
       if(!PyString_Check(var)) {
@@ -162,36 +171,47 @@ PyObject *PyHooks_ParseInfo(PyObject *self, PyObject *args) {
   // id number we'll need for parsing some values
   int id = 0;
 
-  // we need to crash-proof this function still
-  //***********
-  // FINISH ME
-  //***********
-
   // go through all of our tokens
   ITERATE_LIST(token, token_i) {
     if(startswith(token, "ch")) {
       sscanf(token, "ch.%d", &id);
-      PyTuple_SetItem(list, i, charGetPyForm(propertyTableGet(mob_table,id)));
+      CHAR_DATA *ch = propertyTableGet(mob_table, id);
+      PyTuple_SetItem(list, i, (ch ? charGetPyForm(ch) : Py_None));
     }
     else if(startswith(token, "obj")) {
       sscanf(token, "obj.%d", &id);
-      PyTuple_SetItem(list, i, objGetPyForm(propertyTableGet(obj_table,id)));
+      OBJ_DATA *obj = propertyTableGet(obj_table, id);
+      PyTuple_SetItem(list, i, (obj ? objGetPyForm(obj) : Py_None));
     }
     else if(startswith(token, "rm")) {
       sscanf(token, "rm.%d", &id);
-      PyTuple_SetItem(list, i, roomGetPyForm(propertyTableGet(room_table,id)));
+      ROOM_DATA *rm = propertyTableGet(room_table, id);
+      PyTuple_SetItem(list, i, (rm ? roomGetPyForm(rm) : Py_None));
     }
     else if(startswith(token, "room")) {
       sscanf(token, "room.%d", &id);
-      PyTuple_SetItem(list, i, roomGetPyForm(propertyTableGet(room_table,id)));
+      ROOM_DATA *rm = propertyTableGet(room_table, id);
+      PyTuple_SetItem(list, i, (rm ? roomGetPyForm(rm) : Py_None));
     }
     else if(startswith(token, "ex")) {
       sscanf(token, "ex.%d", &id);
-      PyTuple_SetItem(list, i, newPyExit(propertyTableGet(exit_table, id)));
+      EXIT_DATA *ex = propertyTableGet(exit_table, id);
+      PyTuple_SetItem(list, i, (ex ? newPyExit(ex) : Py_None));
     }
     else if(startswith(token, "exit")) {
       sscanf(token, "exit.%d", &id);
-      PyTuple_SetItem(list,i, newPyExit(propertyTableGet(exit_table, id)));
+      EXIT_DATA *ex = propertyTableGet(exit_table, id);
+      PyTuple_SetItem(list, i, (ex ? newPyExit(ex) : Py_None));
+    }
+    else if(startswith(token, "sk")) {
+      sscanf(token, "sk.%d", &id);
+      SOCKET_DATA *sock = propertyTableGet(sock_table, id);
+      PyTuple_SetItem(list,i, (sock ? socketGetPyForm(sock) : Py_None));
+    }
+    else if(startswith(token, "sock")) {
+      sscanf(token, "sock.%d", &id);
+      SOCKET_DATA *sock = propertyTableGet(sock_table, id);
+      PyTuple_SetItem(list,i, (sock ? socketGetPyForm(sock) : Py_None));
     }
     else if(*token == HOOK_STR_MARKER) {
       char *str = strdup(token + 1);

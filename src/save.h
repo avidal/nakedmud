@@ -33,6 +33,8 @@ CHAR_DATA     *get_player(const char *player);
 
 void  unreference_account(ACCOUNT_DATA *account);
 void   unreference_player(CHAR_DATA    *ch);
+void    reference_account(ACCOUNT_DATA *account);
+void     reference_player(CHAR_DATA    *ch);
 
 void     register_account(ACCOUNT_DATA *account);
 void      register_player(CHAR_DATA    *ch);

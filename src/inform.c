@@ -311,7 +311,8 @@ void send_outdoors(const char *format, ...) {
     LIST_ITERATOR *list_i = newListIterator(mobile_list);
     CHAR_DATA *ch = NULL;
     ITERATE_LIST(ch, list_i)
-      if(roomGetTerrain(charGetRoom(ch)) != TERRAIN_INDOORS &&
+      if(charGetRoom(ch) != NULL &&
+	 roomGetTerrain(charGetRoom(ch)) != TERRAIN_INDOORS &&
 	 roomGetTerrain(charGetRoom(ch)) != TERRAIN_CAVERN)
 	text_to_char(ch, buf);
     deleteListIterator(list_i);
@@ -383,8 +384,7 @@ void send_to_groups(const char *groups, const char *format, ...) {
     if(!charGetSocket(ch) || !bitIsSet(charGetUserGroups(ch), groups))
       continue;
     text_to_char(ch, buf);
-  }
-  deleteListIterator(ch_i);
+  } deleteListIterator(ch_i);
 }
 
 
@@ -640,7 +640,7 @@ void message(CHAR_DATA *ch,  CHAR_DATA *vict,
     return;
 
   // what's our scope?
-  if(IS_SET(range, TO_VICT) &&
+  if(IS_SET(range, TO_VICT) && vict &&
      (!hide_nosee ||
       // make sure the vict can the character, or the
       // object if there is no character
@@ -649,7 +649,7 @@ void message(CHAR_DATA *ch,  CHAR_DATA *vict,
     send_message(vict, mssg, ch, vict, obj, vobj);
 
   // characters can always see themselves. No need to do checks here
-  if(IS_SET(range, TO_CHAR))
+  if(IS_SET(range, TO_CHAR) && ch)
     send_message(ch, mssg, ch, vict, obj, vobj);
 
   LIST *recipients = NULL;
@@ -668,6 +668,9 @@ void message(CHAR_DATA *ch,  CHAR_DATA *vict,
     ITERATE_LIST(rec, rec_i) {
       // if we wanted to send to ch or vict, we would have already...
       if(rec == vict || rec == ch)
+	continue;
+      // skip by people who are in the game but not in the world yet
+      if(charGetRoom(rec) == NULL)
 	continue;
       if(rec == ch ||
 	 (!hide_nosee ||

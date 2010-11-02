@@ -15,13 +15,25 @@
 // then its from_game function should be called, AND THEN it should be deleted.
 // When something needs to be put into the game, its to_game function should be
 // called AND THEN it should be added to the game (e.g. loading a character and
-// putting him into a room... call char_to_game first);
+// putting him into a room... call char_to_game first); exist functions are to
+// state that something is ready for interaction with but it is *not* ready to
+// be placed in the game yet. For instance, when a brand new character has been
+// made for character creation. Whenever something is put to_game, it is first
+// make to exist.
+void      char_exist        (CHAR_DATA *ch);
+bool      char_exists       (CHAR_DATA *ch);
 void      char_to_game      (CHAR_DATA *ch);
 void      char_from_game    (CHAR_DATA *ch);
+void      obj_exist         (OBJ_DATA  *obj);
+bool      obj_exists        (OBJ_DATA  *obj);
 void      obj_to_game       (OBJ_DATA  *obj);
 void      obj_from_game     (OBJ_DATA  *obj);
+void      room_exist        (ROOM_DATA *room);
+bool      room_exists       (ROOM_DATA *room);
 void      room_to_game      (ROOM_DATA *room);
 void      room_from_game    (ROOM_DATA *room);
+void      exit_exist        (EXIT_DATA *exit);
+bool      exit_exists       (EXIT_DATA *exit);
 void      exit_to_game      (EXIT_DATA *exit);
 void      exit_from_game    (EXIT_DATA *exit);
 

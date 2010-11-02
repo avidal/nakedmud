@@ -105,6 +105,8 @@ SRC  += scripts/scripts.c       \
 	scripts/pyhooks.c       \
 	scripts/pyroom.c        \
 	scripts/pyexit.c        \
+	scripts/pyaccount.c     \
+	scripts/pysocket.c      \
 	scripts/script_editor.c \
 	scripts/pyplugs.c       \
 	scripts/pyevent.c       \

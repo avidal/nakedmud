@@ -37,13 +37,40 @@
 //*****************************************************************************
 // obj/char from/to functions
 //*****************************************************************************
-void exit_to_game(EXIT_DATA *exit) {
+void exit_exist(EXIT_DATA *exit) {
   propertyTablePut(exit_table, exit);
 }
 
-void obj_to_game(OBJ_DATA *obj) {
-  listPut(object_list, obj);
+bool exit_exists(EXIT_DATA *exit) {
+  return propertyTableIn(exit_table, exitGetUID(exit));
+}
+
+void exit_to_game(EXIT_DATA *exit) {
+  if(!exit_exists(exit))
+    exit_exist(exit);
+}
+
+void obj_exist(OBJ_DATA *obj) {
   propertyTablePut(obj_table, obj);
+
+  // also add all contents
+  if(listSize(objGetContents(obj)) > 0) {
+    LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
+    OBJ_DATA *cont = NULL;
+    ITERATE_LIST(cont, cont_i)
+      obj_exist(cont);
+    deleteListIterator(cont_i);
+  }
+}
+
+bool obj_exists(OBJ_DATA *obj) {
+  return propertyTableIn(obj_table, objGetUID(obj));
+}
+
+void obj_to_game(OBJ_DATA *obj) {
+  if(!obj_exists(obj))
+    obj_exist(obj);
+  listPut(object_list, obj);
 
   // execute all of our to_game hooks
   hookRun("obj_to_game", hookBuildInfo("obj", obj));
@@ -58,9 +85,45 @@ void obj_to_game(OBJ_DATA *obj) {
   }
 }
 
-void room_to_game(ROOM_DATA *room) {
-  listPut(room_list, room);
+void room_exist(ROOM_DATA *room) {
   propertyTablePut(room_table, room);
+
+  // add contents
+  if(listSize(roomGetContents(room)) > 0) {
+    LIST_ITERATOR *cont_i = newListIterator(roomGetContents(room));
+    OBJ_DATA        *cont = NULL;
+    ITERATE_LIST(cont, cont_i)
+      obj_exist(cont);
+    deleteListIterator(cont_i);
+  }
+
+  // add its people
+  if(listSize(roomGetCharacters(room)) > 0) {
+    LIST_ITERATOR *ch_i = newListIterator(roomGetCharacters(room));
+    CHAR_DATA       *ch = NULL;
+    ITERATE_LIST(ch, ch_i)
+      char_exist(ch);
+    deleteListIterator(ch_i);
+  }
+
+  // add its exits
+  LIST       *ex_list = roomGetExitNames(room);
+  LIST_ITERATOR *ex_i = newListIterator(ex_list);
+  char           *dir = NULL;
+  ITERATE_LIST(dir, ex_i) {
+    exit_exist(roomGetExit(room, dir));
+  } deleteListIterator(ex_i);
+  deleteListWith(ex_list, free);
+}
+
+bool room_exists(ROOM_DATA *room) {
+  return propertyTableIn(room_table, roomGetUID(room));
+}
+
+void room_to_game(ROOM_DATA *room) {
+  if(!room_exists(room))
+    room_exist(room);
+  listPut(room_list, room);
 
   // execute all of our to_game hooks
   hookRun("room_to_game", hookBuildInfo("rm", room));
@@ -97,9 +160,38 @@ void room_to_game(ROOM_DATA *room) {
   deleteListWith(ex_list, free);
 }
 
-void char_to_game(CHAR_DATA *ch) {
-  listPut(mobile_list, ch);
+void char_exist(CHAR_DATA *ch) {
   propertyTablePut(mob_table, ch);
+
+  // also add inventory
+  if(listSize(charGetInventory(ch)) > 0) {
+    LIST_ITERATOR *inv_i = newListIterator(charGetInventory(ch));
+    OBJ_DATA *obj = NULL;
+    ITERATE_LIST(obj, inv_i)
+      obj_exist(obj);
+    deleteListIterator(inv_i);
+  }
+
+  // and equipped items
+  LIST *eq = bodyGetAllEq(charGetBody(ch));
+  if(listSize(eq) > 0) {
+    LIST_ITERATOR *eq_i = newListIterator(eq);
+    OBJ_DATA *obj = NULL;
+    ITERATE_LIST(obj, eq_i)
+      obj_exist(obj);
+    deleteListIterator(eq_i);
+  }
+  deleteList(eq);
+}
+
+bool char_exists(CHAR_DATA *ch) {
+  return propertyTableIn(mob_table, charGetUID(ch));
+}
+
+void char_to_game(CHAR_DATA *ch) {
+  if(!char_exists(ch))
+    char_exist(ch);
+  listPut(mobile_list, ch);
 
   // execute all of our to_game hooks
   hookRun("char_to_game", hookBuildInfo("ch", ch));
@@ -133,9 +225,6 @@ void obj_from_game(OBJ_DATA *obj) {
   // go through all of our fromgame hooks
   hookRun("obj_from_game", hookBuildInfo("obj", obj));
 
-  listRemove(object_list, obj);
-  propertyTableRemove(obj_table, objGetUID(obj));
-
   // also remove everything that is contained within the object
   if(listSize(objGetContents(obj)) > 0) {
     LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
@@ -144,14 +233,14 @@ void obj_from_game(OBJ_DATA *obj) {
       obj_from_game(cont);
     deleteListIterator(cont_i);
   }
+
+  listRemove(object_list, obj);
+  propertyTableRemove(obj_table, objGetUID(obj));
 }
 
 void room_from_game(ROOM_DATA *room) {
   // go through all of our fromgame hooks
   hookRun("room_from_game", hookBuildInfo("rm", room));
-
-  listRemove(room_list, room);
-  propertyTableRemove(room_table, roomGetUID(room));
 
   // also remove all the objects contained within the room
   if(listSize(roomGetContents(room)) > 0) {
@@ -179,14 +268,14 @@ void room_from_game(ROOM_DATA *room) {
     exit_from_game(roomGetExit(room, dir));
   deleteListIterator(ex_i);
   deleteListWith(ex_list, free);
+
+  listRemove(room_list, room);
+  propertyTableRemove(room_table, roomGetUID(room));
 }
 
 void char_from_game(CHAR_DATA *ch) {
   // go through all of our fromgame hooks
   hookRun("char_from_game", hookBuildInfo("ch", ch));
-
-  listRemove(mobile_list, ch);
-  propertyTableRemove(mob_table, charGetUID(ch));
 
   // also remove inventory
   if(listSize(charGetInventory(ch)) > 0) {
@@ -207,6 +296,9 @@ void char_from_game(CHAR_DATA *ch) {
     deleteListIterator(eq_i);
   }
   deleteList(eq);
+
+  listRemove(mobile_list, ch);
+  propertyTableRemove(mob_table, charGetUID(ch));
 }
 
 void obj_from_char(OBJ_DATA *obj) {

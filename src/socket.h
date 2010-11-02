@@ -7,7 +7,7 @@
 //*****************************************************************************
 
 int   init_socket           ( void );
-bool  new_socket            ( int sock );
+SOCKET_DATA  *new_socket    ( int sock );
 void  close_socket          ( SOCKET_DATA *dsock, bool reconnect );
 bool  read_from_socket      ( SOCKET_DATA *dsock );
 void  socket_handler        ( void );
@@ -46,15 +46,19 @@ void socketPushInputHandler   ( SOCKET_DATA *socket,
 void socketReplaceInputHandler( SOCKET_DATA *socket,
 				void handler(SOCKET_DATA *socket, char *input),
 				void prompt (SOCKET_DATA *socket));
+void socketPushPyInputHandler   (SOCKET_DATA *sock, void *handler,void *prompt);
+void socketReplacePyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt);
 void socketPopInputHandler    ( SOCKET_DATA *socket);
-void (*socketGetInputHandler  ( SOCKET_DATA *socket))(SOCKET_DATA *, char *);
-void socketShowPrompt         ( SOCKET_DATA *sock);
 void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name);
 const char *socketGetHostname ( SOCKET_DATA *sock);
 BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock);
+BUFFER *socketGetOutbound     ( SOCKET_DATA *sock);
 void socketQueueCommand       ( SOCKET_DATA *sock, const char *cmd);
+int               socketGetUID( SOCKET_DATA *sock);
 
+bool socketHasPrompt          ( SOCKET_DATA *sock);
 void socketBustPrompt         ( SOCKET_DATA *sock);
+void socketShowPrompt         ( SOCKET_DATA *sock);
 const char *socketGetLastCmd  ( SOCKET_DATA *sock);
 
 #endif // SOCKET_H

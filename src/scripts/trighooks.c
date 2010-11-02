@@ -379,8 +379,6 @@ void do_wear_trighooks(const char *info) {
   CHAR_DATA *ch = NULL;
   OBJ_DATA *obj = NULL;
   hookParseInfo(info, &ch, &obj);
-  printf("%s\r\n", info);
-  printf("%s %s\r\n", charGetName(ch), objGetName(obj));
 
   do_char_trigs(ch,  "wear", obj, NULL);
   do_obj_trigs (obj, "wear", ch,  NULL);

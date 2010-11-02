@@ -214,11 +214,14 @@ CHAR_DATA *protoMobRun(PROTO_DATA *proto) {
   if(protoIsAbstract(proto))
     return NULL;
   CHAR_DATA *ch = newMobile();
-  char_to_game(ch);
-  if(!protoRun(proto, "mproto", charGetPyForm, charAddPrototype, charSetClass, ch)){
+  char_exist(ch);
+  if(protoRun(proto, "mproto", charGetPyForm, charAddPrototype, charSetClass, ch))
+    char_to_game(ch);
+  else {
     extract_mobile(ch);
     ch = NULL;
   }
+
   return ch;
 }
 
@@ -226,11 +229,14 @@ OBJ_DATA *protoObjRun(PROTO_DATA *proto) {
   if(protoIsAbstract(proto))
     return NULL;
   OBJ_DATA *obj = newObj();
-  obj_to_game(obj);
-  if(!protoRun(proto, "oproto", newPyObj, objAddPrototype, objSetClass, obj)) {
+  obj_exist(obj);
+  if(protoRun(proto, "oproto", newPyObj, objAddPrototype, objSetClass, obj))
+    obj_to_game(obj);
+  else {
     extract_obj(obj);
     obj = NULL;
   }
+
   return obj;
 }
 
@@ -238,10 +244,13 @@ ROOM_DATA *protoRoomRun(PROTO_DATA *proto) {
   if(protoIsAbstract(proto))
     return NULL;
   ROOM_DATA *room = newRoom();
-  room_to_game(room);
-  if(!protoRun(proto, "rproto", newPyRoom, roomAddPrototype,roomSetClass,room)){
+  room_exist(room);
+  if(protoRun(proto, "rproto", newPyRoom, roomAddPrototype,roomSetClass,room))
+    room_to_game(room);
+  else {
     extract_room(room);
     room = NULL;
   }
+
   return room;
 }

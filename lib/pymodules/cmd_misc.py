@@ -20,7 +20,7 @@ def cmd_stop(ch, cmd, arg):
 
 def cmd_clear(ch, cmd, arg):
     '''clear the screen'''
-    ch.send("\033[H\033[J")
+    ch.send_raw("\033[H\033[J")
 
 def event_delayed_cmd(ch, filler, cmd):
     '''used to perform delayed commands'''
@@ -29,13 +29,13 @@ def event_delayed_cmd(ch, filler, cmd):
 def cmd_delay(ch, cmd, arg):
     '''Perform a command, but delay its execution by a couple seconds'''
     try:
-        secs, to_delay = parse_args(ch, True, cmd, arg, "int string")
+        secs, to_delay = parse_args(ch, True, cmd, arg, "double string")
     except: return
 
     if secs < 1:
         ch.send("You can only delay commands for positive amounts of time.")
     else:
-        ch.send("You delay '%s' for %d seconds" % (to_delay, secs))
+        ch.send("You delay '%s' for %.2f seconds" % (to_delay, secs))
         event.start_event(ch, secs, event_delayed_cmd, None, to_delay)
 
 def cmd_motd(ch, cmd, arg):

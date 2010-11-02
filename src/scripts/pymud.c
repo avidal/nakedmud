@@ -20,6 +20,7 @@
 #include "../inform.h"
 #include "../handler.h"
 #include "../parse.h"
+#include "../races.h"
 
 #include "scripts.h"
 #include "pyroom.h"
@@ -27,6 +28,7 @@
 #include "pyobj.h"
 #include "pyplugs.h"
 #include "pyexit.h"
+#include "pysocket.h"
 
 
 
@@ -106,9 +108,10 @@ PyObject *mud_erase_global(PyObject *self, PyObject *args) {
 // format a string to be into a typical description style
 PyObject *mud_format_string(PyObject *self, PyObject *args) {
   char *string = NULL;
+  bool indent  = TRUE;
 
   // parse all of the values
-  if (!PyArg_ParseTuple(args, "s", &string)) {
+  if (!PyArg_ParseTuple(args, "s|b", &string, &indent)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Can not format non-string values.");
     return NULL;
@@ -117,7 +120,7 @@ PyObject *mud_format_string(PyObject *self, PyObject *args) {
   // dup the string so we can work with it and not intrude on the PyString data
   BUFFER *buf = newBuffer(MAX_BUFFER);
   bufferCat(buf, string);
-  bufferFormat(buf, SCREEN_WIDTH, PARA_INDENT);
+  bufferFormat(buf, SCREEN_WIDTH, (indent ? PARA_INDENT : 0));
   PyObject *ret = Py_BuildValue("s", bufferString(buf));
   deleteBuffer(buf);
   return ret;
@@ -463,6 +466,28 @@ PyObject *mud_set_cmd_move(PyObject *self, PyObject *args) {
   return Py_BuildValue("i", 1);
 }
 
+PyObject *mud_is_race(PyObject *self, PyObject *args) {
+  char       *race = NULL;
+  bool player_only = FALSE;
+  if(!PyArg_ParseTuple(args, "s|b", &race, &player_only)) {
+    PyErr_Format(PyExc_TypeError, "a string must be supplied");
+    return NULL;
+  }
+
+  if(player_only)
+    return Py_BuildValue("i", raceIsForPC(race));
+  else
+    return Py_BuildValue("i", isRace(race));
+}
+
+PyObject *mud_list_races(PyObject *self, PyObject *args) {
+  bool player_only = FALSE;
+  if(!PyArg_ParseTuple(args, "|b", &player_only)) {
+    PyErr_Format(PyExc_TypeError, "true/false value to list only player races must be provided.");
+    return NULL;
+  }
+  return Py_BuildValue("s", raceGetList(player_only));
+}
 
 
 //*****************************************************************************
@@ -515,6 +540,12 @@ init_PyMud(void) {
 		  "adds a string to the mudlog");
   PyMud_addMethod("set_cmd_move", mud_set_cmd_move, METH_VARARGS,
 		  "sets the movement command");
+  PyMud_addMethod("is_race", mud_is_race, METH_VARARGS,
+		  "returns whether or not the string is a valid race.");
+  PyMud_addMethod("list_races", mud_list_races, METH_VARARGS,
+		  "returns a list of all the races available. Can take one "
+		  "argument that specifies whether or not to list player "
+		  "races.");
 
   Py_InitModule3("mud", makePyMethods(pymud_methods),
 		 "The mud module, for all MUD misc mud utils.");

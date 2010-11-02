@@ -18,6 +18,7 @@
 #include "../room.h"
 #include "../exit.h"
 #include "../object.h"
+#include "../account.h"
 #include "../socket.h"
 #include "../auxiliary.h"
 #include "../storage.h"
@@ -26,10 +27,12 @@
 
 #include "scripts.h"
 #include "pyplugs.h"
+#include "pyaccount.h"
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyexit.h"
 #include "pyobj.h"
+#include "pysocket.h"
 #include "pymud.h"
 #include "pymudsys.h"
 #include "pyhooks.h"
@@ -338,9 +341,11 @@ void init_scripts(void) {
   init_PyAuxiliary();
   init_PyEvent();
   init_PyStorage();
+  init_PyAccount();
   init_PyChar();
   init_PyRoom();
   init_PyExit();
+  init_PySocket();
   init_PyObj();
   init_PyMud();
   init_PyHooks();
@@ -358,8 +363,9 @@ void init_scripts(void) {
 
   // deal with auxiliary data
   auxiliariesInstall("trigger_data", 
-		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR | AUXILIARY_TYPE_OBJ|
-				       AUXILIARY_TYPE_ROOM,
+		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR|AUXILIARY_TYPE_ROOM |
+				       AUXILIARY_TYPE_OBJ|AUXILIARY_TYPE_SOCKET|
+				       AUXILIARY_TYPE_ACCOUNT,
 				       newTriggerAuxData,  deleteTriggerAuxData,
 				       triggerAuxDataCopyTo, triggerAuxDataCopy,
 				       triggerAuxDataStore,triggerAuxDataRead));
@@ -717,16 +723,14 @@ void expand_dynamic_descs(BUFFER *desc, PyObject *me, CHAR_DATA *ch,
 			  const char *locale) {
   // set up our dictionary
   PyObject *dict = restricted_script_dict();
-  PyObject *pych = charGetPyForm(ch);
   PyDict_SetItemString(dict, "me", me);
-  PyDict_SetItemString(dict, "ch", pych);
+  PyDict_SetItemString(dict, "ch", charGetPyFormBorrowed(ch));
 
   // expand the dynamic description
   expand_dynamic_descs_dict(desc, dict, locale);
 
   // garbage collection
   Py_XDECREF(dict);
-  Py_XDECREF(pych);
 }
 
 const char *get_script_locale(void) {
@@ -777,6 +781,20 @@ PyObject *roomGetPyFormBorrowed(ROOM_DATA *room) {
   return data->pyform;
 }
 
+PyObject *accountGetPyFormBorrowed(ACCOUNT_DATA *acc) {
+  TRIGGER_AUX_DATA *data = accountGetAuxiliaryData(acc, "trigger_data");
+  if(data->pyform == NULL)
+    data->pyform = newPyAccount(acc);
+  return data->pyform;
+}
+
+PyObject *socketGetPyFormBorrowed(SOCKET_DATA *sock) {
+  TRIGGER_AUX_DATA *data = socketGetAuxiliaryData(sock, "trigger_data");
+  if(data->pyform == NULL)
+    data->pyform = newPySocket(sock);
+  return data->pyform;
+}
+
 PyObject *charGetPyForm(CHAR_DATA *ch) {
   PyObject *pyform = charGetPyFormBorrowed(ch);
   Py_INCREF(pyform);
@@ -791,6 +809,18 @@ PyObject *objGetPyForm(OBJ_DATA *obj) {
 
 PyObject *roomGetPyForm(ROOM_DATA *room) {
   PyObject *pyform = roomGetPyFormBorrowed(room);
+  Py_INCREF(pyform);
+  return pyform;
+}
+
+PyObject *accountGetPyForm(ACCOUNT_DATA *acc) {
+  PyObject *pyform = accountGetPyFormBorrowed(acc);
+  Py_INCREF(pyform);
+  return pyform;
+}
+
+PyObject *socketGetPyForm(SOCKET_DATA *sock) {
+  PyObject *pyform = socketGetPyFormBorrowed(sock);
   Py_INCREF(pyform);
   return pyform;
 }

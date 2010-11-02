@@ -81,6 +81,7 @@ PROPERTY_TABLE  *mob_table = NULL; // a table of mobs by UID, for quick lookup
 PROPERTY_TABLE  *obj_table = NULL; // a table of objs by UID, for quick lookup
 PROPERTY_TABLE *room_table = NULL; // a table of rooms by UID, for quick lookup
 PROPERTY_TABLE *exit_table = NULL; // a table of exits by UID, for quick lookup
+PROPERTY_TABLE *sock_table = NULL; // a table of socks by UID, for quick lookup
 BUFFER           *greeting = NULL; // message seen when a socket connects
 BUFFER               *motd = NULL; // what characters see when they log on
 
@@ -146,10 +147,11 @@ int main(int argc, char **argv)
   // For optimal speed, the table sizes should be roughly
   // 25% larger than the number of mobs/objs you intend to have
   // loaded into the game at any given time.
-  mob_table   = newPropertyTable(charGetUID, 3000);
-  obj_table   = newPropertyTable(objGetUID,  3000);
-  room_table  = newPropertyTable(roomGetUID, 3000);
-  exit_table  = newPropertyTable(exitGetUID, 9000);
+  mob_table   = newPropertyTable(charGetUID,  3000);
+  obj_table   = newPropertyTable(objGetUID,   3000);
+  room_table  = newPropertyTable(roomGetUID,  3000);
+  exit_table  = newPropertyTable(exitGetUID,  9000);
+  sock_table  = newPropertyTable(socketGetUID,1000);
 
   // make a new world
   gameworld = newWorld();
@@ -380,8 +382,13 @@ void game_loop(int control)
       int newConnection;
 
       socksize = sizeof(sock);
-      if ((newConnection = accept(control, (struct sockaddr*) &sock, &socksize)) >=0)
-        new_socket(newConnection);
+      if ((newConnection = accept(control, (struct sockaddr*) &sock, &socksize)) >=0) {
+        SOCKET_DATA *newsock = new_socket(newConnection);
+	if(newsock != NULL) {
+	  hookRun("receive_connection", hookBuildInfo("sk", newsock));
+	  socketBustPrompt(newsock);
+	}
+      }
     }
 
 

@@ -6,6 +6,7 @@
 // well as reading and writing to sockets, and closing down unused sockets.
 //
 //*****************************************************************************
+
 #include "wrapsock.h"
 #include <netdb.h>
 #include <sys/ioctl.h>
@@ -21,6 +22,8 @@
 #include "socket.h"
 #include "auxiliary.h"
 #include "hooks.h"
+#include "scripts/scripts.h"
+#include "scripts/pyplugs.h"
 
 
 
@@ -31,6 +34,10 @@
 #include "alias/alias.h"
 #endif
 
+// provides a unique identifier number to every socket that connects to the
+// mud. Used mostly for referring to sockets in Python
+#define START_SOCK_UID           1
+int next_sock_uid = START_SOCK_UID;
 
 
 //
@@ -40,20 +47,20 @@ struct socket_data {
   ACCOUNT_DATA  * account;
   char          * hostname;
   char            inbuf[MAX_INPUT_LEN];
-  char            outbuf[MAX_OUTPUT];
   char            next_command[MAX_BUFFER];
   bool            cmd_read;
   bool            bust_prompt;
   bool            closed;
   int             lookup_status;
   int             control;
-  int             top_output;
+  int             uid;
 
   char          * page_string;   // the string that has been paged to us
   int             curr_page;     // the current page we're on
   int             tot_pages;     // the total number of pages the string has
   
   BUFFER        * text_editor;   // where we do our actual work
+  BUFFER        * outbuf;        // our buffer of pending output
 
   LIST          * input_handlers;// a stack of our input handlers and prompts
   LIST          * input;         // lines of input we have received
@@ -69,10 +76,12 @@ struct socket_data {
 
 //
 // contains an input handler and the socket prompt in one structure, so they
-// can be stored together in the socket_data
+// can be stored together in the socket_data. Allows for the option of Python
+// or C input handlers and prompt pairs.
 typedef struct input_handler_data {
-  void (* handler)(SOCKET_DATA *, char *);
-  void (*  prompt)(SOCKET_DATA *);
+  void *handler; // (* handler)(SOCKET_DATA *, char *);
+  void  *prompt; // (*  prompt)(SOCKET_DATA *);
+  bool   python;
 } IH_PAIR;
 
 
@@ -137,13 +146,13 @@ int init_socket()
  * Initializes a new socket, get's the hostname
  * and puts it in the active socket_list.
  */
-bool new_socket(int sock)
+SOCKET_DATA *new_socket(int sock)
 {
   struct sockaddr_in   sock_addr;
   pthread_attr_t       attr;
   pthread_t            thread_lookup;
   LOOKUP_DATA        * lData;
-  SOCKET_DATA           * sock_new;
+  SOCKET_DATA        * sock_new;
   int                  argp = 1;
   socklen_t            size;
 
@@ -164,8 +173,9 @@ bool new_socket(int sock)
   /* set the socket as non-blocking */
   ioctl(sock, FIONBIO, &argp);
 
-  /* update the socket list */
+  /* update the socket list and table */
   listPut(socket_list, sock_new);
+  propertyTablePut(sock_table, sock_new);
 
   /* do a host lookup */
   size = sizeof(sock_addr);
@@ -204,10 +214,9 @@ bool new_socket(int sock)
 
   /* send the greeting */
   text_to_buffer(sock_new, bufferString(greeting));
-  text_to_buffer(sock_new, "What is your account (not character) name? ");
 
   /* everything went as it was supposed to */
-  return TRUE;
+  return sock_new;
 }
 
 
@@ -252,8 +261,12 @@ void close_socket(SOCKET_DATA *dsock, bool reconnect)
     extract_mobile(dsock->player);
   }
   
-  if(dsock->account)
-    unreference_account(dsock->account);
+  if(dsock->account) {
+    if(account_exists(accountGetName(dsock->account)))
+      unreference_account(dsock->account);
+    else
+      deleteAccount(dsock->account);
+  }
 
   /* set the closed state */
   dsock->closed = TRUE;
@@ -406,233 +419,13 @@ void  send_to_socket( SOCKET_DATA *dsock, const char *format, ...) {
  */
 void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
 {
-  static char output[8 * MAX_BUFFER];
-  bool cr = FALSE, underline = FALSE, bold = FALSE;
-  int iPtr = 0, last = -1, i = 0, j, k;
-  int length = strlen(txt);
-
-  /* the color struct */
-  struct sAnsiColor
-  {
-    const char    cTag;
-    const char  * cString;
-    int           aFlag;
-  };
-
-  /* the color table... */
-  const struct sAnsiColor ansiTable[] =
-  {
-    { 'd',  "30",  eTHIN },
-    { 'D',  "30",  eBOLD },
-    { 'r',  "31",  eTHIN },
-    { 'R',  "31",  eBOLD },
-    { 'g',  "32",  eTHIN },
-    { 'G',  "32",  eBOLD },
-    { 'y',  "33",  eTHIN },
-    { 'Y',  "33",  eBOLD },
-    { 'b',  "34",  eTHIN },
-    { 'B',  "34",  eBOLD },
-    { 'p',  "35",  eTHIN },
-    { 'P',  "35",  eBOLD },
-    { 'c',  "36",  eTHIN },
-    { 'C',  "36",  eBOLD },
-    { 'w',  "37",  eTHIN },
-    { 'W',  "37",  eBOLD },
-
-    /* the end tag */
-    { '\0',  "",   eTHIN }
-  };
-
-  if (length >= MAX_BUFFER)
-  {
-    log_string("text_to_buffer: buffer overflow.");
-    return;
-  }
-
-
-  while (*txt != '\0' && i++ < length)
-  {
-    /* simple bound checking */
-    if (iPtr > (8 * MAX_BUFFER - 15))
-      break;
-
-    switch(*txt)
-    {
-      default:
-        output[iPtr++] = *txt++;
-        break;
-      case '\r':
-	cr = TRUE;
-	output[iPtr++] = *txt++;
-	break;
-      case '\n':
-	if(cr == FALSE)
-	  output[iPtr++] = '\r';
-	output[iPtr++] = *txt++;
-	cr = FALSE;
-	break;
-      case '{':
-        i++; txt++;
-
-        /* toggle underline on/off with #u */
-        if (*txt == 'u')
-        {
-          txt++;
-          if (underline)
-          {
-            underline = FALSE;
-            output[iPtr++] =  27; output[iPtr++] = '['; output[iPtr++] = '0';
-            if (bold)
-            {
-              output[iPtr++] = ';'; output[iPtr++] = '1';
-            }
-            if (last != -1)
-            {
-              output[iPtr++] = ';';
-              for (j = 0; ansiTable[last].cString[j] != '\0'; j++)
-              {
-                output[iPtr++] = ansiTable[last].cString[j];
-              }
-            }
-            output[iPtr++] = 'm';
-          }
-          else
-          {
-            underline = TRUE;
-            output[iPtr++] =  27; output[iPtr++] = '[';
-            output[iPtr++] = '4'; output[iPtr++] = 'm';
-          }
-        }
-
-        /* parse {{ to { */
-        else if (*txt == '{')
-        {
-          txt++;
-          output[iPtr++] = '{';
-        }
-
-        /* {n should clear all tags */
-        else if (*txt == 'n')
-        {
-          txt++;
-          if (last != -1 || underline || bold)
-          {  
-            underline = FALSE;
-            bold = FALSE;
-            output[iPtr++] =  27; output[iPtr++] = '[';
-            output[iPtr++] = '0'; output[iPtr++] = 'm';
-          }
-
-          last = -1;
-        }
-
-        /* check for valid color tag and parse */
-        else
-        {
-          bool validTag = FALSE;
-
-          for (j = 0; ansiTable[j].cString[0] != '\0'; j++)
-          {
-            if (*txt == ansiTable[j].cTag)
-            {
-              validTag = TRUE;
-
-              /* we only add the color sequence if it's needed */
-              if (last != j)
-              {
-                bool cSequence = FALSE;
-
-                /* escape sequence */
-                output[iPtr++] = 27; output[iPtr++] = '[';
-
-                /* remember if a color change is needed */
-                if (last == -1 || last / 2 != j / 2)
-                  cSequence = TRUE;
-
-                /* handle font boldness */
-                if (bold && ansiTable[j].aFlag == eTHIN)
-                {
-                  output[iPtr++] = '0';
-                  bold = FALSE;
-
-                  if (underline)
-                  {
-                    output[iPtr++] = ';'; output[iPtr++] = '4';
-                  }
-
-                  /* changing to eTHIN wipes the old color */
-                  output[iPtr++] = ';';
-                  cSequence = TRUE;
-                }
-                else if (!bold && ansiTable[j].aFlag == eBOLD)
-                {
-                  output[iPtr++] = '1';
-                  bold = TRUE;
-
-                  if (cSequence)
-                    output[iPtr++] = ';';
-                }
-
-                /* add color sequence if needed */
-                if (cSequence)
-                {
-                  for (k = 0; ansiTable[j].cString[k] != '\0'; k++)
-                  {
-                    output[iPtr++] = ansiTable[j].cString[k];
-                  }
-                }
-
-                output[iPtr++] = 'm';
-              }
-
-              /* remember the last color */
-              last = j;
-            }
-          }
-
-          /* it wasn't a valid color tag */
-          if (!validTag)
-            output[iPtr++] = '{';
-          else
-            txt++;
-        }
-        break;   
-    }
-  }
-
-  /* and terminate it with the standard color */
-  /*
-  if (last != -1 || underline || bold) 
-  {
-    output[iPtr++] =  27; output[iPtr++] = '[';
-    output[iPtr++] = '0'; output[iPtr++] = 'm';
-  } 
-  */
-  output[iPtr] = '\0';
-
-  /* check to see if the socket can accept that much data */
-  if (dsock->top_output + iPtr >= MAX_OUTPUT)
-  {
-    //
-    // what happens if the buffer overflow is on an immortal who can see the
-    // logs? We get tossed into an infinite loop... this really isn't too big
-    // of a deal to have to report. Let's just leave it out.
-    //   - Geoff, Mar 22/05
-    //
-    //    bug("Text_to_buffer: ouput overflow on %s.", dsock->hostname);
-    return;
-  }
-
   // if we're at the head of the outbuf and haven't entered a command, 
   // also copy a newline so we're not printing in front of the prompt
-  if(dsock->top_output == 0 && !dsock->bust_prompt) {
-    strcpy(dsock->outbuf, "\r\n");
-    dsock->top_output += 2;
-  }
+  if(bufferLength(dsock->outbuf) == 0 && !dsock->bust_prompt)
+    bufferCat(dsock->outbuf, "\r\n");
 
   /* add data to buffer */
-  strcpy(dsock->outbuf + dsock->top_output, output);
-  dsock->top_output += iPtr;
+  bufferCat(dsock->outbuf, txt);
 }
 
 
@@ -715,34 +508,28 @@ void next_cmd_from_buffer(SOCKET_DATA *dsock) {
 
 
 
-bool flush_output(SOCKET_DATA *dsock)
-{
-  IH_PAIR *pair = listGet(dsock->input_handlers, 0);
-  void (* prompt_func)(SOCKET_DATA *) = (pair ? pair->prompt : NULL);
+bool flush_output(SOCKET_DATA *dsock) {
+  bool  success = TRUE;
 
   // quit if we have no output and don't need/can't have a prompt
-  if(dsock->top_output <= 0 && (!dsock->bust_prompt || !prompt_func))
+  if(bufferLength(dsock->outbuf) <= 0 && 
+     (!dsock->bust_prompt || !socketHasPrompt(dsock)))
     return TRUE;
 
-  if(dsock->bust_prompt && prompt_func) {
-    prompt_func(dsock);
+  if(dsock->bust_prompt) {
+    socketShowPrompt(dsock);
     dsock->bust_prompt = FALSE;
   }
 
-  // reset the top pointer
-  dsock->top_output = 0;
+  // process all of our outbound text for stuff like colors, etc
+  hookRun("process_outbound_text",  hookBuildInfo("sk", dsock));
+  hookRun("finalize_outbound_text", hookBuildInfo("sk", dsock));
 
-  /*
-   * Send the buffer, and return FALSE
-   * if the write fails.
-   */
-  if (!text_to_socket(dsock, dsock->outbuf))
-    return FALSE;
-
-  // Success
-  return TRUE;
+  // Send the buffer, and return FALSE if the write fails. Clear our output
+  success = text_to_socket(dsock, bufferString(dsock->outbuf));
+  bufferClear(dsock->outbuf);
+  return success;
 }
-
 
 
 
@@ -759,6 +546,7 @@ void deleteSocket(SOCKET_DATA *sock) {
   if(sock->hostname)         free(sock->hostname);
   if(sock->page_string)      free(sock->page_string);
   if(sock->text_editor)      deleteBuffer(sock->text_editor);
+  if(sock->outbuf)           deleteBuffer(sock->outbuf);
   if(sock->input_handlers)   deleteListWith(sock->input_handlers, free);
   if(sock->input)            deleteListWith(sock->input, free);
   if(sock->command_hist)     deleteListWith(sock->command_hist, free);
@@ -770,6 +558,7 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
 {
   if(sock_new->page_string)    free(sock_new->page_string);
   if(sock_new->text_editor)    deleteBuffer(sock_new->text_editor);
+  if(sock_new->outbuf)         deleteBuffer(sock_new->outbuf);
   if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, free);
   if(sock_new->auxiliary)      deleteAuxiliaryData(sock_new->auxiliary);
   if(sock_new->input)          deleteListWith(sock_new->input, free);
@@ -780,12 +569,12 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
   sock_new->input_handlers = newList();
   sock_new->input          = newList();
   sock_new->command_hist   = newList();
-  socketPushInputHandler(sock_new, handle_new_connections, NULL);
   sock_new->control        = sock;
   sock_new->lookup_status  = TSTATE_LOOKUP;
-  sock_new->top_output     = 0;
+  sock_new->uid            = next_sock_uid++;
 
   sock_new->text_editor    = newBuffer(MAX_BUFFER);
+  sock_new->outbuf         = newBuffer(MAX_OUTPUT);
 }
 
 
@@ -832,6 +621,7 @@ void recycle_sockets()
 
     /* remove the socket from the main list */
     listRemove(socket_list, dsock);
+    propertyTableRemove(sock_table, dsock->uid);
 
     /* close the socket */
     close(dsock->control);
@@ -841,8 +631,7 @@ void recycle_sockets()
 
     /* delete the socket from memory */
     deleteSocket(dsock);
-  }
-  deleteListIterator(sock_i);
+  } deleteListIterator(sock_i);
 }
 
 
@@ -891,13 +680,13 @@ void copyover_recover() {
 
     dsock->hostname = strdup(host);
     listPut(socket_list, dsock);
+    propertyTablePut(sock_table, dsock);
 
     // load account data
     if((account = get_account(acct)) != NULL)
       socketSetAccount(dsock, account);
     // no luck!
     else {
-      printf("Account load failed.\r\n");
       close_socket(dsock, FALSE);
       continue;
     }
@@ -911,7 +700,6 @@ void copyover_recover() {
       // try putting the character into the game
       // close the socket if we fail.
       if(!try_enter_game(dMob)) {
-	printf("Enter game failed.\r\n");
 	// do not bother extracting, since we haven't entered the game yet
 	unreference_player(socketGetChar(dsock));
 	socketSetChar(dsock, NULL);
@@ -921,7 +709,6 @@ void copyover_recover() {
     }
     // no luck
     else {
-      printf("Player load failed.\r\n");
       close_socket(dsock, FALSE);
       continue;
     }
@@ -935,8 +722,9 @@ void copyover_recover() {
     // make sure the socket can be used
     dsock->bust_prompt    =  TRUE;
     dsock->lookup_status  =  TSTATE_DONE;
-    socketReplaceInputHandler(dsock, account_handle_menu, account_menu);
-    socketPushInputHandler(dsock, handle_cmd_input, show_prompt);
+
+    // let our modules know we've finished copying over a socket
+    hookRun("copyover_complete", hookBuildInfo("sk", dsock));
 
     // negotiate compression
     text_to_buffer(dsock, (char *) compress_will2);
@@ -947,7 +735,6 @@ void copyover_recover() {
   // now, set all of the sockets' control to the new fSet
   reconnect_copyover_sockets();
 }     
-
 
 void socket_handler() {
   LIST_ITERATOR *sock_i = newListIterator(socket_list);
@@ -967,7 +754,32 @@ void socket_handler() {
     
     /* Is there a new command pending ? */
     if (sock->cmd_read) {
-      socketGetInputHandler(sock)(sock, sock->next_command);
+      IH_PAIR *pair = listGet(sock->input_handlers, 0);
+      if(pair->python == FALSE) {
+	void (* handler)(SOCKET_DATA *, char *) = pair->handler;
+	handler(sock, sock->next_command);
+      }
+      else {
+	PyObject *arglist = Py_BuildValue("Os", socketGetPyFormBorrowed(sock),
+					  sock->next_command);
+	PyObject *retval  = PyEval_CallObject(pair->handler, arglist);
+
+	// check for an error:
+	if(retval == NULL) {
+	  char *tb = getPythonTraceback();
+	  if(tb != NULL) {
+	    log_string("Error with a python input handler:\r\n%s\r\n", tb);
+	    free(tb);
+	  }
+	}
+	
+	// garbage collection
+	Py_XDECREF(retval);
+	Py_XDECREF(arglist);
+      }
+
+      // append our last command to the command history. History buffer is
+      // 100 commands, so pop off the earliest command if we're going over
       listPut(sock->command_hist, strdup(sock->next_command));
       if(listSize(sock->command_hist) > 100)
 	free(listRemoveNum(sock->command_hist, 100));
@@ -1189,13 +1001,33 @@ BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock) {
   return sock->text_editor;
 }
 
+BUFFER *socketGetOutbound    ( SOCKET_DATA *sock) {
+  return sock->outbuf;
+}
+
 void socketPushInputHandler  ( SOCKET_DATA *socket, 
 			       void handler(SOCKET_DATA *socket, char *input),
 			       void prompt (SOCKET_DATA *socket)) {
   IH_PAIR *pair = malloc(sizeof(IH_PAIR));
   pair->handler = handler;
   pair->prompt  = prompt;
+  pair->python  = FALSE;
   listPush(socket->input_handlers, pair);
+}
+
+void socketPushPyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt) {
+  IH_PAIR *pair = malloc(sizeof(IH_PAIR));
+  pair->handler = handler;
+  pair->prompt  = prompt;
+  pair->python  = TRUE;
+  Py_XINCREF((PyObject *)handler);
+  Py_XINCREF((PyObject *)prompt);
+  listPush(sock->input_handlers, pair);
+}
+
+void socketReplacePyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt){
+  socketPopInputHandler(sock);
+  socketPushPyInputHandler(sock, handler, prompt);
 }
 
 const char *socketGetLastCmd(SOCKET_DATA *sock) {
@@ -1207,6 +1039,10 @@ const char *socketGetLastCmd(SOCKET_DATA *sock) {
 
 void socketPopInputHandler   ( SOCKET_DATA *socket) {
   IH_PAIR *pair = listPop(socket->input_handlers);
+  if(pair->python) {
+    Py_XDECREF((PyObject *)pair->handler);
+    Py_XDECREF((PyObject *)pair->prompt);
+  }
   free(pair);
 }
 
@@ -1217,19 +1053,42 @@ void socketReplaceInputHandler( SOCKET_DATA *socket,
   socketPushInputHandler(socket, handler, prompt);
 }
 
-void (*socketGetInputHandler ( SOCKET_DATA *socket))(SOCKET_DATA *, char *) {
-  if(listSize(socket->input_handlers) == 0)
-    return NULL;
-  IH_PAIR *pair = listGet(socket->input_handlers, 0);
-  return (pair ? pair->handler : NULL);
-}
-
 void socketQueueCommand( SOCKET_DATA *sock, const char *cmd) {
   listQueue(sock->input, strdup(cmd));
 }
 
+int socketGetUID( SOCKET_DATA *dsock) {
+  return dsock->uid;
+}
+
+bool socketHasPrompt(SOCKET_DATA *sock) {
+  IH_PAIR *pair = listGet(sock->input_handlers, 0);
+  return (pair != NULL && pair->prompt != NULL);
+}
+
 void socketShowPrompt( SOCKET_DATA *sock) {
-  ((IH_PAIR *)listGet(sock->input_handlers, 0))->prompt(sock);
+  IH_PAIR *pair = listGet(sock->input_handlers, 0);
+  if(pair == NULL || pair->prompt == NULL)
+    return;
+  else if(pair->python == FALSE) {
+    ((void (*)(SOCKET_DATA *))pair->prompt)(sock);
+  }
+  else {
+    PyObject *arglist = Py_BuildValue("(O)", socketGetPyFormBorrowed(sock));
+    PyObject *retval  = PyEval_CallObject(pair->prompt, arglist);
+    // check for an error:
+    if(retval == NULL) {
+      char *tb = getPythonTraceback();
+      if(tb != NULL) {
+	log_string("Error with a python prompt:\r\n%s\r\n", tb);
+	free(tb);
+      }
+    }
+    
+    // garbage collection
+    Py_XDECREF(retval);
+    Py_XDECREF(arglist);
+  }
 }
 
 void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name) {
@@ -1359,7 +1218,6 @@ bool compressEnd(SOCKET_DATA *dsock, unsigned char teleopt, bool forced)
 
   dsock->out_compress->avail_in = 0;
   dsock->out_compress->next_in = dummy;
-  dsock->top_output = 0;
 
   /* No terminating signature is needed - receiver will get Z_STREAM_END */
   if (deflate(dsock->out_compress, Z_FINISH) != Z_STREAM_END && !forced)

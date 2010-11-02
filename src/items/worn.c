@@ -43,6 +43,7 @@
 //*****************************************************************************
 #include "../scripts/scripts.h"
 #include "../scripts/pyobj.h"
+#include "../scripts/pymudsys.h"
 
 
 
@@ -222,12 +223,18 @@ bool iedit_worn_parser (SOCKET_DATA *sock, WORN_DATA *data, int choice,
 }
 
 void worn_from_proto(WORN_DATA *worn, BUFFER *buf) {
-  char worn_type[SMALL_BUFFER];
-  sscanf(bufferString(buf), "me.worn_type = \"%s", worn_type);
-  worn_type[next_letter_in(worn_type, '\"')] = '\0'; // kill closing "
-  if(hashIn(worn_table, worn_type)) {
+  const char *code = bufferString(buf);
+  char        line[SMALL_BUFFER];
+  char       *lptr = line;
+
+  // parse out our worn type
+  code = strcpyto(lptr, code, '\n'); 
+  while(*lptr != '\"') lptr++;
+  lptr++; // kill the leading "
+  lptr[next_letter_in(lptr, '\"')] = '\0'; // kill closing "
+  if(hashIn(worn_table, lptr)) {
     if(worn->type) free(worn->type);
-    worn->type = strdup(worn_type);
+    worn->type = strdup(lptr);
   }
 }
 
@@ -280,6 +287,20 @@ int PyObj_setworntype(PyObject *self, PyObject *value, void *closure) {
   return 0;
 }
 
+PyObject *PyMudSys_AddWornType(PyObject *self, PyObject *args) {
+  char *type = NULL;
+  char  *pos = NULL;
+
+  if(!PyArg_ParseTuple(args, "ss", &type, &pos)) {
+    PyErr_Format(PyExc_TypeError, "add_worn_type requires worn type "
+		 "and position list.");
+    return NULL;
+  }
+
+  worn_add_type(type, pos);
+  return Py_BuildValue("i", 1);
+}
+
 
 
 //*****************************************************************************
@@ -314,8 +335,14 @@ void init_worn(void) {
   // add our new python get/setters
   PyObj_addGetSetter("worn_type", PyObj_getworntype, PyObj_setworntype,
 		     "The type of clothing this wearable item is.");
+  PyMudSys_addMethod("add_worn_type", PyMudSys_AddWornType, METH_VARARGS,
+		     "Adds a new worn type to the game.");
   
   // add in our basic worn types
+  //
+  // As of v3.3, worn types can now be added via Python as well as C. People are
+  // encouraged to do so, outside of this module. These are left for historical
+  // purpposes and backwards compatibility with previous version equipment.
   worn_add_type("shirt",                        "torso");
   worn_add_type("gloves",       "left hand, right hand");
   worn_add_type("left glove",               "left hand");

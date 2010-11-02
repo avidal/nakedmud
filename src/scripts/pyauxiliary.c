@@ -131,6 +131,8 @@ PyObject *PyAuxiliary_install(PyObject *self, PyObject *args) {
     SET_BIT(type, AUXILIARY_TYPE_ROOM);
   if(is_keyword(installs_on, "object",    FALSE))
     SET_BIT(type, AUXILIARY_TYPE_OBJ);
+  if(is_keyword(installs_on, "account",   FALSE))
+    SET_BIT(type, AUXILIARY_TYPE_ACCOUNT);
   // more types to come soon!!
   //***********
   // FINISH ME

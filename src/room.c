@@ -216,7 +216,8 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
   // as well, and remove all of the old exits from game. Its sort of hackish to
   // do it here since the room datastructure should have no concept of in/out
   // of game, but there's really nowhere else to put this...
-  bool room_in_game = propertyTableIn(room_table, to->uid);
+  bool does_room_exist = room_exists(to);
+  bool room_in_game    = listIn(room_list, to);
 
   // first, delete all of our old exits
   HASH_ITERATOR *ex_i = newHashIterator(to->exits);
@@ -224,7 +225,7 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
   EXIT_DATA       *ex = NULL;
   ITERATE_HASH(dir, ex, ex_i) {
     hashRemove(to->exits, dir);
-    if(room_in_game) exit_from_game(ex);
+    if(does_room_exist) exit_from_game(ex);
     deleteExit(ex);
   } deleteHashIterator(ex_i);
 
@@ -232,7 +233,8 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
   ex_i = newHashIterator(from->exits);
   ITERATE_HASH(dir, ex, ex_i) {
     roomSetExit(to, dir, exitCopy(ex));
-    if(room_in_game) exit_to_game(roomGetExit(to, dir));
+    if(does_room_exist) exit_exist(ex);
+    if(room_in_game)    exit_to_game(roomGetExit(to, dir));
   } deleteHashIterator(ex_i);
 
   // delete all of our old commands

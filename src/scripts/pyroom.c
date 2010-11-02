@@ -29,6 +29,7 @@
 #include "pyexit.h"
 #include "pyroom.h"
 #include "pymud.h"
+#include "pyauxiliary.h"
 
 
 
@@ -364,7 +365,7 @@ PyObject *PyRoom_get_exit(PyRoom *self, PyObject *value) {
     return retval;
   }
   else
-    return Py_None;
+    return Py_BuildValue("O", Py_None);
 }
 
 
@@ -610,7 +611,7 @@ PyObject *PyRoom_add_cmd(PyRoom *self, PyObject *args) {
   nearMapPut(roomGetCmdTable(room), name, sort_by,
 	     newPyCmd(name, func, POS_STANDING, POS_FLYING,
 		      group, TRUE, TRUE));
-  return Py_None;
+  return Py_BuildValue("O", Py_None);
 }
 
 //
@@ -635,6 +636,42 @@ PyObject *PyRoom_isinstance(PyRoom *self, PyObject *args) {
     return NULL;
   }
 }
+
+//
+// returns the specified piece of auxiliary data from the room
+// if it is a piece of python auxiliary data.
+PyObject *PyRoom_get_auxiliary(PyRoom *self, PyObject *args) {
+  char *keyword = NULL;
+  if(!PyArg_ParseTuple(args, "s", &keyword)) {
+    PyErr_Format(PyExc_TypeError,
+		 "getAuxiliary() must be supplied with the name that the "
+		 "auxiliary data was installed under!");
+    return NULL;
+  }
+
+  // make sure we exist
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to get auxiliary data for a nonexistant room.");
+    return NULL;
+  }
+
+  // make sure the auxiliary data exists
+  if(!pyAuxiliaryDataExists(keyword)) {
+    PyErr_Format(PyExc_StandardError,
+		 "No auxiliary data named '%s' exists!", keyword);
+    return NULL;
+  }
+
+  PyObject *data = roomGetAuxiliaryData(room, keyword);
+  if(data == NULL)
+    data = Py_None;
+  PyObject *retval = Py_BuildValue("O", data);
+  //  Py_DECREF(data);
+  return retval;
+}
+
 
 
 
@@ -768,6 +805,8 @@ init_PyRoom(void) {
 		     "adds a command to the room.");
     PyRoom_addMethod("isinstance", PyRoom_isinstance, METH_VARARGS,
 		     "returns whether or not the room inherits from the proto");
+    PyRoom_addMethod("getAuxiliary", PyRoom_get_auxiliary, METH_VARARGS,
+		     "get's the specified piece of aux data from the room");
 
     // add in all the getsetters and methods
     makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);

@@ -30,6 +30,7 @@
 #include "pyroom.h"
 #include "pyobj.h"
 #include "pyexit.h"
+#include "pyaccount.h"
 #include "pyauxiliary.h"
 
 
@@ -172,8 +173,14 @@ PyObject *PyChar_getposition(PyChar *self, void *closure) {
 
 PyObject *PyChar_getroom(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
-  if(ch != NULL) return Py_BuildValue("O", roomGetPyFormBorrowed(charGetRoom(ch)));
-  else           return NULL;
+  if(ch == NULL)
+    return NULL;
+  else if(charGetRoom(ch) != NULL)
+    return Py_BuildValue("O", roomGetPyFormBorrowed(charGetRoom(ch)));
+  else {
+    Py_INCREF(Py_None);
+    return Py_BuildValue("O", Py_None);
+  }
 }
 
 PyObject *PyChar_getlastroom(PyChar *self, void *closure) {
@@ -184,7 +191,7 @@ PyObject *PyChar_getlastroom(PyChar *self, void *closure) {
     return Py_BuildValue("O", roomGetPyFormBorrowed(charGetLastRoom(ch)));
   else {
     Py_INCREF(Py_None);
-    return Py_None;
+    return Py_BuildValue("O", Py_None);
   }
 }
 
@@ -223,7 +230,7 @@ PyObject *PyChar_geton(PyChar *self, void *closure) {
   if(ch == NULL) 
     return NULL;
   else if(charGetFurniture(ch) == NULL)
-    return Py_None;
+    return Py_BuildValue("O", Py_None);
   else 
     return Py_BuildValue("O", objGetPyFormBorrowed(charGetFurniture(ch)));
 }
@@ -291,13 +298,24 @@ PyObject *PyChar_getbodyparts(PyChar *self, PyObject *args) {
   return list;
 }
 
-
 PyObject *PyChar_getusergroups(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) 
     return Py_BuildValue("s", bitvectorGetBits(charGetUserGroups(ch)));
   else           
     return NULL;
+}
+
+PyObject *PyChar_getsocket(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch == NULL)
+    return NULL;
+  else {
+    SOCKET_DATA *sock = charGetSocket(ch);
+    if(sock == NULL)
+      return Py_BuildValue("O", Py_None);
+    return Py_BuildValue("O", socketGetPyFormBorrowed(sock));
+  }
 }
 
 
@@ -447,12 +465,8 @@ int PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
   }
 
   const char *race = PyString_AsString(value);
-  if(!isRace(race)) {
-    char buf[SMALL_BUFFER];
-    sprintf(buf, "%s is an invalid race type", PyString_AsString(value));
-    PyErr_Format(PyExc_TypeError, buf);
+  if(!isRace(race))
     return -1;
-  }
 
   CHAR_DATA *ch;
   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
@@ -580,7 +594,6 @@ int PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
   // only move if we're not already here
   if(charGetRoom(ch) != room) {
-    char_from_room(ch);
     char_to_room(ch, room);
 
     // if we were on furniture, make sure we dismount it
@@ -620,10 +633,9 @@ PyObject *PyChar_page(PyChar *self, PyObject *value) {
   }
 }
 
-
 //
-// sends a newline-tagged message to the character
-PyObject *PyChar_send(PyChar *self, PyObject *value) {
+// sends text to the character
+PyObject *PyChar_send_raw(PyChar *self, PyObject *value) {
   char *mssg = NULL;
   if (!PyArg_ParseTuple(value, "s", &mssg)) {
     PyErr_Format(PyExc_TypeError, 
@@ -633,7 +645,7 @@ PyObject *PyChar_send(PyChar *self, PyObject *value) {
 
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch) {
-    send_to_char(ch, "%s\r\n", mssg);
+    send_to_char(ch, "%s", mssg);
     return Py_BuildValue("i", 1);
   }
   else {
@@ -644,6 +656,17 @@ PyObject *PyChar_send(PyChar *self, PyObject *value) {
   }
 }
 
+//
+// sends a newline-tagged message to the character
+PyObject *PyChar_send(PyChar *self, PyObject *value) {
+  PyObject *retval = PyChar_send_raw(self, value);
+  if(retval == NULL)
+    return NULL;
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  send_to_char(ch, "\r\n");
+  Py_DECREF(retval);
+  return Py_BuildValue("i", 1);
+}
 
 //
 // Send a newline-tagged message to everyone around the character
@@ -854,6 +877,25 @@ PyObject *PyChar_setvar(PyChar *self, PyObject *args) {
 }
 
 
+PyObject *PyChar_getbodypct(PyChar *self, PyObject *args) {
+  char   *parts = NULL;
+  CHAR_DATA *ch = NULL;
+
+  if (!PyArg_ParseTuple(args, "s", &parts)) {
+    PyErr_Format(PyExc_TypeError,"A comma-separated list of body parts needed");
+    return NULL;
+  }
+
+  ch = PyChar_AsChar((PyObject *)self);
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to query body info for nonexistant character!");
+    return NULL;
+  }
+
+  return Py_BuildValue("d", bodyPartRatio(charGetBody(ch), parts));
+}
+
 //
 // equips a character with an item
 PyObject *PyChar_equip(PyChar *self, PyObject *args) {  
@@ -944,7 +986,7 @@ PyObject *PyChar_getequip(PyChar *self, PyObject *args) {
   
   obj = bodyGetEquipment(charGetBody(ch), pos);
   if(obj == NULL)
-    return Py_None;
+    return Py_BuildValue("O", Py_None);
   else
     return Py_BuildValue("O", objGetPyFormBorrowed(obj));
 }
@@ -1151,10 +1193,8 @@ PyObject *PyChar_get_auxiliary(PyChar *self, PyObject *args) {
   }
 
   PyObject *data = charGetAuxiliaryData(ch, keyword);
-  if(data == NULL) {
-    printf("Data is NULL for %s!!\r\n", keyword);
+  if(data == NULL)
     data = Py_None;
-  }
   PyObject *retval = Py_BuildValue("O", data);
   //  Py_DECREF(data);
   return retval;
@@ -1472,25 +1512,9 @@ PyObject *PyChar_all_chars(PyObject *self) {
   return retval;
 }
 
-PyObject *PyChar_all_sockets(PyObject *self) {
-  PyObject        *list = PyList_New(0);
-  LIST_ITERATOR *sock_i = newListIterator(socket_list);
-  SOCKET_DATA     *sock = NULL;
-  ITERATE_LIST(sock, sock_i) {
-    // only add sockets with attached characters who are in game
-    if(socketGetChar(sock) && charGetRoom(socketGetChar(sock)))
-      PyList_Append(list, charGetPyFormBorrowed(socketGetChar(sock)));
-  } deleteListIterator(sock_i);
-  PyObject *retval = Py_BuildValue("O", list);
-  Py_DECREF(list);
-  return retval;
-}
-
 PyMethodDef char_module_methods[] = {
   { "char_list", (PyCFunction)PyChar_all_chars, METH_NOARGS,
     "Return a python list containing an entry for every character in game." },
-  { "socket_list", (PyCFunction)PyChar_all_sockets, METH_NOARGS,
-    "Returns a list of all characters with attached sockets." },
   { "load_mob", PyChar_load_mob, METH_VARARGS,
     "load a mobile with the specified prototype to a room." },
   { "count_mobs", PyChar_count_mobs, METH_VARARGS,
@@ -1599,6 +1623,10 @@ PyMODINIT_FUNC init_PyChar(void) {
 		      "'it' for neuters");
   PyChar_addGetSetter("user_groups", PyChar_getusergroups, NULL,
 		      "Returns the character's user groups");
+  PyChar_addGetSetter("socket", PyChar_getsocket, NULL,
+		      "Returns the character's socket if it exists.");
+  PyChar_addGetSetter("sock",   PyChar_getsocket, NULL,
+		      "Returns the character's socket if it exists.");
 
   // add in all of our methods for the Char class
   PyChar_addMethod("attach", PyChar_attach, METH_VARARGS,
@@ -1606,6 +1634,8 @@ PyMODINIT_FUNC init_PyChar(void) {
   PyChar_addMethod("detach", PyChar_detach, METH_VARARGS,
 		   "detach an old script from the character.");
   PyChar_addMethod("send", PyChar_send, METH_VARARGS,
+		   "send a message to the character with appended newline.");
+  PyChar_addMethod("send_raw", PyChar_send_raw, METH_VARARGS,
 		   "send a message to the character.");
   PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
 		   "send a message to everyone around the character.");
@@ -1626,6 +1656,9 @@ PyMODINIT_FUNC init_PyChar(void) {
 		   "from whatever it is currently in/on.");
   PyChar_addMethod("get_equip", PyChar_getequip, METH_VARARGS,
 		   "Returns the person's equipment in the specified slot.");
+  PyChar_addMethod("get_bodypct", PyChar_getbodypct, METH_VARARGS,
+		   "Returns the percent mass of the character's body taken up "
+		   "by the specified parts.");
   PyChar_addMethod("isActing", PyChar_is_acting, METH_VARARGS,
 		   "Returns True if the character is currently taking an "
 		   "action, and False otherwise.");

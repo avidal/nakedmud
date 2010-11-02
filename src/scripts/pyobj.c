@@ -26,6 +26,7 @@
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
+#include "pyauxiliary.h"
 
 
 
@@ -210,7 +211,7 @@ PyObject *PyObj_getcarrier(PyObj *self, void *closure) {
   if(obj == NULL)
     return NULL;
   if(objGetCarrier(obj) == NULL)
-    return Py_None;
+    return Py_BuildValue("O", Py_None);
   return Py_BuildValue("O", charGetPyFormBorrowed(objGetCarrier(obj)));
 }
 
@@ -219,7 +220,7 @@ PyObject *PyObj_getroom(PyObj *self, void *closure) {
   if(obj == NULL)
     return NULL;
   if(objGetRoom(obj) == NULL)
-    return Py_None;
+    return Py_BuildValue("O", Py_None);
   return Py_BuildValue("O", roomGetPyFormBorrowed(objGetRoom(obj)));
 }
 
@@ -228,7 +229,7 @@ PyObject *PyObj_getcontainer(PyObj *self, void *closure) {
   if(obj == NULL)
     return NULL;
   if(objGetContainer(obj) == NULL)
-    return Py_None;
+    return Py_BuildValue("O", Py_None);
   return Py_BuildValue("O", objGetPyFormBorrowed(objGetContainer(obj)));
 }
 
@@ -657,6 +658,41 @@ PyObject *PyObj_edesc(PyObj *self, PyObject *value) {
   }
 }
 
+//
+// returns the specified piece of auxiliary data from the object
+// if it is a piece of python auxiliary data.
+PyObject *PyObj_get_auxiliary(PyObj *self, PyObject *args) {
+  char *keyword = NULL;
+  if(!PyArg_ParseTuple(args, "s", &keyword)) {
+    PyErr_Format(PyExc_TypeError,
+		 "getAuxiliary() must be supplied with the name that the "
+		 "auxiliary data was installed under!");
+    return NULL;
+  }
+
+  // make sure we exist
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to get auxiliary data for a nonexistant object.");
+    return NULL;
+  }
+
+  // make sure the auxiliary data exists
+  if(!pyAuxiliaryDataExists(keyword)) {
+    PyErr_Format(PyExc_StandardError,
+		 "No auxiliary data named '%s' exists!", keyword);
+    return NULL;
+  }
+
+  PyObject *data = objGetAuxiliaryData(obj, keyword);
+  if(data == NULL)
+    data = Py_None;
+  PyObject *retval = Py_BuildValue("O", data);
+  //  Py_DECREF(data);
+  return retval;
+}
+
 
 
 //*****************************************************************************
@@ -1054,6 +1090,8 @@ init_PyObj(void) {
 		    "the object will become of the specified type");
     PyObj_addMethod("edesc", PyObj_edesc, METH_VARARGS,
 		    "adds an extra description to the object.");
+    PyObj_addMethod("getAuxiliary", PyObj_get_auxiliary, METH_VARARGS,
+		    "get's the specified piece of aux data from the obj");
 
     makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
     deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;

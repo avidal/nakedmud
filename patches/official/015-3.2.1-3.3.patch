@@ -1,0 +1,5075 @@
+diff -ruN ../nakedmudv3.2.1/src/Makefile src/Makefile
+--- ../nakedmudv3.2.1/src/Makefile	2006-07-09 17:30:19.000000000 -0400
++++ src/Makefile	2006-12-24 22:27:44.000000000 -0500
+@@ -43,7 +43,7 @@
+ 	   \
+ 	   races.c \
+ 	   \
+-	   log.c auxiliary.c account_handler.c char_gen.c \
++	   log.c auxiliary.c \
+ 	   \
+ 	   world.c character.c room.c exit.c extra_descs.c object.c body.c \
+ 	   zone.c room_reset.c account.c \
+diff -ruN ../nakedmudv3.2.1/src/SConstruct src/SConstruct
+--- ../nakedmudv3.2.1/src/SConstruct	1969-12-31 19:00:00.000000000 -0500
++++ src/SConstruct	2006-12-24 23:35:27.000000000 -0500
+@@ -0,0 +1,99 @@
++from distutils.sysconfig import get_config_var, get_python_inc
++from glob import glob
++from os import listdir
++from os.path import isdir, isfile, join
++from sys import platform, version_info
++from time import localtime, strftime
++
++# First, a couple of helper functions
++
++def probe_directory(directory):
++    """
++    Examine the contents of directory, and return a list that
++    satisfies the following properties:
++
++    1. If the directory does not contain a file called '.suppress',
++       all .c files in that directory.
++
++    2. If the directory contains a file called '.suppress', all .c
++       files in that directory that are not named by .suppress
++
++    3. If the directory contains a file called '.suppress', and the
++       file contains the line 'all', return the empty list.
++    """
++    try:
++        suppress = open(join(directory, '.suppress'), 'r')
++        suppress_files = [x.replace('\n', '') for x in suppress.readlines()]
++        suppress.close()
++    except IOError:
++        # Assume file not found
++        suppress_files = []
++    if 'all' in suppress_files:
++        return []
++    # Can't do this earlier because it mangles the 'all' line.
++    suppress_files = [join(directory, x) for x in suppress_files]
++    c_files = recursive_glob(directory, '*.c')
++    return [x for x in c_files if x not in suppress_files]
++
++def recursive_glob(directory, pattern):
++    """
++    Return a list of all files in directory that match the given pattern.
++    """
++    files = []
++    directories = [directory] + [x for x in listdir(directory) if isdir(x)]
++    while directories != []:
++        directories += [x for x in [join(directories[0], y) for y in listdir(directories[0])] if isdir(x)]
++        files += glob(join(directories[0], pattern))
++        directories = directories[1:]
++    return files
++
++# Initialise the build environment
++nakedmud = Environment()
++nakedmud.Append(CPPPATH=[get_python_inc()])
++# The following seems to break under Mac OSX, so we'll just filter it out. It still seems to work without it...
++if platform == 'darwin':
++    nakedmud.Append(LINKFLAGS=get_config_var('LINKFORSHARED').split())
++nakedmud.Append(LIBS=['python%d.%d' % version_info[0:2]])
++
++# The name of the binary file to build
++binary = 'NakedMud'
++
++# Required modules
++modules = ['char_vars', 'set_val', 'olc2', 'editor', 'items', 'scripts']
++
++# Optional modules
++modules += ['time', 'socials', 'alias', 'help']
++
++# Compiler flags
++nakedmud.Append(CCFLAGS=['-Wall', '-g', '-ggdb', '-O2'])
++
++# Required libraries
++nakedmud.Append(LIBS=['z', 'pthread', 'crypt'])
++
++# The big list of source files.
++nakedmud['NAKEDMUD_SOURCES'] = glob('*.c')
++
++# Export the nakedmud environment in case SConscripts need to modify it
++Export('nakedmud')
++
++# Work through the module dirs and append to the sources list
++for module in modules:
++    nakedmud['NAKEDMUD_SOURCES'] += probe_directory(module)
++    filename = join(module, 'SConscript')
++    if(isfile(filename)):
++        SConscript(filename)
++
++# Default target is build the program
++nakedmud.Default(nakedmud.Program(binary, nakedmud['NAKEDMUD_SOURCES']))
++
++# Backup stuff
++
++# Directories to include when making backups. Note that this is _NOT_ a Python list, it is passed
++# directly to tar.
++backup_dirs = 'src lib doc'
++# Name of the backup file
++backup_file = join('backup', '%s-%s.tar.gz' % (binary.lower(), strftime('%Y-%m-%d-%Hh%Mm', localtime())))
++# Rule for making backups
++nakedmud.Command(backup_file, [], ['cd .. ; tar -zcf %s %s' % (backup_file, backup_dirs)])
++# Alias so `scons backup` will make a backup
++nakedmud.Alias('backup', backup_file)
+diff -ruN ../nakedmudv3.2.1/src/account_handler.c src/account_handler.c
+--- ../nakedmudv3.2.1/src/account_handler.c	2006-07-09 17:29:09.000000000 -0400
++++ src/account_handler.c	1969-12-31 19:00:00.000000000 -0500
+@@ -1,369 +0,0 @@
+-//*****************************************************************************
+-//
+-// account_handler.c
+-//
+-// The login and creation of accounts, and handles all of the account procedures
+-// load loading and deleting characters. If you are looking to change the char
+-// creation menu, you will want char_gen.c, not account_handler.c
+-//
+-//*****************************************************************************
+-
+-#include "mud.h"
+-#include "utils.h"
+-#include "socket.h"
+-#include "account.h"
+-#include "character.h"
+-#include "room.h"
+-#include "inform.h"
+-#include "save.h"
+-#include "char_gen.h"
+-#include "hooks.h"
+-
+-
+-
+-// mccp support
+-const unsigned char do_echo   [] = { IAC, WONT, TELOPT_ECHO,      '\0' };
+-const unsigned char dont_echo [] = { IAC, WILL, TELOPT_ECHO,      '\0' };
+-
+-// account input handlers
+-void account_ask_name       (SOCKET_DATA *sock, char *arg);
+-void account_ask_password   (SOCKET_DATA *sock, char *arg);
+-void account_new_password   (SOCKET_DATA *sock, char *arg);
+-void account_verify_password(SOCKET_DATA *sock, char *arg);
+-void account_handle_menu    (SOCKET_DATA *sock, char *arg);
+-void account_new_char       (SOCKET_DATA *sock, char *arg);
+-void account_change_password(SOCKET_DATA *sock, char *arg);
+-
+-// and prompts
+-void account_menu           (SOCKET_DATA *sock);
+-
+-
+-//
+-// the head honcho. This is the first handler that a socket enters once it has
+-// connected to the game. You should use this function to get your login 
+-// procedure rolling.
+-void handle_new_connections(SOCKET_DATA *sock, char *arg) {
+-  account_ask_name(sock, arg);
+-}
+-
+-
+-
+-//*****************************************************************************
+-// implementation of account input handlers
+-//*****************************************************************************
+-
+-//
+-// returns TRUE if the account has a valid name, and FALSE if it does not.
+-// alphanumeric characters and digits are allows. Min length 4, max length 12.
+-// first character must be a letter
+-bool check_account_name(const char *name) {
+-  int i, len = strlen(name);
+-  if(len < 3 || len > 12)
+-    return FALSE;
+-  if(!isalpha(*name))
+-    return FALSE;
+-  for(i = 1; name[i] != '\0'; i++)
+-    if(!isdigit(name[i]) && !isalpha(name[i]))
+-      return FALSE;
+-  return TRUE;
+-}
+-
+-
+-//
+-// Asks for an account name. If this is a new account, then proceed to ask and
+-// verify the password. Otherwise, ask for an account password and make sure it
+-// matches the actual password.
+-void account_ask_name(SOCKET_DATA *sock, char *arg) {
+-  // make sure we're not still resolving the DNS
+-  if (socketGetDNSLookupStatus(sock) != TSTATE_DONE) {
+-    text_to_buffer(sock, 
+-		   "Making a dns lookup, please have patience.\n\r"
+-		   "What is your account name? ");
+-    return;
+-  }
+-
+-  // check for a legal account name
+-  if (!check_account_name(arg)) {
+-    text_to_buffer(sock, 
+-		   "Sorry, that's not a legal account name. Your account name must only consist of\r\n"
+-		   "characters and numbers, and it must be between 4 and 12 characters long. The\r\n"
+-		   "first character MUST be a letter. Please pick another.\r\n"
+-		   "What is your name? ");
+-    return;
+-  }
+-
+-  // all is good. See if the account exists already
+-  else {
+-    ACCOUNT_DATA *acct = NULL;
+-    log_string("Account '%s' is trying to connect.", arg);
+-
+-    // check for new account
+-    if ( (acct = get_account(arg)) == NULL) {
+-      // check for lockdown
+-      if(*mudsettingGetString("lockdown") &&
+-	 !is_keyword(mudsettingGetString("lockdown"), DFLT_USER_GROUP, FALSE)) {
+-	text_to_socket(sock, "Sorry, creating new accounts is not allowed at the moment.\r\n");
+-	close_socket(sock, FALSE);
+-	return;
+-      }
+-
+-      // make sure someone else is not creating an account with this name
+-      if(account_creating(arg)) {
+-	text_to_socket(sock, "Someone is already creating an account with "
+-		       "that name.\r\nTry again: ");
+-	return;
+-      }
+-
+-      // make a new account and give it a name
+-      acct = newAccount();
+-      accountSetName(acct, arg);
+-
+-      // prepare for next step 
+-      text_to_buffer(sock, "Please enter a new password: ");
+-      socketReplaceInputHandler(sock, account_new_password, NULL);
+-    }
+-
+-    // old account
+-    else {
+-      // prepare for next step 
+-      text_to_buffer(sock, "What is your password? ");
+-      socketReplaceInputHandler(sock, account_ask_password, NULL);
+-    }
+-
+-    // make sure the password entry is not displayed on screen
+-    text_to_buffer(sock, (char *)dont_echo);
+-
+-    // attach the account to the socket
+-    socketSetAccount(sock, acct);
+-  }
+-}
+-
+-
+-//
+-// Ask for a password, and make sure it matches the account's password. If it
+-// does not, then dc the socket
+-void account_ask_password   (SOCKET_DATA *sock, char *arg) {
+-  // make sure we can start seeing what we type, again
+-  text_to_buffer(sock, (char *) do_echo);
+-
+-  // Passwords match. Go to the account menu
+-  if (compares(crypt(arg, accountGetName(socketGetAccount(sock))), 
+-	       accountGetPassword(socketGetAccount(sock)))) {
+-    socketReplaceInputHandler(sock, account_handle_menu, account_menu);
+-  }
+-  else {
+-    text_to_socket(sock, "\007\007Bad password! Disconnecting.\r\n");
+-    close_socket(sock, FALSE);
+-  }
+-}
+-
+-
+-//
+-// Ask and verify a new password during account creation
+-void account_new_password   (SOCKET_DATA *sock, char *arg) {
+-  // make sure the password is an acceptable length
+-  if (strlen(arg) < 5 || strlen(arg) > 12) {
+-    text_to_buffer(sock, 
+-		   "\r\nBetween 5 and 12 chars please!\n\r"
+-		   "Please enter a new password: ");
+-    return;
+-  }
+-
+-  // encrypt and set the password
+-  accountSetPassword(socketGetAccount(sock), 
+-		     crypt(arg, accountGetName(socketGetAccount(sock))));
+-
+-  // move onto the next step
+-  text_to_buffer(sock, "\r\nPlease verify the password: ");
+-  socketReplaceInputHandler(sock, account_verify_password, NULL);
+-}
+-
+-
+-//
+-// Verify the password during account creation. If there is a password mismatch,
+-// then restart the password process.
+-void account_verify_password(SOCKET_DATA *sock, char *arg) {
+-  if (compares(crypt(arg, accountGetName(socketGetAccount(sock))), 
+-	       accountGetPassword(socketGetAccount(sock)))) {
+-    text_to_buffer(sock, (char *)do_echo);
+-
+-    // account created. Register it, and plop it into the account menu. If it
+-    // is already created, we're just editing the password. So save changes.
+-    if(!account_exists(accountGetName(socketGetAccount(sock)))) {
+-      // run hooks for creating our account for the first time
+-      hookRun("create_account", 
+-	      hookBuildInfo("str", accountGetName(socketGetAccount(sock))));
+-      register_account(socketGetAccount(sock));
+-    }
+-    else
+-      save_account(socketGetAccount(sock));
+-    socketReplaceInputHandler(sock, account_handle_menu, account_menu);
+-  }
+-  else {
+-    accountSetPassword(socketGetAccount(sock), NULL);
+-    text_to_buffer(sock, 
+-		   "\r\nPassword mismatch!\n\r"
+-		   "Please enter a new password: ");
+-    socketReplaceInputHandler(sock, account_new_password, NULL);
+-  }
+-}
+-
+-//
+-// Load up an existing character attached to the account. Enter the game
+-void account_load_char(SOCKET_DATA *sock, int ch_num) {
+-  ACCOUNT_DATA *acct = socketGetAccount(sock);
+-  char *ch_name      = NULL;
+-  if((ch_name = listGet(accountGetChars(acct), ch_num)) == NULL)
+-    text_to_buffer(sock, "Invalid choice!\r\n");
+-  else {
+-    CHAR_DATA *ch = check_reconnect(ch_name);
+-    // this character is already in-game. Disconnect them
+-    if(ch != NULL) { 
+-      // attach the character
+-      socketSetChar(sock, ch);
+-      charSetSocket(ch, sock);
+-
+-      log_string("%s has reconnected.", charGetName(ch));
+-
+-      // and let him enter the game. Replace the load character input handler
+-      // with the one for playing the game.
+-      socketPushInputHandler(sock, handle_cmd_input, show_prompt);
+-      text_to_buffer(sock, "You take over a body already in use.\n\r");
+-    }
+-
+-    // hmmm... our pfile is missing!!
+-    else if ((ch = get_player(ch_name)) == NULL)
+-      text_to_socket(sock, "ERROR: Your pfile is missing!\n\r");
+-
+-    // everything is OK
+-    else {
+-      // attach the new player 
+-      socketSetChar(sock, ch);
+-      charSetSocket(ch, sock);
+-
+-      // make sure the mud isn't locked to this person
+-      if(*mudsettingGetString("lockdown") &&
+-	 !bitIsSet(charGetUserGroups(ch), mudsettingGetString("lockdown"))) {
+-	send_to_char(ch, "You are currently locked out of the mud.\r\n");
+-	unreference_player(ch);
+-	socketSetChar(sock, NULL);
+-	return;
+-      }
+-      
+-      // try putting the character into the game. Pop the input handler
+-      // if we cannot
+-      if(try_enter_game(ch)) {
+-	log_string("%s has entered the game.", charGetName(ch));
+-	// we're no longer in the creation process... attach the game
+-	// input handler
+-	socketPushInputHandler(sock, handle_cmd_input, show_prompt);
+-
+-	text_to_buffer(sock, bufferString(motd));
+-	look_at_room(ch, charGetRoom(ch));
+-
+-	// run entrance hooks
+-	hookRun("enter", hookBuildInfo("ch rm", ch, charGetRoom(ch)));
+-      }
+-      else {
+-	text_to_buffer(sock, "There was a problem entering the game. Try again later!\r\n");
+-	// do not extract, just delete. We failed to enter
+-	// the game, so there is no need to extract from the game.
+-	unreference_player(socketGetChar(sock));
+-	socketSetChar(sock, NULL);
+-      }
+-    }
+-  }
+-}
+-
+-
+-//
+-// Change the password on an already-existant account
+-void account_change_password(SOCKET_DATA *sock, char *arg) {
+-  if (compares(crypt(arg, accountGetName(socketGetAccount(sock))), 
+-	       accountGetPassword(socketGetAccount(sock)))) {
+-    text_to_buffer(sock, "\r\nPlease enter a new password: ");
+-    socketReplaceInputHandler(sock, account_new_password, NULL);
+-  }
+-  else {
+-    text_to_buffer(sock, "\r\nIncorrect password!\r\n");
+-    socketReplaceInputHandler(sock, account_handle_menu, account_menu);
+-  }
+-}
+-
+-
+-//
+-// handle all of the options in the account main menu
+-void account_handle_menu(SOCKET_DATA *sock, char *arg) {
+-  // are we trying to load up a character?
+-  if(isdigit(*arg))
+-    account_load_char(sock, atoi(arg));
+-
+-  // we're doing a menu choice
+-  else switch(toupper(*arg)) {
+-  case 'Q':
+-    // quit the menu
+-    text_to_buffer(sock, "Come back soon!\r\n");
+-    save_account(socketGetAccount(sock));
+-    socketPopInputHandler(sock);
+-    break;
+-
+-  case 'P':
+-    // change password
+-    text_to_buffer(sock, (char *)dont_echo);
+-    text_to_buffer(sock, "Enter old password: ");
+-    socketReplaceInputHandler(sock, account_change_password, NULL);
+-    break;
+-
+-  case 'N':
+-    // make a new character
+-    if(*mudsettingGetString("lockdown") &&
+-       !is_keyword(mudsettingGetString("lockdown"), DFLT_USER_GROUP, FALSE)) {
+-      text_to_buffer(sock, "The MUD is currently locked to new players.\r\n");
+-      return;
+-    }
+-    start_char_gen(sock);
+-    break;
+-
+-  default:
+-    text_to_buffer(sock, "Invalid choice!\r\n");
+-    break;
+-  }
+-}
+-
+-
+-//
+-// Display a list of all the account's characters to the account.
+-void display_account_chars(SOCKET_DATA *sock) {
+-  static char fmt[100];
+-  int print_room, num_cols = 3, i = 0;
+-  char *str = NULL;
+-  LIST_ITERATOR *ch_i =newListIterator(accountGetChars(socketGetAccount(sock)));
+-
+-  print_room = (80 - 10*num_cols)/num_cols;
+-  sprintf(fmt, "  {c%%2d{g) %%-%ds%%s", print_room);
+-
+-  text_to_buffer(sock, "\r\n{wPlay a Character:\r\n");
+-  ITERATE_LIST(str, ch_i) {
+-    send_to_socket(sock, fmt, i, str, (i % num_cols == (num_cols - 1) ? 
+-				       "\r\n" : "   "));
+-    i++;
+-  } deleteListIterator(ch_i);
+-
+-  if(i % num_cols != 0)
+-    send_to_socket(sock, "\r\n");
+-}
+-
+-
+-void account_menu(SOCKET_DATA *sock) {
+-  // if we have some characters created, display them
+-  if(listSize(accountGetChars(socketGetAccount(sock))) > 0)
+-    display_account_chars(sock);
+-
+-  // additional options? delete? who's online?
+-  text_to_buffer(sock,
+-		 "\r\n{wAdditional Options:\r\n"
+-		 "  {g[{cP{g]assword change\r\n"
+-		 "  {g[{cN{g]ew character\r\n"
+-		 "\r\n"
+-		 "Enter choice, or Q to quit:{n ");
+-}
+diff -ruN ../nakedmudv3.2.1/src/autorun.py src/autorun.py
+--- ../nakedmudv3.2.1/src/autorun.py	2006-07-09 17:29:08.000000000 -0400
++++ src/autorun.py	2006-12-24 22:15:56.000000000 -0500
+@@ -5,40 +5,48 @@
+ #
+ # This autorun script was designed to be used with NakedMud. It will 
+ # automagically restart your MUD any time it crashes. If the MUD is manually
+-# shut down, the autorun script will terminate. 
++# shut down, the autorun script will terminate. Accepts a port argument.
+ #
+ # Geoff Hollis
+ # http://www.ualberta.ca/~hollis/nakedmud.html
+ #
+ ################################################################################
+-
++import sys               # for sys.argv
+ from time import sleep   # we delay before restarting
+ from os   import system  # to start running the MUD
+ 
+-# how long do we delay before a restart (seconds)
+-restart_delay = 5
+-
+-# the path to the MUD binary
+-path = './NakedMud'
+-
+-# the port we will be running the MUD under
+-port = 4000
+-
+-# the command we execute to boot up the MUD
+-cmd  = "%s %d" % (path, port)
+-
+-# now, while we have not exited without an error, run the MUD 
+-# and reboot it every time we exit with an error (we crash)
+-while True:
+-    # run the MUD
+-    status = system(cmd)
+-
+-    # exited normally
+-    if status == 0:
+-	break;
+-    else:
+-	# We should probably see if we can figure out what kind of
+-	# error caused the crash here, and report it
+-
+-	# wait out our delay, then restart the MUD
+-	sleep(restart_delay)
++def main(argv = sys.argv[1:]):
++    '''
++    handles the autorunning of the mud. Can accept 1 optional argument that
++    specifies the port number to run under
++    '''
++    restart_delay = 5     # how long do we delay before a restart (seconds)
++    path = './NakedMud'   # the path to the MUD binary
++    port = 4000           # the default port we will be running the MUD under
++
++    # parse out our port number if one was supplied
++    if len(argv) > 0:
++        port = int(argv[0])
++
++    # the command we execute to boot up the MUD
++    cmd  = "%s %d" % (path, port)
++
++    # now, while we have not exited without an error, run the MUD 
++    # and reboot it every time we exit with an error (we crash)
++    while True:
++        # run the MUD
++        status = system(cmd)
++
++        # exited normally
++        if status == 0:
++            break;
++        else:
++            # We should probably see if we can figure out what kind of
++            # error caused the crash here, and report it
++
++            # wait out our delay, then restart the MUD
++            sleep(restart_delay)
++
++# start us if we're run as a script
++if __name__ == "__main__":
++    sys.exit(main())
+diff -ruN ../nakedmudv3.2.1/src/char_gen.c src/char_gen.c
+--- ../nakedmudv3.2.1/src/char_gen.c	2006-07-09 17:29:08.000000000 -0400
++++ src/char_gen.c	1969-12-31 19:00:00.000000000 -0500
+@@ -1,198 +0,0 @@
+-//*****************************************************************************
+-//
+-// char_gen.c
+-//
+-// Contains all of the functions neccessary for generating a new character. 
+-// Different muds will handle this process in wildly different ways. As such,
+-// I figured it would be good to localize all of the login details to a single 
+-// file for people to tailor to their specific mud. It also makes updating to 
+-// newer versions a bit easier. Your character generation process should be
+-// laid out here. A basic framework is given, but it could use lots of work. In
+-// fact, it is crap and could use LOTS of work. I encourage people to write 
+-// their own login procedure and submit their designs to me so I can develop a 
+-// better general method for later versions of the mud.
+-//
+-//*****************************************************************************
+-
+-#include "mud.h"
+-#include "utils.h"
+-#include "socket.h"
+-#include "account.h"
+-#include "character.h"
+-#include "room.h"
+-#include "world.h"
+-#include "save.h"
+-#include "races.h"
+-#include "handler.h"
+-#include "inform.h"
+-#include "hooks.h"
+-
+-
+-
+-//*****************************************************************************
+-// local functions, defines, structures, and the like
+-//*****************************************************************************
+-
+-// functions in the char creation procedure
+-void char_ask_name(SOCKET_DATA *sock, char *arg);
+-void char_ask_sex (SOCKET_DATA *sock, char *arg);
+-void char_ask_race(SOCKET_DATA *sock, char *arg);
+-
+-
+-//
+-// List all of the races available during creation
+-void list_races(SOCKET_DATA *sock) {
+-  send_to_socket(sock, "Available races are:\r\n");
+-  send_to_socket(sock, "%s", raceGetList(TRUE));
+-  send_to_socket(sock, "\r\n\r\nPlease enter your choice: ");
+-}
+-
+-
+-//
+-// Character names must be at least 4 characters long, and no more than 12.
+-// The name must only be composed of alphanumeric characters
+-bool check_char_name(const char *name) {
+-  int i, size = strlen(name);
+-  if (size < 3 || size > 12)
+-    return FALSE;
+-  for (i = 0; i < size; i++)
+-    if (!isalpha(name[i])) 
+-      return FALSE;
+-  return TRUE;
+-}
+-
+-
+-//
+-// Query for the character's name.
+-void char_ask_name(SOCKET_DATA *sock, char *arg) {
+-  CHAR_DATA *ch = NULL;
+-
+-  // check for a legal name
+-  if(!check_char_name(arg))
+-    text_to_buffer(sock, 
+-		   "Sorry, that was an illegal name. Please pick another.\r\n"
+-		   "What is your name? ");
+-
+-  // a character with this name already exists
+-  else if(player_exists(arg))
+-    text_to_buffer(sock,
+-		   "A character with this name already exists.\r\n"
+-		   "What is your name? ");
+-
+-  // someone's already creating a character with this name
+-  else if(player_creating(arg))
+-    text_to_buffer(sock, "Someone is already creating a player with that name."
+-		   "\r\nTry again: ");
+-
+-  // we're OK to make this new character
+-  else {
+-    ch = newChar();
+-
+-    // give the player it's name 
+-    *arg = toupper(*arg);
+-    charSetName(ch, arg);
+-
+-    // and room description. In the future, we may want
+-    // to consider allowing players to set their own rdescs 
+-    char rdesc[SMALL_BUFFER];
+-    sprintf(rdesc, "%s is here.", arg);
+-    charSetRdesc(ch, rdesc);
+-
+-    // socket <-> player 
+-    charSetSocket(ch, sock);
+-    socketSetChar(sock, ch);
+-
+-    // prepare for next step 
+-    text_to_buffer(sock, "What is your sex (M/F/N)? ");
+-    socketReplaceInputHandler(sock, char_ask_sex, NULL);
+-  }
+-}
+-
+-
+-//
+-// Ask for the character's sex. 
+-void char_ask_sex (SOCKET_DATA *sock, char *arg) {
+-  switch(toupper(*arg)) {
+-  case 'F':
+-    charSetSex(socketGetChar(sock), SEX_FEMALE);
+-    break;
+-  case 'M':
+-    charSetSex(socketGetChar(sock), SEX_MALE);
+-    break;
+-  case 'N':
+-    charSetSex(socketGetChar(sock), SEX_NEUTRAL);
+-    break;
+-  default:
+-    text_to_buffer(sock, "\r\nInvalid sex. Try again (M/F/N) :");
+-    return;
+-  }
+-
+-  // onto race choosing
+-  socketReplaceInputHandler(sock, char_ask_race, NULL);
+-  list_races(sock);
+-}
+-
+-
+-//
+-// Pick a race for our new character
+-void char_ask_race(SOCKET_DATA *sock, char *arg) {
+-  if(!arg || !*arg || !raceIsForPC(arg))
+-    send_to_socket(sock, "Invalid race! Please try again: ");
+-  else {
+-    charSetRace(socketGetChar(sock), arg);
+-    charResetBody(socketGetChar(sock));
+-
+-    // give the character a unique id 
+-    int next_char_uid = mudsettingGetInt("puid") + 1;
+-    mudsettingSetInt("puid", next_char_uid);
+-    charSetUID(socketGetChar(sock), next_char_uid);
+-    
+-    // if it's the first player, give him all priviledges
+-    if(charGetUID(socketGetChar(sock)) == 1)
+-      bitSet(charGetUserGroups(socketGetChar(sock)),
+-	     "admin, builder, scripter, player, playtester");
+-
+-    // add the character to the game 
+-    char_to_game(socketGetChar(sock));
+-    
+-    log_string("New player: %s has entered the game.", 
+-	       charGetName(socketGetChar(sock)));
+-    
+-    // and into the game 
+-    // pop the input handler for char creation and add the one for
+-    // playing the game
+-    socketReplaceInputHandler(sock, handle_cmd_input, show_prompt);
+-    text_to_buffer(sock, bufferString(motd));
+-    
+-    // we should do some checks here to make sure the start room exists
+-    char_to_room(socketGetChar(sock), worldGetRoom(gameworld, START_ROOM));
+-    look_at_room(socketGetChar(sock), charGetRoom(socketGetChar(sock)));
+-
+-    // run any hooks for creating the player for the first time
+-    hookRun("create_player", hookBuildInfo("ch", socketGetChar(sock)));
+-    
+-    // and register him as a valid player
+-    register_player(socketGetChar(sock));
+-    
+-    //************************************************************
+-    //******                 VERY IMPORTANT                 ******
+-    //************************************************************
+-    // add this character to our account list
+-    accountPutChar(socketGetAccount(sock), charGetName(socketGetChar(sock)));
+-    save_account(socketGetAccount(sock));
+-
+-    // run entrance hooks
+-    ROOM_DATA      *room = charGetRoom(socketGetChar(sock));
+-    hookRun("enter", hookBuildInfo("ch rm", socketGetChar(sock), room));
+-  }
+-}
+-
+-
+-
+-//*****************************************************************************
+-// implementation of char_gen.c
+-//*****************************************************************************
+-void start_char_gen(SOCKET_DATA *sock) {
+-  text_to_buffer(sock, "What is your character's name? ");
+-  socketPushInputHandler(sock, char_ask_name, NULL);
+-}
+diff -ruN ../nakedmudv3.2.1/src/char_gen.h src/char_gen.h
+--- ../nakedmudv3.2.1/src/char_gen.h	2006-07-09 17:29:08.000000000 -0400
++++ src/char_gen.h	1969-12-31 19:00:00.000000000 -0500
+@@ -1,23 +0,0 @@
+-#ifndef CHAR_GEN_H
+-#define CHAR_GEN_H
+-//*****************************************************************************
+-//
+-// char_gen.h
+-//
+-// Contains all of the functions neccessary for generating a new character. 
+-// Different muds will handle this process in wildly different ways. As such,
+-// I figured it would be good to localize all of the login details to a single 
+-// file for people to tailor to their specific mud. It also makes updating to 
+-// newer versions a bit easier. Your character generation process should be
+-// laid out here. A basic framework is given, but it could use lots of work. In
+-// fact, it is crap and could use LOTS of work. I encourage people to write 
+-// their own login procedure and submit their designs to me so I can develop a 
+-// better general method for later versions of the mud.
+-//
+-//*****************************************************************************
+-
+-//
+-// Start the character generation process!
+-void start_char_gen(SOCKET_DATA *sock);
+-
+-#endif // CHAR_GEN_H
+diff -ruN ../nakedmudv3.2.1/src/gameloop.c src/gameloop.c
+--- ../nakedmudv3.2.1/src/gameloop.c	2006-07-09 17:29:08.000000000 -0400
++++ src/gameloop.c	2006-12-24 22:15:56.000000000 -0500
+@@ -81,6 +81,7 @@
+ PROPERTY_TABLE  *obj_table = NULL; // a table of objs by UID, for quick lookup
+ PROPERTY_TABLE *room_table = NULL; // a table of rooms by UID, for quick lookup
+ PROPERTY_TABLE *exit_table = NULL; // a table of exits by UID, for quick lookup
++PROPERTY_TABLE *sock_table = NULL; // a table of socks by UID, for quick lookup
+ BUFFER           *greeting = NULL; // message seen when a socket connects
+ BUFFER               *motd = NULL; // what characters see when they log on
+ 
+@@ -146,10 +147,11 @@
+   // For optimal speed, the table sizes should be roughly
+   // 25% larger than the number of mobs/objs you intend to have
+   // loaded into the game at any given time.
+-  mob_table   = newPropertyTable(charGetUID, 3000);
+-  obj_table   = newPropertyTable(objGetUID,  3000);
+-  room_table  = newPropertyTable(roomGetUID, 3000);
+-  exit_table  = newPropertyTable(exitGetUID, 9000);
++  mob_table   = newPropertyTable(charGetUID,  3000);
++  obj_table   = newPropertyTable(objGetUID,   3000);
++  room_table  = newPropertyTable(roomGetUID,  3000);
++  exit_table  = newPropertyTable(exitGetUID,  9000);
++  sock_table  = newPropertyTable(socketGetUID,1000);
+ 
+   // make a new world
+   gameworld = newWorld();
+@@ -380,8 +382,13 @@
+       int newConnection;
+ 
+       socksize = sizeof(sock);
+-      if ((newConnection = accept(control, (struct sockaddr*) &sock, &socksize)) >=0)
+-        new_socket(newConnection);
++      if ((newConnection = accept(control, (struct sockaddr*) &sock, &socksize)) >=0) {
++        SOCKET_DATA *newsock = new_socket(newConnection);
++	if(newsock != NULL) {
++	  hookRun("receive_connection", hookBuildInfo("sk", newsock));
++	  socketBustPrompt(newsock);
++	}
++      }
+     }
+ 
+ 
+diff -ruN ../nakedmudv3.2.1/src/handler.c src/handler.c
+--- ../nakedmudv3.2.1/src/handler.c	2006-07-09 17:29:08.000000000 -0400
++++ src/handler.c	2006-12-24 22:15:56.000000000 -0500
+@@ -37,13 +37,40 @@
+ //*****************************************************************************
+ // obj/char from/to functions
+ //*****************************************************************************
+-void exit_to_game(EXIT_DATA *exit) {
++void exit_exist(EXIT_DATA *exit) {
+   propertyTablePut(exit_table, exit);
+ }
+ 
++bool exit_exists(EXIT_DATA *exit) {
++  return propertyTableIn(exit_table, exitGetUID(exit));
++}
++
++void exit_to_game(EXIT_DATA *exit) {
++  if(!exit_exists(exit))
++    exit_exist(exit);
++}
++
++void obj_exist(OBJ_DATA *obj) {
++  propertyTablePut(obj_table, obj);
++
++  // also add all contents
++  if(listSize(objGetContents(obj)) > 0) {
++    LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
++    OBJ_DATA *cont = NULL;
++    ITERATE_LIST(cont, cont_i)
++      obj_exist(cont);
++    deleteListIterator(cont_i);
++  }
++}
++
++bool obj_exists(OBJ_DATA *obj) {
++  return propertyTableIn(obj_table, objGetUID(obj));
++}
++
+ void obj_to_game(OBJ_DATA *obj) {
++  if(!obj_exists(obj))
++    obj_exist(obj);
+   listPut(object_list, obj);
+-  propertyTablePut(obj_table, obj);
+ 
+   // execute all of our to_game hooks
+   hookRun("obj_to_game", hookBuildInfo("obj", obj));
+@@ -58,9 +85,45 @@
+   }
+ }
+ 
++void room_exist(ROOM_DATA *room) {
++  propertyTablePut(room_table, room);
++
++  // add contents
++  if(listSize(roomGetContents(room)) > 0) {
++    LIST_ITERATOR *cont_i = newListIterator(roomGetContents(room));
++    OBJ_DATA        *cont = NULL;
++    ITERATE_LIST(cont, cont_i)
++      obj_exist(cont);
++    deleteListIterator(cont_i);
++  }
++
++  // add its people
++  if(listSize(roomGetCharacters(room)) > 0) {
++    LIST_ITERATOR *ch_i = newListIterator(roomGetCharacters(room));
++    CHAR_DATA       *ch = NULL;
++    ITERATE_LIST(ch, ch_i)
++      char_exist(ch);
++    deleteListIterator(ch_i);
++  }
++
++  // add its exits
++  LIST       *ex_list = roomGetExitNames(room);
++  LIST_ITERATOR *ex_i = newListIterator(ex_list);
++  char           *dir = NULL;
++  ITERATE_LIST(dir, ex_i) {
++    exit_exist(roomGetExit(room, dir));
++  } deleteListIterator(ex_i);
++  deleteListWith(ex_list, free);
++}
++
++bool room_exists(ROOM_DATA *room) {
++  return propertyTableIn(room_table, roomGetUID(room));
++}
++
+ void room_to_game(ROOM_DATA *room) {
++  if(!room_exists(room))
++    room_exist(room);
+   listPut(room_list, room);
+-  propertyTablePut(room_table, room);
+ 
+   // execute all of our to_game hooks
+   hookRun("room_to_game", hookBuildInfo("rm", room));
+@@ -97,9 +160,38 @@
+   deleteListWith(ex_list, free);
+ }
+ 
++void char_exist(CHAR_DATA *ch) {
++  propertyTablePut(mob_table, ch);
++
++  // also add inventory
++  if(listSize(charGetInventory(ch)) > 0) {
++    LIST_ITERATOR *inv_i = newListIterator(charGetInventory(ch));
++    OBJ_DATA *obj = NULL;
++    ITERATE_LIST(obj, inv_i)
++      obj_exist(obj);
++    deleteListIterator(inv_i);
++  }
++
++  // and equipped items
++  LIST *eq = bodyGetAllEq(charGetBody(ch));
++  if(listSize(eq) > 0) {
++    LIST_ITERATOR *eq_i = newListIterator(eq);
++    OBJ_DATA *obj = NULL;
++    ITERATE_LIST(obj, eq_i)
++      obj_exist(obj);
++    deleteListIterator(eq_i);
++  }
++  deleteList(eq);
++}
++
++bool char_exists(CHAR_DATA *ch) {
++  return propertyTableIn(mob_table, charGetUID(ch));
++}
++
+ void char_to_game(CHAR_DATA *ch) {
++  if(!char_exists(ch))
++    char_exist(ch);
+   listPut(mobile_list, ch);
+-  propertyTablePut(mob_table, ch);
+ 
+   // execute all of our to_game hooks
+   hookRun("char_to_game", hookBuildInfo("ch", ch));
+@@ -133,9 +225,6 @@
+   // go through all of our fromgame hooks
+   hookRun("obj_from_game", hookBuildInfo("obj", obj));
+ 
+-  listRemove(object_list, obj);
+-  propertyTableRemove(obj_table, objGetUID(obj));
+-
+   // also remove everything that is contained within the object
+   if(listSize(objGetContents(obj)) > 0) {
+     LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
+@@ -144,15 +233,15 @@
+       obj_from_game(cont);
+     deleteListIterator(cont_i);
+   }
++
++  listRemove(object_list, obj);
++  propertyTableRemove(obj_table, objGetUID(obj));
+ }
+ 
+ void room_from_game(ROOM_DATA *room) {
+   // go through all of our fromgame hooks
+   hookRun("room_from_game", hookBuildInfo("rm", room));
+ 
+-  listRemove(room_list, room);
+-  propertyTableRemove(room_table, roomGetUID(room));
+-
+   // also remove all the objects contained within the room
+   if(listSize(roomGetContents(room)) > 0) {
+     LIST_ITERATOR *cont_i = newListIterator(roomGetContents(room));
+@@ -179,15 +268,15 @@
+     exit_from_game(roomGetExit(room, dir));
+   deleteListIterator(ex_i);
+   deleteListWith(ex_list, free);
++
++  listRemove(room_list, room);
++  propertyTableRemove(room_table, roomGetUID(room));
+ }
+ 
+ void char_from_game(CHAR_DATA *ch) {
+   // go through all of our fromgame hooks
+   hookRun("char_from_game", hookBuildInfo("ch", ch));
+ 
+-  listRemove(mobile_list, ch);
+-  propertyTableRemove(mob_table, charGetUID(ch));
+-
+   // also remove inventory
+   if(listSize(charGetInventory(ch)) > 0) {
+     LIST_ITERATOR *inv_i = newListIterator(charGetInventory(ch));
+@@ -207,6 +296,9 @@
+     deleteListIterator(eq_i);
+   }
+   deleteList(eq);
++
++  listRemove(mobile_list, ch);
++  propertyTableRemove(mob_table, charGetUID(ch));
+ }
+ 
+ void obj_from_char(OBJ_DATA *obj) {
+diff -ruN ../nakedmudv3.2.1/src/handler.h src/handler.h
+--- ../nakedmudv3.2.1/src/handler.h	2006-07-09 17:29:08.000000000 -0400
++++ src/handler.h	2006-12-24 22:15:56.000000000 -0500
+@@ -15,13 +15,25 @@
+ // then its from_game function should be called, AND THEN it should be deleted.
+ // When something needs to be put into the game, its to_game function should be
+ // called AND THEN it should be added to the game (e.g. loading a character and
+-// putting him into a room... call char_to_game first);
++// putting him into a room... call char_to_game first); exist functions are to
++// state that something is ready for interaction with but it is *not* ready to
++// be placed in the game yet. For instance, when a brand new character has been
++// made for character creation. Whenever something is put to_game, it is first
++// make to exist.
++void      char_exist        (CHAR_DATA *ch);
++bool      char_exists       (CHAR_DATA *ch);
+ void      char_to_game      (CHAR_DATA *ch);
+ void      char_from_game    (CHAR_DATA *ch);
++void      obj_exist         (OBJ_DATA  *obj);
++bool      obj_exists        (OBJ_DATA  *obj);
+ void      obj_to_game       (OBJ_DATA  *obj);
+ void      obj_from_game     (OBJ_DATA  *obj);
++void      room_exist        (ROOM_DATA *room);
++bool      room_exists       (ROOM_DATA *room);
+ void      room_to_game      (ROOM_DATA *room);
+ void      room_from_game    (ROOM_DATA *room);
++void      exit_exist        (EXIT_DATA *exit);
++bool      exit_exists       (EXIT_DATA *exit);
+ void      exit_to_game      (EXIT_DATA *exit);
+ void      exit_from_game    (EXIT_DATA *exit);
+ 
+diff -ruN ../nakedmudv3.2.1/src/hooks.c src/hooks.c
+--- ../nakedmudv3.2.1/src/hooks.c	2006-07-09 17:29:08.000000000 -0400
++++ src/hooks.c	2006-12-24 22:15:56.000000000 -0500
+@@ -24,6 +24,7 @@
+ #include "room.h"
+ #include "exit.h"
+ #include "account.h"
++#include "socket.h"
+ #include "hooks.h"
+ 
+ 
+@@ -114,6 +115,8 @@
+       bprintf(info_buf, "rm.%d", roomGetUID(va_arg(vargs, ROOM_DATA *)));
+     else if(!strcasecmp(token, "ex") || !strcasecmp(token, "exit"))
+       bprintf(info_buf, "ex.%d", exitGetUID(va_arg(vargs, EXIT_DATA *)));
++    else if(!strcasecmp(token, "sk") || !strcasecmp(token, "sock"))
++      bprintf(info_buf, "sk.%d", socketGetUID(va_arg(vargs, SOCKET_DATA *)));
+     else if(!strcasecmp(token, "str"))
+       bprintf(info_buf, "%c%s%c", HOOK_STR_MARKER, va_arg(vargs, char *), HOOK_STR_MARKER);
+     else if(!strcasecmp(token, "int"))
+@@ -209,6 +212,14 @@
+       sscanf(token, "exit.%d", &id);
+       *va_arg(vargs, EXIT_DATA **) = propertyTableGet(exit_table, id);
+     }
++    else if(startswith(token, "sk")) {
++      sscanf(token, "sk.%d", &id);
++      *va_arg(vargs, SOCKET_DATA **) = propertyTableGet(sock_table, id);
++    }
++    else if(startswith(token, "sock")) {
++      sscanf(token, "sk.%d", &id);
++      *va_arg(vargs, SOCKET_DATA **) = propertyTableGet(sock_table, id);
++    }
+     else if(*token == HOOK_STR_MARKER) {
+       char *str = strdup(token + 1);
+       str[strlen(str)-1] = '\0';
+diff -ruN ../nakedmudv3.2.1/src/inform.c src/inform.c
+--- ../nakedmudv3.2.1/src/inform.c	2006-07-09 17:29:08.000000000 -0400
++++ src/inform.c	2006-12-24 22:15:56.000000000 -0500
+@@ -311,7 +311,8 @@
+     LIST_ITERATOR *list_i = newListIterator(mobile_list);
+     CHAR_DATA *ch = NULL;
+     ITERATE_LIST(ch, list_i)
+-      if(roomGetTerrain(charGetRoom(ch)) != TERRAIN_INDOORS &&
++      if(charGetRoom(ch) != NULL &&
++	 roomGetTerrain(charGetRoom(ch)) != TERRAIN_INDOORS &&
+ 	 roomGetTerrain(charGetRoom(ch)) != TERRAIN_CAVERN)
+ 	text_to_char(ch, buf);
+     deleteListIterator(list_i);
+@@ -383,8 +384,7 @@
+     if(!charGetSocket(ch) || !bitIsSet(charGetUserGroups(ch), groups))
+       continue;
+     text_to_char(ch, buf);
+-  }
+-  deleteListIterator(ch_i);
++  } deleteListIterator(ch_i);
+ }
+ 
+ 
+@@ -640,7 +640,7 @@
+     return;
+ 
+   // what's our scope?
+-  if(IS_SET(range, TO_VICT) &&
++  if(IS_SET(range, TO_VICT) && vict &&
+      (!hide_nosee ||
+       // make sure the vict can the character, or the
+       // object if there is no character
+@@ -649,7 +649,7 @@
+     send_message(vict, mssg, ch, vict, obj, vobj);
+ 
+   // characters can always see themselves. No need to do checks here
+-  if(IS_SET(range, TO_CHAR))
++  if(IS_SET(range, TO_CHAR) && ch)
+     send_message(ch, mssg, ch, vict, obj, vobj);
+ 
+   LIST *recipients = NULL;
+@@ -669,6 +669,9 @@
+       // if we wanted to send to ch or vict, we would have already...
+       if(rec == vict || rec == ch)
+ 	continue;
++      // skip by people who are in the game but not in the world yet
++      if(charGetRoom(rec) == NULL)
++	continue;
+       if(rec == ch ||
+ 	 (!hide_nosee ||
+ 	  // make sure the vict can see the character, or the
+diff -ruN ../nakedmudv3.2.1/src/items/worn.c src/items/worn.c
+--- ../nakedmudv3.2.1/src/items/worn.c	2006-07-09 17:29:07.000000000 -0400
++++ src/items/worn.c	2006-12-25 19:32:04.000000000 -0500
+@@ -43,6 +43,7 @@
+ //*****************************************************************************
+ #include "../scripts/scripts.h"
+ #include "../scripts/pyobj.h"
++#include "../scripts/pymudsys.h"
+ 
+ 
+ 
+@@ -222,12 +223,18 @@
+ }
+ 
+ void worn_from_proto(WORN_DATA *worn, BUFFER *buf) {
+-  char worn_type[SMALL_BUFFER];
+-  sscanf(bufferString(buf), "me.worn_type = \"%s", worn_type);
+-  worn_type[next_letter_in(worn_type, '\"')] = '\0'; // kill closing "
+-  if(hashIn(worn_table, worn_type)) {
++  const char *code = bufferString(buf);
++  char        line[SMALL_BUFFER];
++  char       *lptr = line;
++
++  // parse out our worn type
++  code = strcpyto(lptr, code, '\n'); 
++  while(*lptr != '\"') lptr++;
++  lptr++; // kill the leading "
++  lptr[next_letter_in(lptr, '\"')] = '\0'; // kill closing "
++  if(hashIn(worn_table, lptr)) {
+     if(worn->type) free(worn->type);
+-    worn->type = strdup(worn_type);
++    worn->type = strdup(lptr);
+   }
+ }
+ 
+@@ -280,6 +287,20 @@
+   return 0;
+ }
+ 
++PyObject *PyMudSys_AddWornType(PyObject *self, PyObject *args) {
++  char *type = NULL;
++  char  *pos = NULL;
++
++  if(!PyArg_ParseTuple(args, "ss", &type, &pos)) {
++    PyErr_Format(PyExc_TypeError, "add_worn_type requires worn type "
++		 "and position list.");
++    return NULL;
++  }
++
++  worn_add_type(type, pos);
++  return Py_BuildValue("i", 1);
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -314,8 +335,14 @@
+   // add our new python get/setters
+   PyObj_addGetSetter("worn_type", PyObj_getworntype, PyObj_setworntype,
+ 		     "The type of clothing this wearable item is.");
++  PyMudSys_addMethod("add_worn_type", PyMudSys_AddWornType, METH_VARARGS,
++		     "Adds a new worn type to the game.");
+   
+   // add in our basic worn types
++  //
++  // As of v3.3, worn types can now be added via Python as well as C. People are
++  // encouraged to do so, outside of this module. These are left for historical
++  // purpposes and backwards compatibility with previous version equipment.
+   worn_add_type("shirt",                        "torso");
+   worn_add_type("gloves",       "left hand, right hand");
+   worn_add_type("left glove",               "left hand");
+diff -ruN ../nakedmudv3.2.1/src/mud.h src/mud.h
+--- ../nakedmudv3.2.1/src/mud.h	2006-07-09 17:29:08.000000000 -0400
++++ src/mud.h	2006-12-24 22:15:56.000000000 -0500
+@@ -208,6 +208,7 @@
+ extern  PROPERTY_TABLE     *obj_table; // a mapping between uid and obj
+ extern  PROPERTY_TABLE    *room_table; // a mapping between uid and room
+ extern  PROPERTY_TABLE    *exit_table; // a mapping between uid and exit
++extern  PROPERTY_TABLE    *sock_table; // a mapping between uid and socket
+ 
+ extern  bool                shut_down; // used for shutdown
+ extern  int                   mudport; // What port are we running on?
+@@ -240,12 +241,6 @@
+ 
+ /* interpret.c */
+ void  handle_cmd_input        ( SOCKET_DATA *dsock, char *arg );
+-
+-/* account_hanlder.c */
+-void account_handle_menu      ( SOCKET_DATA *sock, char *arg);
+-void account_menu             ( SOCKET_DATA *sock);
+-
+-
+ void  do_cmd                  ( CHAR_DATA *ch, char *arg, bool aliases_ok);
+ 
+ /* io.c */
+diff -ruN ../nakedmudv3.2.1/src/prototype.c src/prototype.c
+--- ../nakedmudv3.2.1/src/prototype.c	2006-07-09 17:29:09.000000000 -0400
++++ src/prototype.c	2006-12-24 22:15:56.000000000 -0500
+@@ -214,11 +214,14 @@
+   if(protoIsAbstract(proto))
+     return NULL;
+   CHAR_DATA *ch = newMobile();
+-  char_to_game(ch);
+-  if(!protoRun(proto, "mproto", charGetPyForm, charAddPrototype, charSetClass, ch)){
++  char_exist(ch);
++  if(protoRun(proto, "mproto", charGetPyForm, charAddPrototype, charSetClass, ch))
++    char_to_game(ch);
++  else {
+     extract_mobile(ch);
+     ch = NULL;
+   }
++
+   return ch;
+ }
+ 
+@@ -226,11 +229,14 @@
+   if(protoIsAbstract(proto))
+     return NULL;
+   OBJ_DATA *obj = newObj();
+-  obj_to_game(obj);
+-  if(!protoRun(proto, "oproto", newPyObj, objAddPrototype, objSetClass, obj)) {
++  obj_exist(obj);
++  if(protoRun(proto, "oproto", newPyObj, objAddPrototype, objSetClass, obj))
++    obj_to_game(obj);
++  else {
+     extract_obj(obj);
+     obj = NULL;
+   }
++
+   return obj;
+ }
+ 
+@@ -238,10 +244,13 @@
+   if(protoIsAbstract(proto))
+     return NULL;
+   ROOM_DATA *room = newRoom();
+-  room_to_game(room);
+-  if(!protoRun(proto, "rproto", newPyRoom, roomAddPrototype,roomSetClass,room)){
++  room_exist(room);
++  if(protoRun(proto, "rproto", newPyRoom, roomAddPrototype,roomSetClass,room))
++    room_to_game(room);
++  else {
+     extract_room(room);
+     room = NULL;
+   }
++
+   return room;
+ }
+diff -ruN ../nakedmudv3.2.1/src/room.c src/room.c
+--- ../nakedmudv3.2.1/src/room.c	2006-07-09 17:29:09.000000000 -0400
++++ src/room.c	2006-12-24 22:15:56.000000000 -0500
+@@ -216,7 +216,8 @@
+   // as well, and remove all of the old exits from game. Its sort of hackish to
+   // do it here since the room datastructure should have no concept of in/out
+   // of game, but there's really nowhere else to put this...
+-  bool room_in_game = propertyTableIn(room_table, to->uid);
++  bool does_room_exist = room_exists(to);
++  bool room_in_game    = listIn(room_list, to);
+ 
+   // first, delete all of our old exits
+   HASH_ITERATOR *ex_i = newHashIterator(to->exits);
+@@ -224,7 +225,7 @@
+   EXIT_DATA       *ex = NULL;
+   ITERATE_HASH(dir, ex, ex_i) {
+     hashRemove(to->exits, dir);
+-    if(room_in_game) exit_from_game(ex);
++    if(does_room_exist) exit_from_game(ex);
+     deleteExit(ex);
+   } deleteHashIterator(ex_i);
+ 
+@@ -232,7 +233,8 @@
+   ex_i = newHashIterator(from->exits);
+   ITERATE_HASH(dir, ex, ex_i) {
+     roomSetExit(to, dir, exitCopy(ex));
+-    if(room_in_game) exit_to_game(roomGetExit(to, dir));
++    if(does_room_exist) exit_exist(ex);
++    if(room_in_game)    exit_to_game(roomGetExit(to, dir));
+   } deleteHashIterator(ex_i);
+ 
+   // delete all of our old commands
+diff -ruN ../nakedmudv3.2.1/src/save.c src/save.c
+--- ../nakedmudv3.2.1/src/save.c	2006-07-09 17:29:09.000000000 -0400
++++ src/save.c	2006-12-24 22:15:56.000000000 -0500
+@@ -309,13 +309,32 @@
+   }
+ }
+ 
++
++void reference_account(ACCOUNT_DATA *account) {
++  SAVE_REF_DATA *ref_data = hashGet(account_table, accountGetName(account));
++  if(ref_data == NULL)
++    log_string("ERROR: Tried referencing account '%s' that is not loaded!",
++	       accountGetName(account));
++  else
++    ref_data->refcnt++;
++}
++
++void reference_player(CHAR_DATA *ch) {
++  SAVE_REF_DATA *ref_data = hashGet(player_table, charGetName(ch));
++  if(ref_data == NULL)
++    log_string("ERROR: Tried referencing player '%s' that is not loaded!",
++	       charGetName(ch));
++  else
++    ref_data->refcnt++;
++}
++
+ void register_account(ACCOUNT_DATA *account) {
+   if(account_exists(accountGetName(account)))
+     log_string("ERROR: Tried to register already-registered account, '%s'",
+ 	       accountGetName(account));
+   else {
+-    save_account(account);
+     hashPut(account_table, accountGetName(account), newSaveRefData(account));
++    save_account(account);
+   }
+ }
+ 
+@@ -324,8 +343,8 @@
+     log_string("ERROR: Tried to register already-registered player, '%s'",
+ 	       charGetName(ch));
+   else {
+-    save_player(ch);
+     hashPut(player_table, charGetName(ch), newSaveRefData(ch));
++    save_player(ch);
+   }
+ }
+ 
+diff -ruN ../nakedmudv3.2.1/src/save.h src/save.h
+--- ../nakedmudv3.2.1/src/save.h	2006-07-09 17:29:09.000000000 -0400
++++ src/save.h	2006-12-24 22:15:56.000000000 -0500
+@@ -33,6 +33,8 @@
+ 
+ void  unreference_account(ACCOUNT_DATA *account);
+ void   unreference_player(CHAR_DATA    *ch);
++void    reference_account(ACCOUNT_DATA *account);
++void     reference_player(CHAR_DATA    *ch);
+ 
+ void     register_account(ACCOUNT_DATA *account);
+ void      register_player(CHAR_DATA    *ch);
+diff -ruN ../nakedmudv3.2.1/src/scripts/module.mk src/scripts/module.mk
+--- ../nakedmudv3.2.1/src/scripts/module.mk	2006-07-09 17:30:27.000000000 -0400
++++ src/scripts/module.mk	2006-12-24 22:48:04.000000000 -0500
+@@ -105,6 +105,8 @@
+ 	scripts/pyhooks.c       \
+ 	scripts/pyroom.c        \
+ 	scripts/pyexit.c        \
++	scripts/pyaccount.c     \
++	scripts/pysocket.c      \
+ 	scripts/script_editor.c \
+ 	scripts/pyplugs.c       \
+ 	scripts/pyevent.c       \
+diff -ruN ../nakedmudv3.2.1/src/scripts/pyaccount.c src/scripts/pyaccount.c
+--- ../nakedmudv3.2.1/src/scripts/pyaccount.c	1969-12-31 19:00:00.000000000 -0500
++++ src/scripts/pyaccount.c	2006-12-24 22:15:56.000000000 -0500
+@@ -0,0 +1,332 @@
++//*****************************************************************************
++//
++// pyaccount.c
++//
++// Contains a python account module, and an Account class that is a python 
++// wrapper for NakedMud accounts.
++//
++//*****************************************************************************
++
++#include "../mud.h"
++#include "../utils.h"
++#include "../account.h"
++#include "../character.h"
++#include "../save.h"
++
++#include "scripts.h"
++#include "pyplugs.h"
++#include "pyauxiliary.h"
++#include "pyaccount.h"
++#include "pychar.h"
++
++
++
++//*****************************************************************************
++// local structures and defines
++//*****************************************************************************
++
++// a list of the get/setters on the Exit class
++LIST *pyaccount_getsetters = NULL;
++
++// a list of the methods on the Exit class
++LIST *pyaccount_methods = NULL;
++
++typedef struct {
++  PyObject_HEAD
++  ACCOUNT_DATA *account;
++} PyAccount;
++
++
++
++//*****************************************************************************
++// allocation, deallocation, initialization, and comparison
++//*****************************************************************************
++void PyAccount_dealloc(PyAccount *self) {
++  if(account_exists(accountGetName(self->account)))
++    unreference_account(self->account);
++  self->ob_type->tp_free((PyObject*)self);
++}
++
++PyObject *PyAccount_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
++    PyAccount *self;
++    self = (PyAccount *)type->tp_alloc(type, 0);
++    self->account = NULL;
++    return (PyObject *)self;
++}
++
++int PyAccount_init(PyAccount *self, PyObject *args, PyObject *kwds) {
++  char *kwlist[] = {"name", NULL};
++  char     *name = NULL;
++
++  // get the uid
++  if (!PyArg_ParseTupleAndKeywords(args, kwds, "s", kwlist, &name)) {
++    PyErr_Format(PyExc_TypeError, "Accounts may only be created using a name");
++    return -1;
++  }
++
++  // make sure an account with this name exists
++  if(!account_exists(name)) {
++    PyErr_Format(PyExc_TypeError, "Account with name %s does not exist.", name);
++    return -1;
++  }
++
++  self->account = get_account(name);
++  return 0;
++}
++
++int PyAccount_compare(PyAccount *acc1, PyAccount *acc2) {
++  return strcasecmp(accountGetName(acc1->account),
++		    accountGetName(acc2->account));
++}
++
++
++
++//*****************************************************************************
++// getters and setters for the Account class
++//*****************************************************************************
++PyObject *PyAccount_getname(PyAccount *self, void *closure) {
++  ACCOUNT_DATA *acc = PyAccount_AsAccount((PyObject *)self);
++  if(acc != NULL) return Py_BuildValue("s", accountGetName(acc));
++  else            return NULL;
++}
++
++
++
++//*****************************************************************************
++// methods for the Account class
++//*****************************************************************************
++PyObject *PyAccount_add_char(PyAccount *self, PyObject *args) {
++  PyObject    *val = NULL;
++  CHAR_DATA    *ch = NULL;
++  const char *name = NULL;
++
++  if(!PyArg_ParseTuple(args, "O", &val)) {
++    PyErr_Format(PyExc_TypeError,
++		 "add_char() must be supplied with a character or name.");
++    return NULL;
++  }
++
++  // make sure we exist
++  ACCOUNT_DATA *acc = PyAccount_AsAccount((PyObject *)self);
++  if(acc == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to add character to a nonexistant account.");
++    return NULL;
++  }
++
++  if(PyString_Check(val))
++    name = PyString_AsString(val);
++  else if(PyChar_Check(val)) {
++    ch = PyChar_AsChar(val);
++    if(ch != NULL)
++      name = charGetName(ch);
++    else {
++      PyErr_Format(PyExc_StandardError,
++		   "Tried to add nonexistant character %d to account.",
++		   PyChar_AsUid(val));
++      return NULL;
++    }
++  }
++
++  accountPutChar(acc, name);
++  listSortWith(accountGetChars(acc), strcasecmp);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *PyAccount_characters(PyAccount *self, PyObject *args) {
++  ACCOUNT_DATA *acc = PyAccount_AsAccount((PyObject *)self);
++  if(acc == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to add character to a nonexistant account.");
++    return NULL;
++  }
++
++  LIST_ITERATOR *name_i = newListIterator(accountGetChars(acc));
++  PyObject        *list = PyList_New(0);
++  const char      *name = NULL;
++
++  ITERATE_LIST(name, name_i) {
++    PyObject *val = PyString_FromString(name);
++    PyList_Append(list, val);
++    Py_DECREF(val);
++  } deleteListIterator(name_i);
++  PyObject *retval = Py_BuildValue("O", list);
++  Py_DECREF(list);
++  return retval;
++}
++
++//
++// returns the specified piece of auxiliary data from the account
++// if it is a piece of python auxiliary data.
++PyObject *PyAccount_get_auxiliary(PyAccount *self, PyObject *args) {
++  char *keyword = NULL;
++  if(!PyArg_ParseTuple(args, "s", &keyword)) {
++    PyErr_Format(PyExc_TypeError,
++		 "getAuxiliary() must be supplied with the name that the "
++		 "auxiliary data was installed under!");
++    return NULL;
++  }
++
++  // make sure we exist
++  ACCOUNT_DATA *acc = PyAccount_AsAccount((PyObject *)self);
++  if(acc == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to get auxiliary data for a nonexistant account.");
++    return NULL;
++  }
++
++  // make sure the auxiliary data exists
++  if(!pyAuxiliaryDataExists(keyword)) {
++    PyErr_Format(PyExc_StandardError,
++		 "No auxiliary data named '%s' exists!", keyword);
++    return NULL;
++  }
++
++  PyObject *data = accountGetAuxiliaryData(acc, keyword);
++  if(data == NULL)
++    data = Py_None;
++  PyObject *retval = Py_BuildValue("O", data);
++  //  Py_DECREF(data);
++  return retval;
++}
++
++
++
++//*****************************************************************************
++// structures to define our methods and classes
++//*****************************************************************************
++PyTypeObject PyAccount_Type = {
++    PyObject_HEAD_INIT(NULL)
++    0,                         /*ob_size*/
++    "account.Account",         /*tp_name*/
++    sizeof(PyAccount),         /*tp_basicsize*/
++    0,                         /*tp_itemsize*/
++    (destructor)PyAccount_dealloc,/*tp_dealloc*/
++    0,                         /*tp_print*/
++    0,                         /*tp_getattr*/
++    0,                         /*tp_setattr*/
++    (cmpfunc)PyAccount_compare,/*tp_compare*/
++    0,                         /*tp_repr*/
++    0,                         /*tp_as_number*/
++    0,                         /*tp_as_sequence*/
++    0,                         /*tp_as_mapping*/
++    0,                         /*tp_hash */
++    0,                         /*tp_call*/
++    0,                         /*tp_str*/
++    0,                         /*tp_getattro*/
++    0,                         /*tp_setattro*/
++    0,                         /*tp_as_buffer*/
++    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
++    "Python Account object",   /* tp_doc */
++    0,		               /* tp_traverse */
++    0,		               /* tp_clear */
++    0,		               /* tp_richcompare */
++    0,		               /* tp_weaklistoffset */
++    0,		               /* tp_iter */
++    0,		               /* tp_iternext */
++    0,                         /* tp_methods */
++    0,                         /* tp_members */
++    0,                         /* tp_getset */ 
++    0,                         /* tp_base */
++    0,                         /* tp_dict */
++    0,                         /* tp_descr_get */
++    0,                         /* tp_descr_set */
++    0,                         /* tp_dictoffset */
++    (initproc)PyAccount_init,  /* tp_init */
++    0,                         /* tp_alloc */
++    PyAccount_new,             /* tp_new */
++};
++
++PyMethodDef account_module_methods[] = {
++  {NULL, NULL, 0, NULL}  /* Sentinel */
++};
++
++
++
++//*****************************************************************************
++// implementation of pyexit.h
++//*****************************************************************************
++void PyAccount_addGetSetter(const char *name, void *g, void *s,const char *doc){
++  // make sure our list of get/setters is created
++  if(pyaccount_getsetters == NULL) pyaccount_getsetters = newList();
++
++  // make the GetSetter def
++  PyGetSetDef *def = calloc(1, sizeof(PyGetSetDef));
++  def->name        = strdup(name);
++  def->get         = (getter)g;
++  def->set         = (setter)s;
++  def->doc         = (doc ? strdup(doc) : NULL);
++  def->closure     = NULL;
++  listPut(pyaccount_getsetters, def);
++}
++
++void PyAccount_addMethod(const char *name, void *f, int flags, const char *doc){
++  // make sure our list of methods is created
++  if(pyaccount_methods == NULL) pyaccount_methods = newList();
++
++  // make the Method def
++  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
++  def->ml_name     = strdup(name);
++  def->ml_meth     = (PyCFunction)f;
++  def->ml_flags    = flags;
++  def->ml_doc      = (doc ? strdup(doc) : NULL);
++  listPut(pyaccount_methods, def);
++}
++
++// initialize accounts for use. This must be called AFTER 
++PyMODINIT_FUNC
++init_PyAccount(void) {
++    PyObject* module = NULL;
++
++    // add all of the basic getsetters
++    PyAccount_addGetSetter("name", PyAccount_getname, NULL, 
++			   "the account's name.");
++
++    // add all of the basic methods
++    PyAccount_addMethod("add_char", PyAccount_add_char, METH_VARARGS,
++			"adds a character to the account.");
++    PyAccount_addMethod("characters", PyAccount_characters, METH_VARARGS,
++			"lists names of all characters tied to the account.");
++    PyAccount_addMethod("getAuxiliary", PyAccount_get_auxiliary, METH_VARARGS,
++			"gets the account auxiliary data with given key.");
++
++    // add in all the getsetters and methods
++    makePyType(&PyAccount_Type, pyaccount_getsetters, pyaccount_methods);
++    deleteListWith(pyaccount_getsetters, free); pyaccount_getsetters = NULL;
++    deleteListWith(pyaccount_methods,    free); pyaccount_methods    = NULL;
++
++    // make sure the account class is ready to be made
++    if (PyType_Ready(&PyAccount_Type) < 0)
++        return;
++
++    // initialize the module
++    module = Py_InitModule3("account", account_module_methods,
++			    "The account module, for all MUD account-related "
++			    "stuff.");
++
++    // make sure the module parsed OK
++    if (module == NULL)
++      return;
++
++    // add the Account class to the account module
++    PyTypeObject *type = &PyAccount_Type;
++    PyModule_AddObject(module, "Account", (PyObject *)type);
++    Py_INCREF(&PyAccount_Type);
++}
++
++ACCOUNT_DATA *PyAccount_AsAccount(PyObject *account) {
++  return ((PyAccount *)account)->account;
++}
++
++int PyAccount_Check(PyObject *value) {
++  return PyObject_TypeCheck(value, &PyAccount_Type);
++}
++
++PyObject *newPyAccount(ACCOUNT_DATA *account) {
++  PyAccount *py_account = 
++    (PyAccount *)PyAccount_new(&PyAccount_Type, NULL, NULL);
++  py_account->account = account;
++  if(account_exists(accountGetName(account)))
++    reference_account(account);
++  return (PyObject *)py_account;
++}
+diff -ruN ../nakedmudv3.2.1/src/scripts/pyaccount.h src/scripts/pyaccount.h
+--- ../nakedmudv3.2.1/src/scripts/pyaccount.h	1969-12-31 19:00:00.000000000 -0500
++++ src/scripts/pyaccount.h	2006-12-24 22:15:56.000000000 -0500
+@@ -0,0 +1,42 @@
++#ifndef PYACCOUNT_H
++#define PYACCOUNT_H
++//*****************************************************************************
++//
++// pyaccount.h
++//
++// Contains a python account module, and an Account class that is a python 
++// wrapper for NakedMud accounts. If you wish to give python access to more
++// features of an account, it should NOT be done by editing pyaccount.c! Use 
++// PyAccount_addGetSetter and PyAccount_addMethod in a new module implementing 
++// the feature you want to give Python access to.
++//
++//*****************************************************************************
++
++// initialize accounts for use. This must be called AFTER all other modules
++// have added in new get/setters and methods to pyroom
++PyMODINIT_FUNC     init_PyAccount(void);
++PyObject            *newPyAccount(ACCOUNT_DATA *account);
++ACCOUNT_DATA *PyAccount_AsAccount(PyObject *account);
++
++//
++// checks to see if the PyObject is a PyAccount
++int          PyAccount_Check(PyObject *value);
++
++//
++// getters allow Python to access pieces of the Account module. Setters allow
++// Python to change pieces of the account module. Getters are called when Python
++// tries to get the value of some variable on the object, and setters are called
++// when Python tries to set the value of some variable on the object. Get and
++// Set do not both need to be supplied. Examples of how to add new getters and
++// setters is presented in pyaccount.c
++void PyAccount_addGetSetter(const char *name, void *g, void *s, const char *doc);
++
++//
++// Adds a new method function (i.e. void *f) to the Account class. Name is the 
++// name of the function, f is the PyCFunction implementing the new method, 
++// flags is the type of method beings used (almost always METH_VARARGS), and
++// dog is an (optional) description of what the method does. For examples on
++// how to add new methods, see pyaccount.c
++void PyAccount_addMethod(const char *name, void *f, int flags, const char *doc);
++
++#endif // PYACCOUNT_H
+diff -ruN ../nakedmudv3.2.1/src/scripts/pyauxiliary.c src/scripts/pyauxiliary.c
+--- ../nakedmudv3.2.1/src/scripts/pyauxiliary.c	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/pyauxiliary.c	2006-12-24 22:15:56.000000000 -0500
+@@ -131,6 +131,8 @@
+     SET_BIT(type, AUXILIARY_TYPE_ROOM);
+   if(is_keyword(installs_on, "object",    FALSE))
+     SET_BIT(type, AUXILIARY_TYPE_OBJ);
++  if(is_keyword(installs_on, "account",   FALSE))
++    SET_BIT(type, AUXILIARY_TYPE_ACCOUNT);
+   // more types to come soon!!
+   //***********
+   // FINISH ME
+diff -ruN ../nakedmudv3.2.1/src/scripts/pychar.c src/scripts/pychar.c
+--- ../nakedmudv3.2.1/src/scripts/pychar.c	2006-07-10 22:15:16.000000000 -0400
++++ src/scripts/pychar.c	2006-12-24 22:15:56.000000000 -0500
+@@ -30,6 +30,7 @@
+ #include "pyroom.h"
+ #include "pyobj.h"
+ #include "pyexit.h"
++#include "pyaccount.h"
+ #include "pyauxiliary.h"
+ 
+ 
+@@ -172,8 +173,14 @@
+ 
+ PyObject *PyChar_getroom(PyChar *self, void *closure) {
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+-  if(ch != NULL) return Py_BuildValue("O", roomGetPyFormBorrowed(charGetRoom(ch)));
+-  else           return NULL;
++  if(ch == NULL)
++    return NULL;
++  else if(charGetRoom(ch) != NULL)
++    return Py_BuildValue("O", roomGetPyFormBorrowed(charGetRoom(ch)));
++  else {
++    Py_INCREF(Py_None);
++    return Py_BuildValue("O", Py_None);
++  }
+ }
+ 
+ PyObject *PyChar_getlastroom(PyChar *self, void *closure) {
+@@ -184,7 +191,7 @@
+     return Py_BuildValue("O", roomGetPyFormBorrowed(charGetLastRoom(ch)));
+   else {
+     Py_INCREF(Py_None);
+-    return Py_None;
++    return Py_BuildValue("O", Py_None);
+   }
+ }
+ 
+@@ -223,7 +230,7 @@
+   if(ch == NULL) 
+     return NULL;
+   else if(charGetFurniture(ch) == NULL)
+-    return Py_None;
++    return Py_BuildValue("O", Py_None);
+   else 
+     return Py_BuildValue("O", objGetPyFormBorrowed(charGetFurniture(ch)));
+ }
+@@ -291,7 +298,6 @@
+   return list;
+ }
+ 
+-
+ PyObject *PyChar_getusergroups(PyChar *self, void *closure) {
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) 
+@@ -300,6 +306,18 @@
+     return NULL;
+ }
+ 
++PyObject *PyChar_getsocket(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch == NULL)
++    return NULL;
++  else {
++    SOCKET_DATA *sock = charGetSocket(ch);
++    if(sock == NULL)
++      return Py_BuildValue("O", Py_None);
++    return Py_BuildValue("O", socketGetPyFormBorrowed(sock));
++  }
++}
++
+ 
+ 
+ //
+@@ -447,12 +465,8 @@
+   }
+ 
+   const char *race = PyString_AsString(value);
+-  if(!isRace(race)) {
+-    char buf[SMALL_BUFFER];
+-    sprintf(buf, "%s is an invalid race type", PyString_AsString(value));
+-    PyErr_Format(PyExc_TypeError, buf);
++  if(!isRace(race))
+     return -1;
+-  }
+ 
+   CHAR_DATA *ch;
+   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+@@ -580,7 +594,6 @@
+   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+   // only move if we're not already here
+   if(charGetRoom(ch) != room) {
+-    char_from_room(ch);
+     char_to_room(ch, room);
+ 
+     // if we were on furniture, make sure we dismount it
+@@ -620,10 +633,9 @@
+   }
+ }
+ 
+-
+ //
+-// sends a newline-tagged message to the character
+-PyObject *PyChar_send(PyChar *self, PyObject *value) {
++// sends text to the character
++PyObject *PyChar_send_raw(PyChar *self, PyObject *value) {
+   char *mssg = NULL;
+   if (!PyArg_ParseTuple(value, "s", &mssg)) {
+     PyErr_Format(PyExc_TypeError, 
+@@ -633,7 +645,7 @@
+ 
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch) {
+-    send_to_char(ch, "%s\r\n", mssg);
++    send_to_char(ch, "%s", mssg);
+     return Py_BuildValue("i", 1);
+   }
+   else {
+@@ -644,6 +656,17 @@
+   }
+ }
+ 
++//
++// sends a newline-tagged message to the character
++PyObject *PyChar_send(PyChar *self, PyObject *value) {
++  PyObject *retval = PyChar_send_raw(self, value);
++  if(retval == NULL)
++    return NULL;
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  send_to_char(ch, "\r\n");
++  Py_DECREF(retval);
++  return Py_BuildValue("i", 1);
++}
+ 
+ //
+ // Send a newline-tagged message to everyone around the character
+@@ -854,6 +877,25 @@
+ }
+ 
+ 
++PyObject *PyChar_getbodypct(PyChar *self, PyObject *args) {
++  char   *parts = NULL;
++  CHAR_DATA *ch = NULL;
++
++  if (!PyArg_ParseTuple(args, "s", &parts)) {
++    PyErr_Format(PyExc_TypeError,"A comma-separated list of body parts needed");
++    return NULL;
++  }
++
++  ch = PyChar_AsChar((PyObject *)self);
++  if(ch == NULL) {
++    PyErr_Format(PyExc_StandardError, 
++		 "Tried to query body info for nonexistant character!");
++    return NULL;
++  }
++
++  return Py_BuildValue("d", bodyPartRatio(charGetBody(ch), parts));
++}
++
+ //
+ // equips a character with an item
+ PyObject *PyChar_equip(PyChar *self, PyObject *args) {  
+@@ -944,7 +986,7 @@
+   
+   obj = bodyGetEquipment(charGetBody(ch), pos);
+   if(obj == NULL)
+-    return Py_None;
++    return Py_BuildValue("O", Py_None);
+   else
+     return Py_BuildValue("O", objGetPyFormBorrowed(obj));
+ }
+@@ -1151,10 +1193,8 @@
+   }
+ 
+   PyObject *data = charGetAuxiliaryData(ch, keyword);
+-  if(data == NULL) {
+-    printf("Data is NULL for %s!!\r\n", keyword);
++  if(data == NULL)
+     data = Py_None;
+-  }
+   PyObject *retval = Py_BuildValue("O", data);
+   //  Py_DECREF(data);
+   return retval;
+@@ -1472,25 +1512,9 @@
+   return retval;
+ }
+ 
+-PyObject *PyChar_all_sockets(PyObject *self) {
+-  PyObject        *list = PyList_New(0);
+-  LIST_ITERATOR *sock_i = newListIterator(socket_list);
+-  SOCKET_DATA     *sock = NULL;
+-  ITERATE_LIST(sock, sock_i) {
+-    // only add sockets with attached characters who are in game
+-    if(socketGetChar(sock) && charGetRoom(socketGetChar(sock)))
+-      PyList_Append(list, charGetPyFormBorrowed(socketGetChar(sock)));
+-  } deleteListIterator(sock_i);
+-  PyObject *retval = Py_BuildValue("O", list);
+-  Py_DECREF(list);
+-  return retval;
+-}
+-
+ PyMethodDef char_module_methods[] = {
+   { "char_list", (PyCFunction)PyChar_all_chars, METH_NOARGS,
+     "Return a python list containing an entry for every character in game." },
+-  { "socket_list", (PyCFunction)PyChar_all_sockets, METH_NOARGS,
+-    "Returns a list of all characters with attached sockets." },
+   { "load_mob", PyChar_load_mob, METH_VARARGS,
+     "load a mobile with the specified prototype to a room." },
+   { "count_mobs", PyChar_count_mobs, METH_VARARGS,
+@@ -1599,6 +1623,10 @@
+ 		      "'it' for neuters");
+   PyChar_addGetSetter("user_groups", PyChar_getusergroups, NULL,
+ 		      "Returns the character's user groups");
++  PyChar_addGetSetter("socket", PyChar_getsocket, NULL,
++		      "Returns the character's socket if it exists.");
++  PyChar_addGetSetter("sock",   PyChar_getsocket, NULL,
++		      "Returns the character's socket if it exists.");
+ 
+   // add in all of our methods for the Char class
+   PyChar_addMethod("attach", PyChar_attach, METH_VARARGS,
+@@ -1606,6 +1634,8 @@
+   PyChar_addMethod("detach", PyChar_detach, METH_VARARGS,
+ 		   "detach an old script from the character.");
+   PyChar_addMethod("send", PyChar_send, METH_VARARGS,
++		   "send a message to the character with appended newline.");
++  PyChar_addMethod("send_raw", PyChar_send_raw, METH_VARARGS,
+ 		   "send a message to the character.");
+   PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
+ 		   "send a message to everyone around the character.");
+@@ -1626,6 +1656,9 @@
+ 		   "from whatever it is currently in/on.");
+   PyChar_addMethod("get_equip", PyChar_getequip, METH_VARARGS,
+ 		   "Returns the person's equipment in the specified slot.");
++  PyChar_addMethod("get_bodypct", PyChar_getbodypct, METH_VARARGS,
++		   "Returns the percent mass of the character's body taken up "
++		   "by the specified parts.");
+   PyChar_addMethod("isActing", PyChar_is_acting, METH_VARARGS,
+ 		   "Returns True if the character is currently taking an "
+ 		   "action, and False otherwise.");
+diff -ruN ../nakedmudv3.2.1/src/scripts/pyevent.c src/scripts/pyevent.c
+--- ../nakedmudv3.2.1/src/scripts/pyevent.c	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/pyevent.c	2006-12-24 22:15:56.000000000 -0500
+@@ -35,7 +35,7 @@
+   }
+ 
+   // decrease the reference on our function and data
+-  //  Py_DECREF(tuple);
++  Py_XDECREF(tuple);
+ }
+ 
+ 
+@@ -111,7 +111,9 @@
+ //
+ // start a new update (event that re-queues itself after completion)
+ PyObject *PyEvent_start_update(PyObject *self, PyObject *args) {
+-  return PyEvent_start(self, args, start_update);
++  PyErr_Format(PyExc_StandardError, "start_update is deprecated. Use start_event.");
++  return NULL;
++  /* return PyEvent_start(self, args, start_update); */
+ }
+ 
+ //
+diff -ruN ../nakedmudv3.2.1/src/scripts/pyhooks.c src/scripts/pyhooks.c
+--- ../nakedmudv3.2.1/src/scripts/pyhooks.c	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/pyhooks.c	2006-12-24 22:15:56.000000000 -0500
+@@ -15,6 +15,7 @@
+ #include "pychar.h"
+ #include "pyobj.h"
+ #include "pyexit.h"
++#include "pysocket.h"
+ #include "pyplugs.h"
+ #include "pyhooks.h"
+ 
+@@ -98,6 +99,14 @@
+       }
+       bprintf(buf, "ex.%d", PyExit_AsUid(var));
+     }
++    else if(!strcasecmp(token, "sk") || !strcasecmp(token, "sock")) {
++      var = PyTuple_GetItem(vars, i);
++      if(!PySocket_Check(var)) {
++	PyErr_Format(PyExc_TypeError, "arg %d was not Mudsock", i);
++	break;
++      }
++      bprintf(buf, "sk.%d", PySocket_AsUid(var));
++    }
+     else if(!strcasecmp(token, "str")) {
+       var = PyTuple_GetItem(vars, i);
+       if(!PyString_Check(var)) {
+@@ -162,36 +171,47 @@
+   // id number we'll need for parsing some values
+   int id = 0;
+ 
+-  // we need to crash-proof this function still
+-  //***********
+-  // FINISH ME
+-  //***********
+-
+   // go through all of our tokens
+   ITERATE_LIST(token, token_i) {
+     if(startswith(token, "ch")) {
+       sscanf(token, "ch.%d", &id);
+-      PyTuple_SetItem(list, i, charGetPyForm(propertyTableGet(mob_table,id)));
++      CHAR_DATA *ch = propertyTableGet(mob_table, id);
++      PyTuple_SetItem(list, i, (ch ? charGetPyForm(ch) : Py_None));
+     }
+     else if(startswith(token, "obj")) {
+       sscanf(token, "obj.%d", &id);
+-      PyTuple_SetItem(list, i, objGetPyForm(propertyTableGet(obj_table,id)));
++      OBJ_DATA *obj = propertyTableGet(obj_table, id);
++      PyTuple_SetItem(list, i, (obj ? objGetPyForm(obj) : Py_None));
+     }
+     else if(startswith(token, "rm")) {
+       sscanf(token, "rm.%d", &id);
+-      PyTuple_SetItem(list, i, roomGetPyForm(propertyTableGet(room_table,id)));
++      ROOM_DATA *rm = propertyTableGet(room_table, id);
++      PyTuple_SetItem(list, i, (rm ? roomGetPyForm(rm) : Py_None));
+     }
+     else if(startswith(token, "room")) {
+       sscanf(token, "room.%d", &id);
+-      PyTuple_SetItem(list, i, roomGetPyForm(propertyTableGet(room_table,id)));
++      ROOM_DATA *rm = propertyTableGet(room_table, id);
++      PyTuple_SetItem(list, i, (rm ? roomGetPyForm(rm) : Py_None));
+     }
+     else if(startswith(token, "ex")) {
+       sscanf(token, "ex.%d", &id);
+-      PyTuple_SetItem(list, i, newPyExit(propertyTableGet(exit_table, id)));
++      EXIT_DATA *ex = propertyTableGet(exit_table, id);
++      PyTuple_SetItem(list, i, (ex ? newPyExit(ex) : Py_None));
+     }
+     else if(startswith(token, "exit")) {
+       sscanf(token, "exit.%d", &id);
+-      PyTuple_SetItem(list,i, newPyExit(propertyTableGet(exit_table, id)));
++      EXIT_DATA *ex = propertyTableGet(exit_table, id);
++      PyTuple_SetItem(list, i, (ex ? newPyExit(ex) : Py_None));
++    }
++    else if(startswith(token, "sk")) {
++      sscanf(token, "sk.%d", &id);
++      SOCKET_DATA *sock = propertyTableGet(sock_table, id);
++      PyTuple_SetItem(list,i, (sock ? socketGetPyForm(sock) : Py_None));
++    }
++    else if(startswith(token, "sock")) {
++      sscanf(token, "sock.%d", &id);
++      SOCKET_DATA *sock = propertyTableGet(sock_table, id);
++      PyTuple_SetItem(list,i, (sock ? socketGetPyForm(sock) : Py_None));
+     }
+     else if(*token == HOOK_STR_MARKER) {
+       char *str = strdup(token + 1);
+diff -ruN ../nakedmudv3.2.1/src/scripts/pymud.c src/scripts/pymud.c
+--- ../nakedmudv3.2.1/src/scripts/pymud.c	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/pymud.c	2006-12-24 22:15:56.000000000 -0500
+@@ -20,6 +20,7 @@
+ #include "../inform.h"
+ #include "../handler.h"
+ #include "../parse.h"
++#include "../races.h"
+ 
+ #include "scripts.h"
+ #include "pyroom.h"
+@@ -27,6 +28,7 @@
+ #include "pyobj.h"
+ #include "pyplugs.h"
+ #include "pyexit.h"
++#include "pysocket.h"
+ 
+ 
+ 
+@@ -106,9 +108,10 @@
+ // format a string to be into a typical description style
+ PyObject *mud_format_string(PyObject *self, PyObject *args) {
+   char *string = NULL;
++  bool indent  = TRUE;
+ 
+   // parse all of the values
+-  if (!PyArg_ParseTuple(args, "s", &string)) {
++  if (!PyArg_ParseTuple(args, "s|b", &string, &indent)) {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Can not format non-string values.");
+     return NULL;
+@@ -117,7 +120,7 @@
+   // dup the string so we can work with it and not intrude on the PyString data
+   BUFFER *buf = newBuffer(MAX_BUFFER);
+   bufferCat(buf, string);
+-  bufferFormat(buf, SCREEN_WIDTH, PARA_INDENT);
++  bufferFormat(buf, SCREEN_WIDTH, (indent ? PARA_INDENT : 0));
+   PyObject *ret = Py_BuildValue("s", bufferString(buf));
+   deleteBuffer(buf);
+   return ret;
+@@ -463,6 +466,28 @@
+   return Py_BuildValue("i", 1);
+ }
+ 
++PyObject *mud_is_race(PyObject *self, PyObject *args) {
++  char       *race = NULL;
++  bool player_only = FALSE;
++  if(!PyArg_ParseTuple(args, "s|b", &race, &player_only)) {
++    PyErr_Format(PyExc_TypeError, "a string must be supplied");
++    return NULL;
++  }
++
++  if(player_only)
++    return Py_BuildValue("i", raceIsForPC(race));
++  else
++    return Py_BuildValue("i", isRace(race));
++}
++
++PyObject *mud_list_races(PyObject *self, PyObject *args) {
++  bool player_only = FALSE;
++  if(!PyArg_ParseTuple(args, "|b", &player_only)) {
++    PyErr_Format(PyExc_TypeError, "true/false value to list only player races must be provided.");
++    return NULL;
++  }
++  return Py_BuildValue("s", raceGetList(player_only));
++}
+ 
+ 
+ //*****************************************************************************
+@@ -515,6 +540,12 @@
+ 		  "adds a string to the mudlog");
+   PyMud_addMethod("set_cmd_move", mud_set_cmd_move, METH_VARARGS,
+ 		  "sets the movement command");
++  PyMud_addMethod("is_race", mud_is_race, METH_VARARGS,
++		  "returns whether or not the string is a valid race.");
++  PyMud_addMethod("list_races", mud_list_races, METH_VARARGS,
++		  "returns a list of all the races available. Can take one "
++		  "argument that specifies whether or not to list player "
++		  "races.");
+ 
+   Py_InitModule3("mud", makePyMethods(pymud_methods),
+ 		 "The mud module, for all MUD misc mud utils.");
+diff -ruN ../nakedmudv3.2.1/src/scripts/pymudsys.c src/scripts/pymudsys.c
+--- ../nakedmudv3.2.1/src/scripts/pymudsys.c	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/pymudsys.c	2006-12-24 22:15:56.000000000 -0500
+@@ -14,11 +14,15 @@
+ #include "../character.h"
+ #include "../socket.h"
+ #include "../save.h"
++#include "../handler.h"
++#include "../account.h"
+ 
+ #include "pymudsys.h"
+ #include "scripts.h"
+ #include "pyplugs.h"
+ #include "pychar.h"
++#include "pyaccount.h"
++#include "pysocket.h"
+ 
+ 
+ 
+@@ -64,33 +68,284 @@
+   return Py_BuildValue("i", 1);
+ }
+ 
++PyObject *mudsys_create_account(PyObject *self, PyObject *args) {
++  char *name = NULL;
++  if(!PyArg_ParseTuple(args, "s", &name)) {
++    PyErr_Format(PyExc_TypeError, "A string name must be supplied.");
++    return NULL;
++  }
++
++  if(account_exists(name))
++    return Py_BuildValue("O", Py_None);
++  if(account_creating(name))
++    return Py_BuildValue("O", Py_None);
++  ACCOUNT_DATA *acct = newAccount();
++  accountSetName(acct, name);
++  return Py_BuildValue("O", accountGetPyFormBorrowed(acct));
++}
++
++PyObject *mudsys_create_player(PyObject *Self, PyObject *args) {
++  char *name = NULL;
++  if(!PyArg_ParseTuple(args, "s", &name)) {
++    PyErr_Format(PyExc_TypeError, "A string name must be supplied.");
++    return NULL;
++  }
++
++  if(player_exists(name))
++    return Py_BuildValue("O", Py_None);
++  if(player_creating(name))
++    return Py_BuildValue("O", Py_None);
++  CHAR_DATA *ch = newChar();
++  charSetName(ch, name);
++
++  // give the character a unique id 
++  int next_char_uid = mudsettingGetInt("puid") + 1;
++  mudsettingSetInt("puid", next_char_uid);
++  charSetUID(ch, next_char_uid);
++      
++  // if it's the first player, give him all priviledges
++  if(charGetUID(ch) == 1)
++    bitSet(charGetUserGroups(ch),
++	   "admin, builder, scripter, player, playtester");
++
++  char_exist(ch);
++  return Py_BuildValue("O", charGetPyFormBorrowed(ch));
++}
++
++PyObject *mudsys_player_exists(PyObject *self, PyObject *args) {
++  char *name = NULL;
++  if(!PyArg_ParseTuple(args, "s", &name)) {
++    PyErr_Format(PyExc_TypeError, "A string name must be supplied.");
++    return NULL;
++  }
++  return Py_BuildValue("i", player_exists(name));
++}
++
++PyObject *mudsys_account_exists(PyObject *self, PyObject *args) {
++  char *name = NULL;
++  if(!PyArg_ParseTuple(args, "s", &name)) {
++    PyErr_Format(PyExc_TypeError, "A string name must be supplied.");
++    return NULL;
++  }
++  return Py_BuildValue("i", account_exists(name));
++}
++
++PyObject *mudsys_player_creating(PyObject *self, PyObject *args) {
++  char *name = NULL;
++  if(!PyArg_ParseTuple(args, "s", &name)) {
++    PyErr_Format(PyExc_TypeError, "A string name must be supplied.");
++    return NULL;
++  }
++  return Py_BuildValue("i", player_creating(name));
++}
++
++PyObject *mudsys_account_creating(PyObject *self, PyObject *args) {
++  char *name = NULL;
++  if(!PyArg_ParseTuple(args, "s", &name)) {
++    PyErr_Format(PyExc_TypeError, "A string name must be supplied.");
++    return NULL;
++  }
++  return Py_BuildValue("i", account_creating(name));
++}
++
++//
++// registers a player into the system
++PyObject *mudsys_do_register(PyObject *Self, PyObject *args) {
++  PyObject      *val = NULL;
++  CHAR_DATA      *ch = NULL;
++  ACCOUNT_DATA *acct = NULL;
++
++  if(!PyArg_ParseTuple(args, "O", &val)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "A char or account to be registered must be supplied.");
++    return NULL;
++  }
++
++  if(PyChar_Check(val)) {
++    if((ch = PyChar_AsChar(val)) == NULL) {
++      PyErr_Format(PyExc_StandardError,
++		   "Tried to register nonexistant player, %d.",
++		   PyChar_AsUid(val));
++      return NULL;
++    }
++    if(!charIsNPC(ch))
++      register_player(ch);
++  }
++  else if(PyAccount_Check(val)) {
++    if((acct = PyAccount_AsAccount(val)) == NULL) {
++      PyErr_Format(PyExc_StandardError,
++		   "Tried to register nonexistant account.");
++      return NULL;
++    }
++    register_account(acct);
++  }
++  else { 
++    PyErr_Format(PyExc_TypeError, 
++		 "Only players and accounts may be registered.");
++    return NULL;
++  }
++
++  return Py_BuildValue("i", 1);
++}
++
+ //
+ // saves a player to disk
+ PyObject *mudsys_do_save(PyObject *self, PyObject *args) {
+-  PyObject *pych = NULL;
+-  CHAR_DATA  *ch = NULL;
++  PyObject      *val = NULL;
++  CHAR_DATA      *ch = NULL;
++  ACCOUNT_DATA *acct = NULL;
++
++  if(!PyArg_ParseTuple(args, "O", &val)) {
++    PyErr_Format(PyExc_TypeError, "A character or account must be supplied.");
++    return NULL;
++  }
+ 
+-  if(!PyArg_ParseTuple(args, "O", &pych)) {
+-    PyErr_Format(PyExc_TypeError, "A character to be saved must be supplied.");
++  if(PyChar_Check(val)) {
++    if( (ch = PyChar_AsChar(val)) == NULL) {
++      PyErr_Format(PyExc_StandardError,
++		   "Tried to save nonexistant character, %d.",
++		   PyChar_AsUid(val));
++      return NULL;
++    }
++    // only save registered characters
++    if(!player_exists(charGetName(ch)))
++      return Py_BuildValue("i", 0);
++    if(!charIsNPC(ch))
++      save_player(ch);
++  }
++  else if(PyAccount_Check(val)) {
++    if( (acct = PyAccount_AsAccount(val)) == NULL) {
++      PyErr_Format(PyExc_StandardError, "Tried to save nonexistant account.");
++      return NULL;
++    }
++    // only save registered players
++    if(!account_exists(accountGetName(acct)))
++      return Py_BuildValue("i", 0);
++    save_account(acct);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, "Only characters and accounts may be saved.");
++    return NULL;
++  }
++
++  return Py_BuildValue("i", 1);
++}
++
++//
++// attaches an account to a socket
++PyObject *mudsys_attach_account_socket(PyObject *self, PyObject *args) {
++  PyObject   *pyacct = NULL;
++  PyObject   *pysock = NULL;
++  ACCOUNT_DATA *acct = NULL;
++  SOCKET_DATA  *sock = NULL;
++
++  if(!PyArg_ParseTuple(args, "OO", &pyacct, &pysock)) {
++    PyErr_Format(PyExc_TypeError,"An account and socket to be attached must be supplied.");
++    return NULL;
++  }
++
++  if(!PyAccount_Check(pyacct)) {
++    PyErr_Format(PyExc_TypeError, "First argument must be an account.");
++    return NULL;
++  }
++  if(!PySocket_Check(pysock)) {
++    PyErr_Format(PyExc_TypeError, "Second argument must be a socket.");
++    return NULL;
++  }
++
++  if( (acct = PyAccount_AsAccount(pyacct)) == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to attach nonexistant account.");
++    return NULL;
++  }
++  if( (sock = PySocket_AsSocket(pysock)) == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to attach nonexistant socket, %d.",PySocket_AsUid(pysock));
++    return NULL;
++  }
++
++  // first, do any nessessary detaching for our old character and old socket
++  if(socketGetAccount(sock) != NULL && 
++     account_exists(accountGetName(socketGetAccount(sock))))
++    unreference_account(socketGetAccount(sock));
++  socketSetAccount(sock, acct);
++  if(account_exists(accountGetName(acct)))
++    reference_account(acct);
++  return Py_BuildValue("i", 1);
++}
++
++//
++// attaches a character to a socket
++PyObject *mudsys_attach_char_socket(PyObject *self, PyObject *args) {
++  PyObject    *pych = NULL;
++  PyObject  *pysock = NULL;
++  CHAR_DATA     *ch = NULL;
++  SOCKET_DATA *sock = NULL;
++
++  if(!PyArg_ParseTuple(args, "OO", &pych, &pysock)) {
++    PyErr_Format(PyExc_TypeError,"A character and socket to be attached must be supplied.");
+     return NULL;
+   }
+ 
+   if(!PyChar_Check(pych)) {
+-    PyErr_Format(PyExc_TypeError, "Only characters may be saved.");
++    PyErr_Format(PyExc_TypeError, "First argument must be a character.");
++    return NULL;
++  }
++  if(!PySocket_Check(pysock)) {
++    PyErr_Format(PyExc_TypeError, "Second argument must be a socket.");
+     return NULL;
+   }
+ 
+   if( (ch = PyChar_AsChar(pych)) == NULL) {
+     PyErr_Format(PyExc_StandardError,
+-		 "Tried to save nonexistant character, %d.",PyChar_AsUid(pych));
++		 "Tried to attach nonexistant character, %d.",PyChar_AsUid(pych));
++    return NULL;
++  }
++  if( (sock = PySocket_AsSocket(pysock)) == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to attach nonexistant socket, %d.",PySocket_AsUid(pysock));
+     return NULL;
+   }
+ 
+-  if(!charIsNPC(ch))
+-    save_player(ch);
++  // first, do any nessessary detaching for our old character and old socket
++  if(socketGetChar(sock) != NULL)
++    charSetSocket(socketGetChar(sock), NULL);
++  if(charGetSocket(ch) != NULL)
++    socketSetChar(charGetSocket(ch), NULL);
++  charSetSocket(ch, sock);
++  socketSetChar(sock, ch);
+   return Py_BuildValue("i", 1);
+ }
+ 
++//
++// detaches a character from its socket
++PyObject *mudsys_detach_char_socket(PyObject *self, PyObject *args) {
++  PyObject    *pych = NULL;
++  CHAR_DATA     *ch = NULL;
++  SOCKET_DATA *sock = NULL;
++
++  if(!PyArg_ParseTuple(args, "O", &pych)) {
++    PyErr_Format(PyExc_TypeError,"A character to be detached must be supplied.");
++    return NULL;
++  }
++
++  if(!PyChar_Check(pych)) {
++    PyErr_Format(PyExc_TypeError, "Only characters may be detached.");
++    return NULL;
++  }
++
++  if( (ch = PyChar_AsChar(pych)) == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to detach nonexistant character, %d.",PyChar_AsUid(pych));
++    return NULL;
++  }
++
++  sock = charGetSocket(ch);
++  if(sock != NULL)
++    socketSetChar(sock, NULL);
++  charSetSocket(ch, NULL);
++  return Py_BuildValue("i", 1);
++}
+ 
+ //
+ // quits a character from the game
+@@ -125,6 +380,73 @@
+   return Py_BuildValue("i", 1);
+ }
+ 
++//
++// loads an account from disk
++PyObject *mudsys_load_account(PyObject *self, PyObject *args) {
++  char *name = NULL;
++  
++  if(!PyArg_ParseTuple(args, "s", &name)) {
++    PyErr_Format(PyExc_TypeError, "An account name must be supplied.");
++    return NULL;
++  }
++
++  // newPyAccount increases the reference count on the account. We can
++  // unreference it after we've created the Python wrapper for it
++  ACCOUNT_DATA *acct = get_account(name);
++  if(acct == NULL)
++    return Py_BuildValue("O", Py_None);
++  PyObject *retval = Py_BuildValue("O", accountGetPyFormBorrowed(acct));
++  unreference_account(acct);
++  return retval;
++}
++
++//
++// loads a character from disk
++PyObject *mudsys_load_char(PyObject *self, PyObject *args) {
++  char *name = NULL;
++  
++  if(!PyArg_ParseTuple(args, "s", &name)) {
++    PyErr_Format(PyExc_TypeError, "A character name must be supplied.");
++    return NULL;
++  }
++
++  CHAR_DATA *ch = get_player(name);
++  if(ch == NULL)
++    return Py_BuildValue("O", Py_None);
++
++  char_exist(ch);
++  return Py_BuildValue("O", charGetPyFormBorrowed(ch));
++}
++
++//
++// tries to put the player into the game
++PyObject *mudsys_try_enter_game(PyObject *self, PyObject *args) {
++  PyObject *pych = NULL;
++  CHAR_DATA  *ch = NULL;
++
++  if(!PyArg_ParseTuple(args, "O", &pych)) {
++    PyErr_Format(PyExc_TypeError,"A character to enter game must be supplied.");
++    return NULL;
++  }
++
++  if(!PyChar_Check(pych)) {
++    PyErr_Format(PyExc_TypeError, "Only characters may enter game.");
++    return NULL;
++  }
++
++  if((ch = PyChar_AsChar(pych)) == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried enter game with nonexistant character, %d.",
++		 PyChar_AsUid(pych));
++    return NULL;
++  }
++
++  // only enter game if we're not already in the game
++  if(listIn(mobile_list, ch))
++    return Py_BuildValue("i", 0);
++  else
++    return Py_BuildValue("i", try_enter_game(ch));
++}
+ 
+ //
+ // disconnects a character from its socket
+@@ -158,6 +480,56 @@
+   return Py_BuildValue("i", 1);
+ }
+ 
++PyObject *mudsys_password_matches(PyObject *self, PyObject *args) {
++  PyObject   *pyacct = NULL;
++  char          *pwd = NULL;
++  ACCOUNT_DATA *acct = NULL;
++
++  if(!PyArg_ParseTuple(args, "Os", &pyacct, &pwd)) {
++    PyErr_Format(PyExc_TypeError, "an account and password must be supplied.");
++    return NULL;
++  }
++
++  if(!PyAccount_Check(pyacct)) {
++    PyErr_Format(PyExc_TypeError, "only accounts may have passwords checked.");
++    return NULL;
++  }
++
++  if( (acct = PyAccount_AsAccount(pyacct)) == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to check password for nonexistant account.");
++    return NULL;
++  }
++
++  return Py_BuildValue("i", compares(crypt(pwd, accountGetName(acct)), 
++				     accountGetPassword(acct)));
++}
++
++PyObject *mudsys_set_password(PyObject *self, PyObject *args) {
++  PyObject   *pyacct = NULL;
++  char          *pwd = NULL;
++  ACCOUNT_DATA *acct = NULL;
++
++  if(!PyArg_ParseTuple(args, "Os", &pyacct, &pwd)) {
++    PyErr_Format(PyExc_TypeError, "an account and password must be supplied.");
++    return NULL;
++  }
++
++  if(!PyAccount_Check(pyacct)) {
++    PyErr_Format(PyExc_TypeError, "only accounts may have passwords set.");
++    return NULL;
++  }
++
++  if( (acct = PyAccount_AsAccount(pyacct)) == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to set password for nonexistant account.");
++    return NULL;
++  }
++
++  accountSetPassword(acct, crypt(pwd, accountGetName(acct)));
++  return Py_BuildValue("i", 1);
++}
++
+ 
+ //
+ // add a new command to the mud, via a python script or module. Takes in a
+@@ -191,7 +563,7 @@
+   // add the command to the game
+   add_py_cmd(name, sort_by, func, min_pos_num, max_pos_num,
+ 	     group, mob_ok, interrupts);
+-  return Py_None;
++  return Py_BuildValue("O", Py_None);
+ }
+ 
+ 
+@@ -205,7 +577,55 @@
+     return NULL;
+   }
+   remove_cmd(name);
+-  return Py_None;
++  return Py_BuildValue("O", Py_None);
++}
++
++
++PyObject *mudsys_handle_cmd_input(PyObject *self, PyObject *args) {
++  PyObject  *pysock = NULL;
++  SOCKET_DATA *sock = NULL;
++  char         *cmd = NULL;
++
++  if(!PyArg_ParseTuple(args, "Os", &pysock, &cmd)) {
++    PyErr_Format(PyExc_TypeError, "A socket and command must be supplied.");
++    return NULL;
++  }
++
++  if(!PySocket_Check(pysock)) {
++    PyErr_Format(PyExc_TypeError, "A socket must be supplied.");
++    return NULL;
++  }
++
++  if( (sock = PySocket_AsSocket(pysock)) == NULL) {
++    PyErr_Format(PyExc_StandardError, "Tried to run command for nonexistent socket.");
++    return NULL;
++  }
++
++  handle_cmd_input(sock, cmd);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *mudsys_show_prompt(PyObject *self, PyObject *args) {
++  PyObject  *pysock = NULL;
++  SOCKET_DATA *sock = NULL;
++
++  if(!PyArg_ParseTuple(args, "O", &pysock)) {
++    PyErr_Format(PyExc_TypeError, "A socket must be supplied.");
++    return NULL;
++  }
++
++  if(!PySocket_Check(pysock)) {
++    PyErr_Format(PyExc_TypeError, "A socket must be supplied.");
++    return NULL;
++  }
++
++  if( (sock = PySocket_AsSocket(pysock)) == NULL) {
++    PyErr_Format(PyExc_StandardError, "Tried to show prompt to nonexistent socket.");
++    return NULL;
++  }
++
++  show_prompt(sock);
++  return Py_BuildValue("i", 1);
+ }
+ 
+ 
+@@ -238,16 +658,54 @@
+ 		     "sets a system value on the mud.");
+   PyMudSys_addMethod("sys_getval", mudsys_get_sys_val, METH_VARARGS,
+ 		     "returns a system value on the mud.");
++  PyMudSys_addMethod("player_exists", mudsys_player_exists, METH_VARARGS,
++		     "returns whether a player with the name exists.");
++  PyMudSys_addMethod("account_exists", mudsys_account_exists, METH_VARARGS,
++		     "returns whether an account with the name exists.");
++  PyMudSys_addMethod("player_creating", mudsys_player_creating, METH_VARARGS,
++		     "returns whether a player with the name is creating.");
++  PyMudSys_addMethod("account_creating", mudsys_account_creating, METH_VARARGS,
++		     "returns whether an account with the name is creating.");
++  PyMudSys_addMethod("do_register", mudsys_do_register, METH_VARARGS,
++		     "register a player to disk, and with an account.");
++  PyMudSys_addMethod("load_char", mudsys_load_char, METH_VARARGS,
++		     "load a characer from disk");
++  PyMudSys_addMethod("load_account", mudsys_load_account, METH_VARARGS,
++		     "load an account from disk");
++  PyMudSys_addMethod("try_enter_game", mudsys_try_enter_game, METH_VARARGS,
++		     "Tries to put the character into the game world");
+   PyMudSys_addMethod("do_save", mudsys_do_save, METH_VARARGS,
+ 		     "save a character to disk");
+   PyMudSys_addMethod("do_quit", mudsys_do_quit, METH_VARARGS,
+ 		     "quit a character from game");
++  PyMudSys_addMethod("attach_account_socket",mudsys_attach_account_socket, 
++		     METH_VARARGS, "attaches an account and socket.");
++  PyMudSys_addMethod("attach_char_socket", mudsys_attach_char_socket, 
++		     METH_VARARGS, "attaches a char and socket.");
++  PyMudSys_addMethod("detach_char_socket", mudsys_detach_char_socket,
++		     METH_VARARGS, "detachs a char from a socket.");
+   PyMudSys_addMethod("do_disconnect", mudsys_do_disconnect, METH_VARARGS,
+ 		     "disconnects a character from its socket");
++  PyMudSys_addMethod("password_matches", mudsys_password_matches, METH_VARARGS,
++		     "returns whether or not the password matches the account's"
++		     " password.");
++  PyMudSys_addMethod("set_password", mudsys_set_password, METH_VARARGS,
++		     "sets an account's password.");
+   PyMudSys_addMethod("add_cmd", mudsys_add_cmd, METH_VARARGS,
+ 		     "Add a new command to the game.");
+   PyMudSys_addMethod("remove_cmd", mudsys_remove_cmd, METH_VARARGS,
+ 		     "Removes a command from the game.");
++  PyMudSys_addMethod("handle_cmd_input", mudsys_handle_cmd_input, METH_VARARGS,
++		     "the default input handler for character commands.");
++  PyMudSys_addMethod("show_prompt", mudsys_show_prompt, METH_VARARGS,
++		     "the default character prompt. Can be replaced in Python "
++		     "by assigning a new prompt to the same named variable.");
++  PyMudSys_addMethod("create_account", mudsys_create_account, METH_VARARGS,
++		     "creates a new account by name. Must be registered "
++		     "after fully created.");
++  PyMudSys_addMethod("create_player", mudsys_create_player, METH_VARARGS,
++		     "creates a new player by name. Must be registered "
++		     "after fully created.");
+ 
+   Py_InitModule3("mudsys", makePyMethods(pymudsys_methods),
+ 		 "The mudsys module, for all MUD system utils.");
+diff -ruN ../nakedmudv3.2.1/src/scripts/pyobj.c src/scripts/pyobj.c
+--- ../nakedmudv3.2.1/src/scripts/pyobj.c	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/pyobj.c	2006-12-24 22:15:56.000000000 -0500
+@@ -26,6 +26,7 @@
+ #include "pychar.h"
+ #include "pyroom.h"
+ #include "pyobj.h"
++#include "pyauxiliary.h"
+ 
+ 
+ 
+@@ -210,7 +211,7 @@
+   if(obj == NULL)
+     return NULL;
+   if(objGetCarrier(obj) == NULL)
+-    return Py_None;
++    return Py_BuildValue("O", Py_None);
+   return Py_BuildValue("O", charGetPyFormBorrowed(objGetCarrier(obj)));
+ }
+ 
+@@ -219,7 +220,7 @@
+   if(obj == NULL)
+     return NULL;
+   if(objGetRoom(obj) == NULL)
+-    return Py_None;
++    return Py_BuildValue("O", Py_None);
+   return Py_BuildValue("O", roomGetPyFormBorrowed(objGetRoom(obj)));
+ }
+ 
+@@ -228,7 +229,7 @@
+   if(obj == NULL)
+     return NULL;
+   if(objGetContainer(obj) == NULL)
+-    return Py_None;
++    return Py_BuildValue("O", Py_None);
+   return Py_BuildValue("O", objGetPyFormBorrowed(objGetContainer(obj)));
+ }
+ 
+@@ -657,6 +658,41 @@
+   }
+ }
+ 
++//
++// returns the specified piece of auxiliary data from the object
++// if it is a piece of python auxiliary data.
++PyObject *PyObj_get_auxiliary(PyObj *self, PyObject *args) {
++  char *keyword = NULL;
++  if(!PyArg_ParseTuple(args, "s", &keyword)) {
++    PyErr_Format(PyExc_TypeError,
++		 "getAuxiliary() must be supplied with the name that the "
++		 "auxiliary data was installed under!");
++    return NULL;
++  }
++
++  // make sure we exist
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to get auxiliary data for a nonexistant object.");
++    return NULL;
++  }
++
++  // make sure the auxiliary data exists
++  if(!pyAuxiliaryDataExists(keyword)) {
++    PyErr_Format(PyExc_StandardError,
++		 "No auxiliary data named '%s' exists!", keyword);
++    return NULL;
++  }
++
++  PyObject *data = objGetAuxiliaryData(obj, keyword);
++  if(data == NULL)
++    data = Py_None;
++  PyObject *retval = Py_BuildValue("O", data);
++  //  Py_DECREF(data);
++  return retval;
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -1054,6 +1090,8 @@
+ 		    "the object will become of the specified type");
+     PyObj_addMethod("edesc", PyObj_edesc, METH_VARARGS,
+ 		    "adds an extra description to the object.");
++    PyObj_addMethod("getAuxiliary", PyObj_get_auxiliary, METH_VARARGS,
++		    "get's the specified piece of aux data from the obj");
+ 
+     makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
+     deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;
+diff -ruN ../nakedmudv3.2.1/src/scripts/pyplugs.c src/scripts/pyplugs.c
+--- ../nakedmudv3.2.1/src/scripts/pyplugs.c	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/pyplugs.c	2006-12-24 22:15:56.000000000 -0500
+@@ -170,10 +170,20 @@
+       log_string("loading python module, %s", mname);
+     // oops... something went wrong. Let's get the traceback
+     else {
++      // we now abandon bootup if we fail to load a Python module, because it
++      // can have potentially dangerous affects on the loading of other modules
++      // Thanks to Thirsteh for pointing this out.
++      BUFFER *buf = newBuffer(1);
+       char *tb = getPythonTraceback();
+-      log_string("Error loading module, %s:\r\n%s\r\n",
+-		 mname, tb);
++      bprintf(buf, "Error loading module, %s:\r\n%s\r\n"
++	           "Bootup aborted. MUD shutting down.", mname, tb);
++      log_string(bufferString(buf));
++      printf("%s", bufferString(buf));
++      
++      deleteBuffer(buf);
+       free(tb);
++      closedir(dir);
++      exit(1);
+     }
+   }
+   closedir(dir);
+diff -ruN ../nakedmudv3.2.1/src/scripts/pyroom.c src/scripts/pyroom.c
+--- ../nakedmudv3.2.1/src/scripts/pyroom.c	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/pyroom.c	2006-12-24 22:15:56.000000000 -0500
+@@ -29,6 +29,7 @@
+ #include "pyexit.h"
+ #include "pyroom.h"
+ #include "pymud.h"
++#include "pyauxiliary.h"
+ 
+ 
+ 
+@@ -364,7 +365,7 @@
+     return retval;
+   }
+   else
+-    return Py_None;
++    return Py_BuildValue("O", Py_None);
+ }
+ 
+ 
+@@ -610,7 +611,7 @@
+   nearMapPut(roomGetCmdTable(room), name, sort_by,
+ 	     newPyCmd(name, func, POS_STANDING, POS_FLYING,
+ 		      group, TRUE, TRUE));
+-  return Py_None;
++  return Py_BuildValue("O", Py_None);
+ }
+ 
+ //
+@@ -636,6 +637,42 @@
+   }
+ }
+ 
++//
++// returns the specified piece of auxiliary data from the room
++// if it is a piece of python auxiliary data.
++PyObject *PyRoom_get_auxiliary(PyRoom *self, PyObject *args) {
++  char *keyword = NULL;
++  if(!PyArg_ParseTuple(args, "s", &keyword)) {
++    PyErr_Format(PyExc_TypeError,
++		 "getAuxiliary() must be supplied with the name that the "
++		 "auxiliary data was installed under!");
++    return NULL;
++  }
++
++  // make sure we exist
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to get auxiliary data for a nonexistant room.");
++    return NULL;
++  }
++
++  // make sure the auxiliary data exists
++  if(!pyAuxiliaryDataExists(keyword)) {
++    PyErr_Format(PyExc_StandardError,
++		 "No auxiliary data named '%s' exists!", keyword);
++    return NULL;
++  }
++
++  PyObject *data = roomGetAuxiliaryData(room, keyword);
++  if(data == NULL)
++    data = Py_None;
++  PyObject *retval = Py_BuildValue("O", data);
++  //  Py_DECREF(data);
++  return retval;
++}
++
++
+ 
+ 
+ //*****************************************************************************
+@@ -768,6 +805,8 @@
+ 		     "adds a command to the room.");
+     PyRoom_addMethod("isinstance", PyRoom_isinstance, METH_VARARGS,
+ 		     "returns whether or not the room inherits from the proto");
++    PyRoom_addMethod("getAuxiliary", PyRoom_get_auxiliary, METH_VARARGS,
++		     "get's the specified piece of aux data from the room");
+ 
+     // add in all the getsetters and methods
+     makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);
+diff -ruN ../nakedmudv3.2.1/src/scripts/pysocket.c src/scripts/pysocket.c
+--- ../nakedmudv3.2.1/src/scripts/pysocket.c	1969-12-31 19:00:00.000000000 -0500
++++ src/scripts/pysocket.c	2006-12-24 22:15:56.000000000 -0500
+@@ -0,0 +1,467 @@
++//*****************************************************************************
++//
++// pysocket.c
++//
++// Contains a python socket module, and an Socket class that is a python 
++// wrapper for NakedMud sockets.
++//
++//*****************************************************************************
++
++#include "../mud.h"
++#include "../utils.h"
++#include "../socket.h"
++#include "../character.h"
++
++#include "scripts.h"
++#include "pyplugs.h"
++#include "pyauxiliary.h"
++#include "pysocket.h"
++
++
++
++//*****************************************************************************
++// local structures and defines
++//*****************************************************************************
++
++// a list of the get/setters on the Exit class
++LIST *pysocket_getsetters = NULL;
++
++// a list of the methods on the Exit class
++LIST *pysocket_methods = NULL;
++
++typedef struct {
++  PyObject_HEAD
++  int uid;
++} PySocket;
++
++
++
++//*****************************************************************************
++// allocation, deallocation, initialization, and comparison
++//*****************************************************************************
++void PySocket_dealloc(PySocket *self) {
++  self->ob_type->tp_free((PyObject*)self);
++}
++
++PyObject *PySocket_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
++    PySocket *self;
++    self = (PySocket *)type->tp_alloc(type, 0);
++    self->uid = NOTHING;
++    return (PyObject *)self;
++}
++
++int PySocket_init(PySocket *self, PyObject *args, PyObject *kwds) {
++  char *kwlist[] = {"uid", NULL};
++  int        uid = NOTHING;
++
++  // get the uid
++  if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwlist, &uid)) {
++    PyErr_Format(PyExc_TypeError, "Sockets may only be created using an uid");
++    return -1;
++  }
++
++  // make sure an socket with this name exists
++  if(!propertyTableGet(sock_table, uid)) {
++    PyErr_Format(PyExc_TypeError, "Socket with uid, %d, does not exist", uid);
++    return -1;
++  }
++
++  self->uid = uid;
++  return 0;
++}
++
++int PySocket_compare(PySocket *sock1, PySocket *sock2) {
++  if(sock1->uid == sock2->uid)
++    return 0;
++  else if(sock1->uid < sock2->uid)
++    return -1;
++  else
++    return 1;
++}
++
++
++
++//*****************************************************************************
++// getters and setters for the Socket class
++//*****************************************************************************
++PyObject *PySocket_getuid(PySocket *self, void *closure) {
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock != NULL) return Py_BuildValue("i", socketGetUID(sock));
++  else             return NULL;
++}
++
++PyObject *PySocket_getaccount(PySocket *self, void *closure) {
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock == NULL)
++    return NULL;
++  else {
++    ACCOUNT_DATA *acc = socketGetAccount(sock);
++    if(acc == NULL)
++      return Py_BuildValue("O", Py_None);
++    return Py_BuildValue("O", accountGetPyFormBorrowed(acc));
++  }
++}
++
++PyObject *PySocket_getchar(PySocket *self, void *closure) {
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock == NULL)
++    return NULL;
++  else {
++    CHAR_DATA *ch = socketGetChar(sock);
++    // for the time being, we don't return characters without UIDs... like ones
++    // that are being created. We have to redo character generation to allow
++    // for characters-in-progress to be referenced
++    if(ch == NULL || charGetUID(ch) == NOBODY)
++      return Py_BuildValue("O", Py_None);
++    return Py_BuildValue("O", charGetPyFormBorrowed(ch));
++  }
++}
++
++PyObject *PySocket_get_outbound_text(PySocket *self, void *closure) {
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock == NULL)
++    return NULL;
++  else {
++    return Py_BuildValue("s", bufferString(socketGetOutbound(sock)));
++  } 
++}
++
++int PySocket_set_outbound_text(PySocket *self, PyObject *value, void *closure) {
++  if(!PyString_Check(value)) {
++    PyErr_Format(PyExc_TypeError, "Outbound text must be in string format.");
++    return -1;
++  }
++
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock == NULL)
++    return -1;
++  else {
++    bufferClear(socketGetOutbound(sock));
++    bufferCat(socketGetOutbound(sock), PyString_AsString(value));
++    return 0;
++  }
++}
++
++PyObject *PySocket_get_can_use(PySocket *self, void *closure) {
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock == NULL)
++    return NULL;
++  else
++    return Py_BuildValue("i", (socketGetDNSLookupStatus(sock) == TSTATE_DONE ?
++			       TRUE : FALSE));
++}
++
++PyObject *PySocket_bust_prompt(PySocket *self, PyObject *closure) {
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock == NULL) {
++    PyErr_Format(PyExc_StandardError, "Tried to bust prompt on nonexistent "
++		 "socket, %d.", PySocket_AsUid((PyObject *)self));
++    return NULL;
++  }
++  socketBustPrompt(sock);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *PySocket_push_ih(PySocket *self, PyObject *args) {
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  PyObject *handler = NULL;
++  PyObject  *prompt = NULL;
++
++  if(sock == NULL)
++    return NULL;
++
++  if (!PyArg_ParseTuple(args, "OO", &handler, &prompt)) {
++    PyErr_Format(PyExc_TypeError, "handler and prompt function must "
++		 "be supplied.");
++    return NULL;
++  }
++
++  socketPushPyInputHandler(sock, handler, prompt);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *PySocket_pop_ih(PySocket *self) {
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock == NULL)
++    return NULL;
++  socketPopInputHandler(sock);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *PySocket_replace_ih(PySocket *self, PyObject *args) {
++  PyObject *retval = PySocket_pop_ih(self);
++  if(retval == NULL)
++    return NULL;
++  Py_DECREF(retval);
++  retval = PySocket_push_ih(self, args);
++  if(retval == NULL)
++    return NULL;
++  Py_DECREF(retval);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *PySocket_send_raw(PySocket *self, PyObject *value) {
++  char *mssg = NULL;
++  if (!PyArg_ParseTuple(value, "s", &mssg)) {
++    PyErr_Format(PyExc_TypeError, "Sockets may only be sent strings");
++    return NULL;
++  }
++
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock != NULL) {
++    send_to_socket(sock, "%s", mssg);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to send message to nonexistant socket, %d.", 
++		 self->uid);
++    return NULL;
++  }
++}
++
++PyObject *PySocket_send(PySocket *self, PyObject *value) {
++  PyObject *retval = PySocket_send_raw(self, value);
++  if(retval == NULL)
++    return NULL;
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  send_to_socket(sock, "\r\n");
++  Py_DECREF(retval);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *PySocket_close(PySocket *self) {
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock == NULL)
++    return NULL;
++  close_socket(sock, FALSE);
++  return Py_BuildValue("i", 1);
++}
++
++
++
++//*****************************************************************************
++// methods for the Socket class
++//*****************************************************************************
++
++//
++// returns the specified piece of auxiliary data from the socket
++// if it is a piece of python auxiliary data.
++PyObject *PySocket_get_auxiliary(PySocket *self, PyObject *args) {
++  char *keyword = NULL;
++  if(!PyArg_ParseTuple(args, "s", &keyword)) {
++    PyErr_Format(PyExc_TypeError,
++		 "getAuxiliary() must be supplied with the name that the "
++		 "auxiliary data was installed under!");
++    return NULL;
++  }
++
++  // make sure we exist
++  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
++  if(sock == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to get auxiliary data for a nonexistant socket.");
++    return NULL;
++  }
++
++  // make sure the auxiliary data exists
++  if(!pyAuxiliaryDataExists(keyword)) {
++    PyErr_Format(PyExc_StandardError,
++		 "No auxiliary data named '%s' exists!", keyword);
++    return NULL;
++  }
++
++  PyObject *data = socketGetAuxiliaryData(sock, keyword);
++  if(data == NULL)
++    data = Py_None;
++  PyObject *retval = Py_BuildValue("O", data);
++  //  Py_DECREF(data);
++  return retval;
++}
++
++
++
++//*****************************************************************************
++// structures to define our methods and classes
++//*****************************************************************************
++PyTypeObject PySocket_Type = {
++    PyObject_HEAD_INIT(NULL)
++    0,                         /*ob_size*/
++    "mudsock.Mudsock",         /*tp_name*/
++    sizeof(PySocket),          /*tp_basicsize*/
++    0,                         /*tp_itemsize*/
++    (destructor)PySocket_dealloc,/*tp_dealloc*/
++    0,                         /*tp_print*/
++    0,                         /*tp_getattr*/
++    0,                         /*tp_setattr*/
++    (cmpfunc)PySocket_compare, /*tp_compare*/
++    0,                         /*tp_repr*/
++    0,                         /*tp_as_number*/
++    0,                         /*tp_as_sequence*/
++    0,                         /*tp_as_mapping*/
++    0,                         /*tp_hash */
++    0,                         /*tp_call*/
++    0,                         /*tp_str*/
++    0,                         /*tp_getattro*/
++    0,                         /*tp_setattro*/
++    0,                         /*tp_as_buffer*/
++    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
++    "Python Socket object",    /* tp_doc */
++    0,		               /* tp_traverse */
++    0,		               /* tp_clear */
++    0,		               /* tp_richcompare */
++    0,		               /* tp_weaklistoffset */
++    0,		               /* tp_iter */
++    0,		               /* tp_iternext */
++    0,                         /* tp_methods */
++    0,                         /* tp_members */
++    0,                         /* tp_getset */ 
++    0,                         /* tp_base */
++    0,                         /* tp_dict */
++    0,                         /* tp_descr_get */
++    0,                         /* tp_descr_set */
++    0,                         /* tp_dictoffset */
++    (initproc)PySocket_init,   /* tp_init */
++    0,                         /* tp_alloc */
++    PySocket_new,              /* tp_new */
++};
++
++
++
++//*****************************************************************************
++// methods in the mudsock module
++//*****************************************************************************
++PyObject *PySocket_all_sockets(PyObject *self) {
++  PyObject        *list = PyList_New(0);
++  LIST_ITERATOR *sock_i = newListIterator(socket_list);
++  SOCKET_DATA     *sock = NULL;
++  ITERATE_LIST(sock, sock_i) {
++    PyList_Append(list, socketGetPyFormBorrowed(sock));
++  } deleteListIterator(sock_i);
++  PyObject *retval = Py_BuildValue("O", list);
++  Py_DECREF(list);
++  return retval;
++}
++
++PyMethodDef socket_module_methods[] = {
++  { "socket_list", (PyCFunction)PySocket_all_sockets, METH_NOARGS,
++    "Returns a list of all sockets currently connected." },
++  {NULL, NULL, 0, NULL}  /* Sentinel */
++};
++
++
++
++//*****************************************************************************
++// implementation of pyexit.h
++//*****************************************************************************
++void PySocket_addGetSetter(const char *name, void *g, void *s,const char *doc){
++  // make sure our list of get/setters is created
++  if(pysocket_getsetters == NULL) pysocket_getsetters = newList();
++
++  // make the GetSetter def
++  PyGetSetDef *def = calloc(1, sizeof(PyGetSetDef));
++  def->name        = strdup(name);
++  def->get         = (getter)g;
++  def->set         = (setter)s;
++  def->doc         = (doc ? strdup(doc) : NULL);
++  def->closure     = NULL;
++  listPut(pysocket_getsetters, def);
++}
++
++void PySocket_addMethod(const char *name, void *f, int flags, const char *doc){
++  // make sure our list of methods is created
++  if(pysocket_methods == NULL) pysocket_methods = newList();
++
++  // make the Method def
++  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
++  def->ml_name     = strdup(name);
++  def->ml_meth     = (PyCFunction)f;
++  def->ml_flags    = flags;
++  def->ml_doc      = (doc ? strdup(doc) : NULL);
++  listPut(pysocket_methods, def);
++}
++
++// initialize sockets for use. This must be called AFTER 
++PyMODINIT_FUNC
++init_PySocket(void) {
++    PyObject* module = NULL;
++
++    // add all of the basic getsetters
++    PySocket_addGetSetter("uid", PySocket_getuid, NULL,
++			   "the socket's uid.");
++    PySocket_addGetSetter("account", PySocket_getaccount, NULL,
++			   "the socket's account.");
++    PySocket_addGetSetter("character", PySocket_getchar, NULL,
++			   "the socket's character.");
++    PySocket_addGetSetter("char", PySocket_getchar, NULL,
++			   "the socket's character.");
++    PySocket_addGetSetter("ch",   PySocket_getchar, NULL,
++			   "the socket's character.");
++    PySocket_addGetSetter("outbound_text",
++			  PySocket_get_outbound_text,PySocket_set_outbound_text,
++			  "the socket's outbound text.");
++    PySocket_addGetSetter("can_use",
++			  PySocket_get_can_use, NULL,
++			  "Returns whether or not the socket is ready for use. "
++			  "Sockets become available after their dns resolves.");
++
++    // add all of the basic methods
++    PySocket_addMethod("getAuxiliary", PySocket_get_auxiliary, METH_VARARGS,
++		       "gets the socket auxiliary data with given key.");
++    PySocket_addMethod("send", PySocket_send, METH_VARARGS,
++		       "sends text to the socket with appended newline.");
++    PySocket_addMethod("send_raw", PySocket_send_raw, METH_VARARGS,
++		       "sends text to the socket.");
++    PySocket_addMethod("pop_ih", PySocket_pop_ih, METH_NOARGS,
++			"Pops the socket's current input handler.");
++    PySocket_addMethod("push_ih", PySocket_push_ih, METH_VARARGS,
++			"pushes on a new input handler.");
++    PySocket_addMethod("replace_ih", PySocket_replace_ih, METH_VARARGS,
++		       "replaces the socket's input handler.");
++    PySocket_addMethod("close", PySocket_close, METH_VARARGS,
++		       "closes the socket.");
++    PySocket_addMethod("bust_prompt", PySocket_bust_prompt, METH_NOARGS,
++		       "busts the socket's prompt so it will be displayed.");
++
++    // add in all the getsetters and methods
++    makePyType(&PySocket_Type, pysocket_getsetters, pysocket_methods);
++    deleteListWith(pysocket_getsetters, free); pysocket_getsetters = NULL;
++    deleteListWith(pysocket_methods,    free); pysocket_methods    = NULL;
++
++    // make sure the socket class is ready to be made
++    if (PyType_Ready(&PySocket_Type) < 0)
++        return;
++
++    // initialize the module
++    module = Py_InitModule3("mudsock", socket_module_methods,
++			    "The socket module, for all MUD socket-related "
++			    "stuff.");
++
++    // make sure the module parsed OK
++    if (module == NULL)
++      return;
++
++    // add the Socket class to the socket module
++    PyTypeObject *type = &PySocket_Type;
++    PyModule_AddObject(module, "Mudsock", (PyObject *)type);
++    Py_INCREF(&PySocket_Type);
++}
++
++int PySocket_Check(PyObject *value) {
++  return PyObject_TypeCheck(value, &PySocket_Type);
++}
++
++int PySocket_AsUid(PyObject *sock) {
++  return ((PySocket *)sock)->uid;
++}
++
++SOCKET_DATA *PySocket_AsSocket(PyObject *ch) {
++  return propertyTableGet(sock_table, PySocket_AsUid(ch));
++}
++
++PyObject *
++newPySocket(SOCKET_DATA *sock) {
++  PySocket *pysock = (PySocket *)PySocket_new(&PySocket_Type, NULL, NULL);
++  pysock->uid = socketGetUID(sock);
++  return (PyObject *)pysock;
++}
+diff -ruN ../nakedmudv3.2.1/src/scripts/pysocket.h src/scripts/pysocket.h
+--- ../nakedmudv3.2.1/src/scripts/pysocket.h	1969-12-31 19:00:00.000000000 -0500
++++ src/scripts/pysocket.h	2006-12-24 22:15:56.000000000 -0500
+@@ -0,0 +1,44 @@
++#ifndef PYSOCKET_H
++#define PYSOCKET_H
++//*****************************************************************************
++//
++// pysocket.h
++//
++// Contains a python socket module, and an Socket class that is a python 
++// wrapper for NakedMud sockets. If you wish to give python access to more
++// features of an socket, it should NOT be done by editing pysocket.c! Use 
++// PySocket_addGetSetter and PySocket_addMethod in a new module implementing 
++// the feature you want to give Python access to.
++//
++//*****************************************************************************
++
++// initialize sockets for use. This must be called AFTER all other modules
++// have added in new get/setters and methods to pyroom
++PyMODINIT_FUNC   init_PySocket(void);
++PyObject          *newPySocket(SOCKET_DATA *sock);
++SOCKET_DATA *PySocket_AsSocket(PyObject *sock);
++int             PySocket_AsUid(PyObject *sock);
++
++//
++// checks to see if the PyObject is a PySocket
++int PySocket_Check(PyObject *value);
++
++
++//
++// getters allow Python to access pieces of the Socket module. Setters allow
++// Python to change pieces of the socket module. Getters are called when Python
++// tries to get the value of some variable on the object, and setters are called
++// when Python tries to set the value of some variable on the object. Get and
++// Set do not both need to be supplied. Examples of how to add new getters and
++// setters is presented in pysocket.c
++void PySocket_addGetSetter(const char *name, void *g, void *s, const char *doc);
++
++//
++// Adds a new method function (i.e. void *f) to the Socket class. Name is the 
++// name of the function, f is the PyCFunction implementing the new method, 
++// flags is the type of method beings used (almost always METH_VARARGS), and
++// dog is an (optional) description of what the method does. For examples on
++// how to add new methods, see pysocket.c
++void PySocket_addMethod(const char *name, void *f, int flags, const char *doc);
++
++#endif // PYSOCKET_H
+diff -ruN ../nakedmudv3.2.1/src/scripts/scripts.c src/scripts/scripts.c
+--- ../nakedmudv3.2.1/src/scripts/scripts.c	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/scripts.c	2006-12-24 22:15:56.000000000 -0500
+@@ -18,6 +18,7 @@
+ #include "../room.h"
+ #include "../exit.h"
+ #include "../object.h"
++#include "../account.h"
+ #include "../socket.h"
+ #include "../auxiliary.h"
+ #include "../storage.h"
+@@ -26,10 +27,12 @@
+ 
+ #include "scripts.h"
+ #include "pyplugs.h"
++#include "pyaccount.h"
+ #include "pychar.h"
+ #include "pyroom.h"
+ #include "pyexit.h"
+ #include "pyobj.h"
++#include "pysocket.h"
+ #include "pymud.h"
+ #include "pymudsys.h"
+ #include "pyhooks.h"
+@@ -338,9 +341,11 @@
+   init_PyAuxiliary();
+   init_PyEvent();
+   init_PyStorage();
++  init_PyAccount();
+   init_PyChar();
+   init_PyRoom();
+   init_PyExit();
++  init_PySocket();
+   init_PyObj();
+   init_PyMud();
+   init_PyHooks();
+@@ -358,8 +363,9 @@
+ 
+   // deal with auxiliary data
+   auxiliariesInstall("trigger_data", 
+-		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR | AUXILIARY_TYPE_OBJ|
+-				       AUXILIARY_TYPE_ROOM,
++		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR|AUXILIARY_TYPE_ROOM |
++				       AUXILIARY_TYPE_OBJ|AUXILIARY_TYPE_SOCKET|
++				       AUXILIARY_TYPE_ACCOUNT,
+ 				       newTriggerAuxData,  deleteTriggerAuxData,
+ 				       triggerAuxDataCopyTo, triggerAuxDataCopy,
+ 				       triggerAuxDataStore,triggerAuxDataRead));
+@@ -717,16 +723,14 @@
+ 			  const char *locale) {
+   // set up our dictionary
+   PyObject *dict = restricted_script_dict();
+-  PyObject *pych = charGetPyForm(ch);
+   PyDict_SetItemString(dict, "me", me);
+-  PyDict_SetItemString(dict, "ch", pych);
++  PyDict_SetItemString(dict, "ch", charGetPyFormBorrowed(ch));
+ 
+   // expand the dynamic description
+   expand_dynamic_descs_dict(desc, dict, locale);
+ 
+   // garbage collection
+   Py_XDECREF(dict);
+-  Py_XDECREF(pych);
+ }
+ 
+ const char *get_script_locale(void) {
+@@ -777,6 +781,20 @@
+   return data->pyform;
+ }
+ 
++PyObject *accountGetPyFormBorrowed(ACCOUNT_DATA *acc) {
++  TRIGGER_AUX_DATA *data = accountGetAuxiliaryData(acc, "trigger_data");
++  if(data->pyform == NULL)
++    data->pyform = newPyAccount(acc);
++  return data->pyform;
++}
++
++PyObject *socketGetPyFormBorrowed(SOCKET_DATA *sock) {
++  TRIGGER_AUX_DATA *data = socketGetAuxiliaryData(sock, "trigger_data");
++  if(data->pyform == NULL)
++    data->pyform = newPySocket(sock);
++  return data->pyform;
++}
++
+ PyObject *charGetPyForm(CHAR_DATA *ch) {
+   PyObject *pyform = charGetPyFormBorrowed(ch);
+   Py_INCREF(pyform);
+@@ -795,6 +813,18 @@
+   return pyform;
+ }
+ 
++PyObject *accountGetPyForm(ACCOUNT_DATA *acc) {
++  PyObject *pyform = accountGetPyFormBorrowed(acc);
++  Py_INCREF(pyform);
++  return pyform;
++}
++
++PyObject *socketGetPyForm(SOCKET_DATA *sock) {
++  PyObject *pyform = socketGetPyFormBorrowed(sock);
++  Py_INCREF(pyform);
++  return pyform;
++}
++
+ PyObject *PyList_fromList(LIST *list, void *convertor) {
+   PyObject *pylist = PyList_New(0);
+   PyObject *(*conv_func)(void *) = convertor; 
+diff -ruN ../nakedmudv3.2.1/src/scripts/scripts.h src/scripts/scripts.h
+--- ../nakedmudv3.2.1/src/scripts/scripts.h	2006-07-09 17:29:07.000000000 -0400
++++ src/scripts/scripts.h	2006-12-24 22:15:56.000000000 -0500
+@@ -85,16 +85,20 @@
+ // from the first time the python form is created. Before the pyform is 
+ // returned, it is increfed. Therefore, users must decref after they are done
+ // to avoid memory leaks.
+-PyObject *charGetPyForm(CHAR_DATA *ch);
+-PyObject *roomGetPyForm(ROOM_DATA *room);
+-PyObject  *objGetPyForm(OBJ_DATA  *obj);
++PyObject    *charGetPyForm(CHAR_DATA    *ch);
++PyObject    *roomGetPyForm(ROOM_DATA    *room);
++PyObject     *objGetPyForm(OBJ_DATA     *obj);
++PyObject  *socketGetPyForm(SOCKET_DATA  *sock);
++PyObject *accountGetPyForm(ACCOUNT_DATA *acc);
+ 
+ //
+ // The same as above, but returns a borrowed reference so no incref/decref are
+ // needed
+-PyObject *charGetPyFormBorrowed(CHAR_DATA *ch);
+-PyObject *roomGetPyFormBorrowed(ROOM_DATA *room);
+-PyObject  *objGetPyFormBorrowed(OBJ_DATA  *obj);
++PyObject    *charGetPyFormBorrowed(CHAR_DATA    *ch);
++PyObject    *roomGetPyFormBorrowed(ROOM_DATA    *room);
++PyObject     *objGetPyFormBorrowed(OBJ_DATA     *obj);
++PyObject  *socketGetPyFormBorrowed(SOCKET_DATA  *sock);
++PyObject *accountGetPyFormBorrowed(ACCOUNT_DATA *acc);
+ 
+ //
+ // returns a Python form of the given list
+diff -ruN ../nakedmudv3.2.1/src/scripts/trighooks.c src/scripts/trighooks.c
+--- ../nakedmudv3.2.1/src/scripts/trighooks.c	2006-07-09 17:29:08.000000000 -0400
++++ src/scripts/trighooks.c	2006-12-24 22:15:56.000000000 -0500
+@@ -379,8 +379,6 @@
+   CHAR_DATA *ch = NULL;
+   OBJ_DATA *obj = NULL;
+   hookParseInfo(info, &ch, &obj);
+-  printf("%s\r\n", info);
+-  printf("%s %s\r\n", charGetName(ch), objGetName(obj));
+ 
+   do_char_trigs(ch,  "wear", obj, NULL);
+   do_obj_trigs (obj, "wear", ch,  NULL);
+diff -ruN ../nakedmudv3.2.1/src/socket.c src/socket.c
+--- ../nakedmudv3.2.1/src/socket.c	2006-07-09 17:29:09.000000000 -0400
++++ src/socket.c	2006-12-24 22:15:56.000000000 -0500
+@@ -6,6 +6,7 @@
+ // well as reading and writing to sockets, and closing down unused sockets.
+ //
+ //*****************************************************************************
++
+ #include "wrapsock.h"
+ #include <netdb.h>
+ #include <sys/ioctl.h>
+@@ -21,6 +22,8 @@
+ #include "socket.h"
+ #include "auxiliary.h"
+ #include "hooks.h"
++#include "scripts/scripts.h"
++#include "scripts/pyplugs.h"
+ 
+ 
+ 
+@@ -31,6 +34,10 @@
+ #include "alias/alias.h"
+ #endif
+ 
++// provides a unique identifier number to every socket that connects to the
++// mud. Used mostly for referring to sockets in Python
++#define START_SOCK_UID           1
++int next_sock_uid = START_SOCK_UID;
+ 
+ 
+ //
+@@ -40,20 +47,20 @@
+   ACCOUNT_DATA  * account;
+   char          * hostname;
+   char            inbuf[MAX_INPUT_LEN];
+-  char            outbuf[MAX_OUTPUT];
+   char            next_command[MAX_BUFFER];
+   bool            cmd_read;
+   bool            bust_prompt;
+   bool            closed;
+   int             lookup_status;
+   int             control;
+-  int             top_output;
++  int             uid;
+ 
+   char          * page_string;   // the string that has been paged to us
+   int             curr_page;     // the current page we're on
+   int             tot_pages;     // the total number of pages the string has
+   
+   BUFFER        * text_editor;   // where we do our actual work
++  BUFFER        * outbuf;        // our buffer of pending output
+ 
+   LIST          * input_handlers;// a stack of our input handlers and prompts
+   LIST          * input;         // lines of input we have received
+@@ -69,10 +76,12 @@
+ 
+ //
+ // contains an input handler and the socket prompt in one structure, so they
+-// can be stored together in the socket_data
++// can be stored together in the socket_data. Allows for the option of Python
++// or C input handlers and prompt pairs.
+ typedef struct input_handler_data {
+-  void (* handler)(SOCKET_DATA *, char *);
+-  void (*  prompt)(SOCKET_DATA *);
++  void *handler; // (* handler)(SOCKET_DATA *, char *);
++  void  *prompt; // (*  prompt)(SOCKET_DATA *);
++  bool   python;
+ } IH_PAIR;
+ 
+ 
+@@ -137,13 +146,13 @@
+  * Initializes a new socket, get's the hostname
+  * and puts it in the active socket_list.
+  */
+-bool new_socket(int sock)
++SOCKET_DATA *new_socket(int sock)
+ {
+   struct sockaddr_in   sock_addr;
+   pthread_attr_t       attr;
+   pthread_t            thread_lookup;
+   LOOKUP_DATA        * lData;
+-  SOCKET_DATA           * sock_new;
++  SOCKET_DATA        * sock_new;
+   int                  argp = 1;
+   socklen_t            size;
+ 
+@@ -164,8 +173,9 @@
+   /* set the socket as non-blocking */
+   ioctl(sock, FIONBIO, &argp);
+ 
+-  /* update the socket list */
++  /* update the socket list and table */
+   listPut(socket_list, sock_new);
++  propertyTablePut(sock_table, sock_new);
+ 
+   /* do a host lookup */
+   size = sizeof(sock_addr);
+@@ -204,10 +214,9 @@
+ 
+   /* send the greeting */
+   text_to_buffer(sock_new, bufferString(greeting));
+-  text_to_buffer(sock_new, "What is your account (not character) name? ");
+ 
+   /* everything went as it was supposed to */
+-  return TRUE;
++  return sock_new;
+ }
+ 
+ 
+@@ -252,8 +261,12 @@
+     extract_mobile(dsock->player);
+   }
+   
+-  if(dsock->account)
+-    unreference_account(dsock->account);
++  if(dsock->account) {
++    if(account_exists(accountGetName(dsock->account)))
++      unreference_account(dsock->account);
++    else
++      deleteAccount(dsock->account);
++  }
+ 
+   /* set the closed state */
+   dsock->closed = TRUE;
+@@ -406,233 +419,13 @@
+  */
+ void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
+ {
+-  static char output[8 * MAX_BUFFER];
+-  bool cr = FALSE, underline = FALSE, bold = FALSE;
+-  int iPtr = 0, last = -1, i = 0, j, k;
+-  int length = strlen(txt);
+-
+-  /* the color struct */
+-  struct sAnsiColor
+-  {
+-    const char    cTag;
+-    const char  * cString;
+-    int           aFlag;
+-  };
+-
+-  /* the color table... */
+-  const struct sAnsiColor ansiTable[] =
+-  {
+-    { 'd',  "30",  eTHIN },
+-    { 'D',  "30",  eBOLD },
+-    { 'r',  "31",  eTHIN },
+-    { 'R',  "31",  eBOLD },
+-    { 'g',  "32",  eTHIN },
+-    { 'G',  "32",  eBOLD },
+-    { 'y',  "33",  eTHIN },
+-    { 'Y',  "33",  eBOLD },
+-    { 'b',  "34",  eTHIN },
+-    { 'B',  "34",  eBOLD },
+-    { 'p',  "35",  eTHIN },
+-    { 'P',  "35",  eBOLD },
+-    { 'c',  "36",  eTHIN },
+-    { 'C',  "36",  eBOLD },
+-    { 'w',  "37",  eTHIN },
+-    { 'W',  "37",  eBOLD },
+-
+-    /* the end tag */
+-    { '\0',  "",   eTHIN }
+-  };
+-
+-  if (length >= MAX_BUFFER)
+-  {
+-    log_string("text_to_buffer: buffer overflow.");
+-    return;
+-  }
+-
+-
+-  while (*txt != '\0' && i++ < length)
+-  {
+-    /* simple bound checking */
+-    if (iPtr > (8 * MAX_BUFFER - 15))
+-      break;
+-
+-    switch(*txt)
+-    {
+-      default:
+-        output[iPtr++] = *txt++;
+-        break;
+-      case '\r':
+-	cr = TRUE;
+-	output[iPtr++] = *txt++;
+-	break;
+-      case '\n':
+-	if(cr == FALSE)
+-	  output[iPtr++] = '\r';
+-	output[iPtr++] = *txt++;
+-	cr = FALSE;
+-	break;
+-      case '{':
+-        i++; txt++;
+-
+-        /* toggle underline on/off with #u */
+-        if (*txt == 'u')
+-        {
+-          txt++;
+-          if (underline)
+-          {
+-            underline = FALSE;
+-            output[iPtr++] =  27; output[iPtr++] = '['; output[iPtr++] = '0';
+-            if (bold)
+-            {
+-              output[iPtr++] = ';'; output[iPtr++] = '1';
+-            }
+-            if (last != -1)
+-            {
+-              output[iPtr++] = ';';
+-              for (j = 0; ansiTable[last].cString[j] != '\0'; j++)
+-              {
+-                output[iPtr++] = ansiTable[last].cString[j];
+-              }
+-            }
+-            output[iPtr++] = 'm';
+-          }
+-          else
+-          {
+-            underline = TRUE;
+-            output[iPtr++] =  27; output[iPtr++] = '[';
+-            output[iPtr++] = '4'; output[iPtr++] = 'm';
+-          }
+-        }
+-
+-        /* parse {{ to { */
+-        else if (*txt == '{')
+-        {
+-          txt++;
+-          output[iPtr++] = '{';
+-        }
+-
+-        /* {n should clear all tags */
+-        else if (*txt == 'n')
+-        {
+-          txt++;
+-          if (last != -1 || underline || bold)
+-          {  
+-            underline = FALSE;
+-            bold = FALSE;
+-            output[iPtr++] =  27; output[iPtr++] = '[';
+-            output[iPtr++] = '0'; output[iPtr++] = 'm';
+-          }
+-
+-          last = -1;
+-        }
+-
+-        /* check for valid color tag and parse */
+-        else
+-        {
+-          bool validTag = FALSE;
+-
+-          for (j = 0; ansiTable[j].cString[0] != '\0'; j++)
+-          {
+-            if (*txt == ansiTable[j].cTag)
+-            {
+-              validTag = TRUE;
+-
+-              /* we only add the color sequence if it's needed */
+-              if (last != j)
+-              {
+-                bool cSequence = FALSE;
+-
+-                /* escape sequence */
+-                output[iPtr++] = 27; output[iPtr++] = '[';
+-
+-                /* remember if a color change is needed */
+-                if (last == -1 || last / 2 != j / 2)
+-                  cSequence = TRUE;
+-
+-                /* handle font boldness */
+-                if (bold && ansiTable[j].aFlag == eTHIN)
+-                {
+-                  output[iPtr++] = '0';
+-                  bold = FALSE;
+-
+-                  if (underline)
+-                  {
+-                    output[iPtr++] = ';'; output[iPtr++] = '4';
+-                  }
+-
+-                  /* changing to eTHIN wipes the old color */
+-                  output[iPtr++] = ';';
+-                  cSequence = TRUE;
+-                }
+-                else if (!bold && ansiTable[j].aFlag == eBOLD)
+-                {
+-                  output[iPtr++] = '1';
+-                  bold = TRUE;
+-
+-                  if (cSequence)
+-                    output[iPtr++] = ';';
+-                }
+-
+-                /* add color sequence if needed */
+-                if (cSequence)
+-                {
+-                  for (k = 0; ansiTable[j].cString[k] != '\0'; k++)
+-                  {
+-                    output[iPtr++] = ansiTable[j].cString[k];
+-                  }
+-                }
+-
+-                output[iPtr++] = 'm';
+-              }
+-
+-              /* remember the last color */
+-              last = j;
+-            }
+-          }
+-
+-          /* it wasn't a valid color tag */
+-          if (!validTag)
+-            output[iPtr++] = '{';
+-          else
+-            txt++;
+-        }
+-        break;   
+-    }
+-  }
+-
+-  /* and terminate it with the standard color */
+-  /*
+-  if (last != -1 || underline || bold) 
+-  {
+-    output[iPtr++] =  27; output[iPtr++] = '[';
+-    output[iPtr++] = '0'; output[iPtr++] = 'm';
+-  } 
+-  */
+-  output[iPtr] = '\0';
+-
+-  /* check to see if the socket can accept that much data */
+-  if (dsock->top_output + iPtr >= MAX_OUTPUT)
+-  {
+-    //
+-    // what happens if the buffer overflow is on an immortal who can see the
+-    // logs? We get tossed into an infinite loop... this really isn't too big
+-    // of a deal to have to report. Let's just leave it out.
+-    //   - Geoff, Mar 22/05
+-    //
+-    //    bug("Text_to_buffer: ouput overflow on %s.", dsock->hostname);
+-    return;
+-  }
+-
+   // if we're at the head of the outbuf and haven't entered a command, 
+   // also copy a newline so we're not printing in front of the prompt
+-  if(dsock->top_output == 0 && !dsock->bust_prompt) {
+-    strcpy(dsock->outbuf, "\r\n");
+-    dsock->top_output += 2;
+-  }
++  if(bufferLength(dsock->outbuf) == 0 && !dsock->bust_prompt)
++    bufferCat(dsock->outbuf, "\r\n");
+ 
+   /* add data to buffer */
+-  strcpy(dsock->outbuf + dsock->top_output, output);
+-  dsock->top_output += iPtr;
++  bufferCat(dsock->outbuf, txt);
+ }
+ 
+ 
+@@ -715,37 +508,31 @@
+ 
+ 
+ 
+-bool flush_output(SOCKET_DATA *dsock)
+-{
+-  IH_PAIR *pair = listGet(dsock->input_handlers, 0);
+-  void (* prompt_func)(SOCKET_DATA *) = (pair ? pair->prompt : NULL);
++bool flush_output(SOCKET_DATA *dsock) {
++  bool  success = TRUE;
+ 
+   // quit if we have no output and don't need/can't have a prompt
+-  if(dsock->top_output <= 0 && (!dsock->bust_prompt || !prompt_func))
++  if(bufferLength(dsock->outbuf) <= 0 && 
++     (!dsock->bust_prompt || !socketHasPrompt(dsock)))
+     return TRUE;
+ 
+-  if(dsock->bust_prompt && prompt_func) {
+-    prompt_func(dsock);
++  if(dsock->bust_prompt) {
++    socketShowPrompt(dsock);
+     dsock->bust_prompt = FALSE;
+   }
+ 
+-  // reset the top pointer
+-  dsock->top_output = 0;
+-
+-  /*
+-   * Send the buffer, and return FALSE
+-   * if the write fails.
+-   */
+-  if (!text_to_socket(dsock, dsock->outbuf))
+-    return FALSE;
+-
+-  // Success
+-  return TRUE;
++  // process all of our outbound text for stuff like colors, etc
++  hookRun("process_outbound_text",  hookBuildInfo("sk", dsock));
++  hookRun("finalize_outbound_text", hookBuildInfo("sk", dsock));
++
++  // Send the buffer, and return FALSE if the write fails. Clear our output
++  success = text_to_socket(dsock, bufferString(dsock->outbuf));
++  bufferClear(dsock->outbuf);
++  return success;
+ }
+ 
+ 
+ 
+-
+ //*****************************************************************************
+ //
+ // SOCKET MAINTENANCE
+@@ -759,6 +546,7 @@
+   if(sock->hostname)         free(sock->hostname);
+   if(sock->page_string)      free(sock->page_string);
+   if(sock->text_editor)      deleteBuffer(sock->text_editor);
++  if(sock->outbuf)           deleteBuffer(sock->outbuf);
+   if(sock->input_handlers)   deleteListWith(sock->input_handlers, free);
+   if(sock->input)            deleteListWith(sock->input, free);
+   if(sock->command_hist)     deleteListWith(sock->command_hist, free);
+@@ -770,6 +558,7 @@
+ {
+   if(sock_new->page_string)    free(sock_new->page_string);
+   if(sock_new->text_editor)    deleteBuffer(sock_new->text_editor);
++  if(sock_new->outbuf)         deleteBuffer(sock_new->outbuf);
+   if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, free);
+   if(sock_new->auxiliary)      deleteAuxiliaryData(sock_new->auxiliary);
+   if(sock_new->input)          deleteListWith(sock_new->input, free);
+@@ -780,12 +569,12 @@
+   sock_new->input_handlers = newList();
+   sock_new->input          = newList();
+   sock_new->command_hist   = newList();
+-  socketPushInputHandler(sock_new, handle_new_connections, NULL);
+   sock_new->control        = sock;
+   sock_new->lookup_status  = TSTATE_LOOKUP;
+-  sock_new->top_output     = 0;
++  sock_new->uid            = next_sock_uid++;
+ 
+   sock_new->text_editor    = newBuffer(MAX_BUFFER);
++  sock_new->outbuf         = newBuffer(MAX_OUTPUT);
+ }
+ 
+ 
+@@ -832,6 +621,7 @@
+ 
+     /* remove the socket from the main list */
+     listRemove(socket_list, dsock);
++    propertyTableRemove(sock_table, dsock->uid);
+ 
+     /* close the socket */
+     close(dsock->control);
+@@ -841,8 +631,7 @@
+ 
+     /* delete the socket from memory */
+     deleteSocket(dsock);
+-  }
+-  deleteListIterator(sock_i);
++  } deleteListIterator(sock_i);
+ }
+ 
+ 
+@@ -891,13 +680,13 @@
+ 
+     dsock->hostname = strdup(host);
+     listPut(socket_list, dsock);
++    propertyTablePut(sock_table, dsock);
+ 
+     // load account data
+     if((account = get_account(acct)) != NULL)
+       socketSetAccount(dsock, account);
+     // no luck!
+     else {
+-      printf("Account load failed.\r\n");
+       close_socket(dsock, FALSE);
+       continue;
+     }
+@@ -911,7 +700,6 @@
+       // try putting the character into the game
+       // close the socket if we fail.
+       if(!try_enter_game(dMob)) {
+-	printf("Enter game failed.\r\n");
+ 	// do not bother extracting, since we haven't entered the game yet
+ 	unreference_player(socketGetChar(dsock));
+ 	socketSetChar(dsock, NULL);
+@@ -921,7 +709,6 @@
+     }
+     // no luck
+     else {
+-      printf("Player load failed.\r\n");
+       close_socket(dsock, FALSE);
+       continue;
+     }
+@@ -935,8 +722,9 @@
+     // make sure the socket can be used
+     dsock->bust_prompt    =  TRUE;
+     dsock->lookup_status  =  TSTATE_DONE;
+-    socketReplaceInputHandler(dsock, account_handle_menu, account_menu);
+-    socketPushInputHandler(dsock, handle_cmd_input, show_prompt);
++
++    // let our modules know we've finished copying over a socket
++    hookRun("copyover_complete", hookBuildInfo("sk", dsock));
+ 
+     // negotiate compression
+     text_to_buffer(dsock, (char *) compress_will2);
+@@ -948,7 +736,6 @@
+   reconnect_copyover_sockets();
+ }     
+ 
+-
+ void socket_handler() {
+   LIST_ITERATOR *sock_i = newListIterator(socket_list);
+   SOCKET_DATA     *sock = NULL; 
+@@ -967,7 +754,32 @@
+     
+     /* Is there a new command pending ? */
+     if (sock->cmd_read) {
+-      socketGetInputHandler(sock)(sock, sock->next_command);
++      IH_PAIR *pair = listGet(sock->input_handlers, 0);
++      if(pair->python == FALSE) {
++	void (* handler)(SOCKET_DATA *, char *) = pair->handler;
++	handler(sock, sock->next_command);
++      }
++      else {
++	PyObject *arglist = Py_BuildValue("Os", socketGetPyFormBorrowed(sock),
++					  sock->next_command);
++	PyObject *retval  = PyEval_CallObject(pair->handler, arglist);
++
++	// check for an error:
++	if(retval == NULL) {
++	  char *tb = getPythonTraceback();
++	  if(tb != NULL) {
++	    log_string("Error with a python input handler:\r\n%s\r\n", tb);
++	    free(tb);
++	  }
++	}
++	
++	// garbage collection
++	Py_XDECREF(retval);
++	Py_XDECREF(arglist);
++      }
++
++      // append our last command to the command history. History buffer is
++      // 100 commands, so pop off the earliest command if we're going over
+       listPut(sock->command_hist, strdup(sock->next_command));
+       if(listSize(sock->command_hist) > 100)
+ 	free(listRemoveNum(sock->command_hist, 100));
+@@ -1189,15 +1001,35 @@
+   return sock->text_editor;
+ }
+ 
++BUFFER *socketGetOutbound    ( SOCKET_DATA *sock) {
++  return sock->outbuf;
++}
++
+ void socketPushInputHandler  ( SOCKET_DATA *socket, 
+ 			       void handler(SOCKET_DATA *socket, char *input),
+ 			       void prompt (SOCKET_DATA *socket)) {
+   IH_PAIR *pair = malloc(sizeof(IH_PAIR));
+   pair->handler = handler;
+   pair->prompt  = prompt;
++  pair->python  = FALSE;
+   listPush(socket->input_handlers, pair);
+ }
+ 
++void socketPushPyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt) {
++  IH_PAIR *pair = malloc(sizeof(IH_PAIR));
++  pair->handler = handler;
++  pair->prompt  = prompt;
++  pair->python  = TRUE;
++  Py_XINCREF((PyObject *)handler);
++  Py_XINCREF((PyObject *)prompt);
++  listPush(sock->input_handlers, pair);
++}
++
++void socketReplacePyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt){
++  socketPopInputHandler(sock);
++  socketPushPyInputHandler(sock, handler, prompt);
++}
++
+ const char *socketGetLastCmd(SOCKET_DATA *sock) {
+   if(listSize(sock->command_hist) == 0)
+     return "";
+@@ -1207,6 +1039,10 @@
+ 
+ void socketPopInputHandler   ( SOCKET_DATA *socket) {
+   IH_PAIR *pair = listPop(socket->input_handlers);
++  if(pair->python) {
++    Py_XDECREF((PyObject *)pair->handler);
++    Py_XDECREF((PyObject *)pair->prompt);
++  }
+   free(pair);
+ }
+ 
+@@ -1217,19 +1053,42 @@
+   socketPushInputHandler(socket, handler, prompt);
+ }
+ 
+-void (*socketGetInputHandler ( SOCKET_DATA *socket))(SOCKET_DATA *, char *) {
+-  if(listSize(socket->input_handlers) == 0)
+-    return NULL;
+-  IH_PAIR *pair = listGet(socket->input_handlers, 0);
+-  return (pair ? pair->handler : NULL);
+-}
+-
+ void socketQueueCommand( SOCKET_DATA *sock, const char *cmd) {
+   listQueue(sock->input, strdup(cmd));
+ }
+ 
++int socketGetUID( SOCKET_DATA *dsock) {
++  return dsock->uid;
++}
++
++bool socketHasPrompt(SOCKET_DATA *sock) {
++  IH_PAIR *pair = listGet(sock->input_handlers, 0);
++  return (pair != NULL && pair->prompt != NULL);
++}
++
+ void socketShowPrompt( SOCKET_DATA *sock) {
+-  ((IH_PAIR *)listGet(sock->input_handlers, 0))->prompt(sock);
++  IH_PAIR *pair = listGet(sock->input_handlers, 0);
++  if(pair == NULL || pair->prompt == NULL)
++    return;
++  else if(pair->python == FALSE) {
++    ((void (*)(SOCKET_DATA *))pair->prompt)(sock);
++  }
++  else {
++    PyObject *arglist = Py_BuildValue("(O)", socketGetPyFormBorrowed(sock));
++    PyObject *retval  = PyEval_CallObject(pair->prompt, arglist);
++    // check for an error:
++    if(retval == NULL) {
++      char *tb = getPythonTraceback();
++      if(tb != NULL) {
++	log_string("Error with a python prompt:\r\n%s\r\n", tb);
++	free(tb);
++      }
++    }
++    
++    // garbage collection
++    Py_XDECREF(retval);
++    Py_XDECREF(arglist);
++  }
+ }
+ 
+ void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name) {
+@@ -1359,7 +1218,6 @@
+ 
+   dsock->out_compress->avail_in = 0;
+   dsock->out_compress->next_in = dummy;
+-  dsock->top_output = 0;
+ 
+   /* No terminating signature is needed - receiver will get Z_STREAM_END */
+   if (deflate(dsock->out_compress, Z_FINISH) != Z_STREAM_END && !forced)
+diff -ruN ../nakedmudv3.2.1/src/socket.h src/socket.h
+--- ../nakedmudv3.2.1/src/socket.h	2006-07-09 17:29:09.000000000 -0400
++++ src/socket.h	2006-12-24 22:15:56.000000000 -0500
+@@ -7,7 +7,7 @@
+ //*****************************************************************************
+ 
+ int   init_socket           ( void );
+-bool  new_socket            ( int sock );
++SOCKET_DATA  *new_socket    ( int sock );
+ void  close_socket          ( SOCKET_DATA *dsock, bool reconnect );
+ bool  read_from_socket      ( SOCKET_DATA *dsock );
+ void  socket_handler        ( void );
+@@ -46,15 +46,19 @@
+ void socketReplaceInputHandler( SOCKET_DATA *socket,
+ 				void handler(SOCKET_DATA *socket, char *input),
+ 				void prompt (SOCKET_DATA *socket));
++void socketPushPyInputHandler   (SOCKET_DATA *sock, void *handler,void *prompt);
++void socketReplacePyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt);
+ void socketPopInputHandler    ( SOCKET_DATA *socket);
+-void (*socketGetInputHandler  ( SOCKET_DATA *socket))(SOCKET_DATA *, char *);
+-void socketShowPrompt         ( SOCKET_DATA *sock);
+ void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name);
+ const char *socketGetHostname ( SOCKET_DATA *sock);
+ BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock);
++BUFFER *socketGetOutbound     ( SOCKET_DATA *sock);
+ void socketQueueCommand       ( SOCKET_DATA *sock, const char *cmd);
++int               socketGetUID( SOCKET_DATA *sock);
+ 
++bool socketHasPrompt          ( SOCKET_DATA *sock);
+ void socketBustPrompt         ( SOCKET_DATA *sock);
++void socketShowPrompt         ( SOCKET_DATA *sock);
+ const char *socketGetLastCmd  ( SOCKET_DATA *sock);
+ 
+ #endif // SOCKET_H
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/__restricted_builtin_funcs__.py lib/pymodules/__restricted_builtin_funcs__.py
+--- ../nakedmudv3.2.1/lib/pymodules/__restricted_builtin_funcs__.py	2006-07-09 17:29:16.000000000 -0400
++++ lib/pymodules/__restricted_builtin_funcs__.py	2006-12-24 22:31:26.000000000 -0500
+@@ -9,11 +9,11 @@
+ import __builtin__
+ 
+ def r_import(name, globals = {}, locals = {}, fromlist = []):
+-    """Restricted version of __import__ only allows importing of specific
+-    modules"""
++    '''Restricted __import__ only allows importing of specific modules'''
+ 
+-    ok_modules = ("mud", "obj", "char", "room", "exit", "event",
+-                  "action", "random", "traceback", "__restricted_builtin__")
++    ok_modules = ("mud", "obj", "char", "room", "exit", "account", "mudsock",
++                  "event", "action", "random", "traceback",
++                  "__restricted_builtin__")
+     if name not in ok_modules:
+         raise ImportError, "Untrusted module, %s" % name
+     return __builtin__.__import__(name, globals, locals, fromlist)
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/account_handler.py lib/pymodules/account_handler.py
+--- ../nakedmudv3.2.1/lib/pymodules/account_handler.py	1969-12-31 19:00:00.000000000 -0500
++++ lib/pymodules/account_handler.py	2006-12-24 22:31:26.000000000 -0500
+@@ -0,0 +1,284 @@
++'''
++account_handler.py
++
++The login and creation of accounts, and handles all account procedures, loading
++and deleting, of characters.
++'''
++import mud, mudsys, char, hooks, account, socket, event, telnetlib
++
++# control sequences for squelching passwords
++squelch   = telnetlib.IAC + telnetlib.WILL + telnetlib.ECHO
++unsquelch = telnetlib.IAC + telnetlib.WONT + telnetlib.ECHO
++
++
++
++def check_acct_name(name):
++    '''Makes sure an account name is valid'''
++    return (len(name) > 3 and len(name) < 13 and
++            name[0].isalpha() and name.isalnum())
++
++def acct_name_prompt(sock):
++    sock.send_raw("What is your account name? ")
++
++def acct_new_password_prompt(sock):
++    sock.send_raw("What is your new password? " + squelch)
++
++def acct_password_prompt(sock):
++    sock.send_raw("What is your password? " + squelch)
++
++def acct_confirm_password_prompt(sock):
++    sock.send_raw("\r\nVerify your password? " + squelch)
++
++def acct_wait_dns_prompt(sock):
++    sock.send_raw("Resolving your internet address, have patience... ")
++
++def acct_finish_prompt(sock):
++    sock.send_raw("{c\r\n*** Press enter to finish account creation:{n ") 
++
++def acct_finish_handler(sock, arg):
++    # pop our input handler for finishing account generation
++    sock.pop_ih()
++
++    # log that the account created
++    mud.log_string("New account '" + sock.account.name + "' has created.")
++
++    # register and save the account to disk
++    mudsys.do_register(sock.account)
++
++def acct_wait_dns_handler(sock, arg):
++    # do nothing
++    return
++
++def acct_name_handler(sock, arg):
++    '''the first prompt a socket encounters; enter a name of an account or
++       a new name of an account to create one'''
++    if mudsys.account_exists(arg):
++        # logging on to an already existing account
++        mud.log_string("Account '" + arg + "' is trying to connect.")
++        acct = mudsys.load_account(arg)
++
++        # attach our account to our socket. Put in mudsys to prevent scripts
++        # from messing around with account and socket connections
++        mudsys.attach_account_socket(acct, sock)
++        sock.pop_ih()
++        sock.push_ih(acct_menu_handler, acct_main_menu)
++        sock.push_ih(acct_password_handler, acct_password_prompt)
++
++    elif not check_acct_name(arg):
++        sock.send(mud.format_string("That is an invalid account name. Your " \
++                                    "account name must only consist of " \
++                                    "characters and numbers, and it must be " \
++                                    "4 and 12 characters in length. The first "\
++                                    "character MUST be a letter. Please pick "\
++                                    "another.", False))
++
++    elif mudsys.account_creating(arg):
++        sock.send("An account with that name is already creating.")
++
++    else:
++        # creating a new account
++        mud.log_string("Account '" + arg + "' is trying to create.")
++
++        # create our new account
++        acct = mudsys.create_account(arg)
++        if acct == None:
++            sock.send("Could not create an account with that name.")
++        else:
++            mudsys.attach_account_socket(acct, sock)
++            sock.pop_ih()
++            sock.push_ih(acct_menu_handler, acct_main_menu)
++            sock.push_ih(acct_finish_handler, acct_finish_prompt)
++            sock.push_ih(acct_confirm_password_handler, acct_confirm_password_prompt)
++            sock.push_ih(acct_new_password_handler, acct_new_password_prompt)
++
++
++def acct_new_password_handler(sock, arg):
++    '''asks a new account for a password'''
++    if len(arg) > 0:
++        # put in mudsys to prevent scripts from messing with passwords
++        mudsys.set_password(sock.account, arg)
++        sock.pop_ih()
++
++def acct_confirm_password_handler(sock, arg):
++    '''checks to see if our argument matches our password; if not, we re-enter
++       our old password'''
++    # password functions put in mudsys to prevent scripts from
++    # messing with passwords
++    if not mudsys.password_matches(sock.account, arg):
++        sock.send("Passwords do not match.")
++        sock.pop_ih()
++        sock.push_ih(acct_confirm_password_handler,acct_confirm_password_prompt)
++        sock.push_ih(acct_password_handler, acct_password_prompt)
++    else:
++        # Password matches. Keep it and go down a level
++        sock.send_raw(unsquelch)
++        sock.pop_ih()
++
++def acct_password_handler(sock, arg):
++    '''asks an account to verify its password'''
++    # password functions put in mudsys to prevent scripts from
++    # messing with passwords
++    sock.send_raw(unsquelch)
++    if not mudsys.password_matches(sock.account, arg):
++        sock.send("Incorrect password.")
++        sock.close()
++    else:
++        # password matches, pop our handler and go down a level
++        sock.pop_ih()
++
++def find_reconnect(name):
++    '''searches through the character list for a PC whose name matches the
++       supplied name'''
++    name = name.lower()
++    for ch in char.char_list():
++        if ch.is_pc and name == ch.name.lower():
++            return ch
++    return None
++
++def acct_load_char(sock, arg):
++    '''loads a character attached to the account. Argument supplied must be a
++       numeric value corresponding to the character'''
++    arg = int(arg)
++    if arg >= len(sock.account.characters()) or arg < 0:
++        sock.send("Invalid choice!")
++    else:
++        # get the name
++        name = sock.account.characters()[arg]
++
++        # first, try a reconnect
++        ch = find_reconnect(name)
++
++        # no reconnect? Try loading our character
++        if not ch == None:
++            # swap the sockets
++            old_sock = ch.sock
++
++            # attach and detach put in mudsys to prevent scripts from
++            # messing around with the connections between chars and sockets
++            mudsys.detach_char_socket(ch)
++            mudsys.attach_char_socket(ch, sock)
++            
++            if old_sock != None:
++                old_sock.close()
++            mud.log_string(ch.name + " has reconnected.")
++            ch.send("You take over a body already in use.")
++            sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt)
++
++        else:
++            # load our character. Put in mudsys to prevent scripts from using it
++            ch = mudsys.load_char(name)
++            if ch == None:
++                sock.send("The player file for " + name + " is missing.")
++            elif (mudsys.sys_getval("lockdown") != '' and
++                  not ch.isInGroup(mudsys.sys_getval("lockdown"))):
++                sock.send("You are currently locked out of the mud.")
++                mud.extract(ch)
++            else:
++                # attach put in mudsys to prevent scripts from messing with
++                # character and socket links
++                mudsys.attach_char_socket(ch, sock)
++                if mudsys.try_enter_game(ch):
++                    mud.log_string(ch.name + " has entered the game.")
++                    sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt)
++                    ch.page(mud.get_motd())
++                    ch.act("look")
++                    hooks.run("enter", hooks.build_info("ch rm", (ch, ch.room)))
++                else:
++                    sock.send("There was a problem entering the game. " + \
++                              "try again later.")
++                    # detach put in mudsys t prevent scripts from messing with
++                    # character and socket links
++                    mudsys.detach_char_socket(ch, sock)
++                    mud.extract(ch)
++
++def acct_menu_handler(sock, arg):
++    '''parses account commands (new character, enter game, quit, etc)'''
++    if len(arg) == 0:
++        return
++    arg = arg[0].upper()
++    if arg.isdigit():
++        acct_load_char(sock, arg)
++    elif arg == 'Q':
++        sock.send("Come back soon!")
++        mudsys.do_save(sock.account)
++        sock.close()
++    elif arg == 'P':
++        sock.push_ih(acct_confirm_password_handler,acct_confirm_password_prompt)
++        sock.push_ih(acct_new_password_handler, acct_new_password_prompt)
++        sock.push_ih(acct_password_handler, acct_password_prompt)
++    elif arg == 'N':
++        hooks.run("create_character", hooks.build_info("sk", (sock,)))
++    else:
++        sock.send("Invalid choice!")
++
++def display_acct_chars(sock):
++    '''shows the socket a prettied list of characters tied to the account it
++       has attached. Prints three names per line.'''
++    num_cols   = 3
++    print_room = (80 - 10*num_cols)/num_cols
++    fmt        = "  {c%2d{g) %-" + str(print_room) + "s"
++
++    sock.send("{w\r\nPlay a Character:")
++    i = 0
++    for ch in sock.account.characters():
++        sock.send_raw(fmt % (i, ch))
++        if i % num_cols == num_cols - 1:
++            sock.send_raw("\r\n")
++        i = i + 1
++
++    if not i % num_cols == 0:
++        sock.send_raw("\r\n")
++
++def acct_main_menu(sock):
++    '''displays the main menu for the account and asks for a command'''
++    if len(sock.account.characters()) > 0:
++        display_acct_chars(sock)
++
++    sock.send("\r\n{wAdditional Options:")
++    sock.send("  {g[{cP{g]assword change")
++    sock.send("  {g[{cN{g]new character\r\n")
++    sock.send_raw("Enter choice, or Q to quit:{n ")
++
++
++
++################################################################################
++# events for blocking action when dns lookup is in progress
++################################################################################
++def dns_check_event(no_owner, unused, info):
++    sock, = hooks.parse_info(info)
++    if sock.can_use:
++        sock.send("Lookup complete.")
++        sock.pop_ih()
++        sock.bust_prompt()
++    else:
++        event.start_event(None, 0.1, dns_check_event, None, info)
++
++
++
++################################################################################
++# account handler hooks
++################################################################################
++def account_handler_hook(info):
++    # put a nonfunctional prompt up while waiting for the DNS to resolve
++    sock, = hooks.parse_info(info)
++    sock.push_ih(acct_name_handler, acct_name_prompt)
++    sock.push_ih(acct_wait_dns_handler, acct_wait_dns_prompt)
++    event.start_event(None, 0.1, dns_check_event, None, info)
++
++def copyover_complete_hook(info):
++    sock, = hooks.parse_info(info)
++    sock.push_ih(acct_menu_handler, acct_main_menu)
++    sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt)
++
++
++
++################################################################################
++# loading and unloading the module
++################################################################################
++hooks.add("receive_connection", account_handler_hook)
++hooks.add("copyover_complete",  copyover_complete_hook)
++
++def __unload__():
++    '''removes the hooks for account handling'''
++    hooks.remove("receive_connection", account_handler_hook)
++    hooks.remove("copyover_complete",  copyover_complete_hook)
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/char_gen.py lib/pymodules/char_gen.py
+--- ../nakedmudv3.2.1/lib/pymodules/char_gen.py	1969-12-31 19:00:00.000000000 -0500
++++ lib/pymodules/char_gen.py	2006-12-24 22:31:26.000000000 -0500
+@@ -0,0 +1,119 @@
++'''
++char_gen.py
++
++The basic character generation module. Allows accounts to create new characters
++with basic selection for name, sex, and race.
++'''
++import mudsys, mud, socket, char, hooks
++
++
++
++def check_char_name(arg):
++    '''checks to make sure the character name is valid. Names are valid if they
++       are greater than 2 characters, less than 13, and comprise only alpha
++       characters.'''
++    return len(arg) >= 3 and len(arg) <= 12 and arg.isalpha()
++
++def cg_name_handler(sock, arg):
++    if not check_char_name(arg):
++        sock.send("Illegal name, please pick another.")
++    elif mudsys.player_exists(arg):
++        sock.send("A player with that name already exists.")
++    elif mudsys.player_creating(arg):
++        sock.send("A player is already being created with that name.")
++    else:
++        name = arg[0].upper() + arg[1:]
++        ch = mudsys.create_player(name)
++
++        if ch == None:
++            sock.send("Illegal name, please pick another.")
++        else:
++            mudsys.attach_char_socket(ch, sock)
++            ch.rdesc = ch.name + " is here."
++            sock.pop_ih()
++
++def cg_sex_handler(sock, arg):
++    try:
++        result = {
++            'M' : 'male',
++            'F' : 'female',
++            'N' : 'neutral'
++            }[arg[0].upper()]
++        sock.ch.sex = result
++        sock.pop_ih()
++    except KeyError:
++        sock.send("Invalid sex, try again.")
++
++def cg_race_handler(sock, arg):
++    if not mud.is_race(arg, True):
++        sock.send("Invalid race selection, try again.")
++    else:
++        sock.ch.race = arg
++        sock.pop_ih()
++
++def cg_finish_handler(sock, arg):
++    # pop our input handler for finishing character generation
++    sock.pop_ih()
++
++    # log that the character created
++    mud.log_string("New player: " + sock.ch.name + " has entered the game.")
++
++    # send them the motd
++    sock.ch.page(mud.get_motd())
++
++    # put him in the starting room
++    sock.ch.room = mudsys.sys_getval("start_room")
++    
++    # run the init_player hook
++    hooks.run("init_player", hooks.build_info("ch", (sock.ch,)))
++
++    # register and save him to disk and to an account
++    mudsys.do_register(sock.ch)
++    
++    # attach him to his account and save the accoutn
++    sock.account.add_char(sock.ch)
++    mudsys.do_save(sock.account)
++    
++    # make him look at the room
++    sock.ch.act("look")
++
++    # run our enter hook
++    hooks.run("enter", hooks.build_info("ch rm", (sock.ch, sock.ch.room)))
++
++def cg_name_prompt(sock):
++    sock.send_raw("What is your character's name? ")
++
++def cg_sex_prompt(sock):
++    sock.send_raw("What is your sex (M/F/N)? ")
++
++def cg_race_prompt(sock):
++    sock.send("Available races are: ")
++    sock.send(mud.list_races(True))
++    sock.send_raw("\r\nPlease enter your choice: ")
++
++def cg_finish_prompt(sock):
++    sock.send_raw("{c*** Press enter to finish character generation:{n ")
++
++
++
++################################################################################
++# character generation hooks
++################################################################################
++def char_gen_hook(info):
++    sock, = hooks.parse_info(info)
++    sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt)
++    sock.push_ih(cg_finish_handler, cg_finish_prompt)
++    sock.push_ih(cg_race_handler, cg_race_prompt)
++    sock.push_ih(cg_sex_handler, cg_sex_prompt)
++    sock.push_ih(cg_name_handler, cg_name_prompt)
++
++
++
++################################################################################
++# loading and unloading the module
++################################################################################
++hooks.add("create_character", char_gen_hook)
++
++def __unload__():
++    '''removes the hooks for character generation'''
++    hooks.remove("create_character", char_gen_hook)
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/cmd_comm.py lib/pymodules/cmd_comm.py
+--- ../nakedmudv3.2.1/lib/pymodules/cmd_comm.py	2006-07-09 17:29:16.000000000 -0400
++++ lib/pymodules/cmd_comm.py	2006-12-24 22:31:26.000000000 -0500
+@@ -76,7 +76,7 @@
+        example:
+          say hello, room!'''
+     if arg == '':
+-        send_to_char(ch, "Say what?")
++        ch.send("Say what?")
+     else:
+         arg = arg.replace("$", "$$")
+         message(ch, None, None, None, False, "to_room",
+@@ -115,7 +115,7 @@
+          emote does a little dance.
+          emote A gunshot sounds, and $n is laying on the ground, dead.'''
+     if arg == '':
+-        send_to_char(ch, "Emote we must, but emote what?")
++        ch.send("Emote we must, but emote what?")
+     else:
+         # see if a $n is within the argument ... if there is, let the person
+         # put his or her name where it's wanted. Otherwise, tag it onto the
+@@ -127,7 +127,7 @@
+ def cmd_gemote(ch, cmd, arg):
+     '''cmd_gemote is similar to emote, but it sends a global message'''
+     if arg == '':
+-        send_to_char(ch, "Gemote we must, but gemote what?")
++        ch.send("Gemote we must, but gemote what?")
+     else:
+         # same as emote, but global
+         if arg.find("$n") == -1:
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/cmd_misc.py lib/pymodules/cmd_misc.py
+--- ../nakedmudv3.2.1/lib/pymodules/cmd_misc.py	2006-07-09 17:29:16.000000000 -0400
++++ lib/pymodules/cmd_misc.py	2006-12-24 22:31:26.000000000 -0500
+@@ -20,7 +20,7 @@
+ 
+ def cmd_clear(ch, cmd, arg):
+     '''clear the screen'''
+-    ch.send("\033[H\033[J")
++    ch.send_raw("\033[H\033[J")
+ 
+ def event_delayed_cmd(ch, filler, cmd):
+     '''used to perform delayed commands'''
+@@ -29,13 +29,13 @@
+ def cmd_delay(ch, cmd, arg):
+     '''Perform a command, but delay its execution by a couple seconds'''
+     try:
+-        secs, to_delay = parse_args(ch, True, cmd, arg, "int string")
++        secs, to_delay = parse_args(ch, True, cmd, arg, "double string")
+     except: return
+ 
+     if secs < 1:
+         ch.send("You can only delay commands for positive amounts of time.")
+     else:
+-        ch.send("You delay '%s' for %d seconds" % (to_delay, secs))
++        ch.send("You delay '%s' for %.2f seconds" % (to_delay, secs))
+         event.start_event(ch, secs, event_delayed_cmd, None, to_delay)
+ 
+ def cmd_motd(ch, cmd, arg):
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/colour.py lib/pymodules/colour.py
+--- ../nakedmudv3.2.1/lib/pymodules/colour.py	1969-12-31 19:00:00.000000000 -0500
++++ lib/pymodules/colour.py	2006-12-24 22:31:26.000000000 -0500
+@@ -0,0 +1,88 @@
++"""
++colour.py
++
++NakedMud's base colour module. Contains functions for outbound text processing
++to add ASCII colour codes to the text.
++"""
++import mud, mudsock, hooks
++
++
++
++# symbols and values we need for processing colours
++base_colour_marker   = '{'
++colour_start         = '\x1B['
++cDARK                = '0'
++cLIGHT               = '1'
++
++# colour symbols
++c_none    = 'n'
++c_dark    = 'd'
++c_red     = 'r'
++c_green   = 'g'
++c_yellow  = 'y'
++c_blue    = 'b'
++c_magenta = 'p'
++c_cyan    = 'c'
++c_white   = 'w'
++
++# maps of colour symbols to their ASCII number type thing
++base_colours = { c_none    : '0',
++                 c_dark    : '30',  
++                 c_red     : '31',  
++                 c_green   : '32',  
++                 c_yellow  : '33',  
++                 c_blue    : '34',  
++                 c_magenta : '35',  
++                 c_cyan    : '36',  
++                 c_white   : '37' }
++
++
++
++################################################################################
++# colour processing hooks
++################################################################################
++def process_colour_hook(info):
++    sock,  = hooks.parse_info(info)
++    buf    = sock.outbound_text
++    newbuf = []
++
++    # go through our outbound text and process all of the colour codes
++    i = 0
++    while i < len(buf):
++        if buf[i] == base_colour_marker and i + 1 < len(buf):
++            i = i + 1
++            char  = buf[i]
++
++            # upper case is bright, lower case is dark
++            shade = cLIGHT
++            if char == char.lower():
++                shade = cDARK
++
++            # if it's a valid colour code, build it
++            if base_colours.has_key(char.lower()):
++                newbuf.append(colour_start + shade + ';' + \
++                              base_colours[char.lower()] + 'm')
++
++            # if it was an invalid code, ignore it
++            else:
++                newbuf.append(base_colour_marker)
++                if not char == base_colour_marker:
++                    i = i - 1
++
++        else:
++            newbuf.append(buf[i])
++        i = i + 1
++
++    # replace our outbound buffer with the processed text
++    sock.outbound_text = ''.join(newbuf)
++
++
++
++################################################################################
++# initializing and unloading our hooks
++################################################################################
++hooks.add("process_outbound_text", process_colour_hook)
++
++def __unload__():
++    '''detaches our colour module from the game'''
++    hooks.remove("process_outbound_text", process_colour_hook)
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/inform.py lib/pymodules/inform.py
+--- ../nakedmudv3.2.1/lib/pymodules/inform.py	2006-07-09 17:29:16.000000000 -0400
++++ lib/pymodules/inform.py	2006-12-24 22:31:26.000000000 -0500
+@@ -7,7 +7,7 @@
+ #
+ ################################################################################
+ from mud import *
+-import utils, char, hooks
++import utils, char, hooks, mudsock
+ 
+ 
+ 
+@@ -51,15 +51,21 @@
+     buf = "--------------------------------------------------------------------------------\r\n"
+ 
+     # build character info
+-    count = len(char.socket_list())
+-    for ch in char.socket_list():
+-        buf = buf+(" %-16s %-15s %45s "%(ch.name,ch.race,ch.user_groups))+"\r\n"
++    count   = len(mudsock.socket_list())
++    playing = 0
++    for sock in mudsock.socket_list():
++        if not (sock.ch == None or sock.ch.room == None):
++            buf = buf+(" %-16s %-15s %45s "
++                       % (sock.ch.name,sock.ch.race,sock.ch.user_groups))+"\r\n"
++            playing = playing + 1
+ 
+     conn_end = "s"
+     if count == 1: conn_end = ""
++    play_end = "s"
++    if playing == 1: play_end = ""
+ 
+     # build our footer
+-    buf = buf + "--------------------------------------------------------------------------------\r\n" + (" %d player" % count)  + conn_end + " currently logged in.\r\n" + "--------------------------------------------------------------------------------\r\n"
++    buf = buf + "--------------------------------------------------------------------------------\r\n" + (" %d socket" % count)  + conn_end + " logged in." + (" %d player" % playing) + play_end + " currently playing.\r\n" + "--------------------------------------------------------------------------------\r\n"
+     
+     return buf
+ 
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/mud_test.py lib/pymodules/mud_test.py
+--- ../nakedmudv3.2.1/lib/pymodules/mud_test.py	1969-12-31 19:00:00.000000000 -0500
++++ lib/pymodules/mud_test.py	2006-12-24 22:16:28.000000000 -0500
+@@ -0,0 +1,53 @@
++from mudsys import add_cmd
++import auxiliary
++import storage
++
++# Example auxiliary data class. Holds a single string variable that
++# people are allowed to get and set the value of
++class ExampleAux:
++    # Create a new instance of the auxiliary data. If a storage set is supplied,
++    # read our values from that
++    def __init__(self, set = None):
++        if not set:
++            self.val = "abcxyz"
++        else:
++            self.val = set.readString("val")
++
++    # copy the variables in this auxiliary data to another auxiliary data
++    def copyTo(self, to):
++        to.val = self.val
++
++    # create a duplicate of this auxiliary data
++    def copy(self):
++        newVal = ExampleAux()
++        newVal.val = self.val
++        return newVal
++
++    # returns a storage set representation of the auxiliary data
++    def store(self):
++        set = storage.StorageSet()
++        set.storeString("val", self.val)
++        return set
++
++# allows people to peek at the value stored in their ExampleAux data
++def cmd_getaux(ch, cmd, arg):
++    aux = ch.account.getAuxiliary("example_aux")
++    ch.send("The val is " + aux.val)
++
++# allows people to set the value stored in their ExampleAux data
++def cmd_setaux(ch, cmd, arg):
++    aux = ch.account.getAuxiliary("example_aux")
++    aux.val = arg
++    ch.send("val set to " + arg)
++
++# install our auxiliary data on characters when this module is loaded.
++# auxiliary data can also be installed onto rooms and objects. You can install
++# auxiliary data onto more than one type of thing by comma-separating them in
++# the third argument of this method.
++auxiliary.install("example_aux", ExampleAux, "account")
++
++# add in our two commands
++add_cmd("getaux", None, cmd_getaux, "unconscious", "flying", "admin",
++        False, False)
++add_cmd("setaux", None, cmd_setaux, "unconscious", "flying", "admin",
++        False, False)
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/universal_newline.py lib/pymodules/universal_newline.py
+--- ../nakedmudv3.2.1/lib/pymodules/universal_newline.py	1969-12-31 19:00:00.000000000 -0500
++++ lib/pymodules/universal_newline.py	2006-12-24 22:31:26.000000000 -0500
+@@ -0,0 +1,49 @@
++"""
++universal_newline.py
++
++This module makes sure that all newlines are in a universal form (\r\n)
++regardless of how people send them out. \r, \n, \n\r, and \r\n all get
++transformed to \r\n via this module
++"""
++import mud, mudsock, hooks
++
++
++
++################################################################################
++# universal newline hook
++################################################################################
++def universal_newline_hook(info):
++    sock,  = hooks.parse_info(info)
++    buf    = sock.outbound_text
++    newbuf = []
++    cr     = False
++
++    i = 0
++    while i < len(buf):
++        if not (buf[i] == '\r' or buf[i] == '\n'):
++            newbuf.append(buf[i])
++        elif buf[i] == '\r':
++            if len(newbuf) == 0 or not newbuf[-1] == '\n':
++                cr = True
++                newbuf.append(buf[i])
++        else: # buf[i] == '\n':
++            if cr == False:
++                newbuf.append('\r')
++            cr = False
++            newbuf.append(buf[i])
++        i = i + 1
++    if cr == True:
++        newbuf.append('\n')
++
++    sock.outbound_text = ''.join(newbuf)
++
++
++
++################################################################################
++# initializing and unloading our hooks
++################################################################################
++hooks.add("process_outbound_text", universal_newline_hook)
++
++def __unload__():
++    '''detaches our colour module from the game'''
++    hooks.remove("process_outbound_text", universal_newline_hook)
+diff -ruN ../nakedmudv3.2.1/lib/pymodules/utils.py lib/pymodules/utils.py
+--- ../nakedmudv3.2.1/lib/pymodules/utils.py	2006-07-09 17:29:16.000000000 -0400
++++ lib/pymodules/utils.py	2006-12-24 22:31:26.000000000 -0500
+@@ -107,7 +107,7 @@
+             # display our item(s)
+             if count == 1:
+                 ch.send(s_func(thing))
+-            elif m_func == None:
++            elif m_func == None or m_func(thing) == "":
+                 ch.send("(" + str(count) + ") " + s_func(thing))
+             else:
+                 ch.send(m_func(thing) % count)
