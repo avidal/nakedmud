@@ -1,0 +1,182 @@
+If you are having problems installing scripts, you will want to read the 
+documentation in src/modules/scripts/Makefile. This file is an explanation of
+how to interact with scripts.
+
+Scripting is a powerful method for adding character to your MUD. It essentially
+allows you to edit (simple) code that will modify the way rooms, players, and
+objects work. This scripting module uses Python (http://www.python.org) to run
+scripts. It will probably be a good idea to get an understanding of the basic
+python syntax before doing any scripting. Python is a relatively easy language
+to learn - even for non-programmers - and that was why it was chosen as the
+scripting language.
+
+The scripting module for NakedMud adds a couple things to Python, so that it can
+interact with the different types of data in the MUD (see pychar.c, pyobj.c,
+pyroom.c, and pymud.c). Below is a quick synopsis of the various ways Python
+can work with the MUD's data. For documentation on what specific script types
+are used for, and how, see script.h in this directory.
+
+
+
+********************************************************************************
+****************************** PYTHON CHARACTERS *******************************
+********************************************************************************
+The following variables are accessable on Python characters:
+  ch.inv         return a list of the items in the character's inventory
+  ch.objs        same as ch.inv
+  ch.is_npc      return true or false if the character is an NPC
+  ch.is_pc       return true or false if the character is a PC
+  ch.uid         get the character's unique ID (not settable)
+  ch.name        get/set a character's name
+  ch.desc        get/set a character's description
+  ch.rdesc       get/set a character's room description
+  ch.level       get/set a character's level
+  ch.on          get/set the furniture the character is sitting on
+  ch.vnum        get/set the character's virtual number
+  ch.sex         get/set a character's sex. Sex must be in string form 
+                 (e.g. 'male', 'female', or 'neutral')
+  ch.race        get/set a character's race. Race must be in string form
+                 (e.g. 'human', 'elf', 'dragon')
+  ch.position    get/set a character's position. Position must be in string form
+                 (e.g. 'sitting', 'standing')
+  ch.room        get/set a character's room. When setting, a room, either
+                 a room vnum can be used, or an actual room object (see pyroom).
+
+
+The following functions are available for use with Python characters:
+  
+SENDING MESSAGES
+ch.send('message')
+example: ch.send('hello, world!')
+Send a character a text message.
+
+PERFORMING ACTIONS
+ch.act('command')
+example: ch.act('say hello, world!')
+Force a character to perform a specific action.
+
+STORING SCRIPT DATA
+ch.setvar('varname', value)
+example: ch.setvar('blackjack_winnings', 100)
+Allows you to store information on a character, regarding stuff that happened
+during the script. These variables save over reboots and crashes. The only
+restriction is that the variables must be integer values.
+
+RETRIEVING SCRIPT DATA
+ch.getvar('varname')
+example: winnings = ch.getvar('blackjack_winnings')
+Retrieve set data. If the variable has not been set yet, 0 is returned.
+
+LOADING NEW MOBILES
+load_mob(vnum, to)
+example: new_mob = load_mob(100, 120)
+Load a new mobile to the specified target. The first value is the mob's vnum
+and the second is what you would like to load the mob to. "to" can be a room,
+a room vnum, or a piece of furniture.
+
+COUNTING OCCURANCES OF MOBILES
+count_mob(vnum/name, where = entire game)
+exmaple: room_pcs = count_mobs(-1, 100)
+Count the occurances of the number of mobs that are in the scope of where. Where
+can be either a room, a room vnum, or a piece of furniture. if where is not
+provided (e.g. count_mobs('jim')) then all characters in the entire game are
+looked over for matches. Either a mob vnum can be used, or the mob's name. If
+a vnum if -1 is used, PCs are counted.
+
+
+
+********************************************************************************
+******************************** PYTHON OBJECTS ********************************
+********************************************************************************
+The following variables are accessable on Python mud objects:
+  obj.contents    return a list of the things stored within the object
+  obj.objs        same as obj.contents
+  obj.chars       return the people sitting on the object
+  obj.uid         return the unique ID of the object. Not settable
+  obj.name        get/set the object's name
+  obj.desc        get/set the object's description
+  obj.rdesc       get/set the object's room description
+  obj.vnum        get/set the object's vnum
+
+
+The following functions are available for use with Python mud objects:
+LOADING NEW OBJECTS
+load_obj(vnum, where, bodypart = NONE)
+Load an object with the specified vnum to "where". Where can be a container,
+a room, or a character. If a character is provided but a list of bodyparts
+is not, then the object is loaded to inventory. If a list of bodyparts are
+provided, the mobile will try to equip the object to those bodyparts. If, for
+bodyparts, an empty string (e.g. '') is used, then the mobile will try to
+equip the item to the first open, viable slots.
+
+COUNTING OBJECTS
+count_objs(vnum/name, where = entire game)
+exmaple: inv_items = count_objs(141, ch)
+Count the occurances of the number of objects that are in the scope of where. 
+Where can be a room, a room vnum, a container, or a character. If where is not
+provided (e.g. count_objs('table')) then all objects in the entire game are
+looked over for matches. Either a obj vnum can be used, or the objects's name. 
+
+
+
+********************************************************************************
+********************************* PYTHON ROOMS *********************************
+********************************************************************************
+The following variables are accessable on Python rooms:
+  room.chars      return a list of characters in the room
+  room.contents   return a lsit of objects in the room
+  room.objs       same as room.contents
+  room.vnum       return the virtual number of the room
+
+
+The following functions are available for use with Python mud objects:
+CLOSING DOORS
+room.close('direction')
+example: room.close('north')
+Try to close the door in a specified direction, if a door and direction exist.
+If the door was previously locked, it is unlocked.
+
+OPENING DOORS
+room.open('direction')
+example: room.open('east')
+Try to open the door in a specified direction, if a door and direction exist.
+If the door was previously locked, it is unlocked.
+
+LOCKING DOORS
+room.lock('direction')
+example: room.lock('up')
+Try to lock the door in a specified direction, if a door and direction exist.
+If the door was previously open, it is closed.
+
+UNLOCKING DOORS
+room.unlock('direction')
+example: room.unlock('down')
+Try to unlock the door in a specified direction, if a door and direction exist.
+
+
+
+********************************************************************************
+******************************* GLOBAL VARIABLES *******************************
+********************************************************************************
+There are times when one might want to save a piece of information, but not
+specifically on a character. Global variables allow for this. In addition,
+global variables can be ANY type of value (string, integer, a character, a
+room, you name it). However, global variables do not save over crashes.
+
+SETTING GLOBAL VARIABLES
+set_global('key', val)
+example: set_global('bobs_killer', ch)
+Allows you to store the value of a variable globally, which can be accessed
+by other scripts, or by the same script at a later time.
+
+RETREIVING THE VALUES OF GLOBAL VARIABLES
+get_global('key')
+example: killer = get_global('bobs_killer')
+Retreive the value of a global variable. If the variable has not been set,
+then None is returned.
+
+ERASING A GLOBAL VARIABLE
+erase_global('key')
+example: erase_global('bobs_killer')
+Erase the value of the global variable. Effectively, this is the same as
+setting the variable's value to None.

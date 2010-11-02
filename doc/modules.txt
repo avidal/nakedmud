@@ -1,0 +1,63 @@
+It was my attempt to make NakedMud easily extendable without having to make
+major changes to the core functions and datastructures. I know very little
+about programming this advanced, but I came up with an idea of "modules" and
+decided to try it out (I must say, it was at least partially influenced by
+my minute knowledge of Python). In essense, modules are bits of code that run
+outside of the main game loop, but that can put new data onto the basic data
+structures (rooms, object, mobiles) without having to modify the structures
+directly.
+
+That's the basic idea behind modules. I've found them useful so far. 
+Undoubtedly, there is a better way to go about doing what I wanted to do, (if
+you have suggestions, I'm open ears), but for the time being, I think they work
+nicely.
+
+I will not provide very explicit directions on how to implement new modules
+(really, I think they're flexible enough that you can do whatever you want with
+a little bit of imagination), but I will give some basic directions and a couple
+examples to help you going.
+
+
+BASIC DIRECTIONS - INSTALLING A NEW MODULE
+
+There are 5 basic steps to setting up a module
+
+1) make a directory and makefile for it in src/modules. A template makefile
+   is provided in src/modules/example
+2) add its directory to the bottom of the Makefile in the main src directory
+3) write all of you code
+4) put a define in mud.h to let the rest of the MUD know it is installed, incase
+   other modules will need to interact with yours in the future
+5) add your init() function the main() function in gameloop.c
+
+I think all of these are completely straightforward except for 3. That one's the
+(slightly) tricky part. I've provided a few example modules with the normal
+distribution that I suggest you look over. The best one to get a basic 
+understanding from is probably the time module (src/modules/time). It has
+some straightforward examples of how to get modules to create new commands,
+add new data to a datastructure without editing the datastructure directly,
+how to set up a new event loop without having to edit the gameloop, and a bunch
+of other really useful information. There are two other modules that come stock
+with NakedMud - the OLC module (src/modules/olc) and the scripts module
+(src/modules/scripts), but the time module is by far the best one as as an
+examplar of how I thought modules should work.
+
+
+THINGS TO CONSIDER WHEN IMPLEMENTING MODULES
+
+For 90% of the new features and systems that people would care to implement,
+I think that modules are more than adequate for getting the job done without
+having to modify the main parts of the code. However, there will be situations
+that arise when this is not true. For instance, when implementing the scripting
+module, I had to put some extra code into a bunch of the handlers. There are,
+of course, times you might want to pull out a module really quickly (e.g. it
+has lots of bugs, and you want to disable it for awhile). To save myself from
+having to go back and comment out function calls to be able to recompile when
+a module is pulled out, I found it useful to surround all bits of code involving
+a certain module with #ifdef MODULE_XXX and #endif so that the code would not
+run when the module was removed (or, at least, when its define was removed from
+mud.h). You might find such techniques useful as well.
+
+Geoff Hollis
+hollis@ualberta.ca
+http://www.ualberta.ca/~hollis/

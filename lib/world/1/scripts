@@ -1,0 +1,230 @@
+list:=
+  vnum: 100
+  type: 0
+  narg: 0
+  name: room 100 load script
+  code:~
+    # This script shows the basics of how count_xxx and load_xxx can be
+    # used. load_xxx requires two arguments: a vnum, and the thing you want
+    # to load the xxx into. This can be a room, a character (inventory), or
+    # another object. load_obj takes an optional third argument when the object
+    # is being loaded to a character; you can specify a set of places on the
+    # body the object should be loaded to. Optionally, you can supply an empty
+    # string and the object will just autoequip the first open, possible slots.
+    #
+    # count_xxx takes one argument - either a name or a vnum - and an optional
+    # second argument, of where you would like to look. If the second argument
+    # is supplied, it defines the scope of the count (i.e. in another object,
+    # in a room, in a char's inventory). If no second argument is supplied, it
+    # counts occurances in the entire world. A numeric second argument can be
+    # supplied - it will take this to be a room vnum.
+    
+    # Load Mysty if there are no copies of her in the game
+    if count_mobs(100) < 1:
+      mysty = load_mob(100, room)
+      # also equip her with a shirt (vnum 100)
+      load_obj(100, mysty, '') # '' means "equip to first open slot possible"
+      # and equip her with a pair of earrings (vnum 101)
+      load_obj(101, mysty, 'left ear, right ear')
+      
+    # Load a few tables into the room
+    num_tables = count_objs('table', room)
+    while num_tables < 4:
+      load_obj(120, room)
+      num_tables = num_tables + 1
+  -
+  vnum: 101
+  type: 0
+  narg: 0
+  name: Room 101 reset script
+  code:~
+    # This init script is designed to show how you can manipulate a character's
+    # position, and what he or she is on/at (e.g. chairs, tables, vehicles).
+    #
+    # When an NPC is loaded into the game through load_mob(), the function
+    # normally takes two parameters: the NPC's vnum, and the thing you want to
+    # load the person onto (a room or a piece of furniture). The function also
+    # takes an optional third argument, which is the position you want to load
+    # the character in (e.g. sitting, standing, sleeping, etc). If no third
+    # argument is specified, it defaults to standing if the NPC is loaded to a
+    # room, and defaults to sitting if the NPC is loaded to a piece of furniture.
+    
+    # First, make sure there's a bartender in the game
+    if count_mobs(101) < 1:
+      load_mob(101, room)
+    
+    # See if the bar is here. If it's not, load it
+    # up and add a couple of the barflies that are usually here
+    if count_objs(130, room) < 1:
+      bar = load_obj(130, room)
+      for i in range(5):
+        load_mob(130, bar, 'sitting')
+    
+    # The bar is already in the game. Let's see if we
+    # should try adding a couple more barflies
+    elif count_mobs(130, room) < 8:
+      barfly = load_mob(130, room)
+      barfly.act("sit at bar")
+      
+      # check to make sure the sit worked
+      if barfly.on is None:
+        barfly.act("say Hey, can you guys make some room at the bar?")
+  -
+  vnum: 105
+  type: 4
+  narg: 0
+  name: Crowd Cheering
+  code:~
+    # When someone gets on stage, the crod starts cheering, adding a
+    # bit of flavor.
+    ch.send("{yAs you get up on stage, you hear hoots and hollers from below. It looks like the crowd is waiting you to start performing.")
+  -
+  vnum: 140
+  type: 4
+  narg: 0
+  name: Mysty Greets
+  code:~
+    # check to make sure that a) this isn't an NPC
+    # and b) we've never met this person befande
+    if ch.is_pc and ch.getvar('met_mysty') is 0:
+    
+      # make sure we send different messages for different sexes
+      if ch.sex is 'male':
+        me.act("say Well hello there, darlin'. I've never had the pleasure of seeing your pretty face around these parts. If you need a hand, or perhaps a drink, just ask me for help")
+      else:
+        me.act("say Welcome to the Stuck Swine! I hope it's to your liking here. If you need a hand, or perhaps a drink, just ask me for help")
+      
+      # set a variable so we know we've met mysty before
+      ch.setvar('met_mysty', 1)
+  -
+  vnum: 141
+  type: 1
+  narg: 0
+  name: Julesz hears about Mysty
+  args: Mysty says hi, Mysty says hello
+  code:~
+    # A small example of how speech scripts can be used. This script triggers
+    # when someone says "Mysty says hi" or "Mysty says hello".
+    
+    # don't bother if the person is an NPC
+    if ch.is_pc:
+      
+      # see if they've said this to us before
+      val = ch.getvar('mysty_says_hi')
+      
+      if val == 0:
+        me.act("say Ahhh, you've met Mysty I see? Great gal, isn't she? Here, come grab a seat at the bar. The first drink's on me.")
+        ch.setvar('mysty_says_hi', 1)
+        load_obj(141, me)
+        me.act("give pint " + ch.name)
+      else:
+        me.act("say Thanks. I hope she drops by soon.")
+  -
+  vnum: 150
+  type: 6
+  narg: 0
+  name: Mysty sees someone sit at a table
+  args: si, sit
+  code:~
+    # This is a demonstration of how scripts can trigger off of commands.
+    # You can specify a comma-separated list of commands the script will
+    # work with, as well as if the normal MUD command should be followed
+    # through with afterwards (num. argument = 0) or not (= 1). The command
+    # name must be filled out in full, so if people are to be able to use
+    # abbreviations, you must supply each one in the command list (e.g. en,
+    # ent, ente, enter). If you would like to force the character to perform
+    # another command in a command script, command scripts will be checked
+    # in those those commands as well. To prevent this, ch.act() must be
+    # supplied a special, secondary argument with a value of 1.
+    
+    # first, find what they were trying to sit at. The second and third
+    # arguments are optional. The second supplies the scope (defaults to
+    # all objects in the game). This can be a room, a character, or container.
+    # The third is the character looking. If this is not specified, it does
+    # not check for visibility issues
+    obj = find_obj(arg, room, ch)
+    
+    # If the object exists, it's not what we're already sitting at, and
+    # the vnum is a table, then serve the customer
+    if obj != None and ch.on == None and obj.vnum == 120:
+      me.act("delay 1 say what can I get for you? If you do not know what we serve, please ask me about the menu")
+  -
+  vnum: 151
+  type: 6
+  narg: 0
+  name: Julesz sees someone sit at the bar
+  args: si, sit
+  code:~
+    # This is similar to Mysty's "see someone sit at a table" script. For full
+    # explanation of what's going on, see that script (vnum 150)
+    obj = find_obj(arg, room, ch)
+    
+    if obj != None and ch.on == None and obj.vnum == 130:
+      me.act("delay 1 say what can I get for you? If you'd like to know what we have on tap, please ask")
+  -
+  vnum: 197
+  type: 4
+  narg: 0
+  name: Global example
+  code:~
+    # This script provides an example of how global variables can be used.
+    # Unlike character variables, whose names must be strings and whose values
+    # must be integers, global variables can take any type of "name" (key) and
+    # old any type of data (value); global variables are just maps from one
+    # piece of data to another piece. Of course, global variables do not save
+    # across crashes, whereas player variables do.
+    #
+    # Although keys can be any type of data, it is probably good practice to
+    # make them strings.
+    
+    # Ignore the entry if the person is not a PC
+    if ch.is_pc:
+      
+      # See what the current value is
+      curr_val = get_global('global_example_var')
+    
+      # If we don't have someone in memory, remember this person
+      if curr_val == None:
+        me.act("say Nice to meet you, " + ch.name + "! I've heard great stories about you.")
+        set_global('global_example_var', ch)
+      # If we've met the person before, forget who they are so we can meet another
+      elif curr_val == ch:
+        me.act("say Have we met before, " + ch.name + "? I am ever so forgetful")
+        erase_global('global_example_var')
+  -
+  vnum: 198
+  type: 1
+  narg: 0
+  name: Delay script
+  args: hello
+  code:~
+    # this is an example of how delays can be used in scripts.
+    # After someone says 'hello', the person with the attached script
+    # will say hello back, wait a second, and then ask how the person is doing
+    
+    # first, make sure we're not triggering off of ourself
+    if me != ch:
+      me.act("say hello, " + ch.name)
+      sleep(5)
+      me.act("say how are you doing today?")
+  -
+  vnum: 199
+  type: 5
+  narg: 1
+  name: Character following script
+  code:~
+    # this script will make it so that a mob will follow a person
+    # whenever that person leaves a room. The mob will start following
+    # the first person to leave a room the mob is in, and will only follow
+    # that person from that point onward
+    
+    # check to see if we've found someone to follow yet
+    if me.getvar('char_to_follow') is 0:
+      me.setvar('char_to_follow', ch.uid)
+    
+    # see if the person who is leaving is the person we need to follow
+    if me.getvar('char_to_follow') is ch.uid:
+      # perform the same action as the person who we are following
+      me.act(cmd)
+  -
+-

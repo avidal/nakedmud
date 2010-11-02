@@ -1,0 +1,5 @@
+This is a list of useful commands I've learned, which I never remember. Maybe
+you can benefit from them, too:
+
+
+perl -pi -e "s/oldtext/newtext/g;" files

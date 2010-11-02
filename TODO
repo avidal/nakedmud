@@ -1,0 +1,41 @@
+GEOFF'S TO DO LIST
++-- KNOWN BUGS
+
+
++-- NOT COMPLETE
+  * random dungeon generator
+  * spellchecking in the text editor
+  * mounts and vehicles
+  * being able to stream music would be cool...
+  * clean up and document resedit in modules/olc
+  * write helpfiles, create a better helpfile system, and do hedit
+  * Document all of the modules
+  * Finish cleaning up all of the module stuff
+  * tracking and path following
+  * shops (for mobiles and players)
+  * customized prompts
+  * DOCUMENT DOCUMENT DOCUMENT!! Most of the major headers need full
+    documentation still.
+  * soft-code chat channels
+  * character positions and changing of positions is a bit of a hack.
+    it could really do with some cleaning up.
+  * Mysty's Dialog
+    * Betta
+    * Oren
+
+
++-- NEEDS EXTRA WORK
+  * debug dialogs. Also have a new addition, STORY for temporally extended
+    responses
+
+
++-- NEEDS DEBUGGING
+  * check all of our ITERATE_NEXT and make sure that we're not using
+    it in any cases where we might remove the current element we're on
+  * containers
+  * room reset
+  * Make sure extract obj/char is catching everything, and is running well
+  * Delayed action and event handlers
+  * Generic find algorithm
+  * Bodytypes, especially when setting a character's bodytype anew
+  * text editor

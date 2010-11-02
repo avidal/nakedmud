@@ -1,0 +1,110 @@
+list:=
+  vnum     : 100
+  name     : Mysty's Dialog
+  greet    : Welcome to the Stuck Swine! I hope it's to your liking here. If you need a hand, or perhaps a drink, just ask me for help
+  responses:=
+    keywords: Julesz
+    message : He's here most nights, working the bar. A wonderful man, and ohhh so dreamy eyes.
+    -
+    keywords: Freeport
+    message : Freeport is a large trading city to the east of Asmyr. The only way there is though the mountains to the east. The trek is about two weeks, but if you are looking to see the world, Freeport is a good place to start. They have the world's largest marketplace, and they are right on the ocean. If you go down to the docks, the view is absolutely beautiful - especially at night, around sunset.
+    -
+    keywords: cards, blackjack
+    message : Symon loves to play blackjack, although I must say he is not very good at it. Ask him about it if you are looking to play a game. If you're looking for a challenge, however, you might want to look elsewhere.
+    -
+    keywords: tables
+    message : If you take a seat at one of the tables, myself or one of the other waitresses will be around in a moment to take your order.
+    -
+    keywords: parks
+    message : Asmyr has some of the most beautiful parks I've ever seen. In the spring, the wild flowers attract many people. The parks are great places to go if you're looking to strike up a conversation with somebody.
+    -
+    keywords: merchants
+    message : Asmyr sees many merchants passing through. Just outside the east gate of the city, there's a passage through the mountains that leads down to Freeport, which has the world's largest marketplace. Since going through the pass is the only way to get to Freeport, many merchants spend a couple days here to rest up before they make the trek through the pass.
+    -
+    keywords: Mysty says hi
+    message : Mysty - that's me. If you run into Julesz, let him know I say hi. I'm sure that will get him talking. Maybe he'll have some useful information for you, being new around here and all.
+    -
+    keywords: bar
+    message : The bar is on the south side of the tavern. Chances are, Julesz will be working there. He's a great guy - and cute too! If you see him, let him know that Mysty says hi.
+    -
+    keywords: Garod
+    message : He's a surly fellow. Keeps to himself mostly. You can usually find him in the southwest corner of the tavern, by the bar. I wouldn't go looking if I were you, though. He doesn't like company.
+    -
+    keywords: Symon
+    message : He's a professional entertainer, and performs here during the night. If he's not up on stage, you can usually find him loitering around the tavern - just look for the crowd of women. He's a good guy to talk to if you're looking for some laughs, or if you've got some money to burn. He's got a great hand for the dice. The cards don't seem to like him, though.
+    -
+    keywords: usual crowd
+    message : There's If you're looking to meet any of them, Symon, Oren, and Betta are good folk. Just do yourself a favor and stay away from Garod. He's got quite a temper, and doesn't take well to newcomers.
+    -
+    keywords: ask
+    message : If you'd like to know what someone thinks about a topic, you can always try asking them about it. Taverns and other social gatherings are good places to get information.
+    -
+    keywords: greet
+    message : Most of the people around here are quite friendly. Just go up to them and greet them. It's sure to get them talking. Just a small piece of advice - if you haven't been here for awhile, stay away from that Garod fellow. he usually lingers around the southwest corner of the tavern. He's not too fond of people... new people especially.
+    -
+    keywords: cold, bitter cold
+    message : We're quite elevated, and the mountains aren't too far off to the east, so it can get a bit cold at times. The winter chill is really setting in early this year, too. Why don't you have a seat at one of the tables, and I'll serve you up a nice cup of mead to keep you warm?
+    -
+    keywords: Asmyr
+    message : Even though everyone complains about the bitter cold, it is a wonderful city. In the spring, the parks are so beautiful. And, with all of the merchants always passing through, it is a wonderful place to be if you have a bit of spare money
+    -
+    keywords: Stuck Swine
+    message : That would be where you are - home of the finest ales and entertainment this side of Asmyr! If you are looking for food or drink please, have a seat at one of the tables and I will be right with you. Or, if you'd prefer, the bar is at the south end of the tavern.
+    -
+    keywords: help
+    message : You look like you're new to the Stuck Swine. The usual crowd is fairly outgoing. More likely than not, they'll all strike up a conversation with you if you greet them. If you're looking for a drink, have a seat at a table or head to the bar. Whatever you'd like, just ask!
+    -
+    keywords: dice, bones
+    message : Bones is one of Symon's favorite games. I've seen him play - he's quite good at it. If you have some spare money to burn, ask him about bones. I'm sure he'd be willing to play you a game or two. Just don't blame me when you lose your money to him!
+    -
+    keywords: menu, steamed crab, pudding ale, steak, veal, breaded porkchops, porkchops, shepard's pie, pie, salmon
+    message : crab merchants from Freeport recently passed through, and we stocked up. I would suggest our current special of steamed crab. It comes with a side of potatos - mashed or baked - greens, and a bun. We also have a wonderful pudding ale on tap, if you are interested. Our regular menu consists of steak, veal, breaded porkchops, shepard's pie, and salmon. If you would like to order anything, simply say so.
+    -
+    keywords: order steamed crab
+    message : A wonderful choice, I must say. I will let the kitchen know right away.
+    -
+    keywords: order ale, order pudding ale
+    message : Absolutely delicious. I will let the bar know you'd like one.
+    -
+    keywords: order steak, order veal, order breaded porkchops, order porkchops, order shepard's pie, order pie, order salmon
+    message : very well. I will get it out to you as soon as possible.
+    -
+  -
+  vnum     : 101
+  name     : Julesz's Dialog
+  greet    : looking for a drink? If so, you've come to the right place.
+  responses:=
+    keywords: order ale, order pudding ale, order lager, order stout
+    message : Good choice! It will be right up.
+    -
+    keywords: ale, ales
+    message : we have two ales on tap. Our pudding ale has a pleasant fruity, spicy flavor to it. Or, if you'd like, there is our normal ale.
+    -
+    keywords: lager
+    message : It is a nice, light lager with a smooth, crisp taste. I'd suggest it if you are looking for something a bit more refreshing.
+    -
+    keywords: stout
+    message : It is a particularily dark stout, with hints of caramel and roasted almonds. It is one of my favourites, I must say.
+    -
+    keywords: on tap
+    message : we have a lager, a stout, and various ales on tap. If you'd like to hear about any specific one, just ask. Or, if you'd like to order one, say so.
+    -
+    keywords: Mysty
+    message : Aye, she's our main server tonight. Cute lass, and she's got a good head on her shoulders too. If you're wanting to know anything about this place, she's a good one to talk to.
+    -
+    keywords: drink
+    message : have a seat at the bar, and I'll be right with you. Or go find a table in the tavern, and Mysty will serve you.
+    -
+  -
+  vnum     : 102
+  name     : Garod's Dialog
+  greet    : Hrmph, whaddiu want?
+  responses:=
+    keywords: Garod
+    message : That's me. Whaddiu want to know? Hmm? I can tell I don't like you already. Why don't you get lost.
+    -
+    keywords: get lost
+    message : Go pester someone else. I'm busy with my ale right now.
+    -
+  -
+-

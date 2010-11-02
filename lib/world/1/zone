@@ -1,0 +1,10 @@
+vnum       : 1
+min        : 100
+max        : 199
+pulse_timer: -1
+name       : The "Proof of Concept" zone
+desc       :~
+     The ambition of this zone is to act as a repository for "proofs of 
+  concept".  Hopefully, there will be enough examples in this zone to act as a 
+editors    : Alister
+-

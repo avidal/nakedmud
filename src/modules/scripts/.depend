@@ -1,0 +1,7 @@
+pychar.o: pychar.c script.h pychar.h pyroom.h pyobj.h
+pymud.o: pymud.c script.h pyroom.h pychar.h pyobj.h
+pyobj.o: pyobj.c script.h pychar.h pyroom.h pyobj.h
+pyroom.o: pyroom.c script.h pyroom.h pychar.h pyobj.h
+script.o: script.c script.h script_set.h pychar.h pyroom.h pyobj.h \
+  pymud.h
+script_set.o: script_set.c script_set.h script.h
