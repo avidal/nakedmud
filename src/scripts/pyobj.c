@@ -1385,6 +1385,13 @@ init_PyObj(void) {
       "copy()\n"
       "\n"
       "Returns a copy of the object.");
+    PyObj_addMethod("do_trigs", py_gen_do_trigs, METH_KEYWORDS,
+      "do_trigs(type, ch=None, obj=None, room=None, exit=None, cmd=None,\n"
+      "         arg=None, opts=None)\n\n"
+      "Run triggers of the specified type on the object. By default, the\n"
+      "trigger owner is 'me'. Other variables can be specified. The opts\n"
+      "variable can be a dictionary that maps optional variable names to their\n"
+      "values.");
 
     makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
     deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;

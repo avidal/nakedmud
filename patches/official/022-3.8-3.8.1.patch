@@ -1,0 +1,650 @@
+diff -ruN ../nakedmudv3.8/src/scripts/pychar.c src/scripts/pychar.c
+--- ../nakedmudv3.8/src/scripts/pychar.c	2009-04-05 16:39:24.000000000 -0400
++++ src/scripts/pychar.c	2009-04-07 16:19:02.000000000 -0400
+@@ -752,7 +752,7 @@
+ // Send a message with Python statements potentially embedded in it. For 
+ //evaluating 
+ PyObject *PyChar_send(PyObject *self, PyObject *args, PyObject *kwds) {
+-  static char *kwlist[] = { "mssg", "dict", "newline", NULL };
++  static char *kwlist[ ] = { "mssg", "dict", "newline", NULL };
+   CHAR_DATA  *me = NULL;
+   char     *text = NULL;
+   PyObject *dict = NULL;
+@@ -760,13 +760,17 @@
+ 
+   if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|Ob", kwlist, 
+ 				  &text, &dict, &newline)) {
+-    PyErr_Format(PyExc_TypeError, "Char.send takes a message, a dictionary, and possibly a newline option.");
++    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to Char.send");
+     return NULL;
+   }
+ 
++  // is dict None? set it to NULL for expand_to_char
++  if(dict == Py_None)
++    dict = NULL;
++
+   // make sure the dictionary is a dictionary
+-  if(dict != NULL && !(PyDict_Check(dict) || dict == Py_None)) {
+-    PyErr_Format(PyExc_TypeError, "char.send expects second argument to be a dict object.");
++  if(!(dict == NULL || PyDict_Check(dict))) {
++    PyErr_Format(PyExc_TypeError, "Char.send expects second argument to be a dict object.");
+     return NULL;
+   }
+   
+@@ -775,63 +779,72 @@
+     PyErr_Format(PyExc_TypeError, "Tried to send nonexistant character.");
+     return NULL;
+   }
+-
+-  // the text we are sending
+-  BUFFER *buf = newBuffer(1);
+-  bprintf(buf, "%s%s", text, (newline ? "\r\n" : ""));
+-  
+-  // are we sending as-is, or expanding embedded statements?
+-  if(dict != NULL) {
+-    // build the script dictionary
+-    PyObject *script_dict = restricted_script_dict();
+-    if(dict != Py_None)
+-      PyDict_Update(script_dict, dict);
+-    PyDict_SetItemString(script_dict, "me", self);
+-
+-    // do the expansion
+-    expand_dynamic_descs_dict(buf, script_dict, get_script_locale());
+-
+-    // garbage collection and end
+-    Py_XDECREF(script_dict);
++  else if(charGetSocket(me) == NULL) {
++    // no point
++    return Py_BuildValue("");
+   }
+ 
+-  // send the message
+-  text_to_char(me, bufferString(buf));
+-
+-  // build the return value
+-  PyObject *ret = Py_BuildValue("s", bufferString(buf));
+-
+-  // garbage collection
+-  deleteBuffer(buf);
+-
+-  // return the value
+-  return ret;
++  if(dict != NULL)
++    PyDict_SetItemString(dict, "me", self);
++  expand_to_char(me, text, dict, get_script_locale(), newline);
++  return Py_BuildValue("");
+ }
+ 
+ //
+ // Send a newline-tagged message to everyone around the character
+-PyObject *PyChar_sendaround(PyChar *self, PyObject *value) {
+-  char   *mssg = NULL;
+-  bool newline = TRUE;
+-  if (!PyArg_ParseTuple(value, "s|b", &mssg, &newline)) {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Characters may only be sent strings");
++PyObject *PyChar_sendaround(PyObject *self, PyObject *args, PyObject *kwds) {
++  static char *kwlist[ ] = { "mssg", "dict", "cansee_only", "newline", NULL };
++  CHAR_DATA    *me = NULL;
++  char       *text = NULL;
++  PyObject   *dict = NULL;
++  bool cansee_only = FALSE;
++  bool     newline = TRUE;
++
++  if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|Obb", kwlist, 
++				  &text, &dict, &cansee_only, &newline)) {
++    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to Char.sendaround");
+     return NULL;
+   }
+ 
+-  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+-  if(ch) {
+-    send_around_char(ch, FALSE, "%s%s", mssg, (newline ? "\r\n" : ""));
+-    return Py_BuildValue("i", 1);
++  // is dict None? set it to NULL for expand_to_char
++  if(dict == Py_None)
++    dict = NULL;
++
++  // make sure the dictionary is a dictionary
++  if(!(dict == NULL || PyDict_Check(dict))) {
++    PyErr_Format(PyExc_TypeError, "Char.sendaround expects second argument to be a dict object.");
++    return NULL;
+   }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Tried to send message to nonexistant character, %d.", 
+-		    self->uid);
++  
++  // make sure we exist
++  if( (me = PyChar_AsChar(self)) == NULL) {
++    PyErr_Format(PyExc_TypeError, "Tried to sendaround nonexistent character.");
+     return NULL;
+   }
+-}
++  // make sure we have a room
++  else if(charGetRoom(me) == NULL) {
++    // no point
++    return Py_BuildValue("");
++  }
++
++  if(dict != NULL)
++    PyDict_SetItemString(dict, "me", self);
+ 
++  // go through all of the characters in our room and send out messages
++  LIST_ITERATOR *char_i = newListIterator(roomGetCharacters(charGetRoom(me)));
++  CHAR_DATA         *ch = NULL;
++  ITERATE_LIST(ch, char_i) {
++    // it's us, or a linkdead character. Ignore
++    if(me == ch || charGetSocket(ch) == NULL)
++      continue;
++    // can't see and need to see
++    else if(cansee_only && !can_see_char(ch, me))
++      continue;
++    PyDict_SetItemString(dict, "ch", charGetPyFormBorrowed(ch));
++    expand_to_char(ch, text, dict, get_script_locale(), newline);
++  } deleteListIterator(char_i);
++  return Py_BuildValue("");
++}
+ 
+ //
+ // make the character perform an action
+@@ -2053,7 +2066,7 @@
+     "\n"
+     "Detach a trigger from the character by key name.");
+   PyChar_addMethod("send", PyChar_send, METH_KEYWORDS,
+-    "send(mssg, script_dict = None, newline = True)\n"
++    "send(mssg, dict = None, newline = True)\n"
+     "\n"
+     "Sends message to the character. Messages can have scripts embedded in\n" 
+     "them, using [ and ]. If so, a variable dictionary must be provided. By\n"
+@@ -2062,10 +2075,13 @@
+     "send_raw(mssg)\n"
+     "\n"
+     "Sends message to the character with no newline appended.");
+-  PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
+-    "sendaround(mssg, newline=True)\n"
++  PyChar_addMethod("sendaround", PyChar_sendaround, METH_KEYWORDS,
++    "sendaround(mssg, dict = None, cansee_only = False, newline=True)\n"
+     "\n"
+-    "Sends message to everyone else in the same room as the character.");
++    "Sends a message to everyone in the character's room. Messages can have\n"
++    "scripts embedded in them using [ and ]. If so, a variable dictionary\n"
++    "must be provided. By default, 'me' references the person sendaround is\n"
++    "called on, and 'ch' references each character being sent a message.");
+   PyChar_addMethod("act", PyChar_act, METH_VARARGS,
+     "act(command)\n"
+     "\n"
+@@ -2186,6 +2202,13 @@
+     "copy()\n"
+     "\n"
+     "Returns a copy of the character.");
++  PyChar_addMethod("do_trigs", py_gen_do_trigs, METH_KEYWORDS,
++    "do_trigs(type, ch=None, obj=None, room=None, exit=None, cmd=None,\n"
++    "         arg=None, opts=None)\n\n"
++    "Run triggers of the specified type on the character. By default, the\n"
++    "trigger owner is 'me'. Other variables can be specified. The opts\n"
++    "variable can be a dictionary that maps optional variable names to their\n"
++    "values.");
+ 
+   // add in all the getsetters and methods
+   makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);
+diff -ruN ../nakedmudv3.8/src/scripts/pymud.c src/scripts/pymud.c
+--- ../nakedmudv3.8/src/scripts/pymud.c	2009-04-05 00:26:22.000000000 -0400
++++ src/scripts/pymud.c	2009-04-07 16:19:51.000000000 -0400
+@@ -485,6 +485,94 @@
+   return Py_BuildValue("s", raceGetList(player_only));
+ }
+ 
++PyObject *mud_send(PyObject *self, PyObject *args, PyObject *kwds) {
++  static char *kwlist[ ] = { "list", "mssg", "dict", "newline", NULL };
++  PyObject *list = NULL;
++  char     *text = NULL;
++  PyObject *dict = NULL;
++  bool   newline = TRUE;
++
++  if(!PyArg_ParseTupleAndKeywords(args, kwds, "Os|Ob", kwlist, 
++				  &list, &text, &dict, &newline)) {
++    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to mud.send");
++    return NULL;
++  }
++
++  // is dict None? set it to NULL for expand_to_char
++  if(dict == Py_None)
++    dict = NULL;
++
++  // make sure the dictionary is a dictionary
++  if(!(dict == NULL || PyDict_Check(dict))) {
++    PyErr_Format(PyExc_TypeError, "mud.send expects third argument to be a dict object.");
++    return NULL;
++  }
++
++  // make sure the list is a list
++  if(!PyList_Check(list)) {
++    PyErr_Format(PyExc_TypeError, "mud.send expects first argument to be a list of characters.");
++    return NULL;
++  }
++
++  // go through our list of characters, and send each of them the message
++  int i = 0;
++  for(; i < PyList_Size(list); i++) {
++    // make sure it's a character, and it has a socket
++    PyObject *pych = PyList_GetItem(list, i);
++    CHAR_DATA  *ch = NULL;
++    if(!PyChar_Check(pych))
++      continue;
++    if( (ch = PyChar_AsChar(pych)) == NULL || charGetSocket(ch) == NULL)
++      continue;
++    if(dict != NULL)
++      PyDict_SetItemString(dict, "ch", charGetPyFormBorrowed(ch));
++    expand_to_char(ch, text, dict, get_script_locale(), newline);
++  }
++  return Py_BuildValue("");
++}
++
++PyObject *mud_expand_text(PyObject *self, PyObject *args, PyObject *kwds) {
++  static char *kwlist[ ] = { "text", "dict", "newline", NULL };
++  char     *text = NULL;
++  PyObject *dict = NULL;
++  bool   newline = FALSE;
++
++  if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|Ob", kwlist, 
++				  &text, &dict, &newline)) {
++    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to mud.expand_text");
++    return NULL;
++  }
++
++  // is dict None? set it to NULL for expand_to_char
++  if(dict == Py_None)
++    dict = NULL;
++
++  // make sure the dictionary is a dictionary
++  if(!(dict == NULL || PyDict_Check(dict))) {
++    PyErr_Format(PyExc_TypeError, "mud.expand_text expects second argument to be a dict object.");
++    return NULL;
++  }
++  
++  // build our script environment
++  BUFFER   *buf = newBuffer(1);
++  PyObject *env = restricted_script_dict();
++  if(dict != NULL)
++    PyDict_Update(env, dict);
++
++  // do the expansion
++  bufferCat(buf, text);
++  expand_dynamic_descs_dict(buf, env, get_script_locale());
++  if(newline == TRUE)
++    bufferCat(buf, "\r\n");
++
++  // garbage collection and return
++  PyObject *ret = Py_BuildValue("s", bufferString(buf));
++  Py_XDECREF(env);
++  deleteBuffer(buf);
++  return ret;
++}
++
++
+ 
+ //*****************************************************************************
+ // MUD module
+@@ -554,6 +642,20 @@
+     "list_races(player_only=False)\n\n"
+     "Return a list of available races. If player_only is True, list only the\n"
+     "races that players have access to.");
++  PyMud_addMethod("send", mud_send, METH_KEYWORDS,
++    "send(list, mssg, dict = None, newline = True)\n"
++    "\n"
++    "Sends a message to a list of characters. Messages can have scripts\n"
++    "embedded in them, using [ and ]. If so, a variable dictionary must be\n"
++    "provided. By default, 'ch' references each character being sent the\n"
++    "message, for embedded scripts.");
++  PyMud_addMethod("expand_text", mud_expand_text, METH_KEYWORDS,
++    "expand_text(text, dict={}, newline=False)\n\n"
++    "Take text with embedded Python statements. Statements can be embedded\n"
++    "between [ and ]. Expand them out and return the new text. Variables can\n"
++    "be added to the scripting environment by specifying their names and\n"
++    "values in an optional dictionary. Statements are expanded in the default\n"
++    "scripting environment.");
+ 
+   Py_InitModule3("mud", makePyMethods(pymud_methods),
+ 		 "The mud module, for all MUD misc mud utils.");
+diff -ruN ../nakedmudv3.8/src/scripts/pyobj.c src/scripts/pyobj.c
+--- ../nakedmudv3.8/src/scripts/pyobj.c	2009-04-05 12:44:10.000000000 -0400
++++ src/scripts/pyobj.c	2009-04-07 15:20:44.000000000 -0400
+@@ -1385,6 +1385,13 @@
+       "copy()\n"
+       "\n"
+       "Returns a copy of the object.");
++    PyObj_addMethod("do_trigs", py_gen_do_trigs, METH_KEYWORDS,
++      "do_trigs(type, ch=None, obj=None, room=None, exit=None, cmd=None,\n"
++      "         arg=None, opts=None)\n\n"
++      "Run triggers of the specified type on the object. By default, the\n"
++      "trigger owner is 'me'. Other variables can be specified. The opts\n"
++      "variable can be a dictionary that maps optional variable names to their\n"
++      "values.");
+ 
+     makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
+     deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;
+diff -ruN ../nakedmudv3.8/src/scripts/pyroom.c src/scripts/pyroom.c
+--- ../nakedmudv3.8/src/scripts/pyroom.c	2009-04-05 12:39:18.000000000 -0400
++++ src/scripts/pyroom.c	2009-04-07 15:20:15.000000000 -0400
+@@ -1229,6 +1229,13 @@
+       "hasBit(name)\n"
+       "\n"
+       "Return whether room has a bit toggled.\n");
++    PyRoom_addMethod("do_trigs", py_gen_do_trigs, METH_KEYWORDS,
++      "do_trigs(type, ch=None, obj=None, room=None, exit=None, cmd=None,\n"
++      "         arg=None, opts=None)\n\n"
++      "Run triggers of the specified type on the room. By default, the\n"
++      "trigger owner is 'me'. Other variables can be specified. The opts\n"
++      "variable can be a dictionary that maps optional variable names to their\n"
++      "values.");
+ 
+     // add in all the getsetters and methods
+     makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);
+diff -ruN ../nakedmudv3.8/src/scripts/pysocket.c src/scripts/pysocket.c
+--- ../nakedmudv3.8/src/scripts/pysocket.c	2009-04-05 12:41:04.000000000 -0400
++++ src/scripts/pysocket.c	2009-04-07 17:01:40.000000000 -0400
+@@ -264,14 +264,62 @@
+   }
+ }
+ 
+-PyObject *PySocket_send(PySocket *self, PyObject *value) {
+-  PyObject *retval = PySocket_send_raw(self, value);
+-  if(retval == NULL)
++//
++// Send a message with Python statements potentially embedded in it. For 
++//evaluating 
++PyObject *PySocket_send(PyObject *self, PyObject *args, PyObject *kwds) {
++  static char *kwlist[ ] = { "mssg", "dict", "newline", NULL };
++  SOCKET_DATA *me = NULL;
++  char      *text = NULL;
++  PyObject  *dict = NULL;
++  bool    newline = TRUE;
++
++  if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|Ob", kwlist, 
++				  &text, &dict, &newline)) {
++    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to Mudsock.send");
+     return NULL;
+-  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
+-  send_to_socket(sock, "\r\n");
+-  Py_DECREF(retval);
+-  return Py_BuildValue("i", 1);
++  }
++
++  // is dict None? set it to NULL for expand_to_char
++  if(dict == Py_None)
++    dict = NULL;
++
++  // make sure the dictionary is a dictionary
++  if(!(dict == NULL || PyDict_Check(dict))) {
++    PyErr_Format(PyExc_TypeError, "Mudsock.send expects second argument to be a dict object.");
++    return NULL;
++  }
++  
++  // make sure we exist
++  if( (me = PySocket_AsSocket(self)) == NULL) {
++    PyErr_Format(PyExc_TypeError, "Tried to send nonexistent socket.");
++    return NULL;
++  }
++
++  if(dict != NULL)
++    PyDict_SetItemString(dict, "me", self);
++
++  // build our script environment
++  BUFFER   *buf = newBuffer(1);
++  bufferCat(buf, text);
++
++  // expand out our dynamic descriptions if we have a dictionary supplied
++  if(dict != NULL) {
++    PyObject *env = restricted_script_dict();
++    PyDict_Update(env, dict);
++
++    // do the expansion
++    expand_dynamic_descs_dict(buf, env, get_script_locale());
++    Py_XDECREF(env);
++  }
++
++  if(newline == TRUE)
++    bufferCat(buf, "\r\n");
++  text_to_buffer(me, bufferString(buf));
++
++  // garbage collection
++  deleteBuffer(buf);
++  return Py_BuildValue("");
+ }
+ 
+ PyObject *PySocket_close(PySocket *self) {
+@@ -495,9 +543,12 @@
+       "Returns socket's auxiliary data of the specified name.");
+     PySocket_addMethod("aux", PySocket_get_auxiliary, METH_VARARGS,
+       "Alias for mudsock.Mudsock.getAuxiliary");
+-    PySocket_addMethod("send", PySocket_send, METH_VARARGS,
+-      "send(mssg)\n\n"
+-      "Sends text to the socket with appended newline.");
++    PySocket_addMethod("send", PySocket_send, METH_KEYWORDS,
++      "send(mssg, dict = None, newline = True)\n"
++      "\n"
++      "Sends message to the socket. Messages can have scripts embedded in\n" 
++      "them, using [ and ]. If so, a variable dictionary must be provided. By\n"
++      "default, 'me' references the socket being sent the message.");
+     PySocket_addMethod("send_raw", PySocket_send_raw, METH_VARARGS,
+       "send_raw(mssg)\n\n"
+       "Sends text to the socket. No appended newline.");
+diff -ruN ../nakedmudv3.8/src/scripts/scripts.c src/scripts/scripts.c
+--- ../nakedmudv3.8/src/scripts/scripts.c	2009-03-02 01:00:40.000000000 -0500
++++ src/scripts/scripts.c	2009-04-07 15:11:19.000000000 -0400
+@@ -728,6 +728,183 @@
+   Py_XDECREF(dict);
+ }
+ 
++void expand_to_char(CHAR_DATA *ch, const char *mssg, PyObject *dict, 
++		    const char *locale, bool newline) {
++  BUFFER *buf = newBuffer(1);
++  bufferCat(buf, mssg);
++  if(dict != NULL) {
++    // build the script dictionary
++    PyObject *script_dict = restricted_script_dict();
++    PyDict_Update(script_dict, dict);
++
++    // do the expansion
++    expand_dynamic_descs_dict(buf, script_dict, locale);
++
++    // garbage collection and end
++    Py_XDECREF(script_dict);
++  }
++
++  if(newline == TRUE)
++    bufferCat(buf, "\r\n");
++  text_to_char(ch, bufferString(buf));
++
++  // garbage collection
++  deleteBuffer(buf);
++}
++
++PyObject *py_gen_do_trigs(PyObject *self, PyObject *args, PyObject *kwds) {
++  static char *kwlist[] ={ "type","ch","obj","room","exit","cmd","arg","opts",NULL };
++  char       *type = NULL;
++  char        *cmd = NULL;
++  char        *arg = NULL;
++  PyObject   *pych = NULL;
++  PyObject  *pyobj = NULL;
++  PyObject *pyroom = NULL;
++  PyObject *pyexit = NULL;
++  PyObject *pyopts = NULL;
++  LIST       *opts = NULL;
++  CHAR_DATA    *ch = NULL;
++  OBJ_DATA    *obj = NULL;
++  ROOM_DATA  *room = NULL;
++  EXIT_DATA  *exit = NULL;
++  void         *me = NULL;
++  int      me_type = -1;
++  bool        fail = FALSE;
++
++  // first, parse all of our arguments
++  if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|OOOOssO", kwlist, 
++				  &type, &pych, &pyobj, &pyroom, &pyexit,
++				  &cmd, &arg, &pyopts)) {
++    PyErr_Format(PyExc_TypeError, "do_trigs supplied invalid arguments.");
++    return NULL;
++  }
++
++  // make sure we exist, and are of a valid type
++  if(PyChar_Check(self)) {
++    me = PyChar_AsChar(self);
++    me_type = TRIGVAR_CHAR;
++  }
++  else if(PyObj_Check(self)) {
++    me = PyObj_AsObj(self);
++    me_type = TRIGVAR_OBJ;
++  }
++  else if(PyRoom_Check(self)) {
++    me = PyRoom_AsRoom(self);
++    me_type = TRIGVAR_ROOM;
++  }
++
++  // did we find a character?
++  if(me == NULL) {
++    PyErr_Format(PyExc_TypeError,"do_trigs owner does not exist.");
++    return NULL;
++  }
++
++  // make sure ch is of the specified type
++  if(pych!=NULL && (!PyChar_Check(pych) || (ch=PyChar_AsChar(pych)) == NULL)){
++    PyErr_Format(PyExc_TypeError,"do_trigs expects ch to be character.");
++    return NULL;
++  }
++
++  // make sure obj is of the specified type
++  if(pyobj!=NULL && (!PyObj_Check(pyobj) || (obj=PyObj_AsObj(pyobj)) == NULL)){
++    PyErr_Format(PyExc_TypeError,"do_trigs expects obj to be object.");
++    return NULL;
++  }
++
++  // make sure room is of the specified type
++  if(pyroom!=NULL&&(!PyRoom_Check(pyroom)||(room=PyRoom_AsRoom(pyroom))==NULL)){
++    PyErr_Format(PyExc_TypeError,"do_trigs expects room to be room.");
++    return NULL;
++  }
++
++  // make sure exit is of the specified type
++  if(pyexit!=NULL&&(!PyExit_Check(pyexit)||(exit=PyExit_AsExit(pyexit))==NULL)){
++    PyErr_Format(PyExc_TypeError,"do_trigs expects exit to be an exit.");
++    return NULL;
++  }
++
++  // parse opts
++  if(pyopts != NULL && !PyDict_Check(pyopts)) {
++    PyErr_Format(PyExc_TypeError,"do_trigs expects opts to be a dict.");
++    return NULL;
++  }
++  else if(pyopts != NULL) {
++    PyObject  *pairs = PyDict_Items(pyopts);
++    int            i = 0;
++    opts             = newList();
++    // go through each pair and add it to the pyopts list
++    for(; i < PyList_Size(pairs); i++) {
++      PyObject  *pair = PyList_GetItem(pairs, i);
++      PyObject *pykey = PyTuple_GetItem(pair, 0);
++      PyObject *pyval = PyTuple_GetItem(pair, 1);
++      OPT_VAR    *opt = NULL;
++      char       *key = NULL;
++
++      // make sure the key is a string
++      if(PyString_Check(pykey))
++	key = PyString_AsString(pykey);
++      else {
++	PyErr_Format(PyExc_TypeError, "do_trigs opt keys must be strings.");
++	fail = TRUE;
++	break;
++      }
++
++      // check to make sure the val is a valid type
++      if(PyChar_Check(pyval)) {
++	CHAR_DATA *val = PyChar_AsChar(pyval);
++	if(val != NULL)
++	  opt = newOptVar(key, val, TRIGVAR_CHAR);
++	else {
++	  PyErr_Format(PyExc_TypeError,"%s opt provided nonexistent char.",key);
++	  fail = TRUE;
++	  break;
++	}
++      }
++      else if(PyObj_Check(pyval)) {
++	OBJ_DATA *val = PyObj_AsObj(pyval);
++	if(val != NULL)
++	  opt = newOptVar(key, val, TRIGVAR_OBJ);
++	else {
++	  PyErr_Format(PyExc_TypeError,"%s opt provided nonexistent obj.", key);
++	  fail = TRUE;
++	  break;
++	}
++      }
++      else if(PyRoom_Check(pyval)) {
++	ROOM_DATA *val = PyRoom_AsRoom(pyval);
++	if(val != NULL)
++	  opt = newOptVar(key, val, TRIGVAR_ROOM);
++	else {
++	  PyErr_Format(PyExc_TypeError,"%s opt provided nonexistent room.",key);
++	  fail = TRUE;
++	  break;
++	}
++      }
++      else {
++	PyErr_Format(PyExc_TypeError,"%s opt provided invalid value.",key);
++	fail = TRUE;
++	break;
++      }
++
++      // append the opt to the opt list
++      listPut(opts, opt);
++    }
++    Py_DECREF(pairs);
++  }
++
++  // did everything succeed?
++  if(fail == FALSE)
++    gen_do_trigs(me,me_type,type,ch,obj,room,exit,cmd,arg,opts);
++
++  // garbage collection
++  if(opts != NULL)
++    deleteListWith(opts, deleteOptVar);
++
++  if(fail == TRUE)
++    return NULL;
++  return Py_BuildValue("");
++}
++
+ const char *get_script_locale(void) {
+   return listHead(locale_stack);
+ }
+diff -ruN ../nakedmudv3.8/src/scripts/scripts.h src/scripts/scripts.h
+--- ../nakedmudv3.8/src/scripts/scripts.h	2009-03-02 01:00:40.000000000 -0500
++++ src/scripts/scripts.h	2009-04-07 15:11:47.000000000 -0400
+@@ -101,6 +101,13 @@
+ PyObject *accountGetPyFormBorrowed(ACCOUNT_DATA *acc);
+ 
+ //
++// the generic function for parsing a function keyword list and running a 
++// things's triggers from the arguments supplied. See documentation in
++// trighooks.h for explanation of what me and me_type are, as well as arguemnts
++// expected in args. If supplied, opts is expected to be a dict.
++PyObject *py_gen_do_trigs(PyObject *self, PyObject *args, PyObject *kwds);
++
++//
+ // returns a Python form of the given list
+ PyObject *PyList_fromList(LIST *list, void *convertor);
+ 
+@@ -182,6 +189,13 @@
+ void expand_dynamic_descs_dict(BUFFER *desc, PyObject *dict,const char *locale);
+ 
+ //
++// works similar to send_to_char, except allows for embedded Python statements
++// like expand_dynamic_descs_dict does. If dict is NULL, perform text_to_char
++// instead
++void expand_to_char(CHAR_DATA *ch, const char *mssg, PyObject *dict,
++		    const char *locale, bool newline);
++
++//
+ // returns the locale our script is running in. NULL if no scripts are running,
+ // and an empty string if there is no locale for the script
+ const char *get_script_locale(void);

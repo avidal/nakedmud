@@ -1229,6 +1229,13 @@ init_PyRoom(void) {
       "hasBit(name)\n"
       "\n"
       "Return whether room has a bit toggled.\n");
+    PyRoom_addMethod("do_trigs", py_gen_do_trigs, METH_KEYWORDS,
+      "do_trigs(type, ch=None, obj=None, room=None, exit=None, cmd=None,\n"
+      "         arg=None, opts=None)\n\n"
+      "Run triggers of the specified type on the room. By default, the\n"
+      "trigger owner is 'me'. Other variables can be specified. The opts\n"
+      "variable can be a dictionary that maps optional variable names to their\n"
+      "values.");
 
     // add in all the getsetters and methods
     makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);

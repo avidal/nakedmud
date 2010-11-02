@@ -264,14 +264,62 @@ PyObject *PySocket_send_raw(PySocket *self, PyObject *value) {
   }
 }
 
-PyObject *PySocket_send(PySocket *self, PyObject *value) {
-  PyObject *retval = PySocket_send_raw(self, value);
-  if(retval == NULL)
+//
+// Send a message with Python statements potentially embedded in it. For 
+//evaluating 
+PyObject *PySocket_send(PyObject *self, PyObject *args, PyObject *kwds) {
+  static char *kwlist[ ] = { "mssg", "dict", "newline", NULL };
+  SOCKET_DATA *me = NULL;
+  char      *text = NULL;
+  PyObject  *dict = NULL;
+  bool    newline = TRUE;
+
+  if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|Ob", kwlist, 
+				  &text, &dict, &newline)) {
+    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to Mudsock.send");
     return NULL;
-  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
-  send_to_socket(sock, "\r\n");
-  Py_DECREF(retval);
-  return Py_BuildValue("i", 1);
+  }
+
+  // is dict None? set it to NULL for expand_to_char
+  if(dict == Py_None)
+    dict = NULL;
+
+  // make sure the dictionary is a dictionary
+  if(!(dict == NULL || PyDict_Check(dict))) {
+    PyErr_Format(PyExc_TypeError, "Mudsock.send expects second argument to be a dict object.");
+    return NULL;
+  }
+  
+  // make sure we exist
+  if( (me = PySocket_AsSocket(self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Tried to send nonexistent socket.");
+    return NULL;
+  }
+
+  if(dict != NULL)
+    PyDict_SetItemString(dict, "me", self);
+
+  // build our script environment
+  BUFFER   *buf = newBuffer(1);
+  bufferCat(buf, text);
+
+  // expand out our dynamic descriptions if we have a dictionary supplied
+  if(dict != NULL) {
+    PyObject *env = restricted_script_dict();
+    PyDict_Update(env, dict);
+
+    // do the expansion
+    expand_dynamic_descs_dict(buf, env, get_script_locale());
+    Py_XDECREF(env);
+  }
+
+  if(newline == TRUE)
+    bufferCat(buf, "\r\n");
+  text_to_buffer(me, bufferString(buf));
+
+  // garbage collection
+  deleteBuffer(buf);
+  return Py_BuildValue("");
 }
 
 PyObject *PySocket_close(PySocket *self) {
@@ -495,9 +543,12 @@ init_PySocket(void) {
       "Returns socket's auxiliary data of the specified name.");
     PySocket_addMethod("aux", PySocket_get_auxiliary, METH_VARARGS,
       "Alias for mudsock.Mudsock.getAuxiliary");
-    PySocket_addMethod("send", PySocket_send, METH_VARARGS,
-      "send(mssg)\n\n"
-      "Sends text to the socket with appended newline.");
+    PySocket_addMethod("send", PySocket_send, METH_KEYWORDS,
+      "send(mssg, dict = None, newline = True)\n"
+      "\n"
+      "Sends message to the socket. Messages can have scripts embedded in\n" 
+      "them, using [ and ]. If so, a variable dictionary must be provided. By\n"
+      "default, 'me' references the socket being sent the message.");
     PySocket_addMethod("send_raw", PySocket_send_raw, METH_VARARGS,
       "send_raw(mssg)\n\n"
       "Sends text to the socket. No appended newline.");

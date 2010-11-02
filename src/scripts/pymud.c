@@ -485,6 +485,94 @@ PyObject *mud_list_races(PyObject *self, PyObject *args) {
   return Py_BuildValue("s", raceGetList(player_only));
 }
 
+PyObject *mud_send(PyObject *self, PyObject *args, PyObject *kwds) {
+  static char *kwlist[ ] = { "list", "mssg", "dict", "newline", NULL };
+  PyObject *list = NULL;
+  char     *text = NULL;
+  PyObject *dict = NULL;
+  bool   newline = TRUE;
+
+  if(!PyArg_ParseTupleAndKeywords(args, kwds, "Os|Ob", kwlist, 
+				  &list, &text, &dict, &newline)) {
+    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to mud.send");
+    return NULL;
+  }
+
+  // is dict None? set it to NULL for expand_to_char
+  if(dict == Py_None)
+    dict = NULL;
+
+  // make sure the dictionary is a dictionary
+  if(!(dict == NULL || PyDict_Check(dict))) {
+    PyErr_Format(PyExc_TypeError, "mud.send expects third argument to be a dict object.");
+    return NULL;
+  }
+
+  // make sure the list is a list
+  if(!PyList_Check(list)) {
+    PyErr_Format(PyExc_TypeError, "mud.send expects first argument to be a list of characters.");
+    return NULL;
+  }
+
+  // go through our list of characters, and send each of them the message
+  int i = 0;
+  for(; i < PyList_Size(list); i++) {
+    // make sure it's a character, and it has a socket
+    PyObject *pych = PyList_GetItem(list, i);
+    CHAR_DATA  *ch = NULL;
+    if(!PyChar_Check(pych))
+      continue;
+    if( (ch = PyChar_AsChar(pych)) == NULL || charGetSocket(ch) == NULL)
+      continue;
+    if(dict != NULL)
+      PyDict_SetItemString(dict, "ch", charGetPyFormBorrowed(ch));
+    expand_to_char(ch, text, dict, get_script_locale(), newline);
+  }
+  return Py_BuildValue("");
+}
+
+PyObject *mud_expand_text(PyObject *self, PyObject *args, PyObject *kwds) {
+  static char *kwlist[ ] = { "text", "dict", "newline", NULL };
+  char     *text = NULL;
+  PyObject *dict = NULL;
+  bool   newline = FALSE;
+
+  if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|Ob", kwlist, 
+				  &text, &dict, &newline)) {
+    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to mud.expand_text");
+    return NULL;
+  }
+
+  // is dict None? set it to NULL for expand_to_char
+  if(dict == Py_None)
+    dict = NULL;
+
+  // make sure the dictionary is a dictionary
+  if(!(dict == NULL || PyDict_Check(dict))) {
+    PyErr_Format(PyExc_TypeError, "mud.expand_text expects second argument to be a dict object.");
+    return NULL;
+  }
+  
+  // build our script environment
+  BUFFER   *buf = newBuffer(1);
+  PyObject *env = restricted_script_dict();
+  if(dict != NULL)
+    PyDict_Update(env, dict);
+
+  // do the expansion
+  bufferCat(buf, text);
+  expand_dynamic_descs_dict(buf, env, get_script_locale());
+  if(newline == TRUE)
+    bufferCat(buf, "\r\n");
+
+  // garbage collection and return
+  PyObject *ret = Py_BuildValue("s", bufferString(buf));
+  Py_XDECREF(env);
+  deleteBuffer(buf);
+  return ret;
+}
+
+
 
 //*****************************************************************************
 // MUD module
@@ -554,6 +642,20 @@ init_PyMud(void) {
     "list_races(player_only=False)\n\n"
     "Return a list of available races. If player_only is True, list only the\n"
     "races that players have access to.");
+  PyMud_addMethod("send", mud_send, METH_KEYWORDS,
+    "send(list, mssg, dict = None, newline = True)\n"
+    "\n"
+    "Sends a message to a list of characters. Messages can have scripts\n"
+    "embedded in them, using [ and ]. If so, a variable dictionary must be\n"
+    "provided. By default, 'ch' references each character being sent the\n"
+    "message, for embedded scripts.");
+  PyMud_addMethod("expand_text", mud_expand_text, METH_KEYWORDS,
+    "expand_text(text, dict={}, newline=False)\n\n"
+    "Take text with embedded Python statements. Statements can be embedded\n"
+    "between [ and ]. Expand them out and return the new text. Variables can\n"
+    "be added to the scripting environment by specifying their names and\n"
+    "values in an optional dictionary. Statements are expanded in the default\n"
+    "scripting environment.");
 
   Py_InitModule3("mud", makePyMethods(pymud_methods),
 		 "The mud module, for all MUD misc mud utils.");

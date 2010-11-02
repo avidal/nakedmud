@@ -101,6 +101,13 @@ PyObject  *socketGetPyFormBorrowed(SOCKET_DATA  *sock);
 PyObject *accountGetPyFormBorrowed(ACCOUNT_DATA *acc);
 
 //
+// the generic function for parsing a function keyword list and running a 
+// things's triggers from the arguments supplied. See documentation in
+// trighooks.h for explanation of what me and me_type are, as well as arguemnts
+// expected in args. If supplied, opts is expected to be a dict.
+PyObject *py_gen_do_trigs(PyObject *self, PyObject *args, PyObject *kwds);
+
+//
 // returns a Python form of the given list
 PyObject *PyList_fromList(LIST *list, void *convertor);
 
@@ -180,6 +187,13 @@ void expand_dynamic_descs(BUFFER *desc, PyObject *me, CHAR_DATA *ch,
 //
 // same as expand_dynamic_descs, but takes a dictionary instead of "me" and "ch"
 void expand_dynamic_descs_dict(BUFFER *desc, PyObject *dict,const char *locale);
+
+//
+// works similar to send_to_char, except allows for embedded Python statements
+// like expand_dynamic_descs_dict does. If dict is NULL, perform text_to_char
+// instead
+void expand_to_char(CHAR_DATA *ch, const char *mssg, PyObject *dict,
+		    const char *locale, bool newline);
 
 //
 // returns the locale our script is running in. NULL if no scripts are running,

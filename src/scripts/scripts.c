@@ -728,6 +728,183 @@ void expand_dynamic_descs(BUFFER *desc, PyObject *me, CHAR_DATA *ch,
   Py_XDECREF(dict);
 }
 
+void expand_to_char(CHAR_DATA *ch, const char *mssg, PyObject *dict, 
+		    const char *locale, bool newline) {
+  BUFFER *buf = newBuffer(1);
+  bufferCat(buf, mssg);
+  if(dict != NULL) {
+    // build the script dictionary
+    PyObject *script_dict = restricted_script_dict();
+    PyDict_Update(script_dict, dict);
+
+    // do the expansion
+    expand_dynamic_descs_dict(buf, script_dict, locale);
+
+    // garbage collection and end
+    Py_XDECREF(script_dict);
+  }
+
+  if(newline == TRUE)
+    bufferCat(buf, "\r\n");
+  text_to_char(ch, bufferString(buf));
+
+  // garbage collection
+  deleteBuffer(buf);
+}
+
+PyObject *py_gen_do_trigs(PyObject *self, PyObject *args, PyObject *kwds) {
+  static char *kwlist[] ={ "type","ch","obj","room","exit","cmd","arg","opts",NULL };
+  char       *type = NULL;
+  char        *cmd = NULL;
+  char        *arg = NULL;
+  PyObject   *pych = NULL;
+  PyObject  *pyobj = NULL;
+  PyObject *pyroom = NULL;
+  PyObject *pyexit = NULL;
+  PyObject *pyopts = NULL;
+  LIST       *opts = NULL;
+  CHAR_DATA    *ch = NULL;
+  OBJ_DATA    *obj = NULL;
+  ROOM_DATA  *room = NULL;
+  EXIT_DATA  *exit = NULL;
+  void         *me = NULL;
+  int      me_type = -1;
+  bool        fail = FALSE;
+
+  // first, parse all of our arguments
+  if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|OOOOssO", kwlist, 
+				  &type, &pych, &pyobj, &pyroom, &pyexit,
+				  &cmd, &arg, &pyopts)) {
+    PyErr_Format(PyExc_TypeError, "do_trigs supplied invalid arguments.");
+    return NULL;
+  }
+
+  // make sure we exist, and are of a valid type
+  if(PyChar_Check(self)) {
+    me = PyChar_AsChar(self);
+    me_type = TRIGVAR_CHAR;
+  }
+  else if(PyObj_Check(self)) {
+    me = PyObj_AsObj(self);
+    me_type = TRIGVAR_OBJ;
+  }
+  else if(PyRoom_Check(self)) {
+    me = PyRoom_AsRoom(self);
+    me_type = TRIGVAR_ROOM;
+  }
+
+  // did we find a character?
+  if(me == NULL) {
+    PyErr_Format(PyExc_TypeError,"do_trigs owner does not exist.");
+    return NULL;
+  }
+
+  // make sure ch is of the specified type
+  if(pych!=NULL && (!PyChar_Check(pych) || (ch=PyChar_AsChar(pych)) == NULL)){
+    PyErr_Format(PyExc_TypeError,"do_trigs expects ch to be character.");
+    return NULL;
+  }
+
+  // make sure obj is of the specified type
+  if(pyobj!=NULL && (!PyObj_Check(pyobj) || (obj=PyObj_AsObj(pyobj)) == NULL)){
+    PyErr_Format(PyExc_TypeError,"do_trigs expects obj to be object.");
+    return NULL;
+  }
+
+  // make sure room is of the specified type
+  if(pyroom!=NULL&&(!PyRoom_Check(pyroom)||(room=PyRoom_AsRoom(pyroom))==NULL)){
+    PyErr_Format(PyExc_TypeError,"do_trigs expects room to be room.");
+    return NULL;
+  }
+
+  // make sure exit is of the specified type
+  if(pyexit!=NULL&&(!PyExit_Check(pyexit)||(exit=PyExit_AsExit(pyexit))==NULL)){
+    PyErr_Format(PyExc_TypeError,"do_trigs expects exit to be an exit.");
+    return NULL;
+  }
+
+  // parse opts
+  if(pyopts != NULL && !PyDict_Check(pyopts)) {
+    PyErr_Format(PyExc_TypeError,"do_trigs expects opts to be a dict.");
+    return NULL;
+  }
+  else if(pyopts != NULL) {
+    PyObject  *pairs = PyDict_Items(pyopts);
+    int            i = 0;
+    opts             = newList();
+    // go through each pair and add it to the pyopts list
+    for(; i < PyList_Size(pairs); i++) {
+      PyObject  *pair = PyList_GetItem(pairs, i);
+      PyObject *pykey = PyTuple_GetItem(pair, 0);
+      PyObject *pyval = PyTuple_GetItem(pair, 1);
+      OPT_VAR    *opt = NULL;
+      char       *key = NULL;
+
+      // make sure the key is a string
+      if(PyString_Check(pykey))
+	key = PyString_AsString(pykey);
+      else {
+	PyErr_Format(PyExc_TypeError, "do_trigs opt keys must be strings.");
+	fail = TRUE;
+	break;
+      }
+
+      // check to make sure the val is a valid type
+      if(PyChar_Check(pyval)) {
+	CHAR_DATA *val = PyChar_AsChar(pyval);
+	if(val != NULL)
+	  opt = newOptVar(key, val, TRIGVAR_CHAR);
+	else {
+	  PyErr_Format(PyExc_TypeError,"%s opt provided nonexistent char.",key);
+	  fail = TRUE;
+	  break;
+	}
+      }
+      else if(PyObj_Check(pyval)) {
+	OBJ_DATA *val = PyObj_AsObj(pyval);
+	if(val != NULL)
+	  opt = newOptVar(key, val, TRIGVAR_OBJ);
+	else {
+	  PyErr_Format(PyExc_TypeError,"%s opt provided nonexistent obj.", key);
+	  fail = TRUE;
+	  break;
+	}
+      }
+      else if(PyRoom_Check(pyval)) {
+	ROOM_DATA *val = PyRoom_AsRoom(pyval);
+	if(val != NULL)
+	  opt = newOptVar(key, val, TRIGVAR_ROOM);
+	else {
+	  PyErr_Format(PyExc_TypeError,"%s opt provided nonexistent room.",key);
+	  fail = TRUE;
+	  break;
+	}
+      }
+      else {
+	PyErr_Format(PyExc_TypeError,"%s opt provided invalid value.",key);
+	fail = TRUE;
+	break;
+      }
+
+      // append the opt to the opt list
+      listPut(opts, opt);
+    }
+    Py_DECREF(pairs);
+  }
+
+  // did everything succeed?
+  if(fail == FALSE)
+    gen_do_trigs(me,me_type,type,ch,obj,room,exit,cmd,arg,opts);
+
+  // garbage collection
+  if(opts != NULL)
+    deleteListWith(opts, deleteOptVar);
+
+  if(fail == TRUE)
+    return NULL;
+  return Py_BuildValue("");
+}
+
 const char *get_script_locale(void) {
   return listHead(locale_stack);
 }

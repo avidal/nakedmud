@@ -752,7 +752,7 @@ PyObject *PyChar_send_raw(PyChar *self, PyObject *value) {
 // Send a message with Python statements potentially embedded in it. For 
 //evaluating 
 PyObject *PyChar_send(PyObject *self, PyObject *args, PyObject *kwds) {
-  static char *kwlist[] = { "mssg", "dict", "newline", NULL };
+  static char *kwlist[ ] = { "mssg", "dict", "newline", NULL };
   CHAR_DATA  *me = NULL;
   char     *text = NULL;
   PyObject *dict = NULL;
@@ -760,13 +760,17 @@ PyObject *PyChar_send(PyObject *self, PyObject *args, PyObject *kwds) {
 
   if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|Ob", kwlist, 
 				  &text, &dict, &newline)) {
-    PyErr_Format(PyExc_TypeError, "Char.send takes a message, a dictionary, and possibly a newline option.");
+    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to Char.send");
     return NULL;
   }
 
+  // is dict None? set it to NULL for expand_to_char
+  if(dict == Py_None)
+    dict = NULL;
+
   // make sure the dictionary is a dictionary
-  if(dict != NULL && !(PyDict_Check(dict) || dict == Py_None)) {
-    PyErr_Format(PyExc_TypeError, "char.send expects second argument to be a dict object.");
+  if(!(dict == NULL || PyDict_Check(dict))) {
+    PyErr_Format(PyExc_TypeError, "Char.send expects second argument to be a dict object.");
     return NULL;
   }
   
@@ -775,63 +779,72 @@ PyObject *PyChar_send(PyObject *self, PyObject *args, PyObject *kwds) {
     PyErr_Format(PyExc_TypeError, "Tried to send nonexistant character.");
     return NULL;
   }
-
-  // the text we are sending
-  BUFFER *buf = newBuffer(1);
-  bprintf(buf, "%s%s", text, (newline ? "\r\n" : ""));
-  
-  // are we sending as-is, or expanding embedded statements?
-  if(dict != NULL) {
-    // build the script dictionary
-    PyObject *script_dict = restricted_script_dict();
-    if(dict != Py_None)
-      PyDict_Update(script_dict, dict);
-    PyDict_SetItemString(script_dict, "me", self);
-
-    // do the expansion
-    expand_dynamic_descs_dict(buf, script_dict, get_script_locale());
-
-    // garbage collection and end
-    Py_XDECREF(script_dict);
+  else if(charGetSocket(me) == NULL) {
+    // no point
+    return Py_BuildValue("");
   }
 
-  // send the message
-  text_to_char(me, bufferString(buf));
-
-  // build the return value
-  PyObject *ret = Py_BuildValue("s", bufferString(buf));
-
-  // garbage collection
-  deleteBuffer(buf);
-
-  // return the value
-  return ret;
+  if(dict != NULL)
+    PyDict_SetItemString(dict, "me", self);
+  expand_to_char(me, text, dict, get_script_locale(), newline);
+  return Py_BuildValue("");
 }
 
 //
 // Send a newline-tagged message to everyone around the character
-PyObject *PyChar_sendaround(PyChar *self, PyObject *value) {
-  char   *mssg = NULL;
-  bool newline = TRUE;
-  if (!PyArg_ParseTuple(value, "s|b", &mssg, &newline)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Characters may only be sent strings");
+PyObject *PyChar_sendaround(PyObject *self, PyObject *args, PyObject *kwds) {
+  static char *kwlist[ ] = { "mssg", "dict", "cansee_only", "newline", NULL };
+  CHAR_DATA    *me = NULL;
+  char       *text = NULL;
+  PyObject   *dict = NULL;
+  bool cansee_only = FALSE;
+  bool     newline = TRUE;
+
+  if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|Obb", kwlist, 
+				  &text, &dict, &cansee_only, &newline)) {
+    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to Char.sendaround");
     return NULL;
   }
 
-  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
-  if(ch) {
-    send_around_char(ch, FALSE, "%s%s", mssg, (newline ? "\r\n" : ""));
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-                    "Tried to send message to nonexistant character, %d.", 
-		    self->uid);
+  // is dict None? set it to NULL for expand_to_char
+  if(dict == Py_None)
+    dict = NULL;
+
+  // make sure the dictionary is a dictionary
+  if(!(dict == NULL || PyDict_Check(dict))) {
+    PyErr_Format(PyExc_TypeError, "Char.sendaround expects second argument to be a dict object.");
     return NULL;
   }
+  
+  // make sure we exist
+  if( (me = PyChar_AsChar(self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Tried to sendaround nonexistent character.");
+    return NULL;
+  }
+  // make sure we have a room
+  else if(charGetRoom(me) == NULL) {
+    // no point
+    return Py_BuildValue("");
+  }
+
+  if(dict != NULL)
+    PyDict_SetItemString(dict, "me", self);
+
+  // go through all of the characters in our room and send out messages
+  LIST_ITERATOR *char_i = newListIterator(roomGetCharacters(charGetRoom(me)));
+  CHAR_DATA         *ch = NULL;
+  ITERATE_LIST(ch, char_i) {
+    // it's us, or a linkdead character. Ignore
+    if(me == ch || charGetSocket(ch) == NULL)
+      continue;
+    // can't see and need to see
+    else if(cansee_only && !can_see_char(ch, me))
+      continue;
+    PyDict_SetItemString(dict, "ch", charGetPyFormBorrowed(ch));
+    expand_to_char(ch, text, dict, get_script_locale(), newline);
+  } deleteListIterator(char_i);
+  return Py_BuildValue("");
 }
-
 
 //
 // make the character perform an action
@@ -2053,7 +2066,7 @@ PyMODINIT_FUNC init_PyChar(void) {
     "\n"
     "Detach a trigger from the character by key name.");
   PyChar_addMethod("send", PyChar_send, METH_KEYWORDS,
-    "send(mssg, script_dict = None, newline = True)\n"
+    "send(mssg, dict = None, newline = True)\n"
     "\n"
     "Sends message to the character. Messages can have scripts embedded in\n" 
     "them, using [ and ]. If so, a variable dictionary must be provided. By\n"
@@ -2062,10 +2075,13 @@ PyMODINIT_FUNC init_PyChar(void) {
     "send_raw(mssg)\n"
     "\n"
     "Sends message to the character with no newline appended.");
-  PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
-    "sendaround(mssg, newline=True)\n"
+  PyChar_addMethod("sendaround", PyChar_sendaround, METH_KEYWORDS,
+    "sendaround(mssg, dict = None, cansee_only = False, newline=True)\n"
     "\n"
-    "Sends message to everyone else in the same room as the character.");
+    "Sends a message to everyone in the character's room. Messages can have\n"
+    "scripts embedded in them using [ and ]. If so, a variable dictionary\n"
+    "must be provided. By default, 'me' references the person sendaround is\n"
+    "called on, and 'ch' references each character being sent a message.");
   PyChar_addMethod("act", PyChar_act, METH_VARARGS,
     "act(command)\n"
     "\n"
@@ -2186,6 +2202,13 @@ PyMODINIT_FUNC init_PyChar(void) {
     "copy()\n"
     "\n"
     "Returns a copy of the character.");
+  PyChar_addMethod("do_trigs", py_gen_do_trigs, METH_KEYWORDS,
+    "do_trigs(type, ch=None, obj=None, room=None, exit=None, cmd=None,\n"
+    "         arg=None, opts=None)\n\n"
+    "Run triggers of the specified type on the character. By default, the\n"
+    "trigger owner is 'me'. Other variables can be specified. The opts\n"
+    "variable can be a dictionary that maps optional variable names to their\n"
+    "values.");
 
   // add in all the getsetters and methods
   makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);
