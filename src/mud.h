@@ -38,15 +38,13 @@
 
 
 //*****************************************************************************
-//
 // To avoid having to write some bulky structure names, we've typedef'd a
 // bunch of shortforms for commonly used datatypes. If you make a new datatype
 // that is used lots, put a typedef for it in here.
-//
 //*****************************************************************************
 typedef struct socket_data                SOCKET_DATA;
+typedef struct account_data               ACCOUNT_DATA;
 typedef struct char_data                  CHAR_DATA;  
-typedef struct lookup_data                LOOKUP_DATA;
 typedef struct datatable                  DATATABLE;
 typedef struct storage_set                STORAGE_SET;
 typedef struct storage_set_list           STORAGE_SET_LIST;
@@ -76,7 +74,7 @@ typedef int                               script_vnum;
 typedef int                               dialog_vnum;
 typedef long                              bitvector_t;
 
-/* define simple types */
+// define simple types
 #ifndef __cplusplus
 typedef  unsigned char     bool;
 #endif
@@ -129,12 +127,6 @@ typedef  unsigned char     byte;
 #define EXE_FILE           "../src/NakedMud"      /* the name of the mud binary         */
 #define DEFAULT_PORT       4000                   /* the default port we run on */
 
-// if it is safe to run the game loop in a separate
-// thread (this makes it so we can run scripts in a separate
-// thread as well) then keep this on. Otherwise, comment out
-// this line
-//#define MUD_THREADABLE
-
 /* Thread States */
 #define TSTATE_LOOKUP          0  /* Socket is in host_lookup        */
 #define TSTATE_DONE            1  /* The lookup is done.             */
@@ -142,11 +134,12 @@ typedef  unsigned char     byte;
 #define TSTATE_CLOSED          3  /* Closed, ready to be recycled.   */
 
 /* player levels */
-#define LEVEL_PLAYER           1  // All of the normal players
-#define LEVEL_BUILDER          2  // Players who have building rights
-#define LEVEL_SCRIPTER         3  // Players who have building+scripting rights
-#define LEVEL_ADMIN            4  // The people who oversee the MUD
-#define MAX_LEVEL      LEVEL_ADMIN
+#define LEVEL_PLAYER           1           // All of the normal players
+#define LEVEL_GOD              2           // All the people who run the show
+#define LEVEL_BUILDER          LEVEL_GOD   // Players who have building rights
+#define LEVEL_SCRIPTER         3           // Builders who have scripting rights
+#define LEVEL_ADMIN            4           // The people who oversee the MUD
+#define MAX_LEVEL              LEVEL_ADMIN
 
 /* Communication Ranges */
 #define COMM_LOCAL             0  /* same room only                  */
@@ -163,22 +156,11 @@ typedef  unsigned char     byte;
 #define SOMEONE         "someone"
 #define NOTHING_SPECIAL "you see nothing special."
 
+// the room that new characters are dropped into
 #define START_ROOM      100
 
 #define WORLD_PATH     "../lib/world"
 
-
-
-//*****************************************************************************
-// New structures
-//*****************************************************************************
-
-// required for looking up a socket's IP in a new thread
-struct lookup_data
-{
-  SOCKET_DATA       * dsock;   /* the socket we wish to do a hostlookup on */
-  char           * buf;     /* the buffer it should be stored in        */
-};
 
 
 
@@ -196,6 +178,33 @@ void add_cmd      (const char *cmd, const char *sort_by, void *func,
 	           int subcmd, int min_pos, int max_pos,
 	           int min_level, bool mob_ok, bool interrupts);
 bool cmd_exists   (const char *cmd);
+
+
+
+//*****************************************************************************
+// functions for setting and retreiving values of various mud settings. It's
+// probably going to be common for people to add new settings that change how
+// their mud will run (e.g. wizlock, newlock, max_level). Forcing people to
+// handle all of this stuff through modules is really giving them more work
+// than is neccessary. Instead, here we have a set of utilities that makes 
+// doing this sort of stuff really easy. Whenever a new value is set, the
+// settings are automagically saved. New variables can be created on the fly.
+// There is no need to define keys anywhere. Conversion between types is
+// handled automatically.
+//*****************************************************************************
+void init_mud_settings();
+
+void mudsettingSetString(const char *key, const char *val);
+void mudsettingSetDouble(const char *key, double val);
+void mudsettingSetInt   (const char *key, int val);
+void mudsettingSetLong  (const char *key, long val);
+void mudsettingSetBool  (const char *key, bool val);
+
+const char *mudsettingGetString(const char *key);
+double      mudsettingGetDouble(const char *key);
+int         mudsettingGetInt   (const char *key);
+long        mudsettingGetLong  (const char *key);
+bool        mudsettingGetBool  (const char *key);
 
 
 
@@ -244,6 +253,11 @@ char  *crypt                  ( const char *key, const char *salt );
 /* interpret.c */
 void  handle_cmd_input        ( SOCKET_DATA *dsock, char *arg );
 
+/* account_hanlder.c */
+void account_handle_menu      ( SOCKET_DATA *sock, char *arg);
+void account_menu             ( SOCKET_DATA *sock);
+
+
 //
 // Some command scripts may want to re-force a character to
 // perform the command. In that case, scripts_ok can be
@@ -273,11 +287,6 @@ char   *strfind               (char *txt, char *sub);
 /* mccp.c */
 bool  compressStart     ( SOCKET_DATA *dsock, unsigned char teleopt );
 bool  compressEnd       ( SOCKET_DATA *dsock, unsigned char teleopt, bool forced );
-
-/* mud.c */
-void init_mud_settings();
-void save_mud_settings();
-int next_char_uid();
 
 /* socket.c */
 #define NUM_LINES_PER_PAGE  22

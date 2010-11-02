@@ -46,6 +46,12 @@ void message(CHAR_DATA *ch,  CHAR_DATA *vict,
 	     int hide_nosee, bitvector_t range, 
 	     const char *mssg);
 
+//
+// same deal as message(), but takes a formatting
+void mssgprintf(CHAR_DATA *ch, CHAR_DATA *vict, 
+		OBJ_DATA *obj, OBJ_DATA  *vobj,
+		int hide_nosee, bitvector_t range, const char *fmt, ...)
+  __attribute__ ((format (printf, 7, 8)));
 
 //
 // send a message to everyone outdoors

@@ -37,8 +37,11 @@ void *lookup_address        ( void *arg );
 //*****************************************************************************
 sh_int socketGetDNSLookupStatus( SOCKET_DATA *sock);
 
-CHAR_DATA *socketGetChar     ( SOCKET_DATA *dsock);
-void       socketSetChar     ( SOCKET_DATA *dsock, CHAR_DATA *ch);
+CHAR_DATA *socketGetChar      ( SOCKET_DATA *dsock);
+void       socketSetChar      ( SOCKET_DATA *dsock, CHAR_DATA *ch);
+
+ACCOUNT_DATA *socketGetAccount( SOCKET_DATA *dsock);
+void          socketSetAccount( SOCKET_DATA *dsock, ACCOUNT_DATA *account);
 
 void socketPushInputHandler   ( SOCKET_DATA *socket, 
 			        void handler(SOCKET_DATA *socket, char *input),
@@ -52,8 +55,6 @@ void socketShowPrompt         ( SOCKET_DATA *sock);
 void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name);
 const char *socketGetHostname ( SOCKET_DATA *sock);
 BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock);
-char **socketGetTextPointer   ( SOCKET_DATA *sock);
-void socketSetTextPointer     ( SOCKET_DATA *sock, char **ptr);
 
 void socketBustPrompt         ( SOCKET_DATA *sock);
 

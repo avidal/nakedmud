@@ -1,0 +1,3664 @@
+diff -ruN ../nakedmudv2.1.1/src/Makefile src/Makefile
+--- ../nakedmudv2.1.1/src/Makefile	Sun May  8 15:04:45 2005
++++ src/Makefile	Thu May 12 17:19:36 2005
+@@ -35,10 +35,10 @@
+ 	   \
+ 	   races.c \
+ 	   \
+-	   log.c auxiliary.c login.c \
++	   log.c auxiliary.c account_handler.c char_gen.c \
+ 	   \
+ 	   world.c character.c room.c exit.c extra_descs.c object.c body.c \
+-	   zone.c dialog.c room_reset.c \
++	   zone.c dialog.c room_reset.c account.c \
+ 	   \
+ 	   list.c property_table.c hashtable.c map.c storage.c set.c \
+ 	   buffer.c bitvector.c
+@@ -70,10 +70,8 @@
+ # clear all of the .o files and all of the save files that emacs makes
+ clean:
+ 	rm -f NakedMud
+-	rm -f *.o
+-	rm -f */*.o
+-	rm -f *~
+-	rm -f */*~
++	rm -f *.o $(patsubst %,%/*.o, $(MODULES))
++	rm -f *~ $(patsubst %,%/*~, $(MODULES))
+ 
+ # include all of our dependencies
+ include $(patsubst %.c,%.d, $(SRC))
+diff -ruN ../nakedmudv2.1.1/src/account.c src/account.c
+--- ../nakedmudv2.1.1/src/account.c	Wed Dec 31 17:00:00 1969
++++ src/account.c	Thu May 12 17:08:52 2005
+@@ -0,0 +1,144 @@
++//*****************************************************************************
++//
++// account.c
++//
++// Players first create an account, and then they can begin creating players.
++// The main purpose of an account is to hold all of the information relevant to
++// one player, which might extend all of that player's game characters. If you 
++// plan on adding any other information to accounts, it is strongly suggested 
++// you do so through auxiliary data (see auxiliary.h).
++//
++// For a recap, IF YOU PLAN ON ADDING ANY OTHER INFORMATION TO ACCOUNTS, IT
++// IS STRONGLY SUGGESTED YOU DO SO THROUGH AUXILIARY DATA (see auxiliary.h).
++//
++//*****************************************************************************
++
++#include "mud.h"
++#include "auxiliary.h"
++#include "storage.h"
++#include "account.h"
++
++
++
++//*****************************************************************************
++// local datastructures, variables, defines, and functions
++//*****************************************************************************
++struct account_data {
++  char          *name; // the name of our account
++  char      *password; // our password to log on
++  LIST    *characters; // our list of character names
++  HASHTABLE      *aux; // auxiliary data we have installed
++};
++
++
++//
++// returns a storage set with a "name" key in it, corresponding to the argument
++// passed in.
++STORAGE_SET *accountStoreChar(const char *name) {
++  STORAGE_SET *set = new_storage_set();
++  store_string(set, "name", name);
++  return set;
++}
++
++
++//
++// parses out a character name from a storage set holding an account character
++// entry.
++char *accountReadChar(STORAGE_SET *set) {
++  return strdup(read_string(set, "name"));
++}
++
++
++
++//*****************************************************************************
++// implementation of account.h
++//*****************************************************************************
++ACCOUNT_DATA *newAccount(void) {
++  ACCOUNT_DATA *account = malloc(sizeof(ACCOUNT_DATA));
++  account->name         = strdup("");
++  account->password     = strdup("");
++  account->aux          = newAuxiliaryData(AUXILIARY_TYPE_ACCOUNT);
++  account->characters   = newList();
++  return account;
++}
++
++void deleteAccount(ACCOUNT_DATA *account) {
++  if(account->name)       free(account->name);
++  if(account->password)   free(account->password);
++  if(account->aux)        deleteAuxiliaryData(account->aux);
++  if(account->characters) deleteListWith(account->characters, free);
++  free(account);
++}
++
++ACCOUNT_DATA *accountRead(STORAGE_SET *set) {
++  ACCOUNT_DATA *account = calloc(1, sizeof(ACCOUNT_DATA));
++  accountSetName(account,            read_string(set, "name"));
++  accountSetPassword(account,    read_string(set, "password"));
++  account->aux = auxiliaryDataRead(read_set(set, "auxiliary"),
++				   AUXILIARY_TYPE_ACCOUNT);
++  account->characters = gen_read_list(read_list(set, "characters"), 
++				      accountReadChar);
++  listSortWith(account->characters, strcasecmp);
++  return account;
++}
++
++STORAGE_SET *accountStore(ACCOUNT_DATA *account) {
++  STORAGE_SET *set = new_storage_set();
++  store_string(set, "name",     account->name);
++  store_string(set, "password", account->password);
++  store_list  (set, "characters", gen_store_list(account->characters, 
++						 accountStoreChar));
++  store_set   (set, "auxiliary", auxiliaryDataStore(account->aux));
++  return set;
++}
++
++void accountCopyTo(ACCOUNT_DATA *from, ACCOUNT_DATA *to) {
++  if(to->characters) deleteListWith(to->characters, free);
++  auxiliaryDataCopyTo(from->aux, to->aux);
++  accountSetName(to, from->name);
++  accountSetPassword(to, from->password);
++  to->characters = listCopyWith(from->characters, strdup);
++}
++
++ACCOUNT_DATA *accountCopy(ACCOUNT_DATA *account) {
++  ACCOUNT_DATA *newacct = newAccount();
++  accountCopyTo(account, newacct);
++  return newacct;
++}
++
++void accountPutChar(ACCOUNT_DATA *account, const char *name) {
++  // make sure it's not already in
++  if(!listGetWith(account->characters, name, strcasecmp))
++    listPut(account->characters, strdup(name));
++}
++
++void accountRemoveChar(ACCOUNT_DATA *account, const char *name) {
++  char *elem = listRemoveWith(account->characters, name, strcasecmp);
++  if(elem) free(elem);
++}
++
++LIST *accountGetChars(ACCOUNT_DATA *account) {
++  return account->characters;
++}
++
++void *accountGetAuxiliaryData(ACCOUNT_DATA *account, const char *data) {
++  return hashGet(account->aux, data);
++}
++
++void accountSetPassword(ACCOUNT_DATA *account, const char *password) {
++  if(account->password) free(account->password);
++  account->password = strdup(password ? password : "");
++}
++
++const char *accountGetPassword(ACCOUNT_DATA *account) {
++  return account->password;
++}
++
++void accountSetName(ACCOUNT_DATA *account, const char *name) {
++  if(account->name) free(account->name);
++  account->name = strdup(name ? name : "");
++}
++
++const char *accountGetName(ACCOUNT_DATA *account) {
++  return account->name;
++}
+diff -ruN ../nakedmudv2.1.1/src/account.d src/account.d
+--- ../nakedmudv2.1.1/src/account.d	Wed Dec 31 17:00:00 1969
++++ src/account.d	Thu May 12 17:17:50 2005
+@@ -0,0 +1,2 @@
++account.d account.o: account.c mud.h wrapsock.h property_table.h list.h map.h \
++  hashtable.h set.h buffer.h bitvector.h auxiliary.h storage.h account.h
+diff -ruN ../nakedmudv2.1.1/src/account.h src/account.h
+--- ../nakedmudv2.1.1/src/account.h	Wed Dec 31 17:00:00 1969
++++ src/account.h	Thu May 12 17:08:52 2005
+@@ -0,0 +1,33 @@
++#ifndef ACCOUNT_H
++#define ACCOUNT_H
++//*****************************************************************************
++//
++// account.h
++//
++// Players first create an account, and then they can begin creating players.
++// The main purpose of an account is to hold all of the information relevant to
++// one player, which might extend all of that player's game characters. If you 
++// plan on adding any other information to accounts, it is strongly suggested 
++// you do so through auxiliary data (see auxiliary.h).
++//
++// For a recap, IF YOU PLAN ON ADDING ANY OTHER INFORMATION TO ACCOUNTS, IT
++// IS STRONGLY SUGGESTED YOU DO SO THROUGH AUXILIARY DATA (see auxiliary.h).
++//
++//*****************************************************************************
++
++ACCOUNT_DATA       *newAccount(void);
++void             deleteAccount(ACCOUNT_DATA *account);
++ACCOUNT_DATA      *accountRead(STORAGE_SET *set);
++STORAGE_SET      *accountStore(ACCOUNT_DATA *account);
++void             accountCopyTo(ACCOUNT_DATA *from, ACCOUNT_DATA *to);
++ACCOUNT_DATA      *accountCopy(ACCOUNT_DATA *account);
++void            accountPutChar(ACCOUNT_DATA *account, const char *name);
++void         accountRemoveChar(ACCOUNT_DATA *account, const char *name);
++LIST          *accountGetChars(ACCOUNT_DATA *account);
++void  *accountGetAuxiliaryData(ACCOUNT_DATA *account, const char *data);
++void        accountSetPassword(ACCOUNT_DATA *account, const char *password);
++const char *accountGetPassword(ACCOUNT_DATA *account);
++void            accountSetName(ACCOUNT_DATA *account, const char *name);
++const char     *accountGetName(ACCOUNT_DATA *account);
++
++#endif // ACCOUNT_H
+diff -ruN ../nakedmudv2.1.1/src/account_handler.c src/account_handler.c
+--- ../nakedmudv2.1.1/src/account_handler.c	Wed Dec 31 17:00:00 1969
++++ src/account_handler.c	Thu May 12 17:22:38 2005
+@@ -0,0 +1,354 @@
++//*****************************************************************************
++//
++// account_handler.c
++//
++// The login and creation of accounts, and handles all of the account procedures
++// load loading and deleting characters. If you are looking to change the char
++// creation menu, you will want char_gen.c, not account_handler.c
++//
++//*****************************************************************************
++
++#include "mud.h"
++#include "utils.h"
++#include "socket.h"
++#include "account.h"
++#include "character.h"
++#include "inform.h"
++#include "save.h"
++#include "char_gen.h"
++
++
++
++//*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "scripts/script.h"
++
++// mccp support
++const unsigned char do_echo   [] = { IAC, WONT, TELOPT_ECHO,      '\0' };
++const unsigned char dont_echo [] = { IAC, WILL, TELOPT_ECHO,      '\0' };
++
++// account input handlers
++void account_ask_name       (SOCKET_DATA *sock, char *arg);
++void account_ask_password   (SOCKET_DATA *sock, char *arg);
++void account_new_password   (SOCKET_DATA *sock, char *arg);
++void account_verify_password(SOCKET_DATA *sock, char *arg);
++void account_handle_menu    (SOCKET_DATA *sock, char *arg);
++void account_new_char       (SOCKET_DATA *sock, char *arg);
++void account_change_password(SOCKET_DATA *sock, char *arg);
++
++// and prompts
++void account_menu           (SOCKET_DATA *sock);
++
++
++//
++// the head honcho. This is the first handler that a socket enters once it has
++// connected to the game. You should use this function to get your login 
++// procedure rolling.
++void handle_new_connections(SOCKET_DATA *sock, char *arg) {
++  account_ask_name(sock, arg);
++}
++
++
++
++//*****************************************************************************
++// implementation of account input handlers
++//*****************************************************************************
++
++//
++// returns TRUE if the account has a valid name, and FALSE if it does not.
++// alphanumeric characters and digits are allows. Min length 4, max length 12.
++// first character must be a letter
++bool check_account_name(const char *name) {
++  int i, len = strlen(name);
++  if(len < 3 || len > 12)
++    return FALSE;
++  if(!isalpha(*name))
++    return FALSE;
++  for(i = 1; name[i] != '\0'; i++)
++    if(!isdigit(name[i]) && !isalpha(name[i]))
++      return FALSE;
++  return TRUE;
++}
++
++
++//
++// Asks for an account name. If this is a new account, then proceed to ask and
++// verify the password. Otherwise, ask for an account password and make sure it
++// matches the actual password.
++void account_ask_name(SOCKET_DATA *sock, char *arg) {
++  // make sure we're not still resolving the DNS
++  if (socketGetDNSLookupStatus(sock) != TSTATE_DONE) {
++    text_to_buffer(sock, 
++		   "Making a dns lookup, please have patience.\n\r"
++		   "What is your account name? ");
++    return;
++  }
++
++  // check for a legal account name
++  if (!check_account_name(arg)) {
++    text_to_buffer(sock, 
++		   "Sorry, that's not a legal account name. Your account name must only consist of\r\n"
++		   "characters and numbers, and it must be between 4 and 12 characters long. The\r\n"
++		   "first character MUST be a letter. Please pick another.\r\n"
++		   "What is your name? ");
++    return;
++  }
++
++  // all is good. See if the account exists already
++  else {
++    ACCOUNT_DATA *acct = NULL;
++    log_string("Account '%s' is trying to connect.", arg);
++
++    // check for new account
++    if ( (acct = load_account(arg)) == NULL) {
++      // check for lockdown
++      if(mudsettingGetInt("lockdown") > 0) {
++	text_to_socket(sock, "Sorry, creating new accounts is not allowed at the moment.\r\n");
++	close_socket(sock, FALSE);
++	return;
++      }
++
++      // make a new account and give it a name
++      acct = newAccount();
++      accountSetName(acct, arg);
++
++      // prepare for next step 
++      text_to_buffer(sock, "Please enter a new password: ");
++      socketReplaceInputHandler(sock, account_new_password, NULL);
++    }
++
++    // old account
++    else {
++      // prepare for next step 
++      text_to_buffer(sock, "What is your password? ");
++      socketReplaceInputHandler(sock, account_ask_password, NULL);
++    }
++
++    // make sure the password entry is not displayed on screen
++    text_to_buffer(sock, (char *)dont_echo);
++
++    // attach the account to the socket
++    socketSetAccount(sock, acct);
++  }
++}
++
++
++//
++// Ask for a password, and make sure it matches the account's password. If it
++// does not, then dc the socket
++void account_ask_password   (SOCKET_DATA *sock, char *arg) {
++  // make sure we can start seeing what we type, again
++  text_to_buffer(sock, (char *) do_echo);
++
++  // Passwords match. Go to the account menu
++  if (compares(crypt(arg, accountGetName(socketGetAccount(sock))), 
++	       accountGetPassword(socketGetAccount(sock)))) {
++    socketReplaceInputHandler(sock, account_handle_menu, account_menu);
++  }
++  else {
++    text_to_socket(sock, "\007\007Bad password! Disconnecting.\r\n");
++    close_socket(sock, FALSE);
++  }
++}
++
++
++//
++// Ask and verify a new password during account creation
++void account_new_password   (SOCKET_DATA *sock, char *arg) {
++  // make sure the password is an acceptable length
++  if (strlen(arg) < 5 || strlen(arg) > 12) {
++    text_to_buffer(sock, 
++		   "\r\nBetween 5 and 12 chars please!\n\r"
++		   "Please enter a new password: ");
++    return;
++  }
++
++  // encrypt and set the password
++  accountSetPassword(socketGetAccount(sock), 
++		     crypt(arg, accountGetName(socketGetAccount(sock))));
++
++  // move onto the next step
++  text_to_buffer(sock, "\r\nPlease verify the password: ");
++  socketReplaceInputHandler(sock, account_verify_password, NULL);
++}
++
++
++//
++// Verify the password during account creation. If there is a password mismatch,
++// then restart the password process.
++void account_verify_password(SOCKET_DATA *sock, char *arg) {
++  if (compares(crypt(arg, accountGetName(socketGetAccount(sock))), 
++	       accountGetPassword(socketGetAccount(sock)))) {
++    text_to_buffer(sock, (char *)do_echo);
++
++    // account created. Save it, and plop it into the account menu
++    save_account(socketGetAccount(sock));
++    socketReplaceInputHandler(sock, account_handle_menu, account_menu);
++  }
++  else {
++    accountSetPassword(socketGetAccount(sock), NULL);
++    text_to_buffer(sock, 
++		   "\r\nPassword mismatch!\n\r"
++		   "Please enter a new password: ");
++    socketReplaceInputHandler(sock, account_new_password, NULL);
++  }
++}
++
++//
++// Load up an existing character attached to the account. Enter the game
++void account_load_char(SOCKET_DATA *sock, int ch_num) {
++  ACCOUNT_DATA *acct = socketGetAccount(sock);
++  char *ch_name      = NULL;
++  if((ch_name = listGet(accountGetChars(acct), ch_num)) == NULL)
++    text_to_buffer(sock, "Invalid choice!\r\n");
++  else {
++    CHAR_DATA *ch = check_reconnect(ch_name);
++    // this character is already in-game. Disconnect them
++    if(ch != NULL) { 
++      // attach the character
++      socketSetChar(sock, ch);
++      charSetSocket(ch, sock);
++
++      log_string("%s has reconnected.", charGetName(ch));
++
++      // and let him enter the game. Replace the load character input handler
++      // with the one for playing the game.
++      socketPushInputHandler(sock, handle_cmd_input, show_prompt);
++      text_to_buffer(sock, "You take over a body already in use.\n\r");
++    }
++
++    // hmmm... our pfile is missing!!
++    else if ((ch = load_player(ch_name)) == NULL)
++      text_to_socket(sock, "ERROR: Your pfile is missing!\n\r");
++
++    // everything is OK
++    else {
++      // attach the new player 
++      socketSetChar(sock, ch);
++      charSetSocket(ch, sock);
++
++      // make sure the mud isn't locked to this person
++      if(charGetLevel(ch) < mudsettingGetInt("lockdown")) {
++	text_to_socket(sock, "Sorry, the mud is currently locked down to anyone of your level and below.\r\n");
++	deleteChar(ch);
++	socketSetChar(sock, NULL);
++	return;
++      }
++
++      // try putting the character into the game. Pop the input handler
++      // if we cannot
++      if(try_enter_game(ch)) {
++	log_string("%s has entered the game.", charGetName(ch));
++	// we're no longer in the creation process... attach the game
++	// input handler
++	socketPushInputHandler(sock, handle_cmd_input, show_prompt);
++
++	text_to_buffer(sock, motd);
++	look_at_room(ch, charGetRoom(ch));
++
++	// check enterance scripts
++	try_enterance_script(ch, charGetRoom(ch), NULL);
++      }
++      else {
++	text_to_buffer(sock, "There was a problem entering the game. Try again later!\r\n");
++	// do not extract, just delete. We failed to enter
++	// the game, so there is no need to extract from the game.
++	deleteChar(socketGetChar(sock));
++	socketSetChar(sock, NULL);
++      }
++    }
++  }
++}
++
++
++//
++// Change the password on an already-existant account
++void account_change_password(SOCKET_DATA *sock, char *arg) {
++  if (compares(crypt(arg, accountGetName(socketGetAccount(sock))), 
++	       accountGetPassword(socketGetAccount(sock)))) {
++    text_to_buffer(sock, "\r\nPlease enter a new password: ");
++    socketReplaceInputHandler(sock, account_new_password, NULL);
++  }
++  else {
++    text_to_buffer(sock, "\r\nIncorrect password!\r\n");
++    socketReplaceInputHandler(sock, account_handle_menu, account_menu);
++  }
++}
++
++
++//
++// handle all of the options in the account main menu
++void account_handle_menu(SOCKET_DATA *sock, char *arg) {
++  // are we trying to load up a character?
++  if(isdigit(*arg))
++    account_load_char(sock, atoi(arg));
++
++  // we're doing a menu choice
++  else switch(toupper(*arg)) {
++  case 'Q':
++    // quit the menu
++    text_to_buffer(sock, "Come back soon!\r\n");
++    save_account(socketGetAccount(sock));
++    socketPopInputHandler(sock);
++    break;
++
++  case 'P':
++    // change password
++    text_to_buffer(sock, (char *)dont_echo);
++    text_to_buffer(sock, "Enter old password: ");
++    socketReplaceInputHandler(sock, account_change_password, NULL);
++    break;
++
++  case 'N':
++    // make a new character
++    if(mudsettingGetBool("lockdown") > 0) {
++      text_to_buffer(sock, "The MUD is currently locked to new players.\r\n");
++      return;
++    }
++    start_char_gen(sock);
++    break;
++
++  default:
++    text_to_buffer(sock, "Invalid choice!\r\n");
++    break;
++  }
++}
++
++
++//
++// Display a list of all the account's characters to the account.
++void display_account_chars(SOCKET_DATA *sock) {
++  static char fmt[100];
++  int print_room, num_cols = 3, i = 0;
++  char *str = NULL;
++  LIST_ITERATOR *ch_i =newListIterator(accountGetChars(socketGetAccount(sock)));
++
++  print_room = (80 - 10*num_cols)/num_cols;
++  sprintf(fmt, "  {c%%2d{g) %%-%ds%%s", print_room);
++
++  text_to_buffer(sock, "\r\n{wPlay a Character:\r\n");
++  ITERATE_LIST(str, ch_i) {
++    send_to_socket(sock, fmt, i, str, (i % num_cols == (num_cols - 1) ? 
++				       "\r\n" : "   "));
++    i++;
++  } deleteListIterator(ch_i);
++
++  if(i % num_cols != 0)
++    send_to_socket(sock, "\r\n");
++}
++
++
++void account_menu(SOCKET_DATA *sock) {
++  // if we have some characters created, display them
++  if(listSize(accountGetChars(socketGetAccount(sock))) > 0)
++    display_account_chars(sock);
++
++  // additional options? delete? who's online?
++  text_to_buffer(sock,
++		 "\r\n{wAdditional Options:\r\n"
++		 "  {g[{cP{g]assword change\r\n"
++		 "  {g[{cN{g]ew character\r\n"
++		 "\r\n"
++		 "Enter choice, or Q to quit:{n ");
++}
+diff -ruN ../nakedmudv2.1.1/src/account_handler.d src/account_handler.d
+--- ../nakedmudv2.1.1/src/account_handler.d	Wed Dec 31 17:00:00 1969
++++ src/account_handler.d	Thu May 12 17:31:45 2005
+@@ -0,0 +1,3 @@
++account_handler.d account_handler.o: account_handler.c mud.h wrapsock.h property_table.h \
++  list.h map.h hashtable.h set.h buffer.h bitvector.h utils.h socket.h \
++  account.h character.h inform.h save.h char_gen.h scripts/script.h
+diff -ruN ../nakedmudv2.1.1/src/action.c src/action.c
+--- ../nakedmudv2.1.1/src/action.c	Sun May  8 15:04:45 2005
++++ src/action.c	Thu May 12 17:08:52 2005
+@@ -119,7 +119,7 @@
+ //*****************************************************************************
+ void init_actions() {
+   // use the standard pointer hasher and comparator
+-  actors = newMap(NULL, NULL, 50);
++  actors = newMap(NULL, NULL);
+ 
+   // add in our example delayed action
+   add_cmd("dsay", NULL, cmd_dsay, 0, POS_SITTING, POS_FLYING, 
+@@ -205,17 +205,22 @@
+ 
+ void pulse_actions(int time) {
+   MAP_ITERATOR   *ch_i = newMapIterator(actors);
+-  void          *actor = NULL;
+-  ACTION_DATA  *action = NULL;
+-  LIST_ITERATOR *act_i = NULL;
+-  LIST        *actions = NULL;
++  ACTION_DATA   *action = NULL;
++  LIST_ITERATOR  *act_i = NULL;
++  LIST         *actions = NULL;
++  const CHAR_DATA *map_actor = NULL;
++  CHAR_DATA         *ch = NULL;
+ 
+-  while( (actor = mapIteratorCurrentKey(ch_i)) != NULL) {
++  ITERATE_MAP(map_actor, actions, ch_i) {
+     actions = mapIteratorCurrentVal(ch_i);
+-    mapIteratorNext(ch_i);
+ 
+     // if we have actions, then go through 'em all
+     if(listSize(actions) > 0) {
++      // eek... small problem. The key for maps is constant, but we need
++      // a non-constant character to send to run_action. Let's get the char's
++      // UID, and re-look him up in the player table
++      ch = propertyTableGet(mob_table, charGetUID(map_actor));
++
+       act_i = newListIterator(actions);
+ 
+       ITERATE_LIST(action, act_i) {
+@@ -224,12 +229,10 @@
+ 	// pop the action from the list, and run it
+ 	if(action->delay <= 0) {
+ 	  listRemove(actions, action);
+-	  run_action(actor, action);
++	  run_action(ch, action);
+ 	  deleteAction(action);
+ 	}
+-      }
+-      deleteListIterator(act_i);
++      } deleteListIterator(act_i);
+     }
+-  }
+-  deleteMapIterator(ch_i);
++  } deleteMapIterator(ch_i);
+ }
+diff -ruN ../nakedmudv2.1.1/src/autorun.py src/autorun.py
+--- ../nakedmudv2.1.1/src/autorun.py	Sun May  8 15:04:45 2005
++++ src/autorun.py	Thu May 12 17:08:52 2005
+@@ -1,3 +1,4 @@
++#!/usr/bin/python
+ ################################################################################
+ #
+ # autorun.py
+diff -ruN ../nakedmudv2.1.1/src/auxiliary.c src/auxiliary.c
+--- ../nakedmudv2.1.1/src/auxiliary.c	Sun May  8 15:04:45 2005
++++ src/auxiliary.c	Thu May 12 17:08:52 2005
+@@ -27,7 +27,6 @@
+ //
+ // the function sets used for loading and saving 
+ // auxiliary functions on our datatypes
+-//
+ HASHTABLE *auxiliary_manip_funcs = NULL;
+ 
+ 
+@@ -90,10 +89,10 @@
+   AUXILIARY_FUNCS *funcs = NULL;
+   const char       *name = NULL;
+ 
+-  ITERATE_HASH(name, funcs, hash_i)
++  ITERATE_HASH(name, funcs, hash_i) {
+     if(IS_SET(funcs->aux_type, aux_type))
+       hashPut(data, name, funcs->new());
+-  deleteHashIterator(hash_i);
++  } deleteHashIterator(hash_i);
+   return data;
+ }
+ 
+@@ -104,10 +103,10 @@
+   AUXILIARY_FUNCS *funcs = NULL;
+   const char       *name = NULL;
+ 
+-  ITERATE_HASH(name, funcs, hash_i) 
++  ITERATE_HASH(name, funcs, hash_i) {
+     if(IS_SET(funcs->aux_type, aux_type) && !hashGet(data, name))
+       hashPut(data, name, funcs->new());
+-  deleteHashIterator(hash_i);
++  } deleteHashIterator(hash_i);
+ }
+ 
+ 
+@@ -122,8 +121,7 @@
+   ITERATE_HASH(name, entry, hash_i) {
+     funcs = auxiliariesGetFuncs(name);
+     funcs->delete(entry);
+-  }
+-  deleteHashIterator(hash_i);
++  } deleteHashIterator(hash_i);
+   deleteHashtable(data);
+ }
+ 
+@@ -138,9 +136,9 @@
+ 
+   ITERATE_HASH(name, entry, hash_i) {
+     funcs = auxiliariesGetFuncs(name);
+-    store_set(set, name, funcs->store(entry));
+-  }
+-  deleteHashIterator(hash_i);
++    if(funcs->store) 
++      store_set(set, name, funcs->store(entry));
++  } deleteHashIterator(hash_i);
+   return set;
+ }
+ 
+@@ -155,9 +153,11 @@
+   ITERATE_HASH(name, funcs, hash_i) {
+     if(!IS_SET(funcs->aux_type, aux_type))
+       continue;
+-    hashPut(data, name, funcs->read(read_set(set, name)));
+-  }
+-  deleteHashIterator(hash_i);
++    if(funcs->read)
++      hashPut(data, name, funcs->read(read_set(set, name)));
++    else
++      hashPut(data, name, funcs->new());
++  } deleteHashIterator(hash_i);
+   return data;
+ }
+ 
+@@ -175,8 +175,7 @@
+     ITERATE_HASH(name, entry, hash_i) {
+       funcs = auxiliariesGetFuncs(name);
+       funcs->delete(entry);
+-    }
+-    deleteHashIterator(hash_i);
++    } deleteHashIterator(hash_i);
+   }
+ 
+   // now, copy in all of the new data
+@@ -185,8 +184,7 @@
+     ITERATE_HASH(name, entry, hash_i) {
+       funcs = auxiliariesGetFuncs(name);
+       hashPut(to, name, funcs->copy(entry));
+-    }
+-    deleteHashIterator(hash_i);
++    } deleteHashIterator(hash_i);
+   }
+ }
+ 
+diff -ruN ../nakedmudv2.1.1/src/auxiliary.h src/auxiliary.h
+--- ../nakedmudv2.1.1/src/auxiliary.h	Sun May  8 15:04:45 2005
++++ src/auxiliary.h	Thu May 12 17:08:51 2005
+@@ -19,6 +19,8 @@
+ #define AUXILIARY_TYPE_OBJ       (1 << 2)
+ #define AUXILIARY_TYPE_ZONE      (1 << 3)
+ #define AUXILIARY_TYPE_SOCKET    (1 << 4)
++#define AUXILIARY_TYPE_ACCOUNT   (1 << 5)
++
+ 
+ 
+ //
+diff -ruN ../nakedmudv2.1.1/src/bitvector.c src/bitvector.c
+--- ../nakedmudv2.1.1/src/bitvector.c	Sun May  8 15:04:45 2005
++++ src/bitvector.c	Thu May 12 17:08:51 2005
+@@ -99,8 +99,7 @@
+ }
+ 
+ BITVECTOR *newBitvector() {
+-  BITVECTOR *v = malloc(sizeof(BITVECTOR));
+-  bzero(v, sizeof(BITVECTOR));
++  BITVECTOR *v = calloc(1, sizeof(BITVECTOR));
+   return v;
+ }
+ 
+@@ -111,8 +110,7 @@
+     int vector_len = hashSize(data->bitmap)/8 + 1;
+     vector = newBitvector();
+     vector->data = data;
+-    vector->bits = malloc(sizeof(char) * vector_len);
+-    bzero(vector->bits, vector_len);
++    vector->bits = calloc(vector_len, sizeof(char));
+   }
+   return vector;
+ }
+diff -ruN ../nakedmudv2.1.1/src/char_gen.c src/char_gen.c
+--- ../nakedmudv2.1.1/src/char_gen.c	Wed Dec 31 17:00:00 1969
++++ src/char_gen.c	Thu May 12 17:08:51 2005
+@@ -0,0 +1,191 @@
++//*****************************************************************************
++//
++// char_gen.c
++//
++// Contains all of the functions neccessary for generating a new character. 
++// Different muds will handle this process in wildly different ways. As such,
++// I figured it would be good to localize all of the login details to a single 
++// file for people to tailor to their specific mud. It also makes updating to 
++// newer versions a bit easier. Your character generation process should be
++// laid out here. A basic framework is given, but it could use lots of work. In
++// fact, it is crap and could use LOTS of work. I encourage people to write 
++// their own login procedure and submit their designs to me so I can develop a 
++// better general method for later versions of the mud.
++//
++//*****************************************************************************
++
++#include "mud.h"
++#include "utils.h"
++#include "socket.h"
++#include "account.h"
++#include "character.h"
++#include "world.h"
++#include "save.h"
++#include "races.h"
++#include "handler.h"
++#include "inform.h"
++
++
++
++//*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "scripts/script.h"
++
++
++
++//*****************************************************************************
++// local functions, defines, structures, and the like
++//*****************************************************************************
++
++// functions in the char creation procedure
++void char_ask_name(SOCKET_DATA *sock, char *arg);
++void char_ask_sex (SOCKET_DATA *sock, char *arg);
++void char_ask_race(SOCKET_DATA *sock, char *arg);
++
++
++//
++// List all of the races available during creation
++void list_races(SOCKET_DATA *sock) {
++  send_to_socket(sock, "Available races are:\r\n");
++  send_to_socket(sock, "%s", raceGetList(TRUE));
++  send_to_socket(sock, "\r\n\r\nPlease enter your choice: ");
++}
++
++
++//
++// Character names must be at least 4 characters long, and no more than 12.
++// The name must only be composed of alphanumeric characters
++bool check_char_name(const char *name) {
++  int i, size = strlen(name);
++  if (size < 3 || size > 12)
++    return FALSE;
++  for (i = 0; i < size; i++)
++    if (!isalpha(name[i])) 
++      return FALSE;
++  return TRUE;
++}
++
++
++//
++// Query for the character's name.
++void char_ask_name(SOCKET_DATA *sock, char *arg) {
++  CHAR_DATA *ch = NULL;
++
++  // check for a legal name
++  if(!check_char_name(arg))
++    text_to_buffer(sock, 
++		   "Sorry, that was an illegal name. Please pick another.\r\n"
++		   "What is your name? ");
++  // a character with this name already exists
++  else if(char_exists(arg))
++    text_to_buffer(sock,
++		   "A character with this name already exists.\r\n"
++		   "What is your name? ");
++  // we're OK to make this new character
++  else {
++    ch = newChar();
++
++    // give the player it's name 
++    *arg = toupper(*arg);
++    charSetName(ch, arg);
++
++    // and room description. In the future, we may want
++    // to consider allowing players to set their own rdescs 
++    char rdesc[SMALL_BUFFER];
++    sprintf(rdesc, "%s is here.", arg);
++    charSetRdesc(ch, rdesc);
++
++    // socket <-> player 
++    charSetSocket(ch, sock);
++    socketSetChar(sock, ch);
++
++    // prepare for next step 
++    text_to_buffer(sock, "What is your sex (M/F/N)? ");
++    socketReplaceInputHandler(sock, char_ask_sex, NULL);
++  }
++}
++
++
++//
++// Ask for the character's sex. 
++void char_ask_sex (SOCKET_DATA *sock, char *arg) {
++  switch(toupper(*arg)) {
++  case 'F':
++    charSetSex(socketGetChar(sock), SEX_FEMALE);
++    break;
++  case 'M':
++    charSetSex(socketGetChar(sock), SEX_MALE);
++    break;
++  case 'N':
++    charSetSex(socketGetChar(sock), SEX_NEUTRAL);
++    break;
++  default:
++    text_to_buffer(sock, "\r\nInvalid sex. Try again (M/F/N) :");
++    return;
++  }
++
++  // onto race choosing
++  socketReplaceInputHandler(sock, char_ask_race, NULL);
++  list_races(sock);
++}
++
++
++//
++// Pick a race for our new character
++void char_ask_race(SOCKET_DATA *sock, char *arg) {
++  if(!arg || !*arg || !raceIsForPC(arg))
++    send_to_socket(sock, "Invalid race! Please try again: ");
++  else {
++    charSetRace(socketGetChar(sock), arg);
++    charResetBody(socketGetChar(sock));
++
++    // give the character a unique id 
++    int next_char_uid = mudsettingGetInt("puid") + 1;
++    mudsettingSetInt("puid", next_char_uid);
++    charSetUID(socketGetChar(sock), next_char_uid);
++    
++    // if it's the first player, set him as the highest level 
++    if(charGetUID(socketGetChar(sock)) == 1)
++      charSetLevel(socketGetChar(sock), MAX_LEVEL);
++
++    // add the character to the game 
++    char_to_game(socketGetChar(sock));
++    
++    log_string("New player: %s has entered the game.", 
++	       charGetName(socketGetChar(sock)));
++    
++    // and into the game 
++    // pop the input handler for char creation and add the one for
++    // playing the game
++    socketReplaceInputHandler(sock, handle_cmd_input, show_prompt);
++    text_to_buffer(sock, motd);
++    
++    // we should do some checks here to make sure the start room exists
++    char_to_room(socketGetChar(sock), worldGetRoom(gameworld, START_ROOM));
++    look_at_room(socketGetChar(sock), charGetRoom(socketGetChar(sock)));
++    
++    // and save him 
++    save_player(socketGetChar(sock));
++    
++    //************************************************************
++    //******                 VERY IMPORTANT                 ******
++    //************************************************************
++    // add this character to our account list
++    accountPutChar(socketGetAccount(sock), charGetName(socketGetChar(sock)));
++    save_account(socketGetAccount(sock));
++
++    // check enterance scripts
++    try_enterance_script(socketGetChar(sock), charGetRoom(socketGetChar(sock)), NULL);
++  }
++}
++
++
++
++//*****************************************************************************
++// implementation of char_gen.c
++//*****************************************************************************
++void start_char_gen(SOCKET_DATA *sock) {
++  text_to_buffer(sock, "What is your character's name? ");
++  socketPushInputHandler(sock, char_ask_name, NULL);
++}
+diff -ruN ../nakedmudv2.1.1/src/char_gen.d src/char_gen.d
+--- ../nakedmudv2.1.1/src/char_gen.d	Wed Dec 31 17:00:00 1969
++++ src/char_gen.d	Thu May 12 17:17:51 2005
+@@ -0,0 +1,3 @@
++char_gen.d char_gen.o: char_gen.c mud.h wrapsock.h property_table.h list.h map.h \
++  hashtable.h set.h buffer.h bitvector.h utils.h socket.h account.h \
++  character.h world.h save.h races.h handler.h inform.h scripts/script.h
+diff -ruN ../nakedmudv2.1.1/src/char_gen.h src/char_gen.h
+--- ../nakedmudv2.1.1/src/char_gen.h	Wed Dec 31 17:00:00 1969
++++ src/char_gen.h	Thu May 12 17:08:51 2005
+@@ -0,0 +1,23 @@
++#ifndef CHAR_GEN_H
++#define CHAR_GEN_H
++//*****************************************************************************
++//
++// char_gen.h
++//
++// Contains all of the functions neccessary for generating a new character. 
++// Different muds will handle this process in wildly different ways. As such,
++// I figured it would be good to localize all of the login details to a single 
++// file for people to tailor to their specific mud. It also makes updating to 
++// newer versions a bit easier. Your character generation process should be
++// laid out here. A basic framework is given, but it could use lots of work. In
++// fact, it is crap and could use LOTS of work. I encourage people to write 
++// their own login procedure and submit their designs to me so I can develop a 
++// better general method for later versions of the mud.
++//
++//*****************************************************************************
++
++//
++// Start the character generation process!
++void start_char_gen(SOCKET_DATA *sock);
++
++#endif // CHAR_GEN_H
+diff -ruN ../nakedmudv2.1.1/src/character.c src/character.c
+--- ../nakedmudv2.1.1/src/character.c	Sun May  8 15:04:44 2005
++++ src/character.c	Thu May 12 17:08:51 2005
+@@ -90,7 +90,6 @@
+ 
+ struct char_data {
+   // data for PCs only
+-  char                 * password;
+   room_vnum              loadroom;
+   int                    imm_invis;
+ 
+@@ -125,10 +124,8 @@
+ 
+ 
+ CHAR_DATA *newChar() {
+-  CHAR_DATA *ch   = malloc(sizeof(CHAR_DATA));
+-  bzero(ch, sizeof(*ch));
++  CHAR_DATA *ch   = calloc(1, sizeof(CHAR_DATA));
+ 
+-  ch->password      = strdup("");
+   ch->imm_invis     = 0;
+ 
+   ch->loadroom      = NOWHERE;
+@@ -214,10 +211,6 @@
+   return ch->name;
+ };
+ 
+-const char  *charGetPassword  ( CHAR_DATA *ch) {
+-  return ch->password;
+-};
+-
+ const char  *charGetDesc      ( CHAR_DATA *ch) {
+   return bufferString(ch->desc);
+ }
+@@ -259,7 +252,7 @@
+   return ch->race;
+ }
+ 
+-int          charGetUID   ( CHAR_DATA *ch) {
++int          charGetUID   ( const CHAR_DATA *ch) {
+   return ch->uid;
+ }
+ 
+@@ -296,11 +289,6 @@
+   ch->name = strdup(name ? name : "");
+ };
+ 
+-void         charSetPassword  ( CHAR_DATA *ch, const char *password) {
+-  if(ch->password) free(ch->password);
+-  ch->password = strdup(password ? password : "");
+-};
+-
+ void         charSetLevel     ( CHAR_DATA *ch, int level) {
+   ch->level = level;
+ };
+@@ -371,7 +359,6 @@
+   // it's also assumed we've extracted our inventory
+   deleteList(mob->inventory);
+ 
+-  if(mob->password)    free(mob->password);
+   if(mob->name)        free(mob->name);
+   if(mob->desc)        deleteBuffer(mob->desc);
+   if(mob->rdesc)       free(mob->rdesc);
+@@ -398,11 +385,10 @@
+   charSetLevel(mob,        read_int   (set, "level"));
+   charSetSex(mob,          read_int   (set, "sex"));
+   charSetRace(mob,         read_string(set, "race"));
+-  charSetPassword(mob,     read_string(set, "password"));
+   bitSet(mob->prfs,        read_string(set, "prfs"));
+ 
+-  // read in PC data
+-  if(*charGetPassword(mob)) {
++  // read in PC data if it exists
++  if(storage_contains(set, "uid")) {
+     charSetImmInvis(mob,   read_int   (set, "imm_invis"));
+     charSetUID(mob,        read_int   (set, "uid"));
+     charSetLoadroom(mob,   read_int   (set, "loadroom"));
+@@ -447,7 +433,6 @@
+   if(!charIsNPC(mob)) {
+     store_int   (set, "imm_invis",  mob->imm_invis);
+     store_int   (set, "position",   mob->position);
+-    store_string(set, "password",   mob->password);
+     store_int   (set, "uid",        mob->uid);
+     store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)));
+   }
+diff -ruN ../nakedmudv2.1.1/src/character.h src/character.h
+--- ../nakedmudv2.1.1/src/character.h	Sun May  8 15:04:44 2005
++++ src/character.h	Thu May 12 17:08:51 2005
+@@ -64,7 +64,6 @@
+ ROOM_DATA   *charGetRoom      ( CHAR_DATA *ch);
+ const char  *charGetName      ( CHAR_DATA *ch);
+ const char  *charGetDesc      ( CHAR_DATA *ch);
+-const char  *charGetPassword  ( CHAR_DATA *ch);
+ const char  *charGetRdesc     ( CHAR_DATA *ch);
+ const char  *charGetMultiRdesc( CHAR_DATA *ch);
+ const char  *charGetMultiName ( CHAR_DATA *ch);
+@@ -75,10 +74,10 @@
+ LIST        *charGetInventory ( CHAR_DATA *ch);
+ BODY_DATA   *charGetBody      ( CHAR_DATA *ch);
+ const char  *charGetRace      ( CHAR_DATA *ch);
+-int          charGetUID       ( CHAR_DATA *ch);
+ room_vnum    charGetLoadroom  ( CHAR_DATA *ch);
+ OBJ_DATA    *charGetFurniture ( CHAR_DATA *ch);
+ int          charGetPos       ( CHAR_DATA *ch);
++int          charGetUID       ( const CHAR_DATA *ch);
+ void        *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name);
+ int          charGetImmInvis  ( CHAR_DATA *ch);
+ BITVECTOR   *charGetPrfs      ( CHAR_DATA *ch);
+@@ -87,7 +86,6 @@
+ void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket);
+ void         charSetRoom      ( CHAR_DATA *ch, ROOM_DATA *room);
+ void         charSetName      ( CHAR_DATA *ch, const char *name);
+-void         charSetPassword  ( CHAR_DATA *ch, const char *password);
+ void         charSetLevel     ( CHAR_DATA *ch, int level);
+ void         charSetSex       ( CHAR_DATA *ch, int sex);
+ void         charSetDesc      ( CHAR_DATA *ch, const char *desc);
+diff -ruN ../nakedmudv2.1.1/src/cmd_admin.c src/cmd_admin.c
+--- ../nakedmudv2.1.1/src/cmd_admin.c	Sun May  8 15:04:44 2005
++++ src/cmd_admin.c	Thu May 12 17:08:51 2005
+@@ -20,9 +20,74 @@
+ #include "storage.h"
+ 
+ 
++
++//*****************************************************************************
++// commands in cmd_admin.c
++//*****************************************************************************
++
++//
++// Locks the game for anyone at or below the lockdown level. No argument tells
++// us the current lockdown level. Suggested by Rhaelar
++COMMAND(cmd_lockdown) {
++  int lockdown = 0;
++
++  // we're trying to view the current lockdown level
++  if(!*arg) {
++    lockdown = mudsettingGetInt("lockdown");
++    // no lockdown in place
++    if(lockdown == 0)
++      send_to_char(ch, "The mud currently is not locked to anyone.\r\n");
++    else if(lockdown == 1)
++      send_to_char(ch, "The mud is locked down to new players.\r\n");
++    else
++      send_to_char(ch, "The mud is locked to anyone below level %d.\r\n",
++		   lockdown);
++  }
++
++  // make sure we've got a level number
++  else if(!isdigit(*arg))
++    send_to_char(ch, "Which level would you like to set the lockdown to?\r\n");
++
++  // make sure we don't lock ourself out
++  else if( (lockdown = atoi(arg)) > charGetLevel(ch))
++    send_to_char(ch, "You cannot lock out people below that level!\r\n");
++
++  // do the lockdown
++  else {
++    mudsettingSetInt("lockdown", lockdown);
++    if(lockdown == 0)
++      send_to_char(ch, "Lockdown removed.\r\n");
++    else if(lockdown == 1)
++      send_to_char(ch, "New players are locked down.\r\n");
++    else
++      send_to_char(ch, "Everyone below level %d is locked down.\r\n", lockdown);
++
++    // kick out anyone that is at or below our lockdown threshold.
++    LIST_ITERATOR *ch_i = newListIterator(mobile_list);
++    ITERATE_LIST(ch, ch_i) {
++      if(!charIsNPC(ch) && charGetLevel(ch) < lockdown) {
++	send_to_char(ch, "The mud has just been locked down to anyone at or "
++		     "below your level.\r\n");
++	save_player(ch);
++
++	// and close the socket if we have one
++	if(charGetSocket(ch)) {
++	  SOCKET_DATA *sock = charGetSocket(ch);
++	  charSetSocket(ch, NULL);
++	  socketSetChar(sock, NULL);
++	  close_socket(sock, FALSE);
++	}
++
++	// do the extraction
++	extract_mobile(ch);
++      }
++    } deleteListIterator(ch_i);
++  }
++}
++
++
+ //
+ // BOOM! Shut down the MUD
+-//
+ COMMAND(cmd_shutdown) {
+   shut_down = TRUE;
+ }
+@@ -30,7 +95,6 @@
+ 
+ //
+ // Perform a command multiple times
+-//
+ COMMAND(cmd_repeat) {
+   if(!arg || !*arg) {
+     send_to_char(ch, "What did you want to repeat, and how many times?\r\n");
+@@ -58,7 +122,6 @@
+ 
+ //
+ // Perform a command at another room or person
+-//
+ COMMAND(cmd_at) {
+   if(!arg || !*arg) {
+     send_to_char(ch, "Do what where?\r\n");
+@@ -111,7 +174,6 @@
+ //   examples:
+ //     goto 100             go to room number 100
+ //     goto jim             go to an object/person named jim
+-//
+ COMMAND(cmd_goto) {
+   if(!arg || !*arg)
+     send_to_char(ch, "Where would you like to go to?\r\n");
+@@ -162,7 +224,6 @@
+ // The opposite of goto. Instead of moving to a specified location, it
+ // takes the target to the user.
+ //   usage: transfer [player]
+-//
+ COMMAND(cmd_transfer) {
+   if(!arg || !*arg)
+     send_to_char(ch, "Who would you like to transfer?\r\n");
+@@ -195,7 +256,6 @@
+ 
+ //
+ // Perform a copyover
+-//
+ COMMAND(cmd_copyover) { 
+   do_copyover(ch);
+ }
+@@ -203,7 +263,6 @@
+ 
+ //
+ // show a list of all the PCs who are linkdead
+-//
+ COMMAND(cmd_linkdead) {
+   CHAR_DATA *xMob;
+   char buf[MAX_BUFFER];
+@@ -226,7 +285,6 @@
+ 
+ //
+ // List all of the non-player commands the character has access to
+-//
+ COMMAND(cmd_wizhelp) {
+   show_commands(ch, LEVEL_BUILDER, charGetLevel(ch));
+ }
+@@ -234,7 +292,6 @@
+ 
+ //
+ // Turn on/off immortal invisibility
+-//
+ COMMAND(cmd_invis) {
+   int level = charGetLevel(ch); // default to our level
+   if(arg && *arg && isdigit(*arg))
+@@ -269,7 +326,6 @@
+ 
+ //
+ // turn off immortal invisibility
+-//
+ COMMAND(cmd_visible) {
+   if(charGetImmInvis(ch) == 0)
+     send_to_char(ch, "But you're already visible!\r\n");
+diff -ruN ../nakedmudv2.1.1/src/cmd_misc.c src/cmd_misc.c
+--- ../nakedmudv2.1.1/src/cmd_misc.c	Sun May  8 15:04:44 2005
++++ src/cmd_misc.c	Thu May 12 17:08:52 2005
+@@ -57,12 +57,11 @@
+   // 
+   // gotta make sure we have a socket. Who knows...
+   // a mobile might be trying to quit
+-  //
+   if(charGetSocket(ch)) {
+     SOCKET_DATA *sock = charGetSocket(ch);
+     charSetSocket(ch, NULL);
+     socketSetChar(sock, NULL);
+-    close_socket(sock, FALSE);
++    socketPopInputHandler(sock);
+   }
+ 
+   extract_mobile(ch);
+@@ -114,18 +113,11 @@
+   start_event(ch, atoi(time) SECONDS, event_delayed_cmd, NULL, NULL, arg);
+ }
+ 
+-
+-//
+-// An entrypoint into the character's notepad
+ //
+-/*
+-COMMAND(cmd_write) {
+-  if(!charGetSocket(ch))
+-    send_to_char(ch, "You cannot use notepad if you have no socket.\r\n");
+-  else {
+-    send_around_char(ch, TRUE, "%s pulls out a notepad and begins writing.", 
+-		     charGetName(ch));
+-    start_notepad(charGetSocket(ch), "");
+-  }
++// Displays the MOTD to the character
++COMMAND(cmd_motd) {
++  // only bother sending it if we have a socket. And then page it, incase
++  // the motd is especially long.
++  if(charGetSocket(ch))
++    page_string(charGetSocket(ch), motd);
+ }
+-*/
+diff -ruN ../nakedmudv2.1.1/src/commands.h src/commands.h
+--- ../nakedmudv2.1.1/src/commands.h	Sun May  8 15:04:44 2005
++++ src/commands.h	Thu May 12 17:08:52 2005
+@@ -8,7 +8,7 @@
+ //
+ //*****************************************************************************
+ 
+-/* admin.c */
++/* cmd_admin.c */
+ COMMAND(cmd_goto);
+ COMMAND(cmd_transfer);
+ COMMAND(cmd_copyover);
+@@ -19,9 +19,10 @@
+ COMMAND(cmd_visible);
+ COMMAND(cmd_repeat);
+ COMMAND(cmd_at);
++COMMAND(cmd_lockdown);
+ 
+ 
+-/* builder.c */
++/* cmd_builder.c */
+ COMMAND(cmd_dig);
+ COMMAND(cmd_fill);
+ COMMAND(cmd_load);
+@@ -75,6 +76,7 @@
+ COMMAND(cmd_more);
+ COMMAND(cmd_back);
+ COMMAND(cmd_stop);
++COMMAND(cmd_motd);
+ 
+ 
+ /* inform.c */
+diff -ruN ../nakedmudv2.1.1/src/gameloop.c src/gameloop.c
+--- ../nakedmudv2.1.1/src/gameloop.c	Sun May  8 15:04:44 2005
++++ src/gameloop.c	Thu May 12 17:15:17 2005
+@@ -3,6 +3,8 @@
+ //
+ // contains the entrypoint for the MUD, plus various state-handling functions.
+ //*****************************************************************************
++#include <sys/time.h>
++
+ #include "mud.h"
+ #include "socket.h"
+ #include "world.h"
+@@ -50,6 +52,8 @@
+ #include "alias/alias.h"
+ #endif
+ 
++
++
+ /* local procedures */
+ void game_loop    ( int control );
+ bool gameloop_end = FALSE;
+@@ -223,7 +227,6 @@
+   log_string("Initializing helpfiles.");
+   init_help();
+ #endif
+-
+ 
+ 
+ 
+diff -ruN ../nakedmudv2.1.1/src/hashtable.c src/hashtable.c
+--- ../nakedmudv2.1.1/src/hashtable.c	Sun May  8 15:04:44 2005
++++ src/hashtable.c	Thu May 12 17:08:52 2005
+@@ -38,19 +38,17 @@
+ // this is a fairly simple hashing function. It could do 
+ // with some major speeding up.
+ int hash(const char *key) {
+-  int i;
+   const int BASE = 2;
+   int base = 1;
+-  int len = strlen(key);
+   int hvalue = 0;
+ 
+-  for (i = 0; i < len; i++) {
++  for (; *key; key++) {
+     base *= BASE;
+-    hvalue += tolower(key[i]) * base;
++    hvalue += tolower(*key) * base;
+   }
+ 
+   return (hvalue < 0 ? hvalue * -1 : hvalue);
+-};
++}
+ 
+ 
+ //
+@@ -156,8 +154,7 @@
+   free(table->buckets);
+ 
+   // now, make new buckets and set them to NULL
+-  table->buckets = malloc(sizeof(LIST *) * size);
+-  bzero(table->buckets, sizeof(LIST *) * size);
++  table->buckets = calloc(size, sizeof(LIST *));
+   table->num_buckets = size;
+ 
+   // now, we put all of our entries back into the new buckets
+diff -ruN ../nakedmudv2.1.1/src/inform.c src/inform.c
+--- ../nakedmudv2.1.1/src/inform.c	Sun May  8 15:04:44 2005
++++ src/inform.c	Thu May 12 17:08:52 2005
+@@ -305,7 +305,8 @@
+     send_to_char(ch, "%-30s %s\r\n", 
+ 		 posbuf, objGetName(equipment));
+   }
+-  if(bodyparts) free(bodyparts);
++  if(bodyparts) 
++    free(bodyparts);
+ }
+ 
+ 
+@@ -579,6 +580,7 @@
+ // list all of the equipment a character is wearing to him or herself
+ //
+ COMMAND(cmd_equipment) {
++  send_to_char(ch, "You are wearing:\r\n");
+   show_body(ch, charGetBody(ch));
+ }
+ 
+@@ -608,7 +610,6 @@
+ 
+ //
+ // show the player all of the people who are currently playing
+-//
+ COMMAND(cmd_who)
+ {
+   CHAR_DATA *plr;
+@@ -622,9 +623,9 @@
+ 	  "{gLevel    Race )\r\n"
+ 	  );
+ 
++  // build our list of people online
+   ITERATE_LIST(dsock, sock_i) {
+     socket_count++;
+-    //    if (dsock->state != STATE_PLAYING) continue;
+     if ((plr = socketGetChar(dsock)) == NULL) continue;
+     playing_count++;
+     bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n", 
+@@ -633,23 +634,20 @@
+ 	      (charGetLevel(plr) == LEVEL_SCRIPTER    ? "scripter" : "admin"))),
+ 	    raceGetAbbrev(charGetRace(plr)),
+ 	    charGetName(plr), socketGetHostname(dsock));
+-  }
++  } deleteListIterator(sock_i);
+ 
+-  bprintf(buf, "\r\n{g%d character%s connected. %d playing.\r\n",
++  // send out info about the number of sockets and players logged on
++  bprintf(buf, "\r\n{g%d socket%s connected. %d playing.\r\n",
+ 	  socket_count, (socket_count == 1 ? "" : "s"), playing_count);
+   page_string(charGetSocket(ch), bufferString(buf));
+-  //  send_to_char(ch, buf->data);
+   deleteBuffer(buf);
+-  deleteListIterator(sock_i);
+ }
+ 
+ 
+ 
+ //*****************************************************************************
+-//
+ // below this line are all of the subfunctions related to the message() 
+ // function
+-//
+ //*****************************************************************************
+ 
+ //
+@@ -669,7 +667,6 @@
+ //  $O = vobj name
+ //  $a = a/an of obj
+ //  $A = a/an of vobj
+-//
+ void send_message(CHAR_DATA *to, 
+ 		  const char *str,
+ 		  CHAR_DATA *ch, CHAR_DATA *vict,
+@@ -812,5 +809,19 @@
+       send_message(rec, mssg, ch, vict, obj, vobj);
+     }
+     deleteListIterator(rec_i);
++  }
++}
++
++void mssgprintf(CHAR_DATA *ch, CHAR_DATA *vict, 
++		OBJ_DATA *obj, OBJ_DATA  *vobj,
++		int hide_nosee, bitvector_t range, const char *fmt, ...) {
++  if(fmt && *fmt) {
++    // form the message
++    static char buf[MAX_BUFFER];
++    va_list args;
++    va_start(args, fmt);
++    vsprintf(buf, fmt, args);
++    va_end(args);
++    message(ch, vict, obj, vobj, hide_nosee, range, buf);
+   }
+ }
+diff -ruN ../nakedmudv2.1.1/src/inform.h src/inform.h
+--- ../nakedmudv2.1.1/src/inform.h	Sun May  8 15:04:44 2005
++++ src/inform.h	Thu May 12 17:08:52 2005
+@@ -46,6 +46,12 @@
+ 	     int hide_nosee, bitvector_t range, 
+ 	     const char *mssg);
+ 
++//
++// same deal as message(), but takes a formatting
++void mssgprintf(CHAR_DATA *ch, CHAR_DATA *vict, 
++		OBJ_DATA *obj, OBJ_DATA  *vobj,
++		int hide_nosee, bitvector_t range, const char *fmt, ...)
++  __attribute__ ((format (printf, 7, 8)));
+ 
+ //
+ // send a message to everyone outdoors
+diff -ruN ../nakedmudv2.1.1/src/interpret.c src/interpret.c
+--- ../nakedmudv2.1.1/src/interpret.c	Sun May  8 15:04:44 2005
++++ src/interpret.c	Thu May 12 17:08:52 2005
+@@ -56,11 +56,11 @@
+   for(i = 0; i < 26; i++)
+     cmd_table[i] = newList();
+ 
+-  //***********************************************************************
++  //************************************************************************
+   // This is for core functions ONLY! If you have a module that adds new
+   // functions to the MUD, they should be added in the init_xxx() function
+   // associated with your module.
+-  //***********************************************************************
++  //************************************************************************
+   add_cmd("north", "n", cmd_move,     DIR_NORTH,    POS_STANDING, POS_FLYING,
+ 	  LEVEL_PLAYER, TRUE, TRUE );
+   add_cmd("east",  "e", cmd_move,     DIR_EAST,     POS_STANDING, POS_FLYING,
+@@ -103,10 +103,6 @@
+ 	  LEVEL_PLAYER, TRUE, FALSE);
+   add_cmd("buildwalk",  NULL, cmd_buildwalk, 0, POS_UNCONCIOUS, POS_FLYING,
+ 	  LEVEL_BUILDER, FALSE, FALSE);
+-  /*
+-  add_cmd("buildwalk",  NULL, cmd_tog_prf,  PRF_BUILDWALK, 
+-	  POS_UNCONCIOUS, POS_FLYING, LEVEL_BUILDER, FALSE, FALSE);
+-  */
+ 
+   // C
+   add_cmd("chat",       NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
+@@ -179,6 +175,8 @@
+ 	  LEVEL_BUILDER, FALSE, FALSE);
+   add_cmd("linkdead",   NULL, cmd_linkdead, 0, POS_UNCONCIOUS, POS_FLYING,
+ 	  LEVEL_ADMIN, FALSE, FALSE);
++  add_cmd("lockdown",   NULL, cmd_lockdown, 0, POS_UNCONCIOUS, POS_FLYING,
++	  LEVEL_ADMIN, FALSE, FALSE);
+ 
+   // M
+   add_cmd("mlist",      NULL, cmd_mlist,    0, POS_UNCONCIOUS, POS_FLYING,
+@@ -186,6 +184,8 @@
+   add_cmd("mdelete",    NULL, cmd_mdelete,  0, POS_UNCONCIOUS, POS_FLYING,
+ 	  LEVEL_BUILDER, FALSE, FALSE);
+   add_cmd("more",       NULL, cmd_more,     0, POS_UNCONCIOUS, POS_FLYING,
++	  LEVEL_PLAYER, TRUE, FALSE);
++  add_cmd("motd",       NULL, cmd_motd,     0, POS_UNCONCIOUS, POS_FLYING,
+ 	  LEVEL_PLAYER, TRUE, FALSE);
+ 
+   // O
+diff -ruN ../nakedmudv2.1.1/src/list.c src/list.c
+--- ../nakedmudv2.1.1/src/list.c	Sun May  8 15:04:44 2005
++++ src/list.c	Thu May 12 17:08:52 2005
+@@ -147,8 +147,8 @@
+ }
+ 
+ void listPut(LIST *L, void *elem) {
+-  if(listIn(L, elem))
+-    return;
++  //  if(listIn(L, elem))
++  //    return;
+ 
+   LIST_NODE *N = newListNode(elem);
+   N->next = L->head;
+@@ -160,8 +160,8 @@
+ 
+ 
+ void listQueue(LIST *L, void *elem) {
+-  if(listIn(L, elem))
+-    return;
++  //  if(listIn(L, elem))
++  //    return;
+ 
+   LIST_NODE *N = newListNode(elem);
+ 
+diff -ruN ../nakedmudv2.1.1/src/login.c src/login.c
+--- ../nakedmudv2.1.1/src/login.c	Sun May  8 15:04:45 2005
++++ src/login.c	Wed Dec 31 17:00:00 1969
+@@ -1,328 +0,0 @@
+-//*****************************************************************************
+-//
+-// login.c
+-//
+-// Different muds will want to set up the login process in very different ways;
+-// as such, I figured it would be good to localize all of the login details to
+-// a single file for people to tailor to their specific mud. It also makes
+-// updating to newer versions a bit easier. Your login procedure should be laid
+-// out here. A basic framework is given, but it could use lots of work. In fact,
+-// it is crap and could use LOTS of work. I encourage people to write their own
+-// login procedure and submit their designs to me so I can develop a better
+-// general method for later versions of the mud.
+-//
+-//*****************************************************************************
+-
+-#include "mud.h"
+-#include "utils.h"
+-#include "socket.h"
+-#include "character.h"
+-#include "handler.h"
+-#include "inform.h"
+-#include "world.h"
+-#include "races.h"
+-#include "save.h"
+-
+-
+-
+-//*****************************************************************************
+-// mandatory modules
+-//*****************************************************************************
+-#include "scripts/script.h"
+-
+-
+-
+-// mccp support
+-const unsigned char do_echo         [] = { IAC, WONT, TELOPT_ECHO,      '\0' };
+-const unsigned char dont_echo       [] = { IAC, WILL, TELOPT_ECHO,      '\0' };
+-
+-
+-// input handlers
+-void state_new_name       (SOCKET_DATA *dsock, char *arg);
+-void state_ask_password   (SOCKET_DATA *dsock, char *arg);
+-void state_new_password   (SOCKET_DATA *dsock, char *arg);
+-void state_verify_password(SOCKET_DATA *dsock, char *arg);
+-void state_ask_sex        (SOCKET_DATA *dsock, char *arg);
+-void state_ask_race       (SOCKET_DATA *dsock, char *arg);
+-
+-
+-
+-//
+-// the head honcho. This is the first handler that a socket enters once it has
+-// connected to the game. You should use this function to get your login 
+-// procedure rolling.
+-void handle_new_connections(SOCKET_DATA *dsock, char *arg) {
+-  state_new_name(dsock, arg);
+-}
+-
+-
+-
+-
+-//*****************************************************************************
+-// Contained blow are the functions required for logging on an old character,
+-// or creating a new character. Hmmm, wouldn't it be nice if players had one 
+-// account where they could have all their multiple characters listed, as
+-// opposed to a bunch of different characters? Perhaps this is something to
+-// consider for later versions of the MUD.
+-//*****************************************************************************
+-
+-//
+-// Ask a new connection for a name. This is the first thing that is called
+-// whenever a new socket connects to us
+-void state_new_name(SOCKET_DATA *dsock, char *arg) {
+-  CHAR_DATA *p_new;
+-
+-  if (socketGetDNSLookupStatus(dsock) != TSTATE_DONE) {
+-    text_to_buffer(dsock, 
+-		   "Making a dns lookup, please have patience.\n\r"
+-		   "What is your name? ");
+-    return;
+-  }
+-  // check for a legal name
+-  if (!check_name(arg)) {
+-    text_to_buffer(dsock, 
+-		   "Sorry, that's not a legal name, please pick another.\n\r"
+-		   "What is your name? ");
+-    return; // break;
+-  }
+-  arg[0] = toupper(arg[0]);
+-  log_string("%s is trying to connect.", arg);
+-
+-
+-  // Check for a new Player 
+-  if ((p_new = load_profile(arg)) == NULL) {
+-    p_new = newChar();
+-
+-    // give the player it's name 
+-    charSetName(p_new, arg);
+-
+-    // and room description. In the future, we may want
+-    // to consider allowing players to set their own rdescs 
+-    char rdesc[SMALL_BUFFER];
+-    sprintf(rdesc, "%s is here.", arg);
+-    charSetRdesc(p_new, rdesc);
+-
+-    // prepare for next step 
+-    text_to_buffer(dsock, "Please enter a new password: ");
+-    socketReplaceInputHandler(dsock, state_new_password, NULL);
+-  }
+-  // old player
+-  else {
+-    // prepare for next step 
+-    text_to_buffer(dsock, "What is your password? ");
+-    socketReplaceInputHandler(dsock, state_ask_password, NULL);
+-  }
+-  text_to_buffer(dsock, (char *)dont_echo);
+-
+-  // socket <-> player 
+-  charSetSocket(p_new, dsock);
+-  socketSetChar(dsock, p_new);
+-}
+-
+-
+-//
+-// Ask a character for a password. This is only called once, when
+-// the character first creates.
+-void state_new_password(SOCKET_DATA *dsock, char *arg) {
+-  if (strlen(arg) < 5 || strlen(arg) > 12) {
+-    text_to_buffer(dsock, 
+-		   "\r\nBetween 5 and 12 chars please!\n\r"
+-		   "Please enter a new password: ");
+-    return;
+-  }
+-  charSetPassword(socketGetChar(dsock), 
+-		  crypt(arg, charGetName(socketGetChar(dsock))));
+-
+-  //
+-  // Why is this here? Is this because of old pfiles that terminated strings
+-  // with a tilde?
+-  //   - Geoff, Mar 21/05
+-  if(strchr(charGetPassword(socketGetChar(dsock)), '~') != NULL) {
+-      text_to_buffer(dsock, "Illegal password!\n\r"
+-		            "Please enter a new password: ");
+-  }
+-  else {
+-    text_to_buffer(dsock, "\r\nPlease verify the password: ");
+-    socketReplaceInputHandler(dsock, state_verify_password, NULL);
+-  }
+-}
+-
+-
+-//
+-// Verify that the character's new password is correct. This is
+-// only called once, when the character creates
+-void state_verify_password(SOCKET_DATA *dsock, char *arg) {
+-  if (compares(crypt(arg, charGetName(socketGetChar(dsock))), 
+-	       charGetPassword(socketGetChar(dsock)))) {
+-    text_to_buffer(dsock, (char *) do_echo);
+-
+-    // onto the sex check 
+-    text_to_buffer(dsock, "\r\nWhat is your sex (M/F/N): ");
+-    socketReplaceInputHandler(dsock, state_ask_sex, NULL);
+-  }
+-  else {
+-    charSetPassword(socketGetChar(dsock), NULL);
+-    text_to_buffer(dsock, 
+-		   "\r\nPassword mismatch!\n\r"
+-		   "Please enter a new password: ");
+-    socketReplaceInputHandler(dsock, state_new_password, NULL);
+-  }
+-}
+-
+-void list_races(SOCKET_DATA *sock) {
+-  send_to_socket(sock, "Available races are:\r\n");
+-  send_to_socket(sock, "%s", raceGetList(TRUE));
+-  send_to_socket(sock, "\r\n\r\nPlease enter your choice: ");
+-}
+-
+-//
+-// Ask for the character's race. Called each time a character is created
+-void state_ask_race(SOCKET_DATA *dsock, char *arg) {
+-  if(!arg || !*arg || !raceIsForPC(arg)) {
+-    send_to_socket(dsock, "Invalid race! Please try again: ");
+-    return;
+-  }    
+-  else {
+-    charSetRace(socketGetChar(dsock), arg);
+-    charResetBody(socketGetChar(dsock));
+-  }
+-
+-  // give the character a unique id 
+-  charSetUID(socketGetChar(dsock), next_char_uid());
+-
+-  // if it's the first player, set him as the highest level 
+-  if(charGetUID(socketGetChar(dsock)) == 1)
+-    charSetLevel(socketGetChar(dsock), MAX_LEVEL);
+-
+-  // add the character to the game 
+-  char_to_game(socketGetChar(dsock));
+-
+-  log_string("New player: %s has entered the game.", 
+-	     charGetName(socketGetChar(dsock)));
+-    
+-  // and into the game 
+-  // pop the input handler for char creation and add the one for
+-  // playing the game
+-  socketReplaceInputHandler(dsock, handle_cmd_input, show_prompt);
+-  text_to_buffer(dsock, motd);
+-
+-  // we should do some checks here to make sure the start room exists
+-  char_to_room(socketGetChar(dsock), worldGetRoom(gameworld, START_ROOM));
+-  look_at_room(socketGetChar(dsock), charGetRoom(socketGetChar(dsock)));
+-
+-  // and save him 
+-  save_player(socketGetChar(dsock));
+-
+-  // check enterance scripts
+-  try_enterance_script(socketGetChar(dsock), charGetRoom(socketGetChar(dsock)), NULL);
+-}
+-
+-//
+-// Ask for the character's sex. This will be called each time the
+-// character creates
+-void state_ask_sex(SOCKET_DATA *dsock, char *arg) {
+-  switch(*arg) {
+-  case 'f':
+-  case 'F':
+-    charSetSex(socketGetChar(dsock), SEX_FEMALE);
+-    break;
+-  case 'm':
+-  case 'M':
+-    charSetSex(socketGetChar(dsock), SEX_MALE);
+-    break;
+-  case 'n':
+-  case 'N':
+-    charSetSex(socketGetChar(dsock), SEX_NEUTRAL);
+-    break;
+-  default:
+-    text_to_buffer(dsock, "\r\nInvalid sex. Try again (M/F/N) :");
+-    return;
+-  }
+-
+-  // onto the password check 
+-  socketReplaceInputHandler(dsock, state_ask_race, NULL);
+-  list_races(dsock);
+-}
+-
+-
+-//
+-// Ask the character for his or her password. This will be called
+-// every time the character logs on, after the first time when the
+-// character creates
+-void state_ask_password(SOCKET_DATA *dsock, char *arg) {
+-  CHAR_DATA *p_new;
+-
+-  text_to_buffer(dsock, (char *) do_echo);
+-  if (compares(crypt(arg, charGetName(socketGetChar(dsock))), 
+-	       charGetPassword(socketGetChar(dsock))))
+-  {
+-    if ((p_new = check_reconnect(charGetName(socketGetChar(dsock)))) != NULL) {
+-      // we do NOT want to extract, here... the player hasn't even
+-      // entered the game yet. We just want to DELETE the profile character
+-      deleteChar(socketGetChar(dsock));
+-
+-      // attach the new player 
+-      socketSetChar(dsock, p_new);
+-      charSetSocket(p_new, dsock);
+-
+-      log_string("%s has reconnected.", charGetName(socketGetChar(dsock)));
+-
+-      // and let him enter the game 
+-      // pop the input handler for char creation and add the one for
+-      // playing the game
+-      socketReplaceInputHandler(dsock, handle_cmd_input, show_prompt);
+-      text_to_buffer(dsock, "You take over a body already in use.\n\r");
+-    }
+-    else if ((p_new = load_player(charGetName(socketGetChar(dsock)))) == NULL) {
+-      text_to_socket(dsock, "ERROR: Your pfile is missing!\n\r");
+-      // no extract, just delete! We haven't entered the game yet,
+-      // so there is no need to extract
+-      deleteChar(socketGetChar(dsock));
+-
+-      socketSetChar(dsock, NULL);
+-      close_socket(dsock, FALSE);
+-      return;
+-    }
+-    else {
+-      // No extract, just delete. We have not entered the game yet,
+-      // so there is no need to extract from it.
+-      deleteChar(socketGetChar(dsock));
+-
+-      // attach the new player 
+-      socketSetChar(dsock, p_new);
+-      charSetSocket(p_new, dsock);
+-
+-      // try putting the character into the game.
+-      // Close the socket if we fail
+-      if(try_enter_game(p_new)) {
+-	log_string("%s has entered the game.", charGetName(p_new));
+-	// we're no longer in the creation process... attach the game
+-	// input handler
+-	socketReplaceInputHandler(dsock, handle_cmd_input, show_prompt);
+-
+-	text_to_buffer(dsock, motd);
+-	look_at_room(p_new, charGetRoom(p_new));
+-
+-	// check enterance scripts
+-	try_enterance_script(p_new, charGetRoom(p_new), NULL);
+-      }
+-      else {
+-	// do not extract, just delete. We failed to enter
+-	// the game, so there is no need to extract from the game.
+-	deleteChar(socketGetChar(dsock));
+-
+-	socketSetChar(dsock, NULL);
+-	close_socket(dsock, FALSE);
+-      }
+-    }
+-  }
+-  else {
+-    text_to_socket(dsock, "Bad password!\n\r");
+-    // do not extract, just delete. We have not entered the game
+-    // yet, so there is no need to extract from the game.
+-    deleteChar(socketGetChar(dsock));
+-
+-    socketSetChar(dsock, NULL);
+-    close_socket(dsock, FALSE);
+-  }
+-}
+diff -ruN ../nakedmudv2.1.1/src/login.d src/login.d
+--- ../nakedmudv2.1.1/src/login.d	Sun May  8 15:04:45 2005
++++ src/login.d	Wed Dec 31 17:00:00 1969
+@@ -1,3 +0,0 @@
+-login.d login.o: login.c mud.h wrapsock.h property_table.h list.h map.h \
+-  hashtable.h set.h buffer.h bitvector.h utils.h socket.h character.h \
+-  handler.h inform.h world.h races.h save.h scripts/script.h
+diff -ruN ../nakedmudv2.1.1/src/map.c src/map.c
+--- ../nakedmudv2.1.1/src/map.c	Sun May  8 15:04:45 2005
++++ src/map.c	Thu May 12 17:08:52 2005
+@@ -10,6 +10,11 @@
+ #include "list.h"
+ #include "map.h"
+ 
++
++// how big of a size does our map start out at?
++#define DEFAULT_MAP_SIZE        5
++
++
+ int gen_hash_cmp(const void *key1, const void *key2) {
+   int val = (key2 - key1);
+   if(val < 0)      return -1;
+@@ -31,11 +36,12 @@
+ };
+ 
+ typedef struct map_entry {
+-  void *key;
++  const void *key;
+   void *val;
+ } MAP_ENTRY;
+ 
+ struct map_data {
++  int size;
+   int num_buckets;
+   struct list **buckets;
+   int (* hash_func)(const void *key);
+@@ -46,7 +52,7 @@
+ //
+ // an internal form of hashGet that returns the entire entry (key and val)
+ //
+-MAP_ENTRY *mapGetEntry(MAP *map, void *key) {
++MAP_ENTRY *mapGetEntry(MAP *map, const void *key) {
+   int bucket = map->hash_func(key) % map->num_buckets;
+ 
+   if(map->buckets[bucket] == NULL)
+@@ -65,7 +71,7 @@
+ }
+ 
+ 
+-MAP_ENTRY *newMapEntry(void *key, void *val) {
++MAP_ENTRY *newMapEntry(const void *key, void *val) {
+   MAP_ENTRY *entry = malloc(sizeof(MAP_ENTRY));
+   entry->key = key;
+   entry->val = val;
+@@ -77,20 +83,68 @@
+ }
+ 
+ 
++//
++// Collect all of the MAP_ENTRYs in a map into a single list
++LIST *mapCollectEntries(MAP *map) {
++  LIST *list = newList();
++  int i;
++  for(i = 0; i < map->num_buckets; i++) {
++    if(map->buckets[i] == NULL) continue;
++    LIST_ITERATOR *list_i = newListIterator(map->buckets[i]);
++    MAP_ENTRY       *elem = NULL;
++    for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
++      listPut(list, elem);
++    deleteListIterator(list_i);
++  }
++  return list;
++}
++
++
++//
++// expand a map to the new size
++void mapExpand(MAP *map, int size) {
++  // collect all of the key:value pairs
++  LIST     *entries = mapCollectEntries(map);
++  MAP_ENTRY  *entry = NULL;
++  int i;
++
++  // delete all of the current buckets
++  for(i = 0; i < map->num_buckets; i++) {
++    if(map->buckets[i] == NULL) continue;
++    deleteList(map->buckets[i]);
++  }
++  free(map->buckets);
++
++  // now, make new buckets and set them to NULL
++  map->buckets = calloc(size, sizeof(LIST *));
++  map->num_buckets = size;
++
++  // now, we put all of our entries back into the new buckets
++  while((entry = listPop(entries)) != NULL) {
++    int bucket = map->hash_func(entry->key) % map->num_buckets;
++    if(map->buckets[bucket] == NULL) map->buckets[bucket] = newList();
++    listPut(map->buckets[bucket], entry);
++  }
++  deleteList(entries);
++}
++
++
++
+ //*****************************************************************************
+ //
+-// implementation of hashmap.h
+-// documentation in hashmap.h
++// implementation of map.h
++// documentation found in map.h
+ //
+ //*****************************************************************************
+-MAP *newMap(void *hash_func, void *compares, int num_buckets) {
++MAP *newMap(void *hash_func, void *compares) {
+   int i;
+   MAP *map = malloc(sizeof(MAP));
+-  map->num_buckets = num_buckets;
++  map->size        = 0;
++  map->num_buckets = DEFAULT_MAP_SIZE;
+   map->hash_func   = (hash_func ? hash_func : gen_hash_func);
+   map->compares    = (compares  ? compares  : gen_hash_cmp);
+-  map->buckets = malloc(sizeof(struct list *) * num_buckets);
+-  for(i = 0; i < num_buckets; i++)
++  map->buckets = malloc(sizeof(LIST *) * map->num_buckets);
++  for(i = 0; i < map->num_buckets; i++)
+     map->buckets[i] = NULL;
+   return map;
+ }
+@@ -100,7 +154,7 @@
+   for(i = 0; i < map->num_buckets; i++) {
+     if(map->buckets[i]) {
+       MAP_ENTRY *entry = NULL;
+-      while((entry=(MAP_ENTRY *)listPop(map->buckets[i])) !=NULL)
++      while((entry = listPop(map->buckets[i])) !=NULL)
+ 	deleteMapEntry(entry);
+       deleteList(map->buckets[i]);
+     }
+@@ -109,7 +163,7 @@
+   free(map);
+ }
+ 
+-int  mapPut    (MAP *map, void *key, void *val) {
++int  mapPut    (MAP *map, const void *key, void *val) {
+   MAP_ENTRY *elem = mapGetEntry(map, key);
+ 
+   // update the val if it's already here
+@@ -118,6 +172,10 @@
+     return 1;
+   }
+   else {
++    // first, see if we'll need to expand the map
++    if((map->size * 80)/100 > map->num_buckets)
++      mapExpand(map, (map->num_buckets * 150)/100);
++
+     int bucket = map->hash_func(key) % map->num_buckets;
+ 
+     // if the bucket doesn't exist yet, create it
+@@ -126,11 +184,12 @@
+ 
+     MAP_ENTRY *entry = newMapEntry(key, val);
+     listPut(map->buckets[bucket], entry);
++    map->size++;
+     return 1;
+   }
+ }
+ 
+-void *mapGet    (MAP *map, void *key) {
++void *mapGet    (MAP *map, const void *key) {
+   MAP_ENTRY *elem = mapGetEntry(map, key);
+   if(elem)
+     return elem->val;
+@@ -138,7 +197,7 @@
+     return NULL;
+ }
+ 
+-void *mapRemove (MAP *map, void *key) {
++void *mapRemove (MAP *map, const void *key) {
+   int bucket = map->hash_func(key) % map->num_buckets;
+ 
+   if(map->buckets[bucket] == NULL)
+@@ -156,6 +215,7 @@
+       void *val = elem->val;
+       listRemove(map->buckets[bucket], elem);
+       deleteMapEntry(elem);
++      map->size--;
+       return val;
+     }
+     else
+@@ -163,19 +223,12 @@
+   }
+ }
+ 
+-int   mapIn     (MAP *map, void *key) {
++int   mapIn     (MAP *map, const void *key) {
+   return (mapGet(map, key) != NULL);
+ }
+ 
+ int   mapSize   (MAP *map) {
+-  int i;
+-  int size = 0;
+-
+-  for(i = 0; i < map->num_buckets; i++)
+-    if(map->buckets[i])
+-      size += listSize(map->buckets[i]);
+-
+-  return size;
++  return map->size;
+ }
+ 
+ 
+@@ -238,7 +291,7 @@
+   }
+ }
+ 
+-void *mapIteratorCurrentKey (MAP_ITERATOR *I) {
++const void *mapIteratorCurrentKey(MAP_ITERATOR *I) {
+   if(!I->bucket_i)
+     return NULL;
+   else {
+diff -ruN ../nakedmudv2.1.1/src/map.h src/map.h
+--- ../nakedmudv2.1.1/src/map.h	Sun May  8 15:04:45 2005
++++ src/map.h	Thu May 12 17:08:52 2005
+@@ -20,23 +20,23 @@
+ //
+ // compares is expected to be a function that takes two keys and compares
+ // them togher. If they are equal, 0 is returned. if key1 is less than key2,
+-// -1 is returned. otherwise, 1 is returned.
+-//
+-MAP *newMap(void *hash_func, void *compares, int num_buckets);
++// -1 is returned. otherwise, 1 is returned. If this function is NULL, a
++// generic comparator is used that compares memory address of the two keys.
++MAP *newMap(void *hash_func, void *compares);
+ void deleteMap(MAP *map);
+ 
+-int   mapPut    (MAP *map, void *key, void *val);
+-void *mapGet    (MAP *map, void *key);
+-void *mapRemove (MAP *map, void *key);
+-int   mapIn     (MAP *map, void *key);
++int   mapPut    (MAP *map, const void *key, void *val);
++void *mapGet    (MAP *map, const void *key);
++void *mapRemove (MAP *map, const void *key);
++int   mapIn     (MAP *map, const void *key);
+ int   mapSize   (MAP *map);
+ 
+ MAP_ITERATOR *newMapIterator(MAP *map);
+ void          deleteMapIterator(MAP_ITERATOR *I);
+ 
+-void  mapIteratorReset      (MAP_ITERATOR *I);
+-void  mapIteratorNext       (MAP_ITERATOR *I);
+-void *mapIteratorCurrentKey (MAP_ITERATOR *I);
+-void *mapIteratorCurrentVal (MAP_ITERATOR *I);
++void  mapIteratorReset            (MAP_ITERATOR *I);
++void  mapIteratorNext             (MAP_ITERATOR *I);
++void *mapIteratorCurrentVal       (MAP_ITERATOR *I);
++const void *mapIteratorCurrentKey (MAP_ITERATOR *I);
+ 
+ #endif // __MAP_H
+diff -ruN ../nakedmudv2.1.1/src/mud.c src/mud.c
+--- ../nakedmudv2.1.1/src/mud.c	Sun May  8 15:04:45 2005
++++ src/mud.c	Thu May 12 17:08:52 2005
+@@ -12,25 +12,68 @@
+ #include "storage.h"
+ 
+ 
++//*****************************************************************************
++// local defines, variables, and datastructures
++//*****************************************************************************
++
++//
++// the file where we store all of our mud settings
+ #define MUD_DATA       "../lib/muddata"
+ 
+-int top_char_uid = 0;
++//
++// our storage set of mud settings
++STORAGE_SET *settings = NULL;
++
+ 
+ 
++//*****************************************************************************
++// implementation of functions in mud.h
++//*****************************************************************************
+ void init_mud_settings() {
+-  STORAGE_SET *set = storage_read(MUD_DATA);
+-  top_char_uid     = read_int(set, "puid");
++  settings = storage_read(MUD_DATA);
++}
++
++void mudsettingSetString(const char *key, const char *val) {
++  store_string(settings,  key, val);
++  storage_write(settings, MUD_DATA);  
++}
++
++void mudsettingSetDouble(const char *key, double val) {
++  store_double(settings, key, val);
++  storage_write(settings, MUD_DATA);
++}
++
++void mudsettingSetInt(const char *key, int val) {
++  store_int(settings, key, val);
++  storage_write(settings, MUD_DATA);
++}
++
++void mudsettingSetLong(const char *key, long val) {
++  store_long(settings, key, val);
++  storage_write(settings, MUD_DATA);
++}
++
++void mudsettingSetBool(const char *key, bool val) {
++  store_bool(settings, key, val);
++  storage_write(settings, MUD_DATA);
++}
++
++const char *mudsettingGetString(const char *key) {
++  return read_string(settings, key);
++}
++
++double mudsettingGetDouble(const char *key) {
++  return read_double(settings, key);
++}
++
++int mudsettingGetInt(const char *key) {
++  return read_int(settings, key);
+ }
+ 
+-void save_mud_settings() {
+-  STORAGE_SET *set = storage_read(MUD_DATA);
+-  store_int(set, "puid", top_char_uid);
+-  storage_write(set, MUD_DATA);
+-  storage_close(set);
++long mudsettingGetLong(const char *key) {
++  return read_long(settings, key);
+ }
+ 
+-int next_char_uid() {
+-  int uid = ++top_char_uid;
+-  save_mud_settings();
+-  return uid;
++bool mudsettingGetBool(const char *key) {
++  return read_bool(settings, key);
+ }
+diff -ruN ../nakedmudv2.1.1/src/mud.h src/mud.h
+--- ../nakedmudv2.1.1/src/mud.h	Sun May  8 15:04:45 2005
++++ src/mud.h	Thu May 12 17:17:41 2005
+@@ -38,15 +38,13 @@
+ 
+ 
+ //*****************************************************************************
+-//
+ // To avoid having to write some bulky structure names, we've typedef'd a
+ // bunch of shortforms for commonly used datatypes. If you make a new datatype
+ // that is used lots, put a typedef for it in here.
+-//
+ //*****************************************************************************
+ typedef struct socket_data                SOCKET_DATA;
++typedef struct account_data               ACCOUNT_DATA;
+ typedef struct char_data                  CHAR_DATA;  
+-typedef struct lookup_data                LOOKUP_DATA;
+ typedef struct datatable                  DATATABLE;
+ typedef struct storage_set                STORAGE_SET;
+ typedef struct storage_set_list           STORAGE_SET_LIST;
+@@ -76,7 +74,7 @@
+ typedef int                               dialog_vnum;
+ typedef long                              bitvector_t;
+ 
+-/* define simple types */
++// define simple types
+ #ifndef __cplusplus
+ typedef  unsigned char     bool;
+ #endif
+@@ -129,12 +127,6 @@
+ #define EXE_FILE           "../src/NakedMud"      /* the name of the mud binary         */
+ #define DEFAULT_PORT       4000                   /* the default port we run on */
+ 
+-// if it is safe to run the game loop in a separate
+-// thread (this makes it so we can run scripts in a separate
+-// thread as well) then keep this on. Otherwise, comment out
+-// this line
+-//#define MUD_THREADABLE
+-
+ /* Thread States */
+ #define TSTATE_LOOKUP          0  /* Socket is in host_lookup        */
+ #define TSTATE_DONE            1  /* The lookup is done.             */
+@@ -142,11 +134,12 @@
+ #define TSTATE_CLOSED          3  /* Closed, ready to be recycled.   */
+ 
+ /* player levels */
+-#define LEVEL_PLAYER           1  // All of the normal players
+-#define LEVEL_BUILDER          2  // Players who have building rights
+-#define LEVEL_SCRIPTER         3  // Players who have building+scripting rights
+-#define LEVEL_ADMIN            4  // The people who oversee the MUD
+-#define MAX_LEVEL      LEVEL_ADMIN
++#define LEVEL_PLAYER           1           // All of the normal players
++#define LEVEL_GOD              2           // All the people who run the show
++#define LEVEL_BUILDER          LEVEL_GOD   // Players who have building rights
++#define LEVEL_SCRIPTER         3           // Builders who have scripting rights
++#define LEVEL_ADMIN            4           // The people who oversee the MUD
++#define MAX_LEVEL              LEVEL_ADMIN
+ 
+ /* Communication Ranges */
+ #define COMM_LOCAL             0  /* same room only                  */
+@@ -163,24 +156,13 @@
+ #define SOMEONE         "someone"
+ #define NOTHING_SPECIAL "you see nothing special."
+ 
++// the room that new characters are dropped into
+ #define START_ROOM      100
+ 
+ #define WORLD_PATH     "../lib/world"
+ 
+ 
+ 
+-//*****************************************************************************
+-// New structures
+-//*****************************************************************************
+-
+-// required for looking up a socket's IP in a new thread
+-struct lookup_data
+-{
+-  SOCKET_DATA       * dsock;   /* the socket we wish to do a hostlookup on */
+-  char           * buf;     /* the buffer it should be stored in        */
+-};
+-
+-
+ 
+ //*****************************************************************************
+ // core functions for working with new commands
+@@ -200,6 +182,33 @@
+ 
+ 
+ //*****************************************************************************
++// functions for setting and retreiving values of various mud settings. It's
++// probably going to be common for people to add new settings that change how
++// their mud will run (e.g. wizlock, newlock, max_level). Forcing people to
++// handle all of this stuff through modules is really giving them more work
++// than is neccessary. Instead, here we have a set of utilities that makes 
++// doing this sort of stuff really easy. Whenever a new value is set, the
++// settings are automagically saved. New variables can be created on the fly.
++// There is no need to define keys anywhere. Conversion between types is
++// handled automatically.
++//*****************************************************************************
++void init_mud_settings();
++
++void mudsettingSetString(const char *key, const char *val);
++void mudsettingSetDouble(const char *key, double val);
++void mudsettingSetInt   (const char *key, int val);
++void mudsettingSetLong  (const char *key, long val);
++void mudsettingSetBool  (const char *key, bool val);
++
++const char *mudsettingGetString(const char *key);
++double      mudsettingGetDouble(const char *key);
++int         mudsettingGetInt   (const char *key);
++long        mudsettingGetLong  (const char *key);
++bool        mudsettingGetBool  (const char *key);
++
++
++
++//*****************************************************************************
+ // Global Variables
+ //*****************************************************************************
+ extern  LIST           *object_list;
+@@ -244,6 +253,11 @@
+ /* interpret.c */
+ void  handle_cmd_input        ( SOCKET_DATA *dsock, char *arg );
+ 
++/* account_hanlder.c */
++void account_handle_menu      ( SOCKET_DATA *sock, char *arg);
++void account_menu             ( SOCKET_DATA *sock);
++
++
+ //
+ // Some command scripts may want to re-force a character to
+ // perform the command. In that case, scripts_ok can be
+@@ -273,11 +287,6 @@
+ /* mccp.c */
+ bool  compressStart     ( SOCKET_DATA *dsock, unsigned char teleopt );
+ bool  compressEnd       ( SOCKET_DATA *dsock, unsigned char teleopt, bool forced );
+-
+-/* mud.c */
+-void init_mud_settings();
+-void save_mud_settings();
+-int next_char_uid();
+ 
+ /* socket.c */
+ #define NUM_LINES_PER_PAGE  22
+diff -ruN ../nakedmudv2.1.1/src/object.c src/object.c
+--- ../nakedmudv2.1.1/src/object.c	Sun May  8 15:04:45 2005
++++ src/object.c	Thu May 12 17:08:52 2005
+@@ -55,8 +55,7 @@
+ 
+ 
+ OBJ_DATA *newObj() {
+-  OBJ_DATA *obj = malloc(sizeof(OBJ_DATA));
+-  bzero(obj, sizeof(*obj));
++  OBJ_DATA *obj = calloc(1, sizeof(OBJ_DATA));
+   obj->uid            = next_obj_uid++;
+   obj->vnum           = NOTHING;
+ 
+diff -ruN ../nakedmudv2.1.1/src/olc2/accedit.c src/olc2/accedit.c
+--- ../nakedmudv2.1.1/src/olc2/accedit.c	Wed Dec 31 17:00:00 1969
++++ src/olc2/accedit.c	Thu May 12 17:08:51 2005
+@@ -0,0 +1,121 @@
++//*****************************************************************************
++//
++// accedit.c
++//
++// Accedit allows admins to edit player accounts online. Passwords and
++// character lists can be edited.
++//
++//*****************************************************************************
++#include "../mud.h"
++#include "../utils.h"
++#include "../account.h"
++#include "../socket.h"
++#include "../character.h"
++#include "../save.h"
++
++#include "olc.h"
++
++
++
++//*****************************************************************************
++// account editing
++//*****************************************************************************
++#define ACCEDIT_NEW_CHAR      1
++#define ACCEDIT_DELETE_CHAR   2
++#define ACCEDIT_PASSWORD      3
++
++
++//
++// Saves the account, updates all of the accounts with this name currently
++// in use, and deletes the account we're working with from memory.
++void accedit_cleanup(ACCOUNT_DATA *acct) {
++  LIST_ITERATOR *sock_i = newListIterator(socket_list);
++  SOCKET_DATA   *sock   = NULL;
++
++  // first, update all of the accounts online
++  ITERATE_LIST(sock, sock_i) {
++    if(socketGetAccount(sock) &&
++       !strcasecmp(accountGetName(socketGetAccount(sock)),
++		   accountGetName(acct)))
++      accountCopyTo(acct, socketGetAccount(sock));
++  } deleteListIterator(sock_i);
++
++  // now, save the account
++  save_account(acct);
++  // and free up the memory
++  deleteAccount(acct);
++}
++
++
++void accedit_menu(SOCKET_DATA *sock, ACCOUNT_DATA *acct) {
++  LIST_ITERATOR *ch_i = newListIterator(accountGetChars(acct));
++  char            *ch = NULL;
++  send_to_socket(sock, "{g[{c%s{g]\r\n", accountGetName(acct));
++  send_to_socket(sock, "Character list:{c\r\n");
++  ITERATE_LIST(ch, ch_i) {
++    send_to_socket(sock, "  %s\r\n", ch);
++  } deleteListIterator(ch_i);
++  send_to_socket(sock, 
++		 "\r\n"
++		 "{cN{n) Add new character\r\n"
++		 "{cD{n) Delete character from account\r\n"
++		 "{cP{n) Change password\r\n");
++}
++
++int accedit_chooser(SOCKET_DATA *sock, ACCOUNT_DATA *acct, const char *option) {
++  switch(toupper(*option)) {
++  case 'N':
++    text_to_buffer(sock, "Enter character's name: ");
++    return ACCEDIT_NEW_CHAR;
++  case 'D':
++    text_to_buffer(sock, "Enter character's name: ");
++    return ACCEDIT_DELETE_CHAR;
++  case 'P':
++    text_to_buffer(sock, "Enter new password: ");
++    return ACCEDIT_PASSWORD;
++  default:
++    return MENU_CHOICE_INVALID;
++  }
++}
++
++bool accedit_parser(SOCKET_DATA *sock, ACCOUNT_DATA *acct, int choice, 
++		  const char *arg) {
++  switch(choice) {
++  case ACCEDIT_NEW_CHAR:
++    if(!char_exists(arg))
++      return FALSE;
++    else {
++      listPutWith(accountGetChars(acct), strdup(arg), strcasecmp);
++      return TRUE;
++    }
++  case ACCEDIT_DELETE_CHAR: {
++    char *name = listRemoveWith(accountGetChars(acct), arg, strcasecmp);
++    if(name != NULL) free(name);
++    return TRUE;
++  }
++  case ACCEDIT_PASSWORD:
++    // make sure the password meets our length requirements
++    if(strlen(arg) < 4 || strlen(arg) > 12)
++      return FALSE;
++    else {
++      accountSetPassword(acct, crypt(arg, accountGetName(acct)));
++      return TRUE;
++    }
++  default:
++    return FALSE;
++  }
++}
++
++COMMAND(cmd_accedit) {
++  if(!arg || !*arg)
++    send_to_char(ch, "You must supply an account name, first!\r\n");
++  else {
++    ACCOUNT_DATA *acct = load_account(arg);
++    if(acct == NULL)
++      send_to_char(ch, "Account '%s' does not exist!\r\n", arg);
++    else {
++      do_olc(charGetSocket(ch), accedit_menu, accedit_chooser, accedit_parser,
++	     NULL, NULL, NULL, accedit_cleanup, acct);
++    }
++  }
++}
+diff -ruN ../nakedmudv2.1.1/src/olc2/accedit.d src/olc2/accedit.d
+--- ../nakedmudv2.1.1/src/olc2/accedit.d	Wed Dec 31 17:00:00 1969
++++ src/olc2/accedit.d	Thu May 12 17:17:48 2005
+@@ -0,0 +1,3 @@
++olc2/accedit.d olc2/accedit.o: olc2/accedit.c mud.h wrapsock.h property_table.h list.h map.h \
++  hashtable.h set.h buffer.h bitvector.h utils.h account.h socket.h \
++  character.h save.h olc2/olc.h
+diff -ruN ../nakedmudv2.1.1/src/olc2/module.mk src/olc2/module.mk
+--- ../nakedmudv2.1.1/src/olc2/module.mk	Sun May  8 15:04:44 2005
++++ src/olc2/module.mk	Thu May 12 17:08:51 2005
+@@ -1,2 +1,2 @@
+ SRC  += olc2/olc.c olc2/redit.c olc2/zedit.c olc2/esedit.c olc2/dedit.c \
+-	olc2/medit.c olc2/oedit.c olc2/bedit.c
++	olc2/medit.c olc2/oedit.c olc2/bedit.c olc2/accedit.c
+diff -ruN ../nakedmudv2.1.1/src/olc2/olc.c src/olc2/olc.c
+--- ../nakedmudv2.1.1/src/olc2/olc.c	Sun May  8 15:04:44 2005
++++ src/olc2/olc.c	Thu May 12 17:08:51 2005
+@@ -236,6 +236,7 @@
+   extern COMMAND(cmd_dedit);
+   extern COMMAND(cmd_medit);
+   extern COMMAND(cmd_oedit);
++  extern COMMAND(cmd_accedit);
+   add_cmd("zedit", NULL, cmd_zedit, 0, POS_UNCONCIOUS, POS_FLYING,
+ 	  LEVEL_BUILDER, FALSE, TRUE);
+   add_cmd("redit", NULL, cmd_redit, 0, POS_UNCONCIOUS, POS_FLYING,
+@@ -246,6 +247,8 @@
+ 	  LEVEL_BUILDER, FALSE, TRUE);
+   add_cmd("oedit", NULL, cmd_oedit, 0, POS_UNCONCIOUS, POS_FLYING,
+ 	  LEVEL_BUILDER, FALSE, TRUE);
++  add_cmd("accedit", NULL, cmd_accedit, 0, POS_UNCONCIOUS, POS_FLYING,
++	  LEVEL_ADMIN,   FALSE, TRUE);
+ }
+ 
+ void do_olc(SOCKET_DATA *sock,
+diff -ruN ../nakedmudv2.1.1/src/room_reset.c src/room_reset.c
+--- ../nakedmudv2.1.1/src/room_reset.c	Sun May  8 15:04:45 2005
++++ src/room_reset.c	Thu May 12 17:08:52 2005
+@@ -64,8 +64,7 @@
+ 
+ 
+ RESET_DATA    *newReset         () {
+-  RESET_DATA *reset = malloc(sizeof(RESET_DATA));
+-  bzero(reset, sizeof(RESET_DATA));
++  RESET_DATA *reset = calloc(1, sizeof(RESET_DATA));
+   reset->type     = RESET_LOAD_OBJECT;
+   reset->arg      = strdup("");
+   reset->times    = 1;
+diff -ruN ../nakedmudv2.1.1/src/save.c src/save.c
+--- ../nakedmudv2.1.1/src/save.c	Sun May  8 15:04:45 2005
++++ src/save.c	Thu May 12 17:08:52 2005
+@@ -1,12 +1,16 @@
+-#include <stdio.h>
+-#include <unistd.h>
+-#include <stdlib.h>
+-#include <string.h>
+-#include <ctype.h>
++//*****************************************************************************
++//
++// save.c
++//
++// contains all of the functions for the saving of characters and accounts.
++// makes sure these things go into the right directories.
++//
++//*****************************************************************************
+ 
+-/* main header file */
+ #include "mud.h"
++#include "socket.h"
+ #include "character.h"
++#include "account.h"
+ #include "world.h"
+ #include "utils.h"
+ #include "handler.h"
+@@ -16,19 +20,18 @@
+ #include "storage.h"
+ 
+ 
+-void save_pfile           ( CHAR_DATA *ch );
+-void save_objfile         ( CHAR_DATA *ch );
+-void save_profile         ( CHAR_DATA *ch );
+ 
++//*****************************************************************************
++// local functions
++//*****************************************************************************
+ 
+ //
+ // Just a general function for finding the filename assocciated with the
+ // given information about a player.
+-//
+-#define FILETYPE_PROFILE      0
+-#define FILETYPE_PFILE        1
+-#define FILETYPE_OFILE        2
+-const char *get_char_filename(const char *name, int filetype) {
++#define FILETYPE_PFILE        0
++#define FILETYPE_OFILE        1
++#define FILETYPE_ACCOUNT      2
++const char *get_save_filename(const char *name, int filetype) {
+   static char buf[SMALL_BUFFER];
+   static char pname[SMALL_BUFFER];
+   int i, size;
+@@ -42,8 +45,8 @@
+   pname[i] = '\0';
+ 
+   switch(filetype) {
+-  case FILETYPE_PROFILE:
+-    sprintf(buf, "../lib/players/profiles/%c/%s.profile", *pname, pname);
++  case FILETYPE_ACCOUNT:
++    sprintf(buf, "../lib/accounts/%c/%s.acct", *pname, pname);
+     break;
+   case FILETYPE_PFILE:
+     sprintf(buf, "../lib/players/pfiles/%c/%s.pfile", *pname, pname);
+@@ -59,55 +62,40 @@
+   return buf;
+ }
+ 
+-
+-void save_player(CHAR_DATA *ch) {
+-  if (!ch) return;
+-
+-  // make sure we have a UID for the character before we start saving
+-  if(charGetUID(ch) == NOBODY) {
+-    log_string("ERROR: %s has invalid UID (%d)", charGetName(ch), NOBODY);
+-    send_to_char(ch, "You have an invalid ID. Please inform a god.\r\n");
+-    return;
+-  }
+-
+-  save_objfile(ch);    // save the player's objects
+-  save_pfile(ch);      // saves the actual player data
+-  save_profile(ch);    // saves the players profile
+-}
+-
+-
+-void save_objfile(CHAR_DATA *ch) {
+-  STORAGE_SET *set = new_storage_set();
+-  // write all of the inventory
+-  store_list(set, "inventory", gen_store_list(charGetInventory(ch), objStore));
+-  
+-  // for equipped items, it's not so easy - we also have to record
+-  // whereabouts on the body the equipment was worn on
+-  STORAGE_SET_LIST *list = new_storage_list();
+-  LIST *eq_list = bodyGetAllEq(charGetBody(ch));
+-  OBJ_DATA *obj = NULL;
+-  while((obj = listPop(eq_list)) != NULL) {
+-    STORAGE_SET *eq_set = objStore(obj);
+-    store_string(set, "equipped", bodyEquippedWhere(charGetBody(ch), obj));
+-    storage_list_put(list, eq_set);
++bool char_exists(const char *name) {
++  // there's two ways a character can exists. Either someone is already making
++  // a character with that name, or there is a character with that name in
++  // storage. We'll check both of these.
++  const char *fname = get_save_filename(name, FILETYPE_PFILE);
++  FILE *fl = fopen(fname, "r");
++  if(fl != NULL) {
++    fclose(fl);
++    return TRUE;
+   }
+-  deleteList(eq_list);
+ 
+-  store_list(set, "equipment", list);
+-  storage_write(set, get_char_filename(charGetName(ch), FILETYPE_OFILE));
+-  storage_close(set);
++  bool char_found       = FALSE;
++  LIST_ITERATOR *sock_i = newListIterator(socket_list);
++  SOCKET_DATA     *sock = NULL;
++  ITERATE_LIST(sock, sock_i) {
++    CHAR_DATA *ch = socketGetChar(sock);
++    if(ch == NULL) continue;
++    if(!strcasecmp(charGetName(ch), name)) {
++      char_found = TRUE;
++      break;
++    }
++  } deleteListIterator(sock_i);
++  return char_found;
+ }
+ 
+-
+ void save_pfile(CHAR_DATA *ch) {
+   STORAGE_SET *set = charStore(ch);
+-  storage_write(set, get_char_filename(charGetName(ch), FILETYPE_PFILE));
++  storage_write(set, get_save_filename(charGetName(ch), FILETYPE_PFILE));
+   storage_close(set);
+ }
+ 
+ 
+ void load_ofile(CHAR_DATA *ch) {
+-  STORAGE_SET *set = storage_read(get_char_filename(charGetName(ch), 
++  STORAGE_SET *set = storage_read(get_save_filename(charGetName(ch), 
+ 						    FILETYPE_OFILE));
+   if(set == NULL)
+     return;
+@@ -133,43 +121,70 @@
+   storage_close(set);
+ }
+ 
++void save_objfile(CHAR_DATA *ch) {
++  STORAGE_SET *set = new_storage_set();
++  // write all of the inventory
++  store_list(set, "inventory", gen_store_list(charGetInventory(ch), objStore));
++  
++  // for equipped items, it's not so easy - we also have to record
++  // whereabouts on the body the equipment was worn on
++  STORAGE_SET_LIST *list = new_storage_list();
++  LIST *eq_list = bodyGetAllEq(charGetBody(ch));
++  OBJ_DATA *obj = NULL;
++  while((obj = listPop(eq_list)) != NULL) {
++    STORAGE_SET *eq_set = objStore(obj);
++    store_string(set, "equipped", bodyEquippedWhere(charGetBody(ch), obj));
++    storage_list_put(list, eq_set);
++  }
++  deleteList(eq_list);
++
++  store_list(set, "equipment", list);
++  storage_write(set, get_save_filename(charGetName(ch), FILETYPE_OFILE));
++  storage_close(set);
++}
++
++
+ 
++//*****************************************************************************
++// implementation of save.h
++//*****************************************************************************
+ CHAR_DATA *load_player(const char *player) {
+-  STORAGE_SET *set = storage_read(get_char_filename(player, FILETYPE_PFILE));
++  STORAGE_SET *set = storage_read(get_save_filename(player, FILETYPE_PFILE));
+   CHAR_DATA   *ch  = charRead(set);
+   storage_close(set);
+   load_ofile(ch);
+   return ch;
+ }
+ 
++void save_player(CHAR_DATA *ch) {
++  if (!ch) return;
+ 
+-/*
+- * This function loads a players profile, and stores
+- * it in a mobile_data... DO NOT USE THIS DATA FOR
+- * ANYTHING BUT CHECKING PASSWORDS OR SIMILAR.
+- */
+-CHAR_DATA *load_profile(const char *player) {
+-  STORAGE_SET *set = storage_read(get_char_filename(player, FILETYPE_PROFILE));
+-  if(set == NULL) return NULL;
+-  CHAR_DATA    *ch = newChar();
+-  charSetName(ch,     read_string(set, "name"));
+-  charSetPassword(ch, read_string(set, "password"));
+-  charSetUID(ch,       read_int  (set, "uid"));
++  // make sure we have a UID for the character before we start saving
++  if(charGetUID(ch) == NOBODY) {
++    log_string("ERROR: %s has invalid UID (%d)", charGetName(ch), NOBODY);
++    send_to_char(ch, "You have an invalid ID. Please inform a god.\r\n");
++    return;
++  }
++
++  save_objfile(ch);    // save the player's objects
++  save_pfile(ch);      // saves the actual player data
++}
++
++void save_account(ACCOUNT_DATA *account) {
++  if(!account) return;
++  STORAGE_SET *set = accountStore(account);
++  storage_write(set, get_save_filename(accountGetName(account),
++				       FILETYPE_ACCOUNT));
+   storage_close(set);
+-  return ch;
+ }
+ 
++ACCOUNT_DATA *load_account(const char *account) {
++  STORAGE_SET   *set = storage_read(get_save_filename(account,
++						      FILETYPE_ACCOUNT));
++  if(set == NULL)
++    return NULL;
+ 
+-/*
+- * This file stores only data vital to load
+- * the character, and check for things like
+- * password and other such data.
+- */
+-void save_profile(CHAR_DATA *ch) {
+-  STORAGE_SET *set = new_storage_set();
+-  store_string(set, "name",     charGetName(ch));
+-  store_string(set, "password", charGetPassword(ch));
+-  store_int   (set, "uid",      charGetUID(ch));
+-  storage_write(set, get_char_filename(charGetName(ch), FILETYPE_PROFILE));
++  ACCOUNT_DATA *acct = accountRead(set);
+   storage_close(set);
++  return acct;
+ }
+diff -ruN ../nakedmudv2.1.1/src/save.d src/save.d
+--- ../nakedmudv2.1.1/src/save.d	Sun May  8 15:04:45 2005
++++ src/save.d	Thu May 12 17:17:53 2005
+@@ -1,3 +1,3 @@
+ save.d save.o: save.c mud.h wrapsock.h property_table.h list.h map.h hashtable.h \
+-  set.h buffer.h bitvector.h character.h world.h utils.h handler.h body.h \
+-  object.h room.h storage.h
++  set.h buffer.h bitvector.h socket.h character.h account.h world.h \
++  utils.h handler.h body.h object.h room.h storage.h
+diff -ruN ../nakedmudv2.1.1/src/save.h src/save.h
+--- ../nakedmudv2.1.1/src/save.h	Sun May  8 15:04:45 2005
++++ src/save.h	Thu May 12 17:08:52 2005
+@@ -8,10 +8,10 @@
+ //
+ //*****************************************************************************
+ 
+-
+-
+-void        save_player ( CHAR_DATA *ch );
+-CHAR_DATA  *load_player ( const char *player );
+-CHAR_DATA  *load_profile( const char *player );
++void          save_account(ACCOUNT_DATA *account);
++ACCOUNT_DATA *load_account(const char   *account);
++bool          char_exists (const char   *name);
++CHAR_DATA    *load_player (const char   *player);
++void          save_player (CHAR_DATA    *ch);
+ 
+ #endif // __SAVE_H
+diff -ruN ../nakedmudv2.1.1/src/scripts/script_edit.c src/scripts/script_edit.c
+--- ../nakedmudv2.1.1/src/scripts/script_edit.c	Sun May  8 15:04:44 2005
++++ src/scripts/script_edit.c	Thu May 12 17:08:51 2005
+@@ -67,6 +67,8 @@
+ 		    const char *arg) {
+   switch(choice) {
+   case SSEDIT_NEW: {
++    if(atoi(arg) == NOTHING)
++      return TRUE;
+     SCRIPT_DATA *script = worldGetScript(gameworld, atoi(arg));
+     if(script == NULL)
+       return FALSE;
+diff -ruN ../nakedmudv2.1.1/src/set_val/set_val.c src/set_val/set_val.c
+--- ../nakedmudv2.1.1/src/set_val/set_val.c	Sun May  8 15:04:44 2005
++++ src/set_val/set_val.c	Thu May 12 17:08:51 2005
+@@ -28,9 +28,14 @@
+ 
+ 
+ //*****************************************************************************
+-//
++// mandatory modules
++//*****************************************************************************
++#include "../editor/editor.h" // for charGetNotepad
++
++
++
++//*****************************************************************************
+ // local defines, datastructures, functions, and commands
+-//
+ //*****************************************************************************
+ HASHTABLE *char_set_table = NULL;
+ HASHTABLE *obj_set_table  = NULL;
+@@ -115,25 +120,23 @@
+ // vnum, or simply "room" for the current room. Optionally, the function can
+ // take a value from the player's notepad instead of from the command line (this
+ // is useful for if you need to write long lengths of formatted text).
+-//
+ COMMAND(cmd_set) {
+   char name [SMALL_BUFFER];
+   char field[SMALL_BUFFER];
+-  arg = two_args(arg, name, field);
++  const char *val = two_args(arg, name, field);
+ 
+   // check to see if we're trying to set from our notepad. Also, make sure
+   // we have a socket and CAN access our notepad.
+-  /*
+   if(subcmd == SET_SUBCMD_SETPAD) {
+-    if(charGetSocket(ch) && *socketGetNotepadPtr(charGetSocket(ch)) != NULL)
+-      arg = *socketGetNotepadPtr(charGetSocket(ch));
++    if(charGetSocket(ch) && *socketGetNotepad(charGetSocket(ch)))
++      val = socketGetNotepad(charGetSocket(ch));
+     else {
+       send_to_char(ch, "Your notepad currently has no contents.\r\n");
+       return;
+     }
+   }
+-  */
+-  if(!*arg || !*name || !*field)
++
++  if(!*val || !*name || !*field)
+     send_to_char(ch, "Set which value on what?\r\n");
+   // are we trying to set a field on a room?
+   else if(!strcasecmp("room", name)) {
+@@ -141,13 +144,13 @@
+ 		    ch))
+       send_to_char(ch, "You are not authorized to edit this zone.\r\n");
+     else
+-      try_set(ch, charGetRoom(ch), room_set_table, field, arg);
++      try_set(ch, charGetRoom(ch), room_set_table, field, val);
+   }
+   else if(isdigit(*name) && worldGetRoom(gameworld, atoi(name))) {
+     if(!canEditZone(worldZoneBounding(gameworld, atoi(name)), ch))
+       send_to_char(ch, "You are not authorized to edit this zone.\r\n");
+     else
+-      try_set(ch, worldGetRoom(gameworld, atoi(name)),room_set_table,field,arg);
++      try_set(ch, worldGetRoom(gameworld, atoi(name)),room_set_table,field,val);
+   }
+   else {
+     int found = FOUND_NONE;
+@@ -160,10 +163,10 @@
+ 	send_to_char(ch, "Sorry, %s is too high a level!\r\n", 
+ 		     see_char_as(ch, tgt));
+       else
+-	try_set(ch, tgt, char_set_table, field, arg);
++	try_set(ch, tgt, char_set_table, field, val);
+     }
+     else if(found == FOUND_OBJ)
+-      try_set(ch, tgt, obj_set_table, field, arg);
++      try_set(ch, tgt, obj_set_table, field, val);
+     else
+       send_to_char(ch, "What was the target you were trying to modify?\r\n");
+   }
+diff -ruN ../nakedmudv2.1.1/src/set_val/set_val.d src/set_val/set_val.d
+--- ../nakedmudv2.1.1/src/set_val/set_val.d	Sun May  8 15:05:26 2005
++++ src/set_val/set_val.d	Thu May 12 17:17:49 2005
+@@ -1,4 +1,4 @@
+ set_val/set_val.d set_val/set_val.o: set_val/set_val.c mud.h wrapsock.h property_table.h list.h \
+   map.h hashtable.h set.h buffer.h bitvector.h utils.h world.h zone.h \
+   socket.h character.h object.h room.h races.h handler.h \
+-  set_val/set_val.h
++  set_val/set_val.h editor/editor.h
+diff -ruN ../nakedmudv2.1.1/src/socket.c src/socket.c
+--- ../nakedmudv2.1.1/src/socket.c	Sun May  8 15:04:58 2005
++++ src/socket.c	Thu May 12 17:08:52 2005
+@@ -11,6 +11,7 @@
+ /* including main header file */
+ #include "mud.h"
+ #include "character.h"
++#include "account.h"
+ #include "save.h"
+ #include "utils.h"
+ #include "socket.h"
+@@ -19,9 +20,9 @@
+ 
+ //
+ // Here it is... the big ol' datastructure for sockets. Yum.
+-//
+ struct socket_data {
+   CHAR_DATA     * player;
++  ACCOUNT_DATA  * account;
+   char          * hostname;
+   char            inbuf[MAX_INPUT_LEN];
+   char            outbuf[MAX_OUTPUT];
+@@ -38,7 +39,6 @@
+   int             tot_pages;     // the total number of pages the string has
+   
+   BUFFER        * text_editor;   // where we do our actual work
+-  char         ** text_pointer;  // where the work will go to
+ 
+   LIST          * input_handlers;// a stack of our input handlers and prompts
+ 
+@@ -53,13 +53,21 @@
+ //
+ // contains an input handler and the socket prompt in one structure, so they
+ // can be stored together in the socket_data
+-//
+ typedef struct input_handler_data {
+   void (* handler)(SOCKET_DATA *, char *);
+   void (*  prompt)(SOCKET_DATA *);
+ } IH_PAIR;
+ 
+ 
++//
++// required for looking up a socket's IP in a new thread
++typedef struct lookup_data {
++  SOCKET_DATA    * dsock;   // the socket we wish to do a hostlookup on
++  char           * buf;     // the buffer it should be stored in
++} LOOKUP_DATA;
++
++
++
+ /* global variables */
+ fd_set        fSet;             /* the socket list for polling       */
+ fd_set        rFd;
+@@ -179,7 +187,7 @@
+ 
+   /* send the greeting */
+   text_to_buffer(sock_new, greeting);
+-  text_to_buffer(sock_new, "Who wants to get naked? ");
++  text_to_buffer(sock_new, "What is your account (not character) name? ");
+ 
+   /* everything went as it was supposed to */
+   return TRUE;
+@@ -212,7 +220,6 @@
+   //  listRemove(socket_list, dsock);
+   //
+ 
+-
+   // we have a character, and it's one that's
+   // not in the process of being created
+   if (dsock->player && charGetUID(dsock->player) != NOBODY) {
+@@ -227,6 +234,9 @@
+     charSetSocket(dsock->player, NULL);
+     extract_mobile(dsock->player);
+   }
++  
++  if(dsock->account)
++    deleteAccount(dsock->account);
+ 
+   /* set the closed state */
+   dsock->closed = TRUE;
+@@ -671,7 +681,8 @@
+ 
+ bool flush_output(SOCKET_DATA *dsock)
+ {
+-  void (* prompt_func)(SOCKET_DATA *) = ((IH_PAIR *)listGet(dsock->input_handlers, 0))->prompt;
++  IH_PAIR *pair = listGet(dsock->input_handlers, 0);
++  void (* prompt_func)(SOCKET_DATA *) = (pair ? pair->prompt : NULL);
+ 
+   // quit if we have no output and don't need/can't have a prompt
+   if(dsock->top_output <= 0 && (!dsock->bust_prompt || !prompt_func))
+@@ -730,12 +741,9 @@
+   socketPushInputHandler(sock_new, handle_new_connections, NULL);
+   sock_new->control        = sock;
+   sock_new->lookup_status  = TSTATE_LOOKUP;
+-  sock_new->player         = NULL;
+   sock_new->top_output     = 0;
+ 
+   sock_new->text_editor    = newBuffer(MAX_BUFFER);
+-  sock_new->text_pointer   = NULL;
+-  //  sock_new->in_text_edit   = FALSE;
+ }
+ 
+ 
+@@ -807,12 +815,13 @@
+ 
+ 
+ /* Recover from a copyover - load players */
+-void copyover_recover()
+-{     
+-  CHAR_DATA *dMob;
+-  SOCKET_DATA *dsock;
++void copyover_recover() {     
++  CHAR_DATA    *dMob;
++  ACCOUNT_DATA *account;
++  SOCKET_DATA  *dsock;
+   FILE *fp;
+-  char name [100];
++  char acct[100];
++  char name[100];
+   char host[MAX_BUFFER];
+   int desc;
+       
+@@ -827,7 +836,7 @@
+   unlink(COPYOVER_FILE);
+ 
+   for (;;) {  
+-    fscanf(fp, "%d %s %s\n", &desc, name, host);
++    fscanf(fp, "%d %s %s %s\n", &desc, acct, name, host);
+     if (desc == -1)
+       break;
+ 
+@@ -841,36 +850,53 @@
+     dsock->hostname = strdup(host);
+     listPut(socket_list, dsock);
+ 
+-    /* load player data */
+-    if ((dMob = load_player(name)) != NULL)
+-    {
+-      /* attach to socket */
++    // load account data
++    if((account = load_account(acct)) != NULL)
++      socketSetAccount(dsock, account);
++    // no luck!
++    else {
++      printf("Account load failed.\r\n");
++      close_socket(dsock, FALSE);
++      continue;
++    }
++
++    // load player data
++    if ((dMob = load_player(name)) != NULL) {
++      // attach to socket
+       charSetSocket(dMob, dsock);
+       socketSetChar(dsock, dMob);
+ 
+       // try putting the character into the game
+       // close the socket if we fail.
+-      try_enter_game(dMob);
++      if(!try_enter_game(dMob)) {
++	printf("Enter game failed.\r\n");
++	// do not bother extracting, since we haven't entered the game yet
++	deleteChar(socketGetChar(dsock));
++	socketSetChar(dsock, NULL);
++	close_socket(dsock, FALSE);
++	continue;
++      }
+     }
+-    else /* ah bugger */
+-    {
++    // no luck
++    else {
++      printf("Player load failed.\r\n");
+       close_socket(dsock, FALSE);
+       continue;
+     }
+    
+-    /* Write something, and check if it goes error-free */
+-    if (!text_to_socket(dsock, "\n\r <*>  And before you know it, everything has changed  <*>\n\r"))
+-    { 
++    // Write something, and check if it goes error-free
++    if (!text_to_socket(dsock, "\n\r <*>  And before you know it, everything has changed  <*>\n\r")) { 
+       close_socket(dsock, FALSE);
+       continue;
+     }
+   
+-    /* make sure the socket can be used */
++    // make sure the socket can be used
+     dsock->bust_prompt    =  TRUE;
+     dsock->lookup_status  =  TSTATE_DONE;
+-    socketReplaceInputHandler(dsock, handle_cmd_input, show_prompt);
++    socketReplaceInputHandler(dsock, account_handle_menu, account_menu);
++    socketPushInputHandler(dsock, handle_cmd_input, show_prompt);
+ 
+-    /* negotiate compression */
++    // negotiate compression
+     text_to_buffer(dsock, (char *) compress_will2);
+     text_to_buffer(dsock, (char *) compress_will);
+   }
+@@ -886,12 +912,10 @@
+   SOCKET_DATA     *sock = NULL; 
+ 
+   ITERATE_LIST(sock, sock_i) {
+-    /*
+-     * Close sockects we are unable to read from, or if we have no handler
+-     * to take in input
+-     */
++    // Close sockects we are unable to read from, or if we have no handler
++    // to take in input
+     if ((FD_ISSET(sock->control, &rFd) && !read_from_socket(sock)) ||
+-	socketGetInputHandler(sock) == NULL) {
++	listSize(sock->input_handlers) == 0) {
+       close_socket(sock, FALSE);
+       continue;
+     }
+@@ -907,13 +931,13 @@
+     }
+     
+     /* if the player quits or get's disconnected */
+-    if(sock->closed) continue;
++    if(sock->closed)
++      continue;
+     
+     /* Send all new data to the socket and close it if any errors occour */
+     if (!flush_output(sock))
+       close_socket(sock, FALSE);
+-  }
+-  deleteListIterator(sock_i);
++  } deleteListIterator(sock_i);
+ }
+ 
+ 
+@@ -999,67 +1023,62 @@
+     dsock->curr_page = dsock->tot_pages;
+     text_to_buffer(dsock, "There is no more text in your page buffer.\r\n");
+   }
+-  /*
+-  if(dsock->curr_page >= dsock->tot_pages)
+-    delete_page(dsock);
+-  */
+ }
+ 
+ void do_copyover(CHAR_DATA *ch) {
+-
++  LIST_ITERATOR *sock_i = newListIterator(socket_list);
++  SOCKET_DATA     *sock = NULL;
+   FILE *fp;
+-  SOCKET_DATA *dsock;
+   char buf[100];
+   char control_buf[20];
+   char port_buf[20];
+-  LIST_ITERATOR *sock_i = newListIterator(socket_list);
+ 
+-  if ((fp = fopen(COPYOVER_FILE, "w+")) == NULL)
+-  {
++  if ((fp = fopen(COPYOVER_FILE, "w+")) == NULL) {
+     text_to_char(ch, "Copyover file not writeable, aborted.\n\r");
+     return;
+   }
+ 
+   sprintf(buf, "\n\r <*>            The world starts spinning             <*>\n\r");
+ 
+-  /* For each playing descriptor, save its state */
+-  ITERATE_LIST(dsock, sock_i) {
+-    compressEnd(dsock, dsock->compressing, FALSE);
+-    if (!socketGetChar(dsock) || !charGetRoom(socketGetChar(dsock))) {
+-      //(dsock->state != STATE_PLAYING) {
+-      text_to_socket(dsock, "\r\nSorry, we are rebooting. Come back in a few minutes.\r\n");
+-      close_socket(dsock, FALSE);
++  // For each playing descriptor, save its character and account
++  ITERATE_LIST(sock, sock_i) {
++    compressEnd(sock, sock->compressing, FALSE);
++    // kick off anyone who hasn't yet logged in a character
++    if (!socketGetChar(sock) || !charGetRoom(socketGetChar(sock))) {
++      text_to_socket(sock, "\r\nSorry, we are rebooting. Come back in a few minutes.\r\n");
++      close_socket(sock, FALSE);
+     }
++    // save account and player info to file
+     else {
+-      fprintf(fp, "%d %s %s\n",
+-	      dsock->control, charGetName(dsock->player), dsock->hostname);
+-      /* save the player */
+-      save_player(dsock->player);
+-      text_to_socket(dsock, buf);
++      fprintf(fp, "%d %s %s %s\n",
++	      sock->control, accountGetName(sock->account), 
++	      charGetName(sock->player), sock->hostname);
++      // save the player
++      save_player(sock->player);
++      save_account(sock->account);
++      text_to_socket(sock, buf);
+     }
+   } deleteListIterator(sock_i);
+   
+   fprintf (fp, "-1\n");
+   fclose (fp);
+ 
+-
+-  /* close any pending sockets */
++  // close any pending sockets
+   recycle_sockets();
+   
+-  /* exec - descriptors are inherited */
++  // exec - descriptors are inherited
+   sprintf(control_buf, "%d", control);
+   sprintf(port_buf, "%d", mudport);
+   execl(EXE_FILE, "NakedMud", "-copyover", control_buf, port_buf, NULL);
+ 
+-  /* Failed - sucessful exec will not return */
++  // Failed - sucessful exec will not return
+   text_to_char(ch, "Copyover FAILED!\n\r");
+ }
+ 
+ 
++
+ //*****************************************************************************
+-//
+ // get and set functions
+-//
+ //*****************************************************************************
+ CHAR_DATA *socketGetChar     ( SOCKET_DATA *dsock) {
+   return dsock->player;
+@@ -1069,12 +1088,12 @@
+   dsock->player = ch;
+ }
+ 
+-char **socketGetTextPointer   ( SOCKET_DATA *sock) {
+-  return sock->text_pointer;
++ACCOUNT_DATA *socketGetAccount ( SOCKET_DATA *dsock) {
++  return dsock->account;
+ }
+ 
+-void socketSetTextPointer (SOCKET_DATA *sock, char **ptr) {
+-  sock->text_pointer = ptr;
++void socketSetAccount (SOCKET_DATA *dsock, ACCOUNT_DATA *account) {
++  dsock->account = account;
+ }
+ 
+ BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock) {
+@@ -1103,7 +1122,10 @@
+ }
+ 
+ void (*socketGetInputHandler ( SOCKET_DATA *socket))(SOCKET_DATA *, char *) {
+-  return ((IH_PAIR *)listGet(socket->input_handlers, 0))->handler;
++  if(listSize(socket->input_handlers) == 0)
++    return NULL;
++  IH_PAIR *pair = listGet(socket->input_handlers, 0);
++  return (pair ? pair->handler : NULL);
+ }
+ 
+ void socketShowPrompt( SOCKET_DATA *sock) {
+diff -ruN ../nakedmudv2.1.1/src/socket.d src/socket.d
+--- ../nakedmudv2.1.1/src/socket.d	Sun May  8 15:05:28 2005
++++ src/socket.d	Thu May 12 17:17:52 2005
+@@ -1,3 +1,3 @@
+ socket.d socket.o: socket.c wrapsock.h mud.h property_table.h list.h map.h \
+-  hashtable.h set.h buffer.h bitvector.h character.h save.h utils.h \
+-  socket.h auxiliary.h
++  hashtable.h set.h buffer.h bitvector.h character.h account.h save.h \
++  utils.h socket.h auxiliary.h
+diff -ruN ../nakedmudv2.1.1/src/socket.h src/socket.h
+--- ../nakedmudv2.1.1/src/socket.h	Sun May  8 15:04:45 2005
++++ src/socket.h	Thu May 12 17:08:52 2005
+@@ -37,8 +37,11 @@
+ //*****************************************************************************
+ sh_int socketGetDNSLookupStatus( SOCKET_DATA *sock);
+ 
+-CHAR_DATA *socketGetChar     ( SOCKET_DATA *dsock);
+-void       socketSetChar     ( SOCKET_DATA *dsock, CHAR_DATA *ch);
++CHAR_DATA *socketGetChar      ( SOCKET_DATA *dsock);
++void       socketSetChar      ( SOCKET_DATA *dsock, CHAR_DATA *ch);
++
++ACCOUNT_DATA *socketGetAccount( SOCKET_DATA *dsock);
++void          socketSetAccount( SOCKET_DATA *dsock, ACCOUNT_DATA *account);
+ 
+ void socketPushInputHandler   ( SOCKET_DATA *socket, 
+ 			        void handler(SOCKET_DATA *socket, char *input),
+@@ -52,8 +55,6 @@
+ void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name);
+ const char *socketGetHostname ( SOCKET_DATA *sock);
+ BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock);
+-char **socketGetTextPointer   ( SOCKET_DATA *sock);
+-void socketSetTextPointer     ( SOCKET_DATA *sock, char **ptr);
+ 
+ void socketBustPrompt         ( SOCKET_DATA *sock);
+ 
+diff -ruN ../nakedmudv2.1.1/src/storage.c src/storage.c
+--- ../nakedmudv2.1.1/src/storage.c	Sun May  8 15:04:45 2005
++++ src/storage.c	Thu May 12 17:08:52 2005
+@@ -89,8 +89,7 @@
+ }
+ 
+ STORAGE_DATA *new_storage_data(const char *key) {
+-  STORAGE_DATA *data = malloc(sizeof(STORAGE_DATA));
+-  bzero(data, sizeof(*data));
++  STORAGE_DATA *data = calloc(1, sizeof(STORAGE_DATA));
+   data->key     = strdup(key);
+   return data;
+ }
+@@ -119,6 +118,11 @@
+   return data;
+ }
+ 
++STORAGE_DATA    *new_data_bool(bool val, const char *key) {
++  char str_val[4]; sprintf(str_val, (val ? "yes" : "no"));
++  return new_data_string(str_val, key);
++}
++
+ STORAGE_DATA    *new_data_int(int val, const char *key) {
+   char str_val[20]; sprintf(str_val, "%d", val);
+   return new_data_string(str_val, key);
+@@ -570,6 +574,10 @@
+   storage_put(set, new_data_double(val, key));
+ }
+ 
++void store_bool(STORAGE_SET *set, const char *key, bool val) {
++  storage_put(set, new_data_bool(val, key));
++}
++
+ void store_int(STORAGE_SET *set, const char *key, int val) {
+   storage_put(set, new_data_int(val, key));
+ }
+@@ -602,6 +610,18 @@
+   STORAGE_DATA *data = hashGet(set->entries, key);
+   if(data) return data->str_val;
+   else     return "";
++}
++
++bool read_bool(STORAGE_SET *set, const char *key) {
++  STORAGE_DATA *data = hashGet(set->entries, key);
++  if(data == NULL) 
++    return FALSE;
++  else if(!strcasecmp(data->str_val, "Yes"))
++    return TRUE;
++  else if(atoi(data->str_val) != 0)
++    return TRUE;
++  else
++    return FALSE;
+ }
+ 
+ double read_double(STORAGE_SET *set, const char *key) {
+diff -ruN ../nakedmudv2.1.1/src/storage.h src/storage.h
+--- ../nakedmudv2.1.1/src/storage.h	Sun May  8 15:04:45 2005
++++ src/storage.h	Thu May 12 17:08:52 2005
+@@ -65,6 +65,7 @@
+ void store_double(STORAGE_SET *set, const char *key, double val);
+ void    store_int(STORAGE_SET *set, const char *key, int val);
+ void   store_long(STORAGE_SET *set, const char *key, long val);
++void   store_bool(STORAGE_SET *set, const char *key, bool val);
+ 
+ 
+ //
+@@ -76,6 +77,7 @@
+ double            read_double(STORAGE_SET *set, const char *key);
+ int                  read_int(STORAGE_SET *set, const char *key);
+ long                read_long(STORAGE_SET *set, const char *key);
++bool                read_bool(STORAGE_SET *set, const char *key);
+ 
+ 
+ //
+diff -ruN ../nakedmudv2.1.1/src/utils.c src/utils.c
+--- ../nakedmudv2.1.1/src/utils.c	Sun May  8 15:04:45 2005
++++ src/utils.c	Thu May 12 17:08:52 2005
+@@ -35,25 +35,6 @@
+ 
+ 
+ 
+-/*
+- * Check to see if a given name is
+- * legal, returning FALSE if it
+- * fails our high standards...
+- */
+-bool check_name(const char *name)
+-{
+-  int size, i;
+-
+-  if ((size = strlen(name)) < 3 || size > 12)
+-    return FALSE;
+-
+-  for (i = 0 ;i < size; i++)
+-    if (!isalpha(name[i])) return FALSE;
+-
+-  return TRUE;
+-}
+-
+-
+ void  add_extract_obj_func (void (* func)(OBJ_DATA *)) {
+   listQueue(extract_obj_funcs, func);
+ }
+@@ -500,6 +481,20 @@
+ }
+ 
+ 
++//
++// just a generic function for hashing a string. This could be 
++// sped up tremendously if it's performance becoming a problem.
++int string_hash(const char *key) {
++  const int BASE = 2;
++  int base = 1;
++  int hvalue = 0;
++  for (; *key; key++) {
++    base *= BASE;
++    hvalue += tolower(*key) * base;
++  }
++  return (hvalue < 0 ? hvalue * -1 : hvalue);
++}
++
+ 
+ void format_string(char **string, int max_width, 
+ 		   unsigned int maxlen, bool indent) {
+@@ -742,9 +737,12 @@
+   // first, we check if the keywords have any non-spaces
+   int i;
+   bool nonspace_found = FALSE;
+-  for(i = 0; keywords[i] != '\0'; i++)
+-    if(!isspace(keywords[i]))
++  for(i = 0; keywords[i] != '\0'; i++) {
++    if(!isspace(keywords[i])) {
+       nonspace_found = TRUE;
++      break;
++    }
++  }
+ 
+   // we didn't find any non-spaces. Return NULL
+   if(!nonspace_found)
+@@ -1277,6 +1275,9 @@
+   return ret_val;
+ }
+ 
++void *identity_func(void *data) {
++  return data;
++}
+ 
+ void show_prompt(SOCKET_DATA *socket) {
+   text_to_buffer(socket, custom_prompt(socketGetChar(socket)));
+@@ -1288,3 +1289,4 @@
+   strcat(prompt, "\r\nprompt> ");    
+   return prompt;
+ }
++
+diff -ruN ../nakedmudv2.1.1/src/utils.h src/utils.h
+--- ../nakedmudv2.1.1/src/utils.h	Sun May  8 15:04:45 2005
++++ src/utils.h	Thu May 12 17:08:52 2005
+@@ -11,11 +11,9 @@
+ 
+ 
+ //*****************************************************************************
+-//
+ // Utilities for numbers
+-//
+ //*****************************************************************************
+-#define MAX_INT               214743648
++#define MAX_INT               214743647
+ #define PI                    3.14159265
+ 
+ #define UMIN(a, b)	      ((a) < (b) ? (a) : (b))
+@@ -45,9 +43,7 @@
+ 
+ 
+ //*****************************************************************************
+-//
+ // Utilities for characters
+-//
+ //*****************************************************************************
+ #define IS_ADMIN(ch)          ((charGetLevel(ch)) > LEVEL_PLAYER ? TRUE : FALSE)
+ 
+@@ -70,7 +66,6 @@
+ //
+ // returns the target's name if the ch can see the target,
+ // and returns SOMEONE/SOMETHING otherwise.
+-//
+ const char *see_char_as (CHAR_DATA *ch, CHAR_DATA *target);
+ const char *see_obj_as  (CHAR_DATA *ch, OBJ_DATA  *target);
+ 
+@@ -80,10 +75,10 @@
+ void     show_prompt(SOCKET_DATA *socket);
+ const char *custom_prompt (CHAR_DATA *ch);
+ 
++
++
+ //*****************************************************************************
+-//
+ // Utilities for bit manipulations and bitvectors
+-//
+ //*****************************************************************************
+ #define BITS_PER_BITVECTOR                   32
+ 
+@@ -97,10 +92,9 @@
+ void        print_bits(bitvector_t bits, const char **names, char *buf);
+ 
+ 
++
+ //*****************************************************************************
+-//
+ // String utilities.
+-//
+ //*****************************************************************************
+ #define CLEAR_SCREEN      "\033[H\033[J"
+ #define AN(string)        (strchr("AEIOU", toupper(*string)) ? "an" : "a")
+@@ -127,12 +121,12 @@
+ 			   int buflen, bool border);
+ int next_space_in         (char *string);
+ int next_letter_in        (const char *string, char marker);
++int string_hash           (const char *key);
++
+ 
+ 
+ //*****************************************************************************
+-//
+ // utilities for game functioning
+-//
+ //*****************************************************************************
+ void  extract_obj          ( OBJ_DATA *obj);
+ void  extract_mobile       ( CHAR_DATA *ch );
+@@ -142,11 +136,21 @@
+ void  add_extract_mob_func ( void (* func)(CHAR_DATA *));
+ 
+ char *get_time             ( void );
+-bool  check_name           ( const char *name );
+ void  communicate          ( CHAR_DATA *dMob, char *txt, int range );
+ void  load_muddata         ( void );
+ CHAR_DATA  *check_reconnect( const char *player );
+ 
++
++
++//*****************************************************************************
++// misc utils
++//*****************************************************************************
++
++//
++// a function that returns the argument passed into it
++void *identity_func(void *data);
++
++
+ // iterate across all the elements in a list
+ #define ITERATE_LIST(val, it) \
+   for(val = listIteratorCurrent(it); val != NULL; val = listIteratorNext(it))
+@@ -178,7 +182,6 @@
+ // count how many objects are in the list, that meet our critereon.
+ // If name is not NULL, we search by name. Otherwise, we search by vnum.
+ // must_see TRUE, a looker must be supplied. Same thing goes for count_letters
+-//
+ int   count_objs   (CHAR_DATA *looker, LIST *list, const char *name, int vnum,
+ 		    bool must_see);
+ int   count_chars  (CHAR_DATA *looker, LIST *list, const char *name, int vnum,
+@@ -201,12 +204,10 @@
+ // split a string into it's target and count number.
+ //   e.g. all.cookie splits into cookie and all
+ //        2.woman splits into woman and 2
+-//
+ void get_count(const char *buf, char *target, int *count);
+ 
+ //
+ // reverse of get_count
+-//
+ void print_count(char *buf, const char *target, int count);
+ 
+ 
+@@ -223,7 +224,6 @@
+ //       a man and a woman
+ //       (5) a man
+ //       a group of 5 men
+-//
+ char *print_list(LIST *list, void *descriptor, void *multi_descriptor);
+ 
+ 
+@@ -237,7 +237,6 @@
+ // vnum_getter is a pointer to a function that returns the thing's vnum for
+ // displaying to players of builder level and above. vnum_getter can be NULL 
+ // to display no vnums.
+-//
+ void show_list(CHAR_DATA *ch, LIST *list, void *descriptor, 
+ 	       void *multi_descriptor, void *vnum_getter);
+ 
+@@ -246,13 +245,11 @@
+ // Return a list of all items in the current list that do not have
+ // people sitting on or at them. The returned list must be deleted
+ // after use.
+-//
+ LIST *get_unused_items(CHAR_DATA *ch, LIST *list, bool invis_ok);
+ 
+ 
+ //
+ // The opposite of get_unused_items
+-//
+ LIST *get_used_items(CHAR_DATA *ch, LIST *list, bool invis_ok);
+ 
+ 
+@@ -260,8 +257,6 @@
+ // returns true if the character has an object with the
+ // specified vnum in his inventory. Returns false otherwise.
+ // useful fo checking keys
+-//
+ bool has_obj(CHAR_DATA *ch, int vnum);
+-
+ 
+ #endif // __UTILS_H

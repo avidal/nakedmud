@@ -99,8 +99,7 @@ void bitvectorCreate(const char *name) {
 }
 
 BITVECTOR *newBitvector() {
-  BITVECTOR *v = malloc(sizeof(BITVECTOR));
-  bzero(v, sizeof(BITVECTOR));
+  BITVECTOR *v = calloc(1, sizeof(BITVECTOR));
   return v;
 }
 
@@ -111,8 +110,7 @@ BITVECTOR   *bitvectorInstanceOf(const char *name) {
     int vector_len = hashSize(data->bitmap)/8 + 1;
     vector = newBitvector();
     vector->data = data;
-    vector->bits = malloc(sizeof(char) * vector_len);
-    bzero(vector->bits, vector_len);
+    vector->bits = calloc(vector_len, sizeof(char));
   }
   return vector;
 }

@@ -65,6 +65,7 @@ void store_string(STORAGE_SET *set, const char *key, const char *val);
 void store_double(STORAGE_SET *set, const char *key, double val);
 void    store_int(STORAGE_SET *set, const char *key, int val);
 void   store_long(STORAGE_SET *set, const char *key, long val);
+void   store_bool(STORAGE_SET *set, const char *key, bool val);
 
 
 //
@@ -76,6 +77,7 @@ const char       *read_string(STORAGE_SET *set, const char *key);
 double            read_double(STORAGE_SET *set, const char *key);
 int                  read_int(STORAGE_SET *set, const char *key);
 long                read_long(STORAGE_SET *set, const char *key);
+bool                read_bool(STORAGE_SET *set, const char *key);
 
 
 //

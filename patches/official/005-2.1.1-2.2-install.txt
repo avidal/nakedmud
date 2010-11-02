@@ -1,0 +1,36 @@
+--- PATCH INSTRUCTIONS FROM v2.1.1 TO v2.2
+
+The bulk of the patch from version 2.1.1 to 2.2 is pretty easy. Simply enter
+your MUDs root directory (the one that has the src/ and lib/ and doc/ 
+directories) and then run the patch file:
+  patch -p0 < nakedmudv2.1.1-to-nakedmudv2.2.patch
+
+You will also have to add a few directories for account info. Try this:
+  cp -R lib/players/pfiles lib/accounts         // copy the directory structure
+  rm lib/accounts/*/*                           // clean out all the files
+
+Sadly, there is no automatic way to assign old characters to accounts, so you'll
+have to do the bulk of this by hand. This can be done either by editing the
+account files or through the online account editor, accedit. For the first 
+character, you'll have to go through the account files so you can log on an 
+admin char and use accedit. The process is pretty simple. Open up the account
+file you'd like to edit, and add the following bits to it:
+
+characters:=
+  name: <char name here>
+  -
+  name: <another name here>
+  -
+  name: <and so forth>
+  -
+-
+
+Once this is done, the account will be able to log on the chars you add to it.
+Do this for your admin, and then log on your admin. You can now edit accounts
+online with the accedit command:
+  accedit <account name>
+
+It's a standard OLC interface, and pretty straightforward to use.
+
+You may also want to add in the new helpfiles, which can be downloaded from the
+NakedMud website; they are bundled in download for the latest version (v2.2).

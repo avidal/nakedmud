@@ -11,11 +11,9 @@
 
 
 //*****************************************************************************
-//
 // Utilities for numbers
-//
 //*****************************************************************************
-#define MAX_INT               214743648
+#define MAX_INT               214743647
 #define PI                    3.14159265
 
 #define UMIN(a, b)	      ((a) < (b) ? (a) : (b))
@@ -45,9 +43,7 @@ const char *numth(int num);
 
 
 //*****************************************************************************
-//
 // Utilities for characters
-//
 //*****************************************************************************
 #define IS_ADMIN(ch)          ((charGetLevel(ch)) > LEVEL_PLAYER ? TRUE : FALSE)
 
@@ -70,7 +66,6 @@ int   can_see_invis       ( CHAR_DATA *ch);
 //
 // returns the target's name if the ch can see the target,
 // and returns SOMEONE/SOMETHING otherwise.
-//
 const char *see_char_as (CHAR_DATA *ch, CHAR_DATA *target);
 const char *see_obj_as  (CHAR_DATA *ch, OBJ_DATA  *target);
 
@@ -80,10 +75,10 @@ void  try_dialog_all      (CHAR_DATA *ch, LIST *listeners, const char *mssg);
 void     show_prompt(SOCKET_DATA *socket);
 const char *custom_prompt (CHAR_DATA *ch);
 
+
+
 //*****************************************************************************
-//
 // Utilities for bit manipulations and bitvectors
-//
 //*****************************************************************************
 #define BITS_PER_BITVECTOR                   32
 
@@ -97,10 +92,9 @@ const char *write_bits(bitvector_t bits);
 void        print_bits(bitvector_t bits, const char **names, char *buf);
 
 
+
 //*****************************************************************************
-//
 // String utilities.
-//
 //*****************************************************************************
 #define CLEAR_SCREEN      "\033[H\033[J"
 #define AN(string)        (strchr("AEIOU", toupper(*string)) ? "an" : "a")
@@ -127,12 +121,12 @@ void center_string        (char *buf, const char *string, int linelen,
 			   int buflen, bool border);
 int next_space_in         (char *string);
 int next_letter_in        (const char *string, char marker);
+int string_hash           (const char *key);
+
 
 
 //*****************************************************************************
-//
 // utilities for game functioning
-//
 //*****************************************************************************
 void  extract_obj          ( OBJ_DATA *obj);
 void  extract_mobile       ( CHAR_DATA *ch );
@@ -142,10 +136,20 @@ void  add_extract_obj_func ( void (* func)(OBJ_DATA *));
 void  add_extract_mob_func ( void (* func)(CHAR_DATA *));
 
 char *get_time             ( void );
-bool  check_name           ( const char *name );
 void  communicate          ( CHAR_DATA *dMob, char *txt, int range );
 void  load_muddata         ( void );
 CHAR_DATA  *check_reconnect( const char *player );
+
+
+
+//*****************************************************************************
+// misc utils
+//*****************************************************************************
+
+//
+// a function that returns the argument passed into it
+void *identity_func(void *data);
+
 
 // iterate across all the elements in a list
 #define ITERATE_LIST(val, it) \
@@ -178,7 +182,6 @@ CHAR_DATA  *check_reconnect( const char *player );
 // count how many objects are in the list, that meet our critereon.
 // If name is not NULL, we search by name. Otherwise, we search by vnum.
 // must_see TRUE, a looker must be supplied. Same thing goes for count_letters
-//
 int   count_objs   (CHAR_DATA *looker, LIST *list, const char *name, int vnum,
 		    bool must_see);
 int   count_chars  (CHAR_DATA *looker, LIST *list, const char *name, int vnum,
@@ -201,12 +204,10 @@ LIST *find_all_objs(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
 // split a string into it's target and count number.
 //   e.g. all.cookie splits into cookie and all
 //        2.woman splits into woman and 2
-//
 void get_count(const char *buf, char *target, int *count);
 
 //
 // reverse of get_count
-//
 void print_count(char *buf, const char *target, int count);
 
 
@@ -223,7 +224,6 @@ void print_count(char *buf, const char *target, int count);
 //       a man and a woman
 //       (5) a man
 //       a group of 5 men
-//
 char *print_list(LIST *list, void *descriptor, void *multi_descriptor);
 
 
@@ -237,7 +237,6 @@ char *print_list(LIST *list, void *descriptor, void *multi_descriptor);
 // vnum_getter is a pointer to a function that returns the thing's vnum for
 // displaying to players of builder level and above. vnum_getter can be NULL 
 // to display no vnums.
-//
 void show_list(CHAR_DATA *ch, LIST *list, void *descriptor, 
 	       void *multi_descriptor, void *vnum_getter);
 
@@ -246,13 +245,11 @@ void show_list(CHAR_DATA *ch, LIST *list, void *descriptor,
 // Return a list of all items in the current list that do not have
 // people sitting on or at them. The returned list must be deleted
 // after use.
-//
 LIST *get_unused_items(CHAR_DATA *ch, LIST *list, bool invis_ok);
 
 
 //
 // The opposite of get_unused_items
-//
 LIST *get_used_items(CHAR_DATA *ch, LIST *list, bool invis_ok);
 
 
@@ -260,8 +257,6 @@ LIST *get_used_items(CHAR_DATA *ch, LIST *list, bool invis_ok);
 // returns true if the character has an object with the
 // specified vnum in his inventory. Returns false otherwise.
 // useful fo checking keys
-//
 bool has_obj(CHAR_DATA *ch, int vnum);
-
 
 #endif // __UTILS_H

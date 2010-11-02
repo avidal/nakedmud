@@ -119,7 +119,7 @@ void stop_all_actions(CHAR_DATA *ch) {
 //*****************************************************************************
 void init_actions() {
   // use the standard pointer hasher and comparator
-  actors = newMap(NULL, NULL, 50);
+  actors = newMap(NULL, NULL);
 
   // add in our example delayed action
   add_cmd("dsay", NULL, cmd_dsay, 0, POS_SITTING, POS_FLYING, 
@@ -205,17 +205,22 @@ void start_action(void           *ch,
 
 void pulse_actions(int time) {
   MAP_ITERATOR   *ch_i = newMapIterator(actors);
-  void          *actor = NULL;
-  ACTION_DATA  *action = NULL;
-  LIST_ITERATOR *act_i = NULL;
-  LIST        *actions = NULL;
+  ACTION_DATA   *action = NULL;
+  LIST_ITERATOR  *act_i = NULL;
+  LIST         *actions = NULL;
+  const CHAR_DATA *map_actor = NULL;
+  CHAR_DATA         *ch = NULL;
 
-  while( (actor = mapIteratorCurrentKey(ch_i)) != NULL) {
+  ITERATE_MAP(map_actor, actions, ch_i) {
     actions = mapIteratorCurrentVal(ch_i);
-    mapIteratorNext(ch_i);
 
     // if we have actions, then go through 'em all
     if(listSize(actions) > 0) {
+      // eek... small problem. The key for maps is constant, but we need
+      // a non-constant character to send to run_action. Let's get the char's
+      // UID, and re-look him up in the player table
+      ch = propertyTableGet(mob_table, charGetUID(map_actor));
+
       act_i = newListIterator(actions);
 
       ITERATE_LIST(action, act_i) {
@@ -224,12 +229,10 @@ void pulse_actions(int time) {
 	// pop the action from the list, and run it
 	if(action->delay <= 0) {
 	  listRemove(actions, action);
-	  run_action(actor, action);
+	  run_action(ch, action);
 	  deleteAction(action);
 	}
-      }
-      deleteListIterator(act_i);
+      } deleteListIterator(act_i);
     }
-  }
-  deleteMapIterator(ch_i);
+  } deleteMapIterator(ch_i);
 }

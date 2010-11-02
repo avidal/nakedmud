@@ -8,7 +8,7 @@
 //
 //*****************************************************************************
 
-/* admin.c */
+/* cmd_admin.c */
 COMMAND(cmd_goto);
 COMMAND(cmd_transfer);
 COMMAND(cmd_copyover);
@@ -19,9 +19,10 @@ COMMAND(cmd_invis);
 COMMAND(cmd_visible);
 COMMAND(cmd_repeat);
 COMMAND(cmd_at);
+COMMAND(cmd_lockdown);
 
 
-/* builder.c */
+/* cmd_builder.c */
 COMMAND(cmd_dig);
 COMMAND(cmd_fill);
 COMMAND(cmd_load);
@@ -75,6 +76,7 @@ COMMAND(cmd_compress);
 COMMAND(cmd_more);
 COMMAND(cmd_back);
 COMMAND(cmd_stop);
+COMMAND(cmd_motd);
 
 
 /* inform.c */

@@ -147,8 +147,8 @@ void deleteListWith(LIST *L, void *func) {
 }
 
 void listPut(LIST *L, void *elem) {
-  if(listIn(L, elem))
-    return;
+  //  if(listIn(L, elem))
+  //    return;
 
   LIST_NODE *N = newListNode(elem);
   N->next = L->head;
@@ -160,8 +160,8 @@ void listPut(LIST *L, void *elem) {
 
 
 void listQueue(LIST *L, void *elem) {
-  if(listIn(L, elem))
-    return;
+  //  if(listIn(L, elem))
+  //    return;
 
   LIST_NODE *N = newListNode(elem);
 

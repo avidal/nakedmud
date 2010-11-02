@@ -89,8 +89,7 @@ void delete_storage_data(STORAGE_DATA *data) {
 }
 
 STORAGE_DATA *new_storage_data(const char *key) {
-  STORAGE_DATA *data = malloc(sizeof(STORAGE_DATA));
-  bzero(data, sizeof(*data));
+  STORAGE_DATA *data = calloc(1, sizeof(STORAGE_DATA));
   data->key     = strdup(key);
   return data;
 }
@@ -117,6 +116,11 @@ STORAGE_DATA *new_data_string(const char *val, const char *key) {
   data->list_val     = new_storage_list();
   data->set_val      = new_storage_set();
   return data;
+}
+
+STORAGE_DATA    *new_data_bool(bool val, const char *key) {
+  char str_val[4]; sprintf(str_val, (val ? "yes" : "no"));
+  return new_data_string(str_val, key);
 }
 
 STORAGE_DATA    *new_data_int(int val, const char *key) {
@@ -570,6 +574,10 @@ void store_double(STORAGE_SET *set, const char *key, double val) {
   storage_put(set, new_data_double(val, key));
 }
 
+void store_bool(STORAGE_SET *set, const char *key, bool val) {
+  storage_put(set, new_data_bool(val, key));
+}
+
 void store_int(STORAGE_SET *set, const char *key, int val) {
   storage_put(set, new_data_int(val, key));
 }
@@ -602,6 +610,18 @@ const char *read_string(STORAGE_SET *set, const char *key) {
   STORAGE_DATA *data = hashGet(set->entries, key);
   if(data) return data->str_val;
   else     return "";
+}
+
+bool read_bool(STORAGE_SET *set, const char *key) {
+  STORAGE_DATA *data = hashGet(set->entries, key);
+  if(data == NULL) 
+    return FALSE;
+  else if(!strcasecmp(data->str_val, "Yes"))
+    return TRUE;
+  else if(atoi(data->str_val) != 0)
+    return TRUE;
+  else
+    return FALSE;
 }
 
 double read_double(STORAGE_SET *set, const char *key) {

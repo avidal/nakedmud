@@ -11,6 +11,7 @@
 /* including main header file */
 #include "mud.h"
 #include "character.h"
+#include "account.h"
 #include "save.h"
 #include "utils.h"
 #include "socket.h"
@@ -19,9 +20,9 @@
 
 //
 // Here it is... the big ol' datastructure for sockets. Yum.
-//
 struct socket_data {
   CHAR_DATA     * player;
+  ACCOUNT_DATA  * account;
   char          * hostname;
   char            inbuf[MAX_INPUT_LEN];
   char            outbuf[MAX_OUTPUT];
@@ -38,7 +39,6 @@ struct socket_data {
   int             tot_pages;     // the total number of pages the string has
   
   BUFFER        * text_editor;   // where we do our actual work
-  char         ** text_pointer;  // where the work will go to
 
   LIST          * input_handlers;// a stack of our input handlers and prompts
 
@@ -53,11 +53,19 @@ struct socket_data {
 //
 // contains an input handler and the socket prompt in one structure, so they
 // can be stored together in the socket_data
-//
 typedef struct input_handler_data {
   void (* handler)(SOCKET_DATA *, char *);
   void (*  prompt)(SOCKET_DATA *);
 } IH_PAIR;
+
+
+//
+// required for looking up a socket's IP in a new thread
+typedef struct lookup_data {
+  SOCKET_DATA    * dsock;   // the socket we wish to do a hostlookup on
+  char           * buf;     // the buffer it should be stored in
+} LOOKUP_DATA;
+
 
 
 /* global variables */
@@ -179,7 +187,7 @@ bool new_socket(int sock)
 
   /* send the greeting */
   text_to_buffer(sock_new, greeting);
-  text_to_buffer(sock_new, "Who wants to get naked? ");
+  text_to_buffer(sock_new, "What is your account (not character) name? ");
 
   /* everything went as it was supposed to */
   return TRUE;
@@ -212,7 +220,6 @@ void close_socket(SOCKET_DATA *dsock, bool reconnect)
   //  listRemove(socket_list, dsock);
   //
 
-
   // we have a character, and it's one that's
   // not in the process of being created
   if (dsock->player && charGetUID(dsock->player) != NOBODY) {
@@ -227,6 +234,9 @@ void close_socket(SOCKET_DATA *dsock, bool reconnect)
     charSetSocket(dsock->player, NULL);
     extract_mobile(dsock->player);
   }
+  
+  if(dsock->account)
+    deleteAccount(dsock->account);
 
   /* set the closed state */
   dsock->closed = TRUE;
@@ -671,7 +681,8 @@ void next_cmd_from_buffer(SOCKET_DATA *dsock)
 
 bool flush_output(SOCKET_DATA *dsock)
 {
-  void (* prompt_func)(SOCKET_DATA *) = ((IH_PAIR *)listGet(dsock->input_handlers, 0))->prompt;
+  IH_PAIR *pair = listGet(dsock->input_handlers, 0);
+  void (* prompt_func)(SOCKET_DATA *) = (pair ? pair->prompt : NULL);
 
   // quit if we have no output and don't need/can't have a prompt
   if(dsock->top_output <= 0 && (!dsock->bust_prompt || !prompt_func))
@@ -730,12 +741,9 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
   socketPushInputHandler(sock_new, handle_new_connections, NULL);
   sock_new->control        = sock;
   sock_new->lookup_status  = TSTATE_LOOKUP;
-  sock_new->player         = NULL;
   sock_new->top_output     = 0;
 
   sock_new->text_editor    = newBuffer(MAX_BUFFER);
-  sock_new->text_pointer   = NULL;
-  //  sock_new->in_text_edit   = FALSE;
 }
 
 
@@ -807,12 +815,13 @@ void reconnect_copyover_sockets() {
 
 
 /* Recover from a copyover - load players */
-void copyover_recover()
-{     
-  CHAR_DATA *dMob;
-  SOCKET_DATA *dsock;
+void copyover_recover() {     
+  CHAR_DATA    *dMob;
+  ACCOUNT_DATA *account;
+  SOCKET_DATA  *dsock;
   FILE *fp;
-  char name [100];
+  char acct[100];
+  char name[100];
   char host[MAX_BUFFER];
   int desc;
       
@@ -827,7 +836,7 @@ void copyover_recover()
   unlink(COPYOVER_FILE);
 
   for (;;) {  
-    fscanf(fp, "%d %s %s\n", &desc, name, host);
+    fscanf(fp, "%d %s %s %s\n", &desc, acct, name, host);
     if (desc == -1)
       break;
 
@@ -841,36 +850,53 @@ void copyover_recover()
     dsock->hostname = strdup(host);
     listPut(socket_list, dsock);
 
-    /* load player data */
-    if ((dMob = load_player(name)) != NULL)
-    {
-      /* attach to socket */
+    // load account data
+    if((account = load_account(acct)) != NULL)
+      socketSetAccount(dsock, account);
+    // no luck!
+    else {
+      printf("Account load failed.\r\n");
+      close_socket(dsock, FALSE);
+      continue;
+    }
+
+    // load player data
+    if ((dMob = load_player(name)) != NULL) {
+      // attach to socket
       charSetSocket(dMob, dsock);
       socketSetChar(dsock, dMob);
 
       // try putting the character into the game
       // close the socket if we fail.
-      try_enter_game(dMob);
+      if(!try_enter_game(dMob)) {
+	printf("Enter game failed.\r\n");
+	// do not bother extracting, since we haven't entered the game yet
+	deleteChar(socketGetChar(dsock));
+	socketSetChar(dsock, NULL);
+	close_socket(dsock, FALSE);
+	continue;
+      }
     }
-    else /* ah bugger */
-    {
+    // no luck
+    else {
+      printf("Player load failed.\r\n");
       close_socket(dsock, FALSE);
       continue;
     }
    
-    /* Write something, and check if it goes error-free */
-    if (!text_to_socket(dsock, "\n\r <*>  And before you know it, everything has changed  <*>\n\r"))
-    { 
+    // Write something, and check if it goes error-free
+    if (!text_to_socket(dsock, "\n\r <*>  And before you know it, everything has changed  <*>\n\r")) { 
       close_socket(dsock, FALSE);
       continue;
     }
   
-    /* make sure the socket can be used */
+    // make sure the socket can be used
     dsock->bust_prompt    =  TRUE;
     dsock->lookup_status  =  TSTATE_DONE;
-    socketReplaceInputHandler(dsock, handle_cmd_input, show_prompt);
+    socketReplaceInputHandler(dsock, account_handle_menu, account_menu);
+    socketPushInputHandler(dsock, handle_cmd_input, show_prompt);
 
-    /* negotiate compression */
+    // negotiate compression
     text_to_buffer(dsock, (char *) compress_will2);
     text_to_buffer(dsock, (char *) compress_will);
   }
@@ -886,12 +912,10 @@ void socket_handler() {
   SOCKET_DATA     *sock = NULL; 
 
   ITERATE_LIST(sock, sock_i) {
-    /*
-     * Close sockects we are unable to read from, or if we have no handler
-     * to take in input
-     */
+    // Close sockects we are unable to read from, or if we have no handler
+    // to take in input
     if ((FD_ISSET(sock->control, &rFd) && !read_from_socket(sock)) ||
-	socketGetInputHandler(sock) == NULL) {
+	listSize(sock->input_handlers) == 0) {
       close_socket(sock, FALSE);
       continue;
     }
@@ -907,13 +931,13 @@ void socket_handler() {
     }
     
     /* if the player quits or get's disconnected */
-    if(sock->closed) continue;
+    if(sock->closed)
+      continue;
     
     /* Send all new data to the socket and close it if any errors occour */
     if (!flush_output(sock))
       close_socket(sock, FALSE);
-  }
-  deleteListIterator(sock_i);
+  } deleteListIterator(sock_i);
 }
 
 
@@ -999,67 +1023,62 @@ void  page_continue(SOCKET_DATA *dsock) {
     dsock->curr_page = dsock->tot_pages;
     text_to_buffer(dsock, "There is no more text in your page buffer.\r\n");
   }
-  /*
-  if(dsock->curr_page >= dsock->tot_pages)
-    delete_page(dsock);
-  */
 }
 
 void do_copyover(CHAR_DATA *ch) {
-
+  LIST_ITERATOR *sock_i = newListIterator(socket_list);
+  SOCKET_DATA     *sock = NULL;
   FILE *fp;
-  SOCKET_DATA *dsock;
   char buf[100];
   char control_buf[20];
   char port_buf[20];
-  LIST_ITERATOR *sock_i = newListIterator(socket_list);
 
-  if ((fp = fopen(COPYOVER_FILE, "w+")) == NULL)
-  {
+  if ((fp = fopen(COPYOVER_FILE, "w+")) == NULL) {
     text_to_char(ch, "Copyover file not writeable, aborted.\n\r");
     return;
   }
 
   sprintf(buf, "\n\r <*>            The world starts spinning             <*>\n\r");
 
-  /* For each playing descriptor, save its state */
-  ITERATE_LIST(dsock, sock_i) {
-    compressEnd(dsock, dsock->compressing, FALSE);
-    if (!socketGetChar(dsock) || !charGetRoom(socketGetChar(dsock))) {
-      //(dsock->state != STATE_PLAYING) {
-      text_to_socket(dsock, "\r\nSorry, we are rebooting. Come back in a few minutes.\r\n");
-      close_socket(dsock, FALSE);
+  // For each playing descriptor, save its character and account
+  ITERATE_LIST(sock, sock_i) {
+    compressEnd(sock, sock->compressing, FALSE);
+    // kick off anyone who hasn't yet logged in a character
+    if (!socketGetChar(sock) || !charGetRoom(socketGetChar(sock))) {
+      text_to_socket(sock, "\r\nSorry, we are rebooting. Come back in a few minutes.\r\n");
+      close_socket(sock, FALSE);
     }
+    // save account and player info to file
     else {
-      fprintf(fp, "%d %s %s\n",
-	      dsock->control, charGetName(dsock->player), dsock->hostname);
-      /* save the player */
-      save_player(dsock->player);
-      text_to_socket(dsock, buf);
+      fprintf(fp, "%d %s %s %s\n",
+	      sock->control, accountGetName(sock->account), 
+	      charGetName(sock->player), sock->hostname);
+      // save the player
+      save_player(sock->player);
+      save_account(sock->account);
+      text_to_socket(sock, buf);
     }
   } deleteListIterator(sock_i);
   
   fprintf (fp, "-1\n");
   fclose (fp);
 
-
-  /* close any pending sockets */
+  // close any pending sockets
   recycle_sockets();
   
-  /* exec - descriptors are inherited */
+  // exec - descriptors are inherited
   sprintf(control_buf, "%d", control);
   sprintf(port_buf, "%d", mudport);
   execl(EXE_FILE, "NakedMud", "-copyover", control_buf, port_buf, NULL);
 
-  /* Failed - sucessful exec will not return */
+  // Failed - sucessful exec will not return
   text_to_char(ch, "Copyover FAILED!\n\r");
 }
 
 
+
 //*****************************************************************************
-//
 // get and set functions
-//
 //*****************************************************************************
 CHAR_DATA *socketGetChar     ( SOCKET_DATA *dsock) {
   return dsock->player;
@@ -1069,12 +1088,12 @@ void       socketSetChar     ( SOCKET_DATA *dsock, CHAR_DATA *ch) {
   dsock->player = ch;
 }
 
-char **socketGetTextPointer   ( SOCKET_DATA *sock) {
-  return sock->text_pointer;
+ACCOUNT_DATA *socketGetAccount ( SOCKET_DATA *dsock) {
+  return dsock->account;
 }
 
-void socketSetTextPointer (SOCKET_DATA *sock, char **ptr) {
-  sock->text_pointer = ptr;
+void socketSetAccount (SOCKET_DATA *dsock, ACCOUNT_DATA *account) {
+  dsock->account = account;
 }
 
 BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock) {
@@ -1103,7 +1122,10 @@ void socketReplaceInputHandler( SOCKET_DATA *socket,
 }
 
 void (*socketGetInputHandler ( SOCKET_DATA *socket))(SOCKET_DATA *, char *) {
-  return ((IH_PAIR *)listGet(socket->input_handlers, 0))->handler;
+  if(listSize(socket->input_handlers) == 0)
+    return NULL;
+  IH_PAIR *pair = listGet(socket->input_handlers, 0);
+  return (pair ? pair->handler : NULL);
 }
 
 void socketShowPrompt( SOCKET_DATA *sock) {

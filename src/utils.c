@@ -35,25 +35,6 @@
 
 
 
-/*
- * Check to see if a given name is
- * legal, returning FALSE if it
- * fails our high standards...
- */
-bool check_name(const char *name)
-{
-  int size, i;
-
-  if ((size = strlen(name)) < 3 || size > 12)
-    return FALSE;
-
-  for (i = 0 ;i < size; i++)
-    if (!isalpha(name[i])) return FALSE;
-
-  return TRUE;
-}
-
-
 void  add_extract_obj_func (void (* func)(OBJ_DATA *)) {
   listQueue(extract_obj_funcs, func);
 }
@@ -500,6 +481,20 @@ int next_space_in(char *string) {
 }
 
 
+//
+// just a generic function for hashing a string. This could be 
+// sped up tremendously if it's performance becoming a problem.
+int string_hash(const char *key) {
+  const int BASE = 2;
+  int base = 1;
+  int hvalue = 0;
+  for (; *key; key++) {
+    base *= BASE;
+    hvalue += tolower(*key) * base;
+  }
+  return (hvalue < 0 ? hvalue * -1 : hvalue);
+}
+
 
 void format_string(char **string, int max_width, 
 		   unsigned int maxlen, bool indent) {
@@ -742,9 +737,12 @@ char **parse_keywords(const char *keywords, int *num_keywords) {
   // first, we check if the keywords have any non-spaces
   int i;
   bool nonspace_found = FALSE;
-  for(i = 0; keywords[i] != '\0'; i++)
-    if(!isspace(keywords[i]))
+  for(i = 0; keywords[i] != '\0'; i++) {
+    if(!isspace(keywords[i])) {
       nonspace_found = TRUE;
+      break;
+    }
+  }
 
   // we didn't find any non-spaces. Return NULL
   if(!nonspace_found)
@@ -1277,6 +1275,9 @@ bool has_obj(CHAR_DATA *ch, int vnum) {
   return ret_val;
 }
 
+void *identity_func(void *data) {
+  return data;
+}
 
 void show_prompt(SOCKET_DATA *socket) {
   text_to_buffer(socket, custom_prompt(socketGetChar(socket)));
@@ -1288,3 +1289,4 @@ const char *custom_prompt(CHAR_DATA *ch) {
   strcat(prompt, "\r\nprompt> ");    
   return prompt;
 }
+

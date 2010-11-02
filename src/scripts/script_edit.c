@@ -67,6 +67,8 @@ bool ssedit_parser (SOCKET_DATA *sock, SCRIPT_SET *set, int choice,
 		    const char *arg) {
   switch(choice) {
   case SSEDIT_NEW: {
+    if(atoi(arg) == NOTHING)
+      return TRUE;
     SCRIPT_DATA *script = worldGetScript(gameworld, atoi(arg));
     if(script == NULL)
       return FALSE;

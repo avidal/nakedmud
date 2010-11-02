@@ -56,11 +56,11 @@ void init_commands() {
   for(i = 0; i < 26; i++)
     cmd_table[i] = newList();
 
-  //***********************************************************************
+  //************************************************************************
   // This is for core functions ONLY! If you have a module that adds new
   // functions to the MUD, they should be added in the init_xxx() function
   // associated with your module.
-  //***********************************************************************
+  //************************************************************************
   add_cmd("north", "n", cmd_move,     DIR_NORTH,    POS_STANDING, POS_FLYING,
 	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("east",  "e", cmd_move,     DIR_EAST,     POS_STANDING, POS_FLYING,
@@ -103,10 +103,6 @@ void init_commands() {
 	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("buildwalk",  NULL, cmd_buildwalk, 0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
-  /*
-  add_cmd("buildwalk",  NULL, cmd_tog_prf,  PRF_BUILDWALK, 
-	  POS_UNCONCIOUS, POS_FLYING, LEVEL_BUILDER, FALSE, FALSE);
-  */
 
   // C
   add_cmd("chat",       NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
@@ -179,6 +175,8 @@ void init_commands() {
 	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("linkdead",   NULL, cmd_linkdead, 0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_ADMIN, FALSE, FALSE);
+  add_cmd("lockdown",   NULL, cmd_lockdown, 0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_ADMIN, FALSE, FALSE);
 
   // M
   add_cmd("mlist",      NULL, cmd_mlist,    0, POS_UNCONCIOUS, POS_FLYING,
@@ -186,6 +184,8 @@ void init_commands() {
   add_cmd("mdelete",    NULL, cmd_mdelete,  0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("more",       NULL, cmd_more,     0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd("motd",       NULL, cmd_motd,     0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
 
   // O

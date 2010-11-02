@@ -64,8 +64,7 @@ const char     *resetTypeGetName (int type) {
 
 
 RESET_DATA    *newReset         () {
-  RESET_DATA *reset = malloc(sizeof(RESET_DATA));
-  bzero(reset, sizeof(RESET_DATA));
+  RESET_DATA *reset = calloc(1, sizeof(RESET_DATA));
   reset->type     = RESET_LOAD_OBJECT;
   reset->arg      = strdup("");
   reset->times    = 1;

@@ -27,7 +27,6 @@
 //
 // the function sets used for loading and saving 
 // auxiliary functions on our datatypes
-//
 HASHTABLE *auxiliary_manip_funcs = NULL;
 
 
@@ -90,10 +89,10 @@ newAuxiliaryData(bitvector_t aux_type) {
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
 
-  ITERATE_HASH(name, funcs, hash_i)
+  ITERATE_HASH(name, funcs, hash_i) {
     if(IS_SET(funcs->aux_type, aux_type))
       hashPut(data, name, funcs->new());
-  deleteHashIterator(hash_i);
+  } deleteHashIterator(hash_i);
   return data;
 }
 
@@ -104,10 +103,10 @@ auxiliaryEnsureDataComplete(HASHTABLE *data, bitvector_t aux_type) {
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
 
-  ITERATE_HASH(name, funcs, hash_i) 
+  ITERATE_HASH(name, funcs, hash_i) {
     if(IS_SET(funcs->aux_type, aux_type) && !hashGet(data, name))
       hashPut(data, name, funcs->new());
-  deleteHashIterator(hash_i);
+  } deleteHashIterator(hash_i);
 }
 
 
@@ -122,8 +121,7 @@ deleteAuxiliaryData(HASHTABLE *data) {
   ITERATE_HASH(name, entry, hash_i) {
     funcs = auxiliariesGetFuncs(name);
     funcs->delete(entry);
-  }
-  deleteHashIterator(hash_i);
+  } deleteHashIterator(hash_i);
   deleteHashtable(data);
 }
 
@@ -138,9 +136,9 @@ auxiliaryDataStore(HASHTABLE *data) {
 
   ITERATE_HASH(name, entry, hash_i) {
     funcs = auxiliariesGetFuncs(name);
-    store_set(set, name, funcs->store(entry));
-  }
-  deleteHashIterator(hash_i);
+    if(funcs->store) 
+      store_set(set, name, funcs->store(entry));
+  } deleteHashIterator(hash_i);
   return set;
 }
 
@@ -155,9 +153,11 @@ auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type) {
   ITERATE_HASH(name, funcs, hash_i) {
     if(!IS_SET(funcs->aux_type, aux_type))
       continue;
-    hashPut(data, name, funcs->read(read_set(set, name)));
-  }
-  deleteHashIterator(hash_i);
+    if(funcs->read)
+      hashPut(data, name, funcs->read(read_set(set, name)));
+    else
+      hashPut(data, name, funcs->new());
+  } deleteHashIterator(hash_i);
   return data;
 }
 
@@ -175,8 +175,7 @@ auxiliaryDataCopyTo(HASHTABLE *from, HASHTABLE *to) {
     ITERATE_HASH(name, entry, hash_i) {
       funcs = auxiliariesGetFuncs(name);
       funcs->delete(entry);
-    }
-    deleteHashIterator(hash_i);
+    } deleteHashIterator(hash_i);
   }
 
   // now, copy in all of the new data
@@ -185,8 +184,7 @@ auxiliaryDataCopyTo(HASHTABLE *from, HASHTABLE *to) {
     ITERATE_HASH(name, entry, hash_i) {
       funcs = auxiliariesGetFuncs(name);
       hashPut(to, name, funcs->copy(entry));
-    }
-    deleteHashIterator(hash_i);
+    } deleteHashIterator(hash_i);
   }
 }
 

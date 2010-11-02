@@ -55,8 +55,7 @@ struct object_data {
 
 
 OBJ_DATA *newObj() {
-  OBJ_DATA *obj = malloc(sizeof(OBJ_DATA));
-  bzero(obj, sizeof(*obj));
+  OBJ_DATA *obj = calloc(1, sizeof(OBJ_DATA));
   obj->uid            = next_obj_uid++;
   obj->vnum           = NOTHING;
 

@@ -305,7 +305,8 @@ void show_body(CHAR_DATA *ch, BODY_DATA *body) {
     send_to_char(ch, "%-30s %s\r\n", 
 		 posbuf, objGetName(equipment));
   }
-  if(bodyparts) free(bodyparts);
+  if(bodyparts) 
+    free(bodyparts);
 }
 
 
@@ -579,6 +580,7 @@ COMMAND(cmd_look) {
 // list all of the equipment a character is wearing to him or herself
 //
 COMMAND(cmd_equipment) {
+  send_to_char(ch, "You are wearing:\r\n");
   show_body(ch, charGetBody(ch));
 }
 
@@ -608,7 +610,6 @@ COMMAND(cmd_commands) {
 
 //
 // show the player all of the people who are currently playing
-//
 COMMAND(cmd_who)
 {
   CHAR_DATA *plr;
@@ -622,9 +623,9 @@ COMMAND(cmd_who)
 	  "{gLevel    Race )\r\n"
 	  );
 
+  // build our list of people online
   ITERATE_LIST(dsock, sock_i) {
     socket_count++;
-    //    if (dsock->state != STATE_PLAYING) continue;
     if ((plr = socketGetChar(dsock)) == NULL) continue;
     playing_count++;
     bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n", 
@@ -633,23 +634,20 @@ COMMAND(cmd_who)
 	      (charGetLevel(plr) == LEVEL_SCRIPTER    ? "scripter" : "admin"))),
 	    raceGetAbbrev(charGetRace(plr)),
 	    charGetName(plr), socketGetHostname(dsock));
-  }
+  } deleteListIterator(sock_i);
 
-  bprintf(buf, "\r\n{g%d character%s connected. %d playing.\r\n",
+  // send out info about the number of sockets and players logged on
+  bprintf(buf, "\r\n{g%d socket%s connected. %d playing.\r\n",
 	  socket_count, (socket_count == 1 ? "" : "s"), playing_count);
   page_string(charGetSocket(ch), bufferString(buf));
-  //  send_to_char(ch, buf->data);
   deleteBuffer(buf);
-  deleteListIterator(sock_i);
 }
 
 
 
 //*****************************************************************************
-//
 // below this line are all of the subfunctions related to the message() 
 // function
-//
 //*****************************************************************************
 
 //
@@ -669,7 +667,6 @@ COMMAND(cmd_who)
 //  $O = vobj name
 //  $a = a/an of obj
 //  $A = a/an of vobj
-//
 void send_message(CHAR_DATA *to, 
 		  const char *str,
 		  CHAR_DATA *ch, CHAR_DATA *vict,
@@ -812,5 +809,19 @@ void message(CHAR_DATA *ch,  CHAR_DATA *vict,
       send_message(rec, mssg, ch, vict, obj, vobj);
     }
     deleteListIterator(rec_i);
+  }
+}
+
+void mssgprintf(CHAR_DATA *ch, CHAR_DATA *vict, 
+		OBJ_DATA *obj, OBJ_DATA  *vobj,
+		int hide_nosee, bitvector_t range, const char *fmt, ...) {
+  if(fmt && *fmt) {
+    // form the message
+    static char buf[MAX_BUFFER];
+    va_list args;
+    va_start(args, fmt);
+    vsprintf(buf, fmt, args);
+    va_end(args);
+    message(ch, vict, obj, vobj, hide_nosee, range, buf);
   }
 }

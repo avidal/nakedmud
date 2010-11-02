@@ -35,10 +35,10 @@ SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c movement.c \
 	   \
 	   races.c \
 	   \
-	   log.c auxiliary.c login.c \
+	   log.c auxiliary.c account_handler.c char_gen.c \
 	   \
 	   world.c character.c room.c exit.c extra_descs.c object.c body.c \
-	   zone.c dialog.c room_reset.c \
+	   zone.c dialog.c room_reset.c account.c \
 	   \
 	   list.c property_table.c hashtable.c map.c storage.c set.c \
 	   buffer.c bitvector.c
@@ -70,10 +70,8 @@ all: $(O_FILES)
 # clear all of the .o files and all of the save files that emacs makes
 clean:
 	rm -f NakedMud
-	rm -f *.o
-	rm -f */*.o
-	rm -f *~
-	rm -f */*~
+	rm -f *.o $(patsubst %,%/*.o, $(MODULES))
+	rm -f *~ $(patsubst %,%/*~, $(MODULES))
 
 # include all of our dependencies
 include $(patsubst %.c,%.d, $(SRC))

@@ -57,12 +57,11 @@ COMMAND(cmd_quit)
   // 
   // gotta make sure we have a socket. Who knows...
   // a mobile might be trying to quit
-  //
   if(charGetSocket(ch)) {
     SOCKET_DATA *sock = charGetSocket(ch);
     charSetSocket(ch, NULL);
     socketSetChar(sock, NULL);
-    close_socket(sock, FALSE);
+    socketPopInputHandler(sock);
   }
 
   extract_mobile(ch);
@@ -114,18 +113,11 @@ COMMAND(cmd_delay) {
   start_event(ch, atoi(time) SECONDS, event_delayed_cmd, NULL, NULL, arg);
 }
 
-
 //
-// An entrypoint into the character's notepad
-//
-/*
-COMMAND(cmd_write) {
-  if(!charGetSocket(ch))
-    send_to_char(ch, "You cannot use notepad if you have no socket.\r\n");
-  else {
-    send_around_char(ch, TRUE, "%s pulls out a notepad and begins writing.", 
-		     charGetName(ch));
-    start_notepad(charGetSocket(ch), "");
-  }
+// Displays the MOTD to the character
+COMMAND(cmd_motd) {
+  // only bother sending it if we have a socket. And then page it, incase
+  // the motd is especially long.
+  if(charGetSocket(ch))
+    page_string(charGetSocket(ch), motd);
 }
-*/

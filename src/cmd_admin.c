@@ -20,9 +20,74 @@
 #include "storage.h"
 
 
+
+//*****************************************************************************
+// commands in cmd_admin.c
+//*****************************************************************************
+
+//
+// Locks the game for anyone at or below the lockdown level. No argument tells
+// us the current lockdown level. Suggested by Rhaelar
+COMMAND(cmd_lockdown) {
+  int lockdown = 0;
+
+  // we're trying to view the current lockdown level
+  if(!*arg) {
+    lockdown = mudsettingGetInt("lockdown");
+    // no lockdown in place
+    if(lockdown == 0)
+      send_to_char(ch, "The mud currently is not locked to anyone.\r\n");
+    else if(lockdown == 1)
+      send_to_char(ch, "The mud is locked down to new players.\r\n");
+    else
+      send_to_char(ch, "The mud is locked to anyone below level %d.\r\n",
+		   lockdown);
+  }
+
+  // make sure we've got a level number
+  else if(!isdigit(*arg))
+    send_to_char(ch, "Which level would you like to set the lockdown to?\r\n");
+
+  // make sure we don't lock ourself out
+  else if( (lockdown = atoi(arg)) > charGetLevel(ch))
+    send_to_char(ch, "You cannot lock out people below that level!\r\n");
+
+  // do the lockdown
+  else {
+    mudsettingSetInt("lockdown", lockdown);
+    if(lockdown == 0)
+      send_to_char(ch, "Lockdown removed.\r\n");
+    else if(lockdown == 1)
+      send_to_char(ch, "New players are locked down.\r\n");
+    else
+      send_to_char(ch, "Everyone below level %d is locked down.\r\n", lockdown);
+
+    // kick out anyone that is at or below our lockdown threshold.
+    LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+    ITERATE_LIST(ch, ch_i) {
+      if(!charIsNPC(ch) && charGetLevel(ch) < lockdown) {
+	send_to_char(ch, "The mud has just been locked down to anyone at or "
+		     "below your level.\r\n");
+	save_player(ch);
+
+	// and close the socket if we have one
+	if(charGetSocket(ch)) {
+	  SOCKET_DATA *sock = charGetSocket(ch);
+	  charSetSocket(ch, NULL);
+	  socketSetChar(sock, NULL);
+	  close_socket(sock, FALSE);
+	}
+
+	// do the extraction
+	extract_mobile(ch);
+      }
+    } deleteListIterator(ch_i);
+  }
+}
+
+
 //
 // BOOM! Shut down the MUD
-//
 COMMAND(cmd_shutdown) {
   shut_down = TRUE;
 }
@@ -30,7 +95,6 @@ COMMAND(cmd_shutdown) {
 
 //
 // Perform a command multiple times
-//
 COMMAND(cmd_repeat) {
   if(!arg || !*arg) {
     send_to_char(ch, "What did you want to repeat, and how many times?\r\n");
@@ -58,7 +122,6 @@ COMMAND(cmd_repeat) {
 
 //
 // Perform a command at another room or person
-//
 COMMAND(cmd_at) {
   if(!arg || !*arg) {
     send_to_char(ch, "Do what where?\r\n");
@@ -111,7 +174,6 @@ COMMAND(cmd_at) {
 //   examples:
 //     goto 100             go to room number 100
 //     goto jim             go to an object/person named jim
-//
 COMMAND(cmd_goto) {
   if(!arg || !*arg)
     send_to_char(ch, "Where would you like to go to?\r\n");
@@ -162,7 +224,6 @@ COMMAND(cmd_goto) {
 // The opposite of goto. Instead of moving to a specified location, it
 // takes the target to the user.
 //   usage: transfer [player]
-//
 COMMAND(cmd_transfer) {
   if(!arg || !*arg)
     send_to_char(ch, "Who would you like to transfer?\r\n");
@@ -195,7 +256,6 @@ COMMAND(cmd_transfer) {
 
 //
 // Perform a copyover
-//
 COMMAND(cmd_copyover) { 
   do_copyover(ch);
 }
@@ -203,7 +263,6 @@ COMMAND(cmd_copyover) {
 
 //
 // show a list of all the PCs who are linkdead
-//
 COMMAND(cmd_linkdead) {
   CHAR_DATA *xMob;
   char buf[MAX_BUFFER];
@@ -226,7 +285,6 @@ COMMAND(cmd_linkdead) {
 
 //
 // List all of the non-player commands the character has access to
-//
 COMMAND(cmd_wizhelp) {
   show_commands(ch, LEVEL_BUILDER, charGetLevel(ch));
 }
@@ -234,7 +292,6 @@ COMMAND(cmd_wizhelp) {
 
 //
 // Turn on/off immortal invisibility
-//
 COMMAND(cmd_invis) {
   int level = charGetLevel(ch); // default to our level
   if(arg && *arg && isdigit(*arg))
@@ -269,7 +326,6 @@ COMMAND(cmd_invis) {
 
 //
 // turn off immortal invisibility
-//
 COMMAND(cmd_visible) {
   if(charGetImmInvis(ch) == 0)
     send_to_char(ch, "But you're already visible!\r\n");

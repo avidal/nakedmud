@@ -3,6 +3,8 @@
 //
 // contains the entrypoint for the MUD, plus various state-handling functions.
 //*****************************************************************************
+#include <sys/time.h>
+
 #include "mud.h"
 #include "socket.h"
 #include "world.h"
@@ -49,6 +51,8 @@
 #ifdef MODULE_ALIAS
 #include "alias/alias.h"
 #endif
+
+
 
 /* local procedures */
 void game_loop    ( int control );
@@ -223,7 +227,6 @@ int main(int argc, char **argv)
   log_string("Initializing helpfiles.");
   init_help();
 #endif
-
 
 
 

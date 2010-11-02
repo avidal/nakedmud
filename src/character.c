@@ -90,7 +90,6 @@ int poscmp(int pos1, int pos2) {
 
 struct char_data {
   // data for PCs only
-  char                 * password;
   room_vnum              loadroom;
   int                    imm_invis;
 
@@ -125,10 +124,8 @@ struct char_data {
 
 
 CHAR_DATA *newChar() {
-  CHAR_DATA *ch   = malloc(sizeof(CHAR_DATA));
-  bzero(ch, sizeof(*ch));
+  CHAR_DATA *ch   = calloc(1, sizeof(CHAR_DATA));
 
-  ch->password      = strdup("");
   ch->imm_invis     = 0;
 
   ch->loadroom      = NOWHERE;
@@ -214,10 +211,6 @@ const char  *charGetName      ( CHAR_DATA *ch) {
   return ch->name;
 };
 
-const char  *charGetPassword  ( CHAR_DATA *ch) {
-  return ch->password;
-};
-
 const char  *charGetDesc      ( CHAR_DATA *ch) {
   return bufferString(ch->desc);
 }
@@ -259,7 +252,7 @@ const char  *charGetRace  ( CHAR_DATA *ch) {
   return ch->race;
 }
 
-int          charGetUID   ( CHAR_DATA *ch) {
+int          charGetUID   ( const CHAR_DATA *ch) {
   return ch->uid;
 }
 
@@ -294,11 +287,6 @@ void         charSetRoom      ( CHAR_DATA *ch, ROOM_DATA *room) {
 void         charSetName      ( CHAR_DATA *ch, const char *name) {
   if(ch->name) free(ch->name);
   ch->name = strdup(name ? name : "");
-};
-
-void         charSetPassword  ( CHAR_DATA *ch, const char *password) {
-  if(ch->password) free(ch->password);
-  ch->password = strdup(password ? password : "");
 };
 
 void         charSetLevel     ( CHAR_DATA *ch, int level) {
@@ -371,7 +359,6 @@ void deleteChar( CHAR_DATA *mob) {
   // it's also assumed we've extracted our inventory
   deleteList(mob->inventory);
 
-  if(mob->password)    free(mob->password);
   if(mob->name)        free(mob->name);
   if(mob->desc)        deleteBuffer(mob->desc);
   if(mob->rdesc)       free(mob->rdesc);
@@ -398,11 +385,10 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
   charSetLevel(mob,        read_int   (set, "level"));
   charSetSex(mob,          read_int   (set, "sex"));
   charSetRace(mob,         read_string(set, "race"));
-  charSetPassword(mob,     read_string(set, "password"));
   bitSet(mob->prfs,        read_string(set, "prfs"));
 
-  // read in PC data
-  if(*charGetPassword(mob)) {
+  // read in PC data if it exists
+  if(storage_contains(set, "uid")) {
     charSetImmInvis(mob,   read_int   (set, "imm_invis"));
     charSetUID(mob,        read_int   (set, "uid"));
     charSetLoadroom(mob,   read_int   (set, "loadroom"));
@@ -447,7 +433,6 @@ STORAGE_SET *charStore(CHAR_DATA *mob) {
   if(!charIsNPC(mob)) {
     store_int   (set, "imm_invis",  mob->imm_invis);
     store_int   (set, "position",   mob->position);
-    store_string(set, "password",   mob->password);
     store_int   (set, "uid",        mob->uid);
     store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)));
   }

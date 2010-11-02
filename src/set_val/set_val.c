@@ -28,9 +28,14 @@
 
 
 //*****************************************************************************
-//
+// mandatory modules
+//*****************************************************************************
+#include "../editor/editor.h" // for charGetNotepad
+
+
+
+//*****************************************************************************
 // local defines, datastructures, functions, and commands
-//
 //*****************************************************************************
 HASHTABLE *char_set_table = NULL;
 HASHTABLE *obj_set_table  = NULL;
@@ -115,25 +120,23 @@ bool isLevel(int level) {
 // vnum, or simply "room" for the current room. Optionally, the function can
 // take a value from the player's notepad instead of from the command line (this
 // is useful for if you need to write long lengths of formatted text).
-//
 COMMAND(cmd_set) {
   char name [SMALL_BUFFER];
   char field[SMALL_BUFFER];
-  arg = two_args(arg, name, field);
+  const char *val = two_args(arg, name, field);
 
   // check to see if we're trying to set from our notepad. Also, make sure
   // we have a socket and CAN access our notepad.
-  /*
   if(subcmd == SET_SUBCMD_SETPAD) {
-    if(charGetSocket(ch) && *socketGetNotepadPtr(charGetSocket(ch)) != NULL)
-      arg = *socketGetNotepadPtr(charGetSocket(ch));
+    if(charGetSocket(ch) && *socketGetNotepad(charGetSocket(ch)))
+      val = socketGetNotepad(charGetSocket(ch));
     else {
       send_to_char(ch, "Your notepad currently has no contents.\r\n");
       return;
     }
   }
-  */
-  if(!*arg || !*name || !*field)
+
+  if(!*val || !*name || !*field)
     send_to_char(ch, "Set which value on what?\r\n");
   // are we trying to set a field on a room?
   else if(!strcasecmp("room", name)) {
@@ -141,13 +144,13 @@ COMMAND(cmd_set) {
 		    ch))
       send_to_char(ch, "You are not authorized to edit this zone.\r\n");
     else
-      try_set(ch, charGetRoom(ch), room_set_table, field, arg);
+      try_set(ch, charGetRoom(ch), room_set_table, field, val);
   }
   else if(isdigit(*name) && worldGetRoom(gameworld, atoi(name))) {
     if(!canEditZone(worldZoneBounding(gameworld, atoi(name)), ch))
       send_to_char(ch, "You are not authorized to edit this zone.\r\n");
     else
-      try_set(ch, worldGetRoom(gameworld, atoi(name)),room_set_table,field,arg);
+      try_set(ch, worldGetRoom(gameworld, atoi(name)),room_set_table,field,val);
   }
   else {
     int found = FOUND_NONE;
@@ -160,10 +163,10 @@ COMMAND(cmd_set) {
 	send_to_char(ch, "Sorry, %s is too high a level!\r\n", 
 		     see_char_as(ch, tgt));
       else
-	try_set(ch, tgt, char_set_table, field, arg);
+	try_set(ch, tgt, char_set_table, field, val);
     }
     else if(found == FOUND_OBJ)
-      try_set(ch, tgt, obj_set_table, field, arg);
+      try_set(ch, tgt, obj_set_table, field, val);
     else
       send_to_char(ch, "What was the target you were trying to modify?\r\n");
   }

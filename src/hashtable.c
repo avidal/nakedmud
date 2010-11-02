@@ -38,19 +38,17 @@ struct hashtable {
 // this is a fairly simple hashing function. It could do 
 // with some major speeding up.
 int hash(const char *key) {
-  int i;
   const int BASE = 2;
   int base = 1;
-  int len = strlen(key);
   int hvalue = 0;
 
-  for (i = 0; i < len; i++) {
+  for (; *key; key++) {
     base *= BASE;
-    hvalue += tolower(key[i]) * base;
+    hvalue += tolower(*key) * base;
   }
 
   return (hvalue < 0 ? hvalue * -1 : hvalue);
-};
+}
 
 
 //
@@ -156,8 +154,7 @@ void hashExpand(HASHTABLE *table, int size) {
   free(table->buckets);
 
   // now, make new buckets and set them to NULL
-  table->buckets = malloc(sizeof(LIST *) * size);
-  bzero(table->buckets, sizeof(LIST *) * size);
+  table->buckets = calloc(size, sizeof(LIST *));
   table->num_buckets = size;
 
   // now, we put all of our entries back into the new buckets

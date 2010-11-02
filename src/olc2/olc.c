@@ -236,6 +236,7 @@ void init_olc2() {
   extern COMMAND(cmd_dedit);
   extern COMMAND(cmd_medit);
   extern COMMAND(cmd_oedit);
+  extern COMMAND(cmd_accedit);
   add_cmd("zedit", NULL, cmd_zedit, 0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, TRUE);
   add_cmd("redit", NULL, cmd_redit, 0, POS_UNCONCIOUS, POS_FLYING,
@@ -246,6 +247,8 @@ void init_olc2() {
 	  LEVEL_BUILDER, FALSE, TRUE);
   add_cmd("oedit", NULL, cmd_oedit, 0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, TRUE);
+  add_cmd("accedit", NULL, cmd_accedit, 0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_ADMIN,   FALSE, TRUE);
 }
 
 void do_olc(SOCKET_DATA *sock,
