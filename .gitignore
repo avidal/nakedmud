@@ -9,3 +9,4 @@
 .gdb_history
 .DS_Store
 log/*
+src/NakedMud
