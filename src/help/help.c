@@ -39,18 +39,22 @@ typedef struct help_data {
   char *info;       // the information in the helpfile
   char *editor;     // who edited the helpfile?
   char *timestamp;  // when was it last edited?
+  // user_group is currently unused
+  char *user_group; // the user group the helpfile belongs to, if any
   LIST *backups;    // a chronologically sorted list of backup helps
 } HELP_DATA;
 
 
-HELP_DATA *newHelp(const char *editor, const char *timestamp,
-		   const char *keywords, const char *info) {
-  HELP_DATA *data = malloc(sizeof(HELP_DATA));
-  data->keywords  = strdupsafe(keywords);
-  data->editor    = strdupsafe(editor);
-  data->info      = strdupsafe(info);
-  data->timestamp = strdupsafe(timestamp);
-  data->backups   = newList();
+HELP_DATA *newHelp(const char *editor, const char *timestamp, 
+		   const char *keywords, const char *user_group, 
+		   const char *info) {
+  HELP_DATA *data   = malloc(sizeof(HELP_DATA));
+  data->keywords    = strdupsafe(keywords);
+  data->editor      = strdupsafe(editor);
+  data->info        = strdupsafe(info);
+  data->timestamp   = strdupsafe(timestamp);
+  data->user_group  = strdupsafe(user_group);
+  data->backups     = newList();
   return data;
 }
 
@@ -59,6 +63,7 @@ void deleteHelp(HELP_DATA *data) {
   if(data->keywords)  free(data->keywords);
   if(data->editor)    free(data->editor);
   if(data->timestamp) free(data->timestamp);
+  if(data->user_group)free(data->user_group);
   if(data->info)      free(data->info);
   free(data);
 }
@@ -67,6 +72,7 @@ HELP_DATA *helpRead(STORAGE_SET *set) {
   HELP_DATA *data = newHelp(read_string(set, "editor"),
 			    read_string(set, "timestamp"),
 			    read_string(set, "keywords"),
+			    read_string(set, "user_group"),
 			    read_string(set, "info"));
   deleteList(data->backups);
   data->backups = gen_read_list(read_list(set, "backups"), helpRead);
@@ -78,6 +84,7 @@ STORAGE_SET *helpStore(HELP_DATA *help) {
   store_string(set, "keywords",  help->keywords);
   store_string(set, "editor",    help->editor);
   store_string(set, "timestamp", help->timestamp);
+  store_string(set, "user_group",help->user_group);
   store_string(set, "info",      help->info);
   store_list  (set, "backups",   gen_store_list(help->backups, helpStore));
   return set;
@@ -238,6 +245,15 @@ LIST *help_matches(const char *keyword) {
 //   help <topic>
 //
 COMMAND(cmd_help) {
+  // make sure we can view it, first
+  HELP_DATA *help = get_help_data(arg, TRUE);
+  if(help != NULL && *help->user_group) {
+    if(!bitIsSet(charGetUserGroups(ch), help->user_group)) {
+      send_to_char(ch, "You may not view that help file.\r\n");
+      return;
+    }
+  }
+
   BUFFER *buf = build_help(arg);
   if(buf == NULL)
     send_to_char(ch, "No help exists on that topic.\r\n");
@@ -486,7 +502,7 @@ void update_help(const char *editor, const char *keyword, const char *info) {
 
   if(data != NULL) {
     HELP_DATA *help_old = newHelp(data->editor, data->timestamp, data->keywords,
-				  data->info);
+				  "", data->info);
     if(data->editor)    free(data->editor);
     if(data->timestamp) free(data->timestamp);
     if(data->info)      free(data->info);
@@ -498,7 +514,7 @@ void update_help(const char *editor, const char *keyword, const char *info) {
     listPut(data->backups, help_old);
   }
   else
-    add_help(newHelp(editor, get_time(), keyword, info));
+    add_help(newHelp(editor, get_time(), keyword, "", info));
 
   save_help();
 }

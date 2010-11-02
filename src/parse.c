@@ -15,6 +15,10 @@
 #include "inform.h"
 #include "parse.h"
 
+// mandatory modules
+#include "scripts/scripts.h"
+#include "scripts/pyexit.h"
+
 
 
 //*****************************************************************************
@@ -36,7 +40,11 @@
 #define PARSE_VAR_BOOL         0
 #define PARSE_VAR_INT          1
 #define PARSE_VAR_DOUBLE       2
-#define PARSE_VAR_POINTER      4
+#define PARSE_VAR_CHAR         4
+#define PARSE_VAR_OBJ          5
+#define PARSE_VAR_ROOM         6
+#define PARSE_VAR_EXIT         7
+#define PARSE_VAR_STRING       8
 
 
 
@@ -575,7 +583,7 @@ PARSE_VAR *use_one_parse_token_char(CHAR_DATA *looker, PARSE_TOKEN *tok,
   if(found == NULL)
     return NULL;
   else {
-    PARSE_VAR *var = newParseVar(PARSE_VAR_POINTER);
+    PARSE_VAR *var = newParseVar(PARSE_VAR_CHAR);
 
     // if multiple vals were possible, flag it
     var->multiple_possible = tok->all_ok;
@@ -632,7 +640,7 @@ PARSE_VAR *use_one_parse_token_obj(CHAR_DATA *looker, PARSE_TOKEN *tok,
   if(found == NULL)
     return NULL;
   else {
-    PARSE_VAR *var = newParseVar(PARSE_VAR_POINTER);
+    PARSE_VAR *var = newParseVar(PARSE_VAR_OBJ);
 
     // if multiple vals were possible, flag it
     var->multiple_possible = tok->all_ok;
@@ -682,7 +690,7 @@ PARSE_VAR *use_one_parse_token_exit(CHAR_DATA *looker, PARSE_TOKEN *tok,
   if(found == NULL)
     return NULL;
   else {
-    PARSE_VAR *var = newParseVar(PARSE_VAR_POINTER);
+    PARSE_VAR *var = newParseVar(PARSE_VAR_EXIT);
 
     // if multiple vals were possible, flag it
     var->multiple_possible = tok->all_ok;
@@ -731,7 +739,7 @@ PARSE_VAR *use_one_parse_token_room(CHAR_DATA *looker, PARSE_TOKEN *tok,
   if(room == NULL)
     return NULL;
   else {
-    PARSE_VAR *var = newParseVar(PARSE_VAR_POINTER);
+    PARSE_VAR *var = newParseVar(PARSE_VAR_ROOM);
     var->ptr_val   = room;
     return var;
   }
@@ -885,7 +893,7 @@ PARSE_VAR *use_one_parse_token(CHAR_DATA *looker, PARSE_TOKEN *tok,
 
     // parse out a single word
   case PARSE_TOKEN_WORD: {
-    var = newParseVar(PARSE_VAR_POINTER);
+    var = newParseVar(PARSE_VAR_STRING);
     var->ptr_val    = arg;
     bool multi_word = FALSE;
 
@@ -909,7 +917,7 @@ PARSE_VAR *use_one_parse_token(CHAR_DATA *looker, PARSE_TOKEN *tok,
 
     // copies whatever is left
   case PARSE_TOKEN_STRING:
-    var = newParseVar(PARSE_VAR_POINTER);
+    var = newParseVar(PARSE_VAR_STRING);
     var->ptr_val = arg;
     // skip up the place of the arg...
     while(*arg != '\0')
@@ -1083,7 +1091,11 @@ void parse_assign_vars(LIST *variables, va_list vargs) {
     case PARSE_VAR_DOUBLE:
       *va_arg(vargs, double *) = one_var->dbl_val;
       break;
-    case PARSE_VAR_POINTER:
+    case PARSE_VAR_STRING:
+    case PARSE_VAR_OBJ:
+    case PARSE_VAR_CHAR:
+    case PARSE_VAR_EXIT:
+    case PARSE_VAR_ROOM:
       *va_arg(vargs, void **) = one_var->ptr_val;
       break;
     // this should never happen...
@@ -1102,10 +1114,171 @@ void parse_assign_vars(LIST *variables, va_list vargs) {
 }
 
 
+//
+// Goes through the list of variables and make a python list with them
+PyObject *parse_create_py_vars(LIST *variables) {
+  LIST_ITERATOR *var_i = newListIterator(variables);
+  PARSE_VAR   *one_var = NULL;
+  PyObject       *list = PyList_New(0);
+  PyObject      *pyval = NULL;
+
+  // go through each variable and assign to vargs as needed
+  ITERATE_LIST(one_var, var_i) {
+    // first, do our basic type
+    switch(one_var->type) {
+    case PARSE_VAR_BOOL:
+      pyval = Py_BuildValue("b", one_var->bool_val);
+      PyList_Append(list, pyval);
+      Py_DECREF(pyval);
+      break;
+    case PARSE_VAR_INT:
+      pyval = Py_BuildValue("i", one_var->int_val);
+      PyList_Append(list, pyval);
+      Py_DECREF(pyval);
+      break;
+    case PARSE_VAR_DOUBLE:
+      pyval = Py_BuildValue("f", one_var->dbl_val);
+      PyList_Append(list, pyval);
+      Py_DECREF(pyval);
+      break;
+    case PARSE_VAR_STRING:
+      pyval = Py_BuildValue("s", one_var->ptr_val);
+      PyList_Append(list, pyval);
+      Py_DECREF(pyval);
+      break;
+    case PARSE_VAR_OBJ:
+      if(one_var->multiple == FALSE)
+	PyList_Append(list, objGetPyFormBorrowed(one_var->ptr_val));
+      else {
+	pyval = PyList_fromList(one_var->ptr_val, objGetPyForm);
+	PyList_Append(list, pyval);
+	Py_DECREF(pyval);
+      }
+      break;
+    case PARSE_VAR_CHAR:
+      if(one_var->multiple == FALSE)
+	PyList_Append(list, charGetPyFormBorrowed(one_var->ptr_val));
+      else {
+	pyval = PyList_fromList(one_var->ptr_val, charGetPyForm);
+	PyList_Append(list, pyval);
+	Py_DECREF(pyval);
+      }
+      break;
+    case PARSE_VAR_EXIT:
+      pyval = newPyExit(one_var->ptr_val);
+      PyList_Append(list, pyval);
+      Py_DECREF(pyval);
+      break;
+    case PARSE_VAR_ROOM:
+      PyList_Append(list, roomGetPyFormBorrowed(one_var->ptr_val));
+      break;
+    // this should never happen...
+    default:
+      break;
+    }
+    
+    // now see if we have a multi_type
+    if(one_var->disambiguated_type != PARSE_NONE) {
+      pyval = 
+	Py_BuildValue("s", (one_var->disambiguated_type==PARSE_CHAR?"char":
+			    (one_var->disambiguated_type==PARSE_ROOM?"room":
+			     (one_var->disambiguated_type==PARSE_OBJ?"obj":
+			      (one_var->disambiguated_type==PARSE_EXIT?"exit":
+			       NULL)))));
+      PyList_Append(list, pyval);
+      Py_DECREF(pyval);
+    }
+
+    // and if we parsed multiple occurences
+    if(one_var->multiple_possible == TRUE) {
+      pyval = Py_BuildValue("b", one_var->multiple);
+      PyList_Append(list, pyval);
+      Py_DECREF(pyval);
+    }
+  } deleteListIterator(var_i);
+
+  return list;
+}
+
+
 
 //*****************************************************************************
 // implementation of parse.h
 //*****************************************************************************
+int parse_expected_py_args(const char *syntax) {
+  LIST *tokens = NULL;
+  if((tokens = decompose_parse_format(syntax)) == NULL)
+    return -1;
+  int count = 0;
+  LIST_ITERATOR *token_i = newListIterator(tokens);
+  PARSE_TOKEN     *token = NULL;
+  ITERATE_LIST(token, token_i) {
+    if(token->type == PARSE_TOKEN_FLAVOR || token->type == PARSE_TOKEN_OPTIONAL)
+      continue;
+
+    // one for a returnable type
+    count++;
+
+    // one to denote what kind in an ambiguous case
+    if(token->type == PARSE_TOKEN_MULTI)
+      count++;
+
+    // one to denote if we had multiples
+    if(token->all_ok)
+      count++;
+  } deleteListIterator(token_i);
+  deleteListWith(tokens, deleteParseToken);
+
+  return count;
+}
+
+void *Py_parse_args(CHAR_DATA *looker, bool show_errors, const char *cmd, 
+		    char *args, const char *syntax) {
+  char err_buf[SMALL_BUFFER] = "";
+  bool       parse_ok = TRUE;
+  LIST        *tokens = NULL;
+  LIST     *variables = NULL;
+  PyObject      *list = NULL;
+
+  // get our list of tokens
+  if((tokens = decompose_parse_format(syntax)) == NULL) {
+    log_string("Command '%s', format error in argument parsing: %s",cmd,syntax);
+    parse_ok = FALSE;
+  }
+  // try to use our tokens to compose a variable list
+  else if((variables = compose_variable_list(looker, tokens, args, err_buf))
+	  == NULL)
+    parse_ok = FALSE;
+  else {
+    // go through all of our vars and make python forms for them
+    list = parse_create_py_vars(variables);
+
+    // fill up optional spots at the end we didn't parse args for
+    int expected = parse_expected_py_args(syntax);
+    while(PyList_Size(list) < expected)
+      PyList_Append(list, Py_None);
+  }
+
+  // did we encounter an error with the arguments and need to mssg someone?
+  if(tokens != NULL && !parse_ok && show_errors) {
+    // do we have a specific error message?
+    if(*err_buf)
+      send_to_char(looker, "%s\r\n", err_buf);
+    // assume a syntax error
+    else
+      show_parse_syntax_error(looker, cmd, tokens);
+  }
+
+  // clean up our mess
+  if(tokens != NULL)
+    deleteListWith(tokens, deleteParseToken);
+  if(variables != NULL)
+    deleteListWith(variables, deleteParseVar);
+
+  // return our parse status
+  return list;
+}
+
 bool parse_args(CHAR_DATA *looker, bool show_errors, const char *cmd,
 		char *args, const char *syntax, ...) {
   char err_buf[SMALL_BUFFER] = "";

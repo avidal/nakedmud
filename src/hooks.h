@@ -21,46 +21,19 @@
 //*****************************************************************************
 
 //
+// random character we use for denoting the beginning/end of a string
+#define HOOK_STR_MARKER '\033'
+
+//
 // prepare hooks for use
 void init_hooks(void);
 
-//
-// creates a "middle-man" between hooks and the variables passed in when 
-// hookRun is called. The supplied function should take a LIST of hooks to
-// be run, and a VA_LIST of arguments. It should parse the arguments out of
-// VA_LIST and call each hook in the LIST with the arguments found in VA_LIST.
-void hook_add_handler(const char *type, 
-		      void(* handler)(LIST *hooks, va_list args));
-
-//
-// some handlers for use by outside modules not wanting to write their own hook
-// handlers. Each assumes a specific number of (void *) pointer arguments, and
-// no return value. If you want to support arguments of other sizes (like ints,
-// bools, etc) or would like your hooks to be able to return values, you will
-// have to write your own handler.
-void hook_handler_0_args(LIST *hooks, va_list args);
-void  hook_handler_1_arg(LIST *hooks, va_list args);
-void hook_handler_2_args(LIST *hooks, va_list args);
-void hook_handler_3_args(LIST *hooks, va_list args);
-void hook_handler_4_args(LIST *hooks, va_list args);
-void hook_handler_5_args(LIST *hooks, va_list args);
-void hook_handler_6_args(LIST *hooks, va_list args);
-
-//
-// This function attaches a hook to the game. It will run whenever a signal is
-// sent that a hook of "type" should run. A hook is a function. The number and
-// types of arguments that the function should take, as well as the type of 
-// return value the hook should supply depends on the type of hook it's added as
-void hookAdd(const char *type, void *hook);
-
-//
-// executes all of the hooks of the given type, with the given arguments. This
-// is sort of a sloppy way to provide hooks with arguments, but it's the best
-// I've come up with so far.
-void hookRun(const char *type, ...);
-
-//
-// remove the given hook
-void hookRemove(const char *type, void *hook);
+void hookRun(const char *type, const char *info);
+void hookAdd(const char *type, void (* func)(const char *));
+void hookAddMonitor(void (* func)(const char *, const char *));
+void hookRemove(const char *type, void (* func)(const char *));
+void hookParseInfo(const char *info, ...);
+const char *hookBuildInfo(const char *format, ...);
+LIST *parse_hook_info_tokens(const char *info);
 
 #endif // HOOKS_H

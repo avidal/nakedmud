@@ -1114,7 +1114,7 @@ void  start_reader(SOCKET_DATA *dsock, const char *text) {
 }
 
 
-void do_copyover(CHAR_DATA *ch) {
+void do_copyover(void) {
   LIST_ITERATOR *sock_i = newListIterator(socket_list);
   SOCKET_DATA     *sock = NULL;
   FILE *fp;
@@ -1122,15 +1122,10 @@ void do_copyover(CHAR_DATA *ch) {
   char control_buf[20];
   char port_buf[20];
 
-  if ((fp = fopen(COPYOVER_FILE, "w+")) == NULL) {
-    text_to_char(ch, "Copyover file not writeable, aborted.\n\r");
+  if ((fp = fopen(COPYOVER_FILE, "w+")) == NULL)
     return;
-  }
 
   sprintf(buf, "\n\r <*>            The world starts spinning             <*>\n\r");
-
-  // execute our shutdown hooks
-  hookRun("shutdown");
 
   // For each playing descriptor, save its character and account
   ITERATE_LIST(sock, sock_i) {
@@ -1158,13 +1153,15 @@ void do_copyover(CHAR_DATA *ch) {
   // close any pending sockets
   recycle_sockets();
 
+#ifdef MODULE_WEBSERVER
+  // if we have a webserver set up, finalize that
+  finalize_webserver();
+#endif
+  
   // exec - descriptors are inherited
   sprintf(control_buf, "%d", control);
   sprintf(port_buf, "%d", mudport);
   execl(EXE_FILE, "NakedMud", "-copyover", control_buf, port_buf, NULL);
-
-  // Failed - sucessful exec will not return
-  text_to_char(ch, "Copyover FAILED!\n\r");
 }
 
 

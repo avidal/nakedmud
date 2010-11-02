@@ -31,6 +31,8 @@
 #include "pyexit.h"
 #include "pyobj.h"
 #include "pymud.h"
+#include "pymudsys.h"
+#include "pyhooks.h"
 #include "pyevent.h"
 #include "pystorage.h"
 #include "pyauxiliary.h"
@@ -125,45 +127,65 @@ int script_loop_depth   = 0;
 // a local variable used for storing whether or not the last script ran fine
 bool script_ok = TRUE;
 
-void expand_char_dynamic_descs(BUFFER *desc, CHAR_DATA *me, CHAR_DATA *ch) {
+void expand_char_dynamic_descs(const char *info) {
+  CHAR_DATA *me = NULL;
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &me, &ch);
+
   // if we're an NPC, do some special work for displaying us. We don't do 
   // dynamic descs for PCs because they will probably be describing themselves,
   // and we don't want to give them access to the scripting language.
   if(charIsNPC(me)) {
     PyObject *pyme = charGetPyForm(me);
     char   *locale = strdup(get_key_locale(charGetClass(me))); 
-    expand_dynamic_descs(desc, pyme, ch, locale);
+    expand_dynamic_descs(charGetLookBuffer(ch), pyme, ch, locale);
     Py_DECREF(pyme);
     free(locale);
   }
 }
 
-void  expand_obj_dynamic_descs(BUFFER *desc, OBJ_DATA *me, CHAR_DATA *ch) {
+void  expand_obj_dynamic_descs(const char *info) {
+  OBJ_DATA  *me = NULL;
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &me, &ch);
+
   PyObject *pyme = objGetPyForm(me);
   char   *locale = strdup(get_key_locale(objGetClass(me))); 
-  expand_dynamic_descs(desc, pyme, ch, locale);
+  expand_dynamic_descs(charGetLookBuffer(ch), pyme, ch, locale);
   Py_DECREF(pyme);
   free(locale);
 }
 
-void expand_room_dynamic_descs(BUFFER *desc, ROOM_DATA *me, CHAR_DATA *ch) {
+void expand_room_dynamic_descs(const char *info) {
+  ROOM_DATA *me = NULL;
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &me, &ch);
+
   PyObject *pyme = roomGetPyForm(me);
   char   *locale = strdup(get_key_locale(roomGetClass(me))); 
-  expand_dynamic_descs(desc, pyme, ch, locale);
+  expand_dynamic_descs(charGetLookBuffer(ch), pyme, ch, locale);
   Py_DECREF(pyme);
   free(locale);
 }
 
-void expand_exit_dynamic_descs(BUFFER *desc, EXIT_DATA *me, CHAR_DATA *ch) {
+void expand_exit_dynamic_descs(const char *info) {
+  EXIT_DATA *me = NULL;
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &me, &ch);
+
   PyObject *pyme = newPyExit(me);
   char   *locale = strdup(get_key_locale(roomGetClass(exitGetRoom(me)))); 
-  expand_dynamic_descs(desc, pyme, ch, locale);
+  expand_dynamic_descs(charGetLookBuffer(ch), pyme, ch, locale);
   Py_DECREF(pyme);
   free(locale);
 }
 
 void finalize_scripts(void) {
   Py_Finalize();
+}
+
+void finalize_scripts_hook(const char *info) {
+  finalize_scripts();
 }
 
 
@@ -312,6 +334,7 @@ void init_scripts(void) {
   Py_Initialize();
 
   // initialize all of our modules written in C
+  init_PyMudSys();
   init_PyAuxiliary();
   init_PyEvent();
   init_PyStorage();
@@ -320,6 +343,7 @@ void init_scripts(void) {
   init_PyExit();
   init_PyObj();
   init_PyMud();
+  init_PyHooks();
 
   // initialize all of our modules written in Python
   init_pyplugs();
@@ -345,7 +369,7 @@ void init_scripts(void) {
   hookAdd("preprocess_char_desc", expand_char_dynamic_descs);
   hookAdd("preprocess_obj_desc",  expand_obj_dynamic_descs);
   hookAdd("preprocess_exit_desc", expand_exit_dynamic_descs);
-  hookAdd("shutdown",             finalize_scripts);
+  hookAdd("shutdown", finalize_scripts_hook);
 
   /*
   // add new player commands
@@ -769,6 +793,19 @@ PyObject *roomGetPyForm(ROOM_DATA *room) {
   PyObject *pyform = roomGetPyFormBorrowed(room);
   Py_INCREF(pyform);
   return pyform;
+}
+
+PyObject *PyList_fromList(LIST *list, void *convertor) {
+  PyObject *pylist = PyList_New(0);
+  PyObject *(*conv_func)(void *) = convertor; 
+  LIST_ITERATOR *list_i = newListIterator(list);
+  void            *elem = NULL;
+  ITERATE_LIST(elem, list_i) {
+    PyObject *pyelem = conv_func(elem);
+    PyList_Append(pylist, pyelem);
+    Py_DECREF(pyelem);
+  } deleteListIterator(list_i);
+  return pylist;
 }
 
 void triggerListAdd(LIST *list, const char *trigger) {

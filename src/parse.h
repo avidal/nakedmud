@@ -113,4 +113,9 @@
 bool parse_args(CHAR_DATA *looker, bool show_errors, const char *cmd, 
 		char *args, const char *syntax, ...);
 
+//
+// the same as above, but returns a Python list version of the arguments
+void *Py_parse_args(CHAR_DATA *looker, bool show_errors, const char *cmd, 
+		    char *args, const char *syntax);
+
 #endif // PARSE_H

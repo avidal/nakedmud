@@ -275,15 +275,20 @@ int PyObj_setfurntype(PyObject *self, PyObject *value, void *closure) {
 //*****************************************************************************
 // hooks
 //*****************************************************************************
-void furniture_append_hook(BUFFER *buf, OBJ_DATA *obj, CHAR_DATA *ch) {
+void furniture_append_hook(const char *info) {
+  OBJ_DATA *obj = NULL;
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &obj, &ch);
+
   if(objIsType(obj, "furniture")) {
     int num_sitters = listSize(objGetUsers(obj));
 
     // print out how much room there is left on the furniture
     int seats_left = (furnitureGetCapacity(obj) - num_sitters);
     if(seats_left > 0)
-      bprintf(buf, " It looks like it could fit %d more %s.\r\n",
-		   seats_left, (seats_left == 1 ? "person" : "people"));
+      bprintf(charGetLookBuffer(ch), 
+	      " It looks like it could fit %d more %s.\r\n",
+	      seats_left, (seats_left == 1 ? "person" : "people"));
 
     // print character names
     if(num_sitters > 0) {
@@ -291,7 +296,7 @@ void furniture_append_hook(BUFFER *buf, OBJ_DATA *obj, CHAR_DATA *ch) {
       listRemove(can_see, ch);
 
       char *chars = print_list(can_see, charGetName, charGetMultiName);
-      if(*chars) bprintf(buf, "%s %s %s %s%s.\r\n",
+      if(*chars) bprintf(charGetLookBuffer(ch), "%s %s %s %s%s.\r\n",
 			 chars, (listSize(can_see) == 1 ? "is" : "are"),
 			 (furnitureGetType(obj) == FURNITURE_AT ? "at":"on"),
 			 see_obj_as(ch, obj),

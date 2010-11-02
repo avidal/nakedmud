@@ -124,7 +124,7 @@ void zonePulse(ZONE_DATA *zone) {
   zone->pulse--;
   if(zone->pulse == 0) {
     zone->pulse = zone->pulse_timer;
-    hookRun("reset", zone);
+    hookRun("reset", hookBuildInfo("str", zoneGetKey(zone)));
   }
 }
 

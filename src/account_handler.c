@@ -191,7 +191,8 @@ void account_verify_password(SOCKET_DATA *sock, char *arg) {
     // is already created, we're just editing the password. So save changes.
     if(!account_exists(accountGetName(socketGetAccount(sock)))) {
       // run hooks for creating our account for the first time
-      hookRun("create_account", socketGetAccount(sock));
+      hookRun("create_account", 
+	      hookBuildInfo("str", accountGetName(socketGetAccount(sock))));
       register_account(socketGetAccount(sock));
     }
     else
@@ -261,7 +262,7 @@ void account_load_char(SOCKET_DATA *sock, int ch_num) {
 	look_at_room(ch, charGetRoom(ch));
 
 	// run entrance hooks
-	hookRun("enter", ch, charGetRoom(ch));
+	hookRun("enter", hookBuildInfo("ch rm", ch, charGetRoom(ch)));
       }
       else {
 	text_to_buffer(sock, "There was a problem entering the game. Try again later!\r\n");

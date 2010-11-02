@@ -96,6 +96,24 @@ void run_event(EVENT_DATA *event) {
     event->on_complete(event->owner, event->data, event->arg);
 }
 
+void interrupt_events_obj_hook(const char *info) {
+  OBJ_DATA *obj = NULL;
+  hookParseInfo(info, &obj);
+  interrupt_events_involving(obj);
+}
+
+void interrupt_events_char_hook(const char *info) {
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &ch);
+  interrupt_events_involving(ch);
+}
+
+void interrupt_events_room_hook(const char *info) {
+  ROOM_DATA *room = NULL;
+  hookParseInfo(info, &room);
+  interrupt_events_involving(room);
+}
+
 
 
 //*****************************************************************************
@@ -110,9 +128,9 @@ void init_events() {
 
   // make sure all events involving the object/char are cancelled when
   // either is extracted from the game
-  hookAdd("obj_from_game",  interrupt_events_involving);
-  hookAdd("char_from_game", interrupt_events_involving);
-  hookAdd("room_from_game", interrupt_events_involving);
+  hookAdd("obj_from_game",  interrupt_events_obj_hook);
+  hookAdd("char_from_game", interrupt_events_char_hook);
+  hookAdd("room_from_game", interrupt_events_room_hook);
 }
 
 void interrupt_event(EVENT_DATA *event) {

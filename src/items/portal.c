@@ -15,7 +15,6 @@
 #include "../socket.h"
 #include "../room.h"
 #include "../world.h"
-#include "../movement.h"
 #include "../inform.h"
 #include "../handler.h"
 #include "../hooks.h"
@@ -138,41 +137,34 @@ void portalSetEnterMssg(OBJ_DATA *obj, const char *mssg) {
 //   examples:
 //     enter portal         enter the thing called "portal" in your room
 COMMAND(cmd_enter) {
-  void    *found = NULL;
-  int found_type = PARSE_NONE;
+  void *obj = NULL;
 
-  if(!parse_args(ch, TRUE, cmd, arg, "{ obj.room exit }", &found, &found_type))
+  if(!parse_args(ch, TRUE, cmd, arg, "obj.room", &obj))
     return;
 
-  // we're trying to enter an exit
-  if(found_type == PARSE_EXIT)
-    try_move_mssg(ch, roomGetExitDir(charGetRoom(ch), found));
-
   // we're trying to enter a portal
+  if(!objIsType(obj, "portal"))
+    send_to_char(ch, "You cannot seem to find an enterance.\r\n");
   else {
-    if(!objIsType(found, "portal"))
-      send_to_char(ch, "You cannot seem to find an enterance.\r\n");
+    ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(obj));
+    if(dest == NULL)
+      send_to_char(ch, "There is nothing on the other side...\r\n");
     else {
-      ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(found));
-      if(dest == NULL)
-	send_to_char(ch, "There is nothing on the other side...\r\n");
-      else {
-	if(*portalGetLeaveMssg(found))
-	  message(ch, NULL, found,NULL,TRUE,TO_ROOM, portalGetLeaveMssg(found));
-	else
-	  message(ch, NULL, found, NULL, TRUE, TO_ROOM, "$n steps into $o.");
-
-	// transfer our character and look
-	char_from_room(ch);
-	char_to_room(ch, dest);
-	look_at_room(ch, dest);
-
-	if(*portalGetEnterMssg(found))
-	  message(ch, NULL, found,NULL,TRUE,TO_ROOM, portalGetEnterMssg(found));
-	else
-	  message(ch, NULL, found, NULL, TRUE, TO_ROOM,
-		  "$n arrives after travelling through $o.");
-      }
+      if(*portalGetLeaveMssg(obj))
+	message(ch, NULL, obj,NULL,TRUE,TO_ROOM, portalGetLeaveMssg(obj));
+      else
+	message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n steps into $o.");
+      
+      // transfer our character and look
+      char_from_room(ch);
+      char_to_room(ch, dest);
+      look_at_room(ch, dest);
+      
+      if(*portalGetEnterMssg(obj))
+	message(ch, NULL, obj,NULL,TRUE,TO_ROOM, portalGetEnterMssg(obj));
+      else
+	message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
+		"$n arrives after travelling through $o.");
     }
   }
 }
@@ -390,7 +382,11 @@ int PyObj_setportalentermssg(PyObject *self, PyObject *value, void *closure) {
 //*****************************************************************************
 // add our hookds
 //*****************************************************************************
-void portal_look_hook(OBJ_DATA *obj, CHAR_DATA *ch) {
+void portal_look_hook(const char *info) {
+  OBJ_DATA *obj = NULL;
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &obj, &ch);
+
   if(objIsType(obj, "portal")) {
     ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(obj));
     if(dest != NULL) {

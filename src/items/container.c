@@ -10,6 +10,7 @@
 #include "../mud.h"
 #include "../storage.h"
 #include "../object.h"
+#include "../character.h"
 #include "../world.h"
 #include "../socket.h"
 #include "../utils.h"
@@ -499,14 +500,23 @@ void container_to_proto(CONTAINER_DATA *data, BUFFER *buf) {
 //*****************************************************************************
 // hooks
 //*****************************************************************************
-void container_append_hook(BUFFER *desc, OBJ_DATA *obj, CHAR_DATA *ch) {
+void container_append_hook(const char *info) {
+  OBJ_DATA *obj = NULL;
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &obj, &ch);
+
   if(objIsType(obj, "container")) {
-    bprintf(desc, " It is %s%s.", (containerIsClosed(obj) ? "closed":"open"),
+    bprintf(charGetLookBuffer(ch), " It is %s%s.", 
+	    (containerIsClosed(obj) ? "closed":"open"),
 	    (containerIsLocked(obj) ? " and locked" : ""));
   }
 }
 
-void container_look_hook(OBJ_DATA *obj, CHAR_DATA *ch) {
+void container_look_hook(const char *info) {
+  OBJ_DATA *obj = NULL;
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &obj, &ch);
+
   if(objIsType(obj, "container") && !containerIsClosed(obj)) {
     LIST *vis_contents = find_all_objs(ch, objGetContents(obj), "", 
 				       NULL, TRUE);

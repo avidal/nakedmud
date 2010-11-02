@@ -1320,6 +1320,283 @@ COMMAND(cmd_resedit) {
 }
 
 
+COMMAND(cmd_dig) {
+  ROOM_DATA      *dest = NULL;
+  char     *parsed_dir = NULL;
+  char *parsed_ret_dir = NULL;
+  char        *ret_dir = NULL;
+  char            *dir = NULL;
+  
+  // parse our arguments
+  if(!parse_args(ch, TRUE, cmd, arg, "room word | word",
+		 &dest, &parsed_dir, &parsed_ret_dir))
+    return;
+
+  // figure out our direction
+  if(dirGetAbbrevNum(parsed_dir) != DIR_NONE)
+    dir = strdup(dirGetName(dirGetAbbrevNum(parsed_dir)));
+  // special exit
+  else
+    dir = strdup(parsed_dir);
+
+  // figure out our return direction. First case == special exit
+  if(parsed_ret_dir != NULL)
+    ret_dir = strdup(parsed_ret_dir);
+  else if(dirGetNum(dir) != DIR_NONE)
+    ret_dir = strdup(dirGetName(dirGetOpposite(dirGetNum(dir))));
+  else if(dirGetAbbrevNum(dir) != DIR_NONE)
+    ret_dir = strdup(dirGetName(dirGetOpposite(dirGetAbbrevNum(dir))));
+
+  // make sure we have a return direction
+  if(ret_dir == NULL)
+    send_to_char(ch, "A return direction for the dig could not be found.\r\n");
+
+  // make sure we don't have an exit in the specified direction
+  else if(roomGetExit(charGetRoom(ch), dir) != NULL)
+    send_to_char(ch, "An exit already exists %s -- fill it first!\r\n",
+		 dir);
+
+  // make sure we don't have an exit in the return direction
+  else if(roomGetExit(dest, ret_dir) != NULL)
+    send_to_char(ch, "An exit already exists in the return direction -- fill it first!\r\n");
+
+  // make sure we have edit priviledges
+  else if(!canEditZone(worldGetZone(gameworld, get_key_locale(roomGetClass(charGetRoom(ch)))), ch))
+    send_to_char(ch, "You are not authorized to edit this zone.\r\n");
+
+  // make sure we have edit priviledges for the destination
+  else if(!canEditZone(worldGetZone(gameworld, get_key_locale(roomGetClass(dest))), ch))
+    send_to_char(ch,"You are not authorized to edit the destination zone.\r\n");
+
+  // do the digging
+  else {
+    // get the prototype for our current room and destination
+    PROTO_DATA  *proto_here = 
+      worldGetType(gameworld, "rproto", roomGetClass(charGetRoom(ch)));
+    PROTO_DATA *proto_there = 
+      worldGetType(gameworld, "rproto", roomGetClass(dest));
+
+    // parse a ROOM_OLC out of them both
+    ROOM_OLC  *olc_here = roomOLCFromProto(proto_here);
+    ROOM_OLC *olc_there = roomOLCFromProto(proto_there);
+
+    // make our exits
+    EXIT_DATA  *exit_here = newExit();
+    EXIT_DATA *exit_there = newExit();
+    exitSetTo(exit_here, roomGetClass(dest));
+    exitSetTo(exit_there, roomGetClass(charGetRoom(ch)));
+
+    // link our rooms
+    roomSetExit(roomOLCGetRoom(olc_here), dir, exit_here);
+    roomSetExit(roomOLCGetRoom(olc_there), ret_dir, exit_there);
+
+    // save our changes and reload the rooms
+    save_room_olc(olc_here);
+    save_room_olc(olc_there);
+
+    // garbage collection
+    deleteRoomOLC(olc_here);
+    deleteRoomOLC(olc_there);
+
+    // inform the builder
+    send_to_char(ch, "You link %s [%s] to %s [%s].\r\n",
+		 roomGetClass(charGetRoom(ch)), dir,
+		 roomGetClass(dest), ret_dir);
+  }
+
+  // garbage collection
+  free(dir);
+  free(ret_dir);
+}
+
+COMMAND(cmd_fill) {
+  ROOM_DATA      *dest = NULL;
+  char     *parsed_dir = NULL;
+  char *parsed_ret_dir = NULL;
+  char        *ret_dir = NULL;
+  char            *dir = NULL;
+  
+  // parse our arguments
+  if(!parse_args(ch, TRUE, cmd, arg, "word | word",
+		 &parsed_dir, &parsed_ret_dir))
+    return;
+
+  // figure out our direction
+  if(dirGetAbbrevNum(parsed_dir) != DIR_NONE)
+    dir = strdup(dirGetName(dirGetAbbrevNum(parsed_dir)));
+  // special exit
+  else
+    dir = strdup(parsed_dir);
+
+  // figure out our return direction. First case == special exit
+  if(parsed_ret_dir != NULL)
+    ret_dir = strdup(parsed_ret_dir);
+  else if(dirGetNum(dir) != DIR_NONE)
+    ret_dir = strdup(dirGetName(dirGetOpposite(dirGetNum(dir))));
+  else if(dirGetAbbrevNum(dir) != DIR_NONE)
+    ret_dir = strdup(dirGetName(dirGetOpposite(dirGetAbbrevNum(dir))));
+
+  // make sure we have a return direction
+  if(ret_dir == NULL)
+    send_to_char(ch, "A return direction for fill could not be found.\r\n");
+  // make sure we have the exit
+  else if(!roomGetExit(charGetRoom(ch), dir))
+    send_to_char(ch, "No exit exists %s!\r\n", dir);
+  // make sure the destination exists
+  else if((dest = worldGetRoom(gameworld,exitGetTo(roomGetExit(charGetRoom(ch),
+							       dir)))) == NULL)
+    send_to_char(ch, "No destination exists %s!\r\n", dir);
+  // make sure we have edit priviledges
+  else if(!canEditZone(worldGetZone(gameworld, get_key_locale(roomGetClass(charGetRoom(ch)))), ch))
+    send_to_char(ch, "You are not authorized to edit this zone.\r\n");
+  // make sure we have edit priviledges for the destination
+  else if(!canEditZone(worldGetZone(gameworld, get_key_locale(roomGetClass(dest))), ch))
+    send_to_char(ch,"You are not authorized to edit the destination zone.\r\n");
+
+  // do the digging
+  else {
+    // get the prototype for our current room and destination
+    PROTO_DATA  *proto_here = 
+      worldGetType(gameworld, "rproto", roomGetClass(charGetRoom(ch)));
+    PROTO_DATA *proto_there = 
+      worldGetType(gameworld, "rproto", roomGetClass(dest));
+
+    // parse a ROOM_OLC out of them both
+    ROOM_OLC  *olc_here = roomOLCFromProto(proto_here);
+    ROOM_OLC *olc_there = roomOLCFromProto(proto_there);
+
+    // delete our exits
+    roomRemoveExit(roomOLCGetRoom(olc_here), dir);
+    roomRemoveExit(roomOLCGetRoom(olc_there), ret_dir);
+
+    // save our changes and reload the rooms
+    save_room_olc(olc_here);
+    save_room_olc(olc_there);
+
+    // garbage collection
+    deleteRoomOLC(olc_here);
+    deleteRoomOLC(olc_there);
+
+    // inform the builder
+    send_to_char(ch, "You unlink %s [%s] and %s [%s].\r\n",
+		 roomGetClass(charGetRoom(ch)), dir,
+		 roomGetClass(dest), ret_dir);
+  }
+
+  // garbage collection
+  free(dir);
+  free(ret_dir);
+}
+
+
+//
+// builds a list of all the instantiations in the range provided
+LIST *list_instantiations(const char *name, const char *locale, int times) {
+  LIST         *list = newList();
+  int      i, base_i = 1;
+  char *working_name = strdup(name);
+
+  // see if we have a start number provided
+  //***********
+  // FINISH ME
+  //***********
+
+  // generate our keys
+  for(i = base_i; i < times + base_i; i++) {
+    char fullkey[SMALL_BUFFER];
+    sprintf(fullkey, "%s%s%d@%s", working_name, (i < 10 ? "0" : ""), i, locale);
+    listQueue(list, strdup(fullkey));
+  }
+
+  // garbage collection
+  free(working_name);
+  return list;
+}
+
+
+//
+// checks to see if any of the rooms are already cloned
+bool check_for_instantiations(CHAR_DATA *ch, const char *name, const char *locale, int times) {
+  LIST           *keys = list_instantiations(name, locale, times);
+  LIST_ITERATOR *key_i = newListIterator(keys);
+  char            *key = NULL;
+  bool         success = TRUE;  
+
+  ITERATE_LIST(key, key_i) {
+    // check for the existance
+    if(worldGetType(gameworld, "rproto", key) != NULL) {
+      send_to_char(ch, "A prototype with key %s already exists.", key);
+      success = FALSE;
+      break;
+    }
+  } deleteListIterator(key_i);
+  deleteListWith(keys, free);
+
+  return success;
+}
+
+COMMAND(cmd_instantiate) {
+  ZONE_DATA  *dest_zone = NULL;
+  ZONE_DATA   *src_zone = NULL; 
+  char            *dest = NULL;
+  char             *src = NULL;
+  char dest_locale[SMALL_BUFFER];
+  char   dest_name[SMALL_BUFFER];
+  char  src_locale[SMALL_BUFFER];
+  char    src_name[SMALL_BUFFER];
+  int             times = 1;
+
+  // rcopy <source> <dest> [times]
+  if(!parse_args(ch, TRUE, cmd, arg, "word word | int", &src, &dest, &times))
+    return;
+  // get our locale and name for the source
+  else if(!parse_worldkey_relative(ch, src, src_name, src_locale))
+    send_to_char(ch, "What is the key of the source room?\r\n");
+  // get our locale and name for the dest
+  else if(!parse_worldkey_relative(ch, dest, dest_name, dest_locale))
+    send_to_char(ch, "What is the key of the destination room?\r\n");
+  // make sure the destination zone is editable
+  else if((dest_zone = worldGetZone(gameworld, dest_locale)) == NULL)
+    send_to_char(ch, "No such destination zone exists.\r\n");
+  else if((src_zone = worldGetZone(gameworld, src_locale)) == NULL)
+    send_to_char(ch, "No such source zone exists.\r\n");
+  // make sure we have editing priviledges
+  else if(!canEditZone(dest_zone, ch))
+    send_to_char(ch,"You are not authorized to edit the destination zone.\r\n");
+  // make sure none of the prototypes we'll be making are instantiated
+  else if(!check_for_instantiations(ch, src_name, src_locale, times)) 
+    return;
+  else {
+    // generate our list of keys
+    LIST           *keys = list_instantiations(dest_name, dest_locale, times);
+    LIST_ITERATOR *key_i = newListIterator(keys);
+    char            *key = NULL;
+    bool      resettable = FALSE;
+
+    // check to see if the source room is resettable
+    if(listGetWith(zoneGetResettable(src_zone),
+		   get_key_name(get_fullkey(src_name, src_locale)),
+		   strcasecmp) != NULL)
+      resettable = TRUE;
+
+    // create each of the rooms to be cloned
+    ITERATE_LIST(key, key_i) {
+      ROOM_OLC *data = newRoomOLC();
+      roomOLCSetKey(data, key);
+      resetListSetKey(roomOLCGetResets(data), key);
+      roomOLCSetAbstract(data, FALSE);
+      roomOLCSetResettable(data, resettable);
+      roomOLCSetParents(data, get_fullkey(src_name, src_locale));
+      save_room_olc(data);
+      deleteRoomOLC(data);
+    } deleteListIterator(key_i);
+    deleteListWith(keys, free);
+
+    send_to_char(ch, "You create %d new instantion%s of %s@%s.\r\n",
+		 times, (times == 1 ? "":"s"), src_name, src_locale);
+  }
+}
+
 COMMAND(cmd_redit) {
   ZONE_DATA    *zone = NULL;
   PROTO_DATA  *proto = NULL;

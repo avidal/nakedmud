@@ -65,6 +65,27 @@ bool PyModule_Reload(char *fname, char *mname) {
   }
   // no errors occured... load the module into our package
   else {
+    // we need to run an unload function if the module has been loaded before
+    PyObject *old_mod = PyImport_ImportModule(mname);
+    if(old_mod != NULL) {
+      PyObject *dict = PyModule_GetDict(old_mod);
+      
+      // if the module has an __unload__ function, call it
+      if(PyDict_GetItemString(dict, "__unload__") != NULL) {
+	PyObject *tbList = PyObject_CallMethod(old_mod, "__unload__", "");
+
+	// encountered an error with the unload function
+	if(tbList == NULL) {
+	  char *tb = getPythonTraceback();
+	  log_string("Encountered error in %s.__unload__():\r\n"
+		     "\r\nTraceback is:\r\n%s\r\n", mname, tb);
+	  free(tb);
+	}
+	Py_XDECREF(tbList);
+      }
+      Py_XDECREF(old_mod);
+    }
+
     PyObject *module = PyImport_ExecCodeModule(mname, code);
     if(module == NULL) {
       char *tb = getPythonTraceback();

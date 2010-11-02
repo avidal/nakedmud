@@ -29,6 +29,8 @@
 #include "items/items.h"
 #include "items/container.h"
 #include "items/worn.h"
+#include "scripts/scripts.h"
+#include "scripts/pymud.h"
 
 
 
@@ -44,7 +46,7 @@ void obj_to_game(OBJ_DATA *obj) {
   propertyTablePut(obj_table, obj);
 
   // execute all of our to_game hooks
-  hookRun("obj_to_game", obj);
+  hookRun("obj_to_game", hookBuildInfo("obj", obj));
 
   // also add all contents
   if(listSize(objGetContents(obj)) > 0) {
@@ -61,7 +63,7 @@ void room_to_game(ROOM_DATA *room) {
   propertyTablePut(room_table, room);
 
   // execute all of our to_game hooks
-  hookRun("room_to_game", room);
+  hookRun("room_to_game", hookBuildInfo("rm", room));
 
   // add contents
   if(listSize(roomGetContents(room)) > 0) {
@@ -87,9 +89,9 @@ void room_to_game(ROOM_DATA *room) {
   char           *dir = NULL;
   ITERATE_LIST(dir, ex_i) {
     exit_to_game(roomGetExit(room, dir));
-    if(dirGetNum(dir) == DIR_NONE)
+    if(get_cmd_move() != NULL && dirGetNum(dir) == DIR_NONE)
       nearMapPut(roomGetCmdTable(room), dir, NULL,
-		 newCmd(dir, cmd_move, POS_STANDING, POS_FLYING,
+		 newPyCmd(dir, get_cmd_move(), POS_STANDING, POS_FLYING,
 			"player", TRUE, TRUE));
   } deleteListIterator(ex_i);
   deleteListWith(ex_list, free);
@@ -100,7 +102,7 @@ void char_to_game(CHAR_DATA *ch) {
   propertyTablePut(mob_table, ch);
 
   // execute all of our to_game hooks
-  hookRun("char_to_game", ch);
+  hookRun("char_to_game", hookBuildInfo("ch", ch));
 
   // also add inventory
   if(listSize(charGetInventory(ch)) > 0) {
@@ -128,11 +130,11 @@ void exit_from_game(EXIT_DATA *exit) {
 }
 
 void obj_from_game(OBJ_DATA *obj) {
+  // go through all of our fromgame hooks
+  hookRun("obj_from_game", hookBuildInfo("obj", obj));
+
   listRemove(object_list, obj);
   propertyTableRemove(obj_table, objGetUID(obj));
-
-  // go through all of our fromgame hooks
-  hookRun("obj_from_game", obj);
 
   // also remove everything that is contained within the object
   if(listSize(objGetContents(obj)) > 0) {
@@ -145,11 +147,11 @@ void obj_from_game(OBJ_DATA *obj) {
 }
 
 void room_from_game(ROOM_DATA *room) {
+  // go through all of our fromgame hooks
+  hookRun("room_from_game", hookBuildInfo("rm", room));
+
   listRemove(room_list, room);
   propertyTableRemove(room_table, roomGetUID(room));
-
-  // go through all of our fromgame hooks
-  hookRun("room_from_game", room);
 
   // also remove all the objects contained within the room
   if(listSize(roomGetContents(room)) > 0) {
@@ -180,11 +182,11 @@ void room_from_game(ROOM_DATA *room) {
 }
 
 void char_from_game(CHAR_DATA *ch) {
+  // go through all of our fromgame hooks
+  hookRun("char_from_game", hookBuildInfo("ch", ch));
+
   listRemove(mobile_list, ch);
   propertyTableRemove(mob_table, charGetUID(ch));
-
-  // go through all of our fromgame hooks
-  hookRun("char_from_game", ch);
 
   // also remove inventory
   if(listSize(charGetInventory(ch)) > 0) {
@@ -273,106 +275,6 @@ void char_to_furniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
 
 
 //*****************************************************************************
-// do_get/give/drop/etc...
-//*****************************************************************************
-void do_get(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
-  if(bitIsOneSet(objGetBits(obj), "notake"))
-    send_to_char(ch, "You cannot take %s.\r\n", objGetName(obj));
-  else if(container) {
-    send_to_char(ch, "You get %s from %s.\r\n", 
-		 objGetName(obj), objGetName(container));
-    message(ch, NULL, obj, container, TRUE, TO_ROOM,
-	    "$n gets $o from $O.");
-    obj_from_obj(obj);
-    obj_to_char(obj, ch);
-  }
-  else {
-    send_to_char(ch, "You get %s.\r\n", objGetName(obj));
-    message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
-	    "$n gets $o.");
-    obj_from_room(obj);
-    obj_to_char(obj, ch);
-    hookRun("get", ch, obj);
-  }
-}
-
-void do_put(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
-  if(containerIsClosed(container))
-    send_to_char(ch, "%s is closed. Open it first.\r\n", 
-		 see_obj_as(ch, container));
-  else if(obj == container)
-    send_to_char(ch, "You cannot put %s into itself.\r\n", objGetName(obj));
-  // make sure we have enough room
-  else if(objGetWeight(obj) > 
-	  (containerGetCapacity(container) - 
-	   objGetWeight(container) + objGetWeightRaw(container)))
-    send_to_char(ch, "There is not enough room in %s for %s.\r\n", 
-		 see_obj_as(ch, container), see_obj_as(ch, obj));
-  // do the move
-  else {
-    obj_from_char(obj);
-    obj_to_obj(obj, container);
-    send_to_char(ch, "You put %s into %s.\r\n", 
-		 see_obj_as(ch, obj), see_obj_as(ch, container));
-    message(ch, NULL, obj, container, TRUE, TO_ROOM,
-	    "$n puts $o into $O.");
-  }
-}
-
-
-void do_give(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
-  message(ch, recv, obj, NULL, TRUE, TO_ROOM, "$n gives $o to $N.");
-  message(ch, recv, obj, NULL, TRUE, TO_VICT, "$n gives $o to you.");
-  message(ch, recv, obj, NULL, TRUE, TO_CHAR, "You give $o to $N.");
-  obj_from_char(obj);
-  obj_to_char(obj, recv);
-
-  // run all of our give/receive hooks
-  hookRun("give", ch, recv, obj);
-}
-
-
-void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
-  send_to_char(ch, "You drop %s.\r\n", objGetName(obj));
-  message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n drops $o.");
-  obj_from_char(obj);
-  obj_to_room(obj, charGetRoom(ch));
-
-  // run all of our drop hooks
-  hookRun("drop", ch, obj);
-}
-
-
-void do_wear(CHAR_DATA *ch, OBJ_DATA *obj, const char *where) {
-  if(!objIsType(obj, "worn"))
-    send_to_char(ch, "You cannot wear %s!\r\n", objGetName(obj));
-  else {
-    obj_from_char(obj);
-    if(try_equip(ch, obj, where, wornGetPositions(obj))) {
-      message(ch, NULL, obj, NULL, TRUE, TO_CHAR, "You equip $o.");
-      message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n equips $o.");
-    }
-    else {
-      send_to_char(ch, "You could not equip %s.\r\n", objGetName(obj));
-      obj_to_char(obj, ch);
-    }
-  }
-}
-
-
-void do_remove(CHAR_DATA *ch, OBJ_DATA *obj) {
-  if(try_unequip(ch, obj)) {
-    message(ch, NULL, obj, NULL, TRUE, TO_CHAR, "You remove $o.");
-    message(ch, NULL, obj, NULL, TRUE, TO_ROOM, "$n removes $o.");
-    obj_to_char(obj, ch);
-  }
-  else
-    send_to_char(ch, "You were unable to remove %s.\r\n", objGetName(obj));
-}
-
-
-
-//*****************************************************************************
 // functions related to equipping and unequipping items
 //*****************************************************************************
 bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *wanted_pos,
@@ -428,17 +330,14 @@ bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *wanted_pos,
       success = bodyEquipPosnames(charGetBody(ch), obj, wanted_pos);
   }
 
-  if(success == TRUE) {
+  if(success == TRUE)
     objSetWearer(obj, ch);
-    hookRun("wear", ch, obj);
-  }
   return success;
 }
 
 bool try_unequip(CHAR_DATA *ch, OBJ_DATA *obj) {
   if(bodyUnequip(charGetBody(ch), obj)) {
     objSetWearer(obj, NULL);
-    hookRun("remove", ch, obj);
     return TRUE;
   }
   return FALSE;
@@ -453,7 +352,6 @@ void unequip_all(CHAR_DATA *ch) {
   while( (obj = listPop(eq)) != NULL) {
     if(bodyUnequip(charGetBody(ch), obj)) {
       objSetWearer(obj, NULL);
-      hookRun("remove", ch, obj);
       obj_to_char(obj, ch);
     }
   } deleteList(eq);

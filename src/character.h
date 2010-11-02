@@ -82,6 +82,7 @@ const char  *charGetMultiName (CHAR_DATA *ch);
 int          charGetSex       (CHAR_DATA *ch);
 // for editing with the text editor
 BUFFER      *charGetDescBuffer(CHAR_DATA *ch);
+BUFFER      *charGetLookBuffer(CHAR_DATA *ch);
 LIST        *charGetInventory (CHAR_DATA *ch);
 BODY_DATA   *charGetBody      (CHAR_DATA *ch);
 const char  *charGetRace      (CHAR_DATA *ch);

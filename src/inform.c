@@ -130,58 +130,56 @@ void list_room_contents(CHAR_DATA *ch, ROOM_DATA *room) {
 //*****************************************************************************
 void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj) {
   // make our working copy of the description
-  BUFFER *new_desc = bufferCopy(objGetDescBuffer(obj));
+  bufferClear(charGetLookBuffer(ch));
+  bufferCat(charGetLookBuffer(ch), objGetDesc(obj));
 
   // do all of the preprocessing on the new descriptions
-  hookRun("preprocess_obj_desc", new_desc, obj, ch);
+  hookRun("preprocess_obj_desc", hookBuildInfo("obj ch", obj, ch));
 
   // append anything that might also go onto it
-  hookRun("append_obj_desc", new_desc, obj, ch);
+  hookRun("append_obj_desc", hookBuildInfo("obj ch", obj, ch));
 
   // colorize all of the edescs
-  edescTagDesc(new_desc, objGetEdescs(obj), "{c", "{g");
+  edescTagDesc(charGetLookBuffer(ch), objGetEdescs(obj), "{c", "{g");
 
   // format the desc, and send it
-  bufferFormat(new_desc, SCREEN_WIDTH, PARA_INDENT);
+  bufferFormat(charGetLookBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
 
-  if(bufferLength(new_desc) == 0)
+  if(bufferLength(charGetLookBuffer(ch)) == 0)
     send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
   else
-    send_to_char(ch, "{g%s", bufferString(new_desc));
+    send_to_char(ch, "{g%s", bufferString(charGetLookBuffer(ch)));
 
-  // free up our mess
-  deleteBuffer(new_desc);
-
-  hookRun("look_at_obj", obj, ch);
+  hookRun("look_at_obj", hookBuildInfo("obj ch", obj, ch));
   send_to_char(ch, "{n");
 }
 
 
 void look_at_exit(CHAR_DATA *ch, EXIT_DATA *exit) {
   // make the working copy of the description, and fill it up with info
-  BUFFER *desc = bufferCopy(exitGetDescBuffer(exit));
+  bufferClear(charGetLookBuffer(ch));
+  bufferCat(charGetLookBuffer(ch), exitGetDesc(exit));
 
   // do all of our preprocessing of the description before we show it
-  hookRun("preprocess_exit_desc", desc, exit, ch);
+  hookRun("preprocess_exit_desc", hookBuildInfo("ex ch", exit, ch));
 
   // append anything that might also go onto it
-  hookRun("append_exit_desc", desc, exit, ch);
+  hookRun("append_exit_desc", hookBuildInfo("ex ch", exit, ch));
 
   // colorize all of the edescs
-  edescTagDesc(desc, roomGetEdescs(exitGetRoom(exit)), "{c", "{g");
+  edescTagDesc(charGetLookBuffer(ch), roomGetEdescs(exitGetRoom(exit)), 
+	       "{c", "{g");
 
   // format our description
-  bufferFormat(desc, SCREEN_WIDTH, PARA_INDENT);
+  bufferFormat(charGetLookBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
 
   // if the buffer has nothing in it, send a "nothing special" message
-  if(bufferLength(desc) == 0)
+  if(bufferLength(charGetLookBuffer(ch)) == 0)
     send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
   else
-    send_to_char(ch, "{g%s", bufferString(desc));
+    send_to_char(ch, "{g%s", bufferString(charGetLookBuffer(ch)));
 
-  deleteBuffer(desc);
-
-  hookRun("look_at_exit", exit, ch);
+  hookRun("look_at_exit", hookBuildInfo("ex ch", exit, ch));
   send_to_char(ch, "{n");
 }
 
@@ -239,44 +237,25 @@ void list_room_exits(CHAR_DATA *ch, ROOM_DATA *room) {
 }
 
 
-void show_body(CHAR_DATA *ch, BODY_DATA *body) {
-  int i, num_bodyparts;
-  const char **bodyparts = bodyGetParts(body, TRUE, &num_bodyparts);
-  OBJ_DATA    *equipment = NULL;
-  char posbuf[SMALL_BUFFER];
-  for(i = 0; i < num_bodyparts; i++) {
-    equipment = bodyGetEquipment(body, bodyparts[i]);
-    if(!equipment || !can_see_obj(ch, equipment))
-      continue;
-    sprintf(posbuf, "{c<{C%s{c>{n", bodyparts[i]);
-    send_to_char(ch, "%-30s %s\r\n", 
-		 posbuf, objGetName(equipment));
-  }
-  if(bodyparts) 
-    free(bodyparts);
-}
-
-
 void look_at_char(CHAR_DATA *ch, CHAR_DATA *vict) {
-  BUFFER *new_desc = bufferCopy(charGetDescBuffer(vict));
+  bufferClear(charGetLookBuffer(ch));
+  bufferCat(charGetLookBuffer(ch), charGetDesc(vict));
 
   // preprocess our desc before it it sent to the person
-  hookRun("preprocess_char_desc", new_desc, vict, ch);
+  hookRun("preprocess_char_desc", hookBuildInfo("ch ch", vict, ch));
 
   // append anything that might also go onto it
-  hookRun("append_char_desc", new_desc, vict, ch);
-    
-  // format and send it
-  bufferFormat(new_desc, SCREEN_WIDTH, PARA_INDENT);
+  hookRun("append_char_desc", hookBuildInfo("ch ch", vict, ch));
 
-  if(bufferLength(new_desc) == 0)
+  // format and send it
+  bufferFormat(charGetLookBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
+
+  if(bufferLength(charGetLookBuffer(ch)) == 0)
     send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
   else
-    send_to_char(ch, "{g%s{n", bufferString(new_desc));
+    send_to_char(ch, "{g%s{n", bufferString(charGetLookBuffer(ch)));
   
-  // clean up our mess
-  deleteBuffer(new_desc);
-  hookRun("look_at_char", vict, ch);
+  hookRun("look_at_char", hookBuildInfo("ch ch", vict, ch));
 }
 
 
@@ -288,27 +267,26 @@ void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
   send_to_char(ch, "{c%s\r\n", roomGetName(room));
 
   // make the working copy of the description, and fill it up with info
-  BUFFER *desc = bufferCopy(roomGetDescBuffer(room));
-
+  bufferClear(charGetLookBuffer(ch));
+  bufferCat(charGetLookBuffer(ch), roomGetDesc(room));
   // do all of our preprocessing of the description before we show it
-  hookRun("preprocess_room_desc", desc, room, ch);
+  hookRun("preprocess_room_desc", hookBuildInfo("rm ch", room, ch));
 
   // append anything that might also go onto it
-  hookRun("append_room_desc", desc, room, ch);
+  hookRun("append_room_desc", hookBuildInfo("rm ch", room, ch));
 
   // colorize all of the edescs
-  edescTagDesc(desc, roomGetEdescs(room), "{c", "{g");
+  edescTagDesc(charGetLookBuffer(ch), roomGetEdescs(room), "{c", "{g");
 
   // format our description
-  bufferFormat(desc, SCREEN_WIDTH, PARA_INDENT);
+  bufferFormat(charGetLookBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
 
-  if(bufferLength(desc) == 0)
+  if(bufferLength(charGetLookBuffer(ch)) == 0)
     send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
   else
-    send_to_char(ch, "{g%s", bufferString(desc));
+    send_to_char(ch, "{g%s", bufferString(charGetLookBuffer(ch)));
 
-  deleteBuffer(desc);
-  hookRun("look_at_room", room, ch);
+  hookRun("look_at_room", hookBuildInfo("rm ch", room, ch));
   send_to_char(ch, "{n");
 }
 
@@ -522,77 +500,14 @@ COMMAND(cmd_look) {
 
 
 //
-// list all of the equipment a character is wearing to him or herself
-COMMAND(cmd_equipment) {
-  send_to_char(ch, "You are wearing:\r\n");
-  show_body(ch, charGetBody(ch));
-}
-
-
-//
-// list a character's inventory to him or herself
-COMMAND(cmd_inventory) {
-  if(listSize(charGetInventory(ch)) == 0)
-    send_to_char(ch, "You aren't carrying anything.\r\n");
-  else {
-    send_to_char(ch, "{gYou are carrying:\r\n");
-    LIST *vis_objs = find_all_objs(ch, charGetInventory(ch), "", NULL, TRUE);
-    show_list(ch, vis_objs, objGetName, objGetMultiName);
-    deleteList(vis_objs);
-  }
-}
-
-
-//
 // show a list of all commands available to the character
 COMMAND(cmd_commands) {
-  show_commands(ch, bitvectorGetBits(charGetUserGroups(ch)));
-}
-
-
-//
-// builds a buffer that lists all of the people online. 
-// Buffer must be deleted after it is used
-BUFFER *build_who(void) {
-  CHAR_DATA *plr;
-  SOCKET_DATA *dsock;
-  BUFFER *buf = newBuffer(MAX_BUFFER);
-  LIST_ITERATOR *sock_i = newListIterator(socket_list);
-  int socket_count = 0, playing_count = 0;
-
-  bprintf(buf, 
-	  "{cPlayers Online:\r\n"
-	  "{gStatus   Race )\r\n"
-	  );
-
-  // build our list of people online
-  ITERATE_LIST(dsock, sock_i) {
-    socket_count++;
-    if ((plr = socketGetChar(dsock)) == NULL) continue;
-    playing_count++;
-    bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n",
-	    (bitIsSet(charGetUserGroups(plr), "admin") ? "admin" :
-	     (bitIsSet(charGetUserGroups(plr), "scripter") ? "scripter" :
-	      (bitIsSet(charGetUserGroups(plr), "builder") ? "builder"  :
-	       (bitIsSet(charGetUserGroups(plr), "player") ? "player" : 
-		"noone!")))),
-	    raceGetAbbrev(charGetRace(plr)),
-	    charGetName(plr), socketGetHostname(dsock));
-  } deleteListIterator(sock_i);
-
-  // send out info about the number of sockets and players logged on
-  bprintf(buf, "\r\n{g%d socket%s connected. %d playing.\r\n",
-	  socket_count, (socket_count == 1 ? "" : "s"), playing_count);
-  return buf;
-}
-
-
-//
-// show the player all of the people who are currently playing
-COMMAND(cmd_who) {
-  BUFFER *buf = build_who();
-  page_string(charGetSocket(ch), bufferString(buf));
-  deleteBuffer(buf);
+  if(!*arg)
+    show_commands(ch, bitvectorGetBits(charGetUserGroups(ch)));
+  else if(!bitIsAllSet(charGetUserGroups(ch), arg))
+    send_to_char(ch, "You are not a member of all user groups: %s.\r\n", arg);
+  else
+    show_commands(ch, arg);
 }
 
 
@@ -849,8 +764,13 @@ void exit_append_room_hook(BUFFER *buf, ROOM_DATA *room, CHAR_DATA *ch) {
   deleteListWith(exnames, free);
 }
 
-void exit_append_hook(BUFFER *buf, EXIT_DATA *exit, CHAR_DATA *ch) {
+void exit_append_hook(const char *info) {
   // before anything, figure out some basic information like our dir and dest
+  EXIT_DATA     *exit = NULL;
+  CHAR_DATA       *ch = NULL;
+  hookParseInfo(info, &exit, &ch);
+
+  BUFFER         *buf = charGetLookBuffer(ch);
   ROOM_DATA     *room = exitGetRoom(exit);
   ROOM_DATA     *dest = worldGetRoom(gameworld, exitGetTo(exit));
   LIST       *exnames = roomGetExitNames(room);
@@ -888,7 +808,10 @@ void exit_append_hook(BUFFER *buf, EXIT_DATA *exit, CHAR_DATA *ch) {
   if(dir) free(dir);
 }
 
-void exit_look_hook(EXIT_DATA *exit, CHAR_DATA *ch) {
+void exit_look_hook(const char *info) {
+  EXIT_DATA *exit = NULL;
+  CHAR_DATA   *ch = NULL;
+  hookParseInfo(info, &exit, &ch);
   // the door is not closed, list off the people we can see as well
   if(!exitIsClosed(exit)) {
     ROOM_DATA *room = worldGetRoom(gameworld, exitGetTo(exit));
@@ -897,14 +820,10 @@ void exit_look_hook(EXIT_DATA *exit, CHAR_DATA *ch) {
   }
 }
 
-void body_look_hook(CHAR_DATA *vict, CHAR_DATA *ch) {
-  send_to_char(ch, "\r\n{g%s %s wearing:\r\n", 
-	       (ch == vict ? "You" : HESHE(vict)),
-	       (ch == vict ? "are" : "is"));
-  show_body(ch, charGetBody(vict));
-}
-
-void room_look_hook(ROOM_DATA *room, CHAR_DATA *ch) {
+void room_look_hook(const char *info) {
+  ROOM_DATA *room = NULL;
+  CHAR_DATA   *ch = NULL;
+  hookParseInfo(info, &room, &ch);
   list_room_exits(ch, room);
   list_room_contents(ch, room);
 }
@@ -915,25 +834,10 @@ void room_look_hook(ROOM_DATA *room, CHAR_DATA *ch) {
 // initialization of inform.h
 //*****************************************************************************
 void init_inform(void) {
-  // add all of our hook types
-  hook_add_handler("preprocess_room_desc", hook_handler_3_args);
-  hook_add_handler("preprocess_obj_desc",  hook_handler_3_args);
-  hook_add_handler("preprocess_char_desc", hook_handler_3_args);
-  hook_add_handler("preprocess_exit_desc", hook_handler_3_args);
-  hook_add_handler("append_room_desc",     hook_handler_3_args);
-  hook_add_handler("append_obj_desc",      hook_handler_3_args);
-  hook_add_handler("append_char_desc",     hook_handler_3_args);
-  hook_add_handler("append_exit_desc",     hook_handler_3_args);
-  hook_add_handler("look_at_room",         hook_handler_2_args);
-  hook_add_handler("look_at_obj",          hook_handler_2_args);
-  hook_add_handler("look_at_char",         hook_handler_2_args);
-  hook_add_handler("look_at_exit",         hook_handler_2_args);
-
   // attach hooks
   hookAdd("append_exit_desc", exit_append_hook);
   // enable if you want exits to append to the end of room descs
   //  hookAdd("append_room_desc", exit_append_room_hook);
-  hookAdd("look_at_exit",     exit_look_hook);
-  hookAdd("look_at_char",     body_look_hook);
-  hookAdd("look_at_room",     room_look_hook);
+  hookAdd("look_at_exit", exit_look_hook);
+  hookAdd("look_at_room", room_look_hook);
 }

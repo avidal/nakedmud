@@ -1220,6 +1220,16 @@ void *identity_func(void *data) {
   return data;
 }
 
+LIST *reverse_list(LIST *list) {
+  LIST         *newlist = newList();
+  LIST_ITERATOR *list_i = newListIterator(list);
+  void            *elem = NULL;
+  ITERATE_LIST(elem, list_i) {
+    listPut(newlist, elem);
+  } deleteListIterator(list_i);
+  return newlist;
+}
+
 bool parse_worldkey(const char *key, char *name, char *locale) {
   *name = *locale = '\0';
   int pos = next_letter_in(key, '@');

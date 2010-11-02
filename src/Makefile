@@ -38,10 +38,8 @@ C_FLAGS := -Wall -g -ggdb -O2
 LIBS    := -lz -lpthread -lcrypt
 
 # each module will add to this from its module.mk file
-SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c movement.c \
+SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c \
 	   action.c mccp.c save.c socket.c io.c strings.c event.c \
-	   \
-	   cmd_comm.c cmd_manip.c cmd_misc.c cmd_admin.c cmd_builder.c \
 	   \
 	   races.c \
 	   \
@@ -53,6 +51,7 @@ SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c movement.c \
 	   list.c property_table.c hashtable.c map.c storage.c set.c \
 	   buffer.c bitvector.c numbers.c prototype.c hooks.c parse.c \
 	   near_map.c command.c
+
 
 
 # include the description for each module. These will add to SRC

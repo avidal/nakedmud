@@ -162,6 +162,13 @@ PyObject *PyObj_getweight(PyObj *self, void *closure) {
   else            return NULL;
 }
 
+
+PyObject *PyObj_get_weight_raw(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) return Py_BuildValue("d", objGetWeightRaw(obj));
+  else            return NULL;
+}
+
 PyObject *PyObj_getcontents(PyObj *self, PyObject *args) {
   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj == NULL) 
@@ -564,9 +571,19 @@ PyObject *PyObj_isinstance(PyObj *self, PyObject *args) {
 
   // pull out the object and check the type
   OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
-  if(obj != NULL)
-    return Py_BuildValue("i", 
-        objIsInstance(obj, get_fullkey_relative(type, get_script_locale())));
+  if(obj != NULL) {
+    PyObject *retval = NULL;
+    char     *locale = NULL;
+    if(get_script_locale())
+      locale = strdup(get_script_locale());
+    else
+      locale = strdup(get_key_locale(objGetClass(obj)));
+
+    retval = 
+      Py_BuildValue("i", objIsInstance(obj, get_fullkey_relative(type,locale)));
+    free(locale);
+    return retval;
+  }
   else {
     PyErr_Format(PyExc_StandardError, 
 		 "Tried to check instances of nonexistent object, %d.", self->uid);
@@ -1006,6 +1023,8 @@ init_PyObj(void) {
     PyObj_addGetSetter("keywords", PyObj_getkeywords, PyObj_setkeywords,
 		       "the object's keywords");
     PyObj_addGetSetter("weight", PyObj_getweight, PyObj_setweight,
+		       "the object's weight (plus contents)");
+    PyObj_addGetSetter("weight_raw", PyObj_get_weight_raw, NULL,
 		       "the object's weight (minus contents)");
     PyObj_addGetSetter("uid", PyObj_getuid, NULL,
 		       "the object's unique identification number");

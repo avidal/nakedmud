@@ -76,9 +76,13 @@ const char *wornTypeGetPositions(const char *type) {
 
 //
 // append information about where the item can be worn
-void append_worn_hook(BUFFER *desc, OBJ_DATA *obj, CHAR_DATA *ch) {
+void append_worn_hook(const char *info) {
+  OBJ_DATA *obj = NULL;
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &obj, &ch);
+
   if(objIsType(obj, "worn")) {
-    bprintf(desc, "When worn, this item covers bodyparts: %s.", 
+    bprintf(charGetLookBuffer(ch),"When worn, this item covers bodyparts: %s.",
 	    wornGetPositions(obj));
   }
 }

@@ -103,6 +103,7 @@ struct char_data {
   ROOM_DATA            * last_room;
   OBJ_DATA             * furniture;
   BUFFER               * desc;
+  BUFFER               * look_buf;
   char                 * name;
   int                    sex;
   int                    position;
@@ -133,6 +134,7 @@ CHAR_DATA *newChar() {
   ch->furniture     = NULL;
   ch->socket        = NULL;
   ch->desc          = newBuffer(1);
+  ch->look_buf      = newBuffer(1);
   ch->name          = strdup("");
   ch->sex           = SEX_NEUTRAL;
   ch->position      = POS_STANDING;
@@ -226,6 +228,10 @@ const char  *charGetDesc      ( CHAR_DATA *ch) {
 
 BUFFER      *charGetDescBuffer( CHAR_DATA *ch) {
   return ch->desc;
+}
+
+BUFFER      *charGetLookBuffer( CHAR_DATA *ch) {
+  return ch->look_buf;
 }
 
 const char  *charGetRdesc     ( CHAR_DATA *ch) {
@@ -377,6 +383,7 @@ void deleteChar( CHAR_DATA *mob) {
   if(mob->prototypes)  free(mob->prototypes);
   if(mob->name)        free(mob->name);
   if(mob->desc)        deleteBuffer(mob->desc);
+  if(mob->look_buf)    deleteBuffer(mob->look_buf);
   if(mob->rdesc)       free(mob->rdesc);
   if(mob->multi_rdesc) free(mob->multi_rdesc);
   if(mob->multi_name)  free(mob->multi_name);

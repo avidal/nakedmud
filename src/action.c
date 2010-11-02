@@ -112,6 +112,13 @@ void stop_all_actions(CHAR_DATA *ch) {
 #endif
 }
 
+// allows stop_all_actions to run as a hook
+void stop_actions_hook(const char *info) {
+  CHAR_DATA *ch = NULL;
+  hookParseInfo(info, &ch);
+  stop_all_actions(ch);
+}
+
 
 
 //*****************************************************************************
@@ -126,7 +133,7 @@ void init_actions() {
 	  "admin", TRUE, FALSE);
 
   // make sure the character does not continue actions after being extracted
-  hookAdd("char_from_game", stop_all_actions);
+  hookAdd("char_from_game", stop_actions_hook);
 }
 
 bool is_acting(void *ch, bitvector_t where) {

@@ -150,11 +150,4 @@ void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj);
 //
 void show_body(CHAR_DATA *ch, BODY_DATA *body);
 
-
-//
-// builds a buffer that lists all of the people online. 
-// Buffer must be deleted after it is used
-BUFFER *build_who(void);
-
-
 #endif // __INFORM_H

@@ -101,6 +101,8 @@ SRC  += scripts/scripts.c       \
 	scripts/pychar.c        \
 	scripts/pyobj.c         \
 	scripts/pymud.c         \
+	scripts/pymudsys.c      \
+	scripts/pyhooks.c       \
 	scripts/pyroom.c        \
 	scripts/pyexit.c        \
 	scripts/script_editor.c \

@@ -19,12 +19,14 @@
 #include "../character.h"
 #include "../inform.h"
 #include "../handler.h"
+#include "../parse.h"
 
 #include "scripts.h"
 #include "pyroom.h"
 #include "pychar.h"
 #include "pyobj.h"
 #include "pyplugs.h"
+#include "pyexit.h"
 
 
 
@@ -36,6 +38,9 @@ PyObject  *globals = NULL;
 
 // a list of methods to add to the mud module
 LIST *pymud_methods = NULL;
+
+// a placeholder of the movement command, as set by one of our modules
+PyObject *py_cmd_move = NULL;
 
 
 
@@ -98,42 +103,6 @@ PyObject *mud_erase_global(PyObject *self, PyObject *args) {
 
 
 //
-// add a new command to the mud, via a python script or module. Takes in a
-// command name, a sort_by command, the function, a minimum and maximum 
-// position in the form of strings, a level, and boolean values for whether the
-// command can be performed by mobiles, and whether it interrupts actions.
-PyObject *mud_add_cmd(PyObject *self, PyObject *args) {
-  PyObject *func = NULL;
-  char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
-       *group = NULL;
-  bool mob_ok = FALSE, interrupts = FALSE;
-  int min_pos_num, max_pos_num;
-
-  // parse all of the values
-  if (!PyArg_ParseTuple(args, "szOsssbb", &name, &sort_by, &func,
-  			&min_pos, &max_pos, &group, &mob_ok, &interrupts)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Could not add new command. Improper arguments supplied");
-    return NULL;
-  }
-
-  // get our positions
-  min_pos_num = posGetNum(min_pos);
-  max_pos_num = posGetNum(max_pos);
-  if(min_pos_num == POS_NONE || max_pos_num == POS_NONE) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Could not add new command. Invalid position names.");
-    return NULL;
-  }
-
-  // add the command to the game
-  add_py_cmd(name, sort_by, func, min_pos_num, max_pos_num,
-	     group, mob_ok, interrupts);
-  return Py_None;
-}
-
-
-//
 // format a string to be into a typical description style
 PyObject *mud_format_string(PyObject *self, PyObject *args) {
   char *string = NULL;
@@ -153,6 +122,42 @@ PyObject *mud_format_string(PyObject *self, PyObject *args) {
   deleteBuffer(buf);
   return ret;
 }
+
+
+//
+// parses arguments for character commands
+PyObject *mud_parse_args(PyObject *self, PyObject *args) {
+  PyObject   *pych = NULL;
+  bool show_errors = FALSE;
+  char        *cmd = NULL;
+  char     *pyargs = NULL;
+  char     *syntax = NULL;
+  char *parse_args = NULL;
+  CHAR_DATA    *ch = NULL;
+
+  // parse our arguments
+  if(!PyArg_ParseTuple(args, "Obsss", &pych, &show_errors, 
+		       &cmd, &pyargs, &syntax)) {
+    PyErr_Format(PyExc_TypeError, "Invalid arguments to parse_args");
+    return NULL;
+  }
+
+  // convert the character
+  if(!PyChar_Check(pych) || (ch = PyChar_AsChar(pych)) == NULL) {
+      PyErr_Format(PyExc_TypeError, 
+		   "First argument must be an existent character!");
+      return NULL;
+  }
+
+  // strdup our py args; they might be edited in the parse function
+  parse_args = strdup(pyargs);
+
+  // finish up and garbage collections
+  PyObject *retval = Py_parse_args(ch, show_errors, cmd, parse_args, syntax);
+  free(parse_args);
+  return retval;
+}
+
 
 //
 // a wrapper around NakedMud's generic_find() function
@@ -201,8 +206,13 @@ PyObject *mud_generic_find(PyObject *self, PyObject *args) {
     SET_BIT(type, FIND_TYPE_OBJ);
   if(is_keyword(type_str, "char", FALSE))
     SET_BIT(type, FIND_TYPE_CHAR);
+  if(is_keyword(type_str, "exit", FALSE))
+    SET_BIT(type, FIND_TYPE_EXIT);
   if(is_keyword(type_str, "in", FALSE))
     SET_BIT(type, FIND_TYPE_IN_OBJ);
+  if(is_keyword(type_str, "all", FALSE))
+    SET_BIT(type,FIND_TYPE_OBJ  | FIND_TYPE_CHAR | 
+	         FIND_TYPE_EXIT | FIND_TYPE_IN_OBJ);
 
   // do the search
   int found_type = FOUND_NONE;
@@ -214,6 +224,17 @@ PyObject *mud_generic_find(PyObject *self, PyObject *args) {
       return Py_BuildValue("O", charGetPyFormBorrowed(found));
     else
       return Py_BuildValue("Os", charGetPyFormBorrowed(found), "char");
+  }
+  else if(found_type == FOUND_EXIT) {
+    // were we searching for one type, or multiple types?
+    PyObject   *exit = newPyExit(found);
+    PyObject *retval = NULL;
+    if(!strcasecmp("exit", type_str))
+      retval = Py_BuildValue("O", exit);
+    else
+      retval = Py_BuildValue("Os", exit, "obj");
+    Py_DECREF(exit);
+    return retval;
   }
   else if(found_type == FOUND_OBJ) {
     // were we searching for one type, or multiple types?
@@ -316,6 +337,8 @@ PyObject *mud_message(PyObject *self, PyObject *args) {
     SET_BIT(range, TO_VICT);
   if(is_keyword(pyrange, "to_room", FALSE))
     SET_BIT(range, TO_ROOM);
+  if(is_keyword(pyrange, "to_world", FALSE))
+    SET_BIT(range, TO_WORLD);
 
   // finally, send out the message
   message(ch, vict, obj, vobj, hide_nosee, range, mssg);
@@ -400,6 +423,46 @@ PyObject *mud_keys_equal(PyObject *self, PyObject *args) {
   return Py_BuildValue("i", ok);
 }
 
+//
+// returns the mud's message of the day
+PyObject *mud_get_motd(PyObject *self, PyObject *args) {
+  return Py_BuildValue("s", bufferString(motd));
+}
+
+PyObject *mud_log_string(PyObject *self, PyObject *args) {
+  char *mssg = NULL;
+  if(!PyArg_ParseTuple(args, "s", &mssg)) {
+    PyErr_Format(PyExc_TypeError, "a message must be supplied to log_string");
+    return NULL;
+  }
+
+  // we have to strip all %'s out of this message
+  BUFFER *buf = newBuffer(1);
+  bufferCat(buf, mssg);
+  bufferReplace(buf, "%", "%%", TRUE);
+  log_string(bufferString(buf));
+  deleteBuffer(buf);
+  return Py_BuildValue("i", 1);
+}
+
+PyObject *mud_set_cmd_move(PyObject *self, PyObject *args) {
+  PyObject *cmd = NULL;
+  if(!PyArg_ParseTuple(args, "O", &cmd)) {
+    PyErr_Format(PyExc_TypeError, "a command must be suppled");
+    return NULL;
+  }
+
+  // make sure it's a function
+  if(!PyFunction_Check(cmd)) {
+    PyErr_Format(PyExc_TypeError, "a command must be suppled");
+    return NULL;
+  }
+
+  Py_XDECREF(py_cmd_move);
+  py_cmd_move = cmd;
+  return Py_BuildValue("i", 1);
+}
+
 
 
 //*****************************************************************************
@@ -428,8 +491,6 @@ init_PyMud(void) {
 		  "Set the value of a global variable.");
   PyMud_addMethod("erase_global",  mud_erase_global, METH_VARARGS,
 		  "Erase the value of a global variable.");
-  PyMud_addMethod("add_cmd", mud_add_cmd, METH_VARARGS,
-		  "Add a new command to the game.");
   PyMud_addMethod("message", mud_message, METH_VARARGS,
 		  "plugs into the message() function from inform.h");
   PyMud_addMethod("format_string", mud_format_string, METH_VARARGS,
@@ -446,10 +507,22 @@ init_PyMud(void) {
 		  "arguments (condition, if action) and an optional third "
 		  "(else action). If no else action is specified and the "
 		  "condition is false, None is returned.");
+  PyMud_addMethod("parse_args", mud_parse_args, METH_VARARGS,
+		  "equivalent to parse_args written in C");
+  PyMud_addMethod("get_motd", mud_get_motd, METH_VARARGS,
+		  "returns the mud's message of the day");
+  PyMud_addMethod("log_string", mud_log_string, METH_VARARGS,
+		  "adds a string to the mudlog");
+  PyMud_addMethod("set_cmd_move", mud_set_cmd_move, METH_VARARGS,
+		  "sets the movement command");
 
   Py_InitModule3("mud", makePyMethods(pymud_methods),
 		 "The mud module, for all MUD misc mud utils.");
 
   globals = PyDict_New();
   Py_INCREF(globals);
+}
+
+void *get_cmd_move(void) {
+  return py_cmd_move;
 }

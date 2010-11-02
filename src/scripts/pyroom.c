@@ -28,6 +28,7 @@
 #include "pyobj.h"
 #include "pyexit.h"
 #include "pyroom.h"
+#include "pymud.h"
 
 
 
@@ -368,6 +369,42 @@ PyObject *PyRoom_get_exit(PyRoom *self, PyObject *value) {
 
 
 //
+// Returns the direction of the exit
+PyObject *PyRoom_get_exit_dir(PyObject *self, PyObject *args) {
+  ROOM_DATA *room = NULL;
+  EXIT_DATA *exit = NULL;
+  PyObject  *pyex = NULL;
+
+  if (!PyArg_ParseTuple(args, "O", &pyex)) {
+    PyErr_Format(PyExc_TypeError, "Exit must be supplied.");
+    return NULL;
+  }
+
+  if((room = PyRoom_AsRoom((PyObject *)self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Tried to get exit dir of nonexistent room"
+		 ", %d.", PyRoom_AsUid(self));
+    return NULL;
+  }
+
+  // get the exit
+  if(!PyExit_Check(pyex)) {
+    PyErr_Format(PyExc_TypeError, "an exit must be supplied to exdir");
+    return NULL;
+  }
+
+  // make sure the exit exists
+  exit = PyExit_AsExit(pyex);
+  if(exit == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to get direction of nonexistant "
+		 "exit, %d.", PyExit_AsUid(pyex));
+    return NULL;
+  }
+
+  return Py_BuildValue("s", roomGetExitDir(room, exit));
+}
+
+
+//
 // Fills an exit in the given direction
 PyObject *PyRoom_fill(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
@@ -425,7 +462,7 @@ PyObject *PyRoom_dig(PyRoom *self, PyObject *value) {
 
   // make sure we have a valid destination
   if(PyString_Check(py_dest))
-    dest = get_fullkey(PyString_AsString(py_dest), get_script_locale());
+    dest = get_fullkey_relative(PyString_AsString(py_dest),get_script_locale());
   else if(PyRoom_Check(py_dest)) {
     ROOM_DATA *to_room = PyRoom_AsRoom(py_dest);
     if(to_room != NULL)
@@ -463,9 +500,9 @@ PyObject *PyRoom_dig(PyRoom *self, PyObject *value) {
     roomSetExit(room, cdir, exit);
 
     // if we're digging a special exit, add a cmd for it to the room cmd table
-    if(dir_num == DIR_NONE && dir_abbrev_num == DIR_NONE)
+    if(get_cmd_move() && dir_num == DIR_NONE && dir_abbrev_num == DIR_NONE)
       nearMapPut(roomGetCmdTable(room), cdir, NULL,
-		 newCmd(cdir, cmd_move, POS_STANDING, POS_FLYING, 
+		 newPyCmd(cdir, get_cmd_move(), POS_STANDING, POS_FLYING, 
 			"player", TRUE, TRUE));
   }
 
@@ -721,6 +758,8 @@ init_PyRoom(void) {
 		     "fills in direction for the room.");
     PyRoom_addMethod("exit", PyRoom_get_exit, METH_VARARGS,
 		     "gets an exit in the room with the given direction name.");
+    PyRoom_addMethod("exdir", PyRoom_get_exit_dir, METH_VARARGS,
+		     "returns the direction of the exit.");
     PyRoom_addMethod("send", PyRoom_send, METH_VARARGS,
 		     "send a message to everyone in the room.");
     PyRoom_addMethod("edesc", PyRoom_edesc, METH_VARARGS,

@@ -222,12 +222,16 @@ PyObject *PyMud_IsNight(PyObject *self) {
 
 //
 // If it's in the night, swap out our desc for the room's night desc
-void room_nightdesc_hook(BUFFER *desc, ROOM_DATA *room, CHAR_DATA *looker) {
+void room_nightdesc_hook(const char *info) {
+  ROOM_DATA   *room = NULL;
+  CHAR_DATA *looker = NULL;
+  hookParseInfo(info, &room, &looker);
+
   if((is_evening() || is_night()) && *roomGetNightDesc(room)) {
     // if it's the room desc and not an edesc, cat the night desc...
-    if(!strcasecmp(bufferString(desc), roomGetDesc(room))) {
-      bufferClear(desc);
-      bufferCat(desc, roomGetNightDesc(room));
+    if(!strcasecmp(bufferString(charGetLookBuffer(looker)),roomGetDesc(room))) {
+      bufferClear(charGetLookBuffer(looker));
+      bufferCat(charGetLookBuffer(looker), roomGetNightDesc(room));
     }
   }
 }

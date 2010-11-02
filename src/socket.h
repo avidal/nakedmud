@@ -12,7 +12,7 @@ void  close_socket          ( SOCKET_DATA *dsock, bool reconnect );
 bool  read_from_socket      ( SOCKET_DATA *dsock );
 void  socket_handler        ( void );
 void  copyover_recover      ( void );
-void  do_copyover           ( CHAR_DATA *ch);
+void  do_copyover           ( void );
 
 /* sends the output directly */
 bool  text_to_socket        ( SOCKET_DATA *dsock, const char *txt );

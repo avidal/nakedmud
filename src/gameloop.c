@@ -303,7 +303,7 @@ int main(int argc, char **argv)
   game_loop(control);
 
   // run our finalize hooks
-  hookRun("shutdown");
+  hookRun("shutdown", "");
 
   // close down the socket
   close(control);

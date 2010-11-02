@@ -22,12 +22,14 @@
 #include "../action.h"
 #include "../socket.h"
 #include "../prototype.h"
+#include "../save.h"
 
 #include "pyplugs.h"
 #include "scripts.h"
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
+#include "pyexit.h"
 #include "pyauxiliary.h"
 
 
@@ -131,6 +133,12 @@ PyObject *PyChar_getdesc(PyChar *self, void *closure) {
   if(ch != NULL) return Py_BuildValue("s", charGetDesc(ch));
   else           return NULL;
 }
+
+PyObject *PyChar_getlookbuf(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) return Py_BuildValue("s", bufferString(charGetLookBuffer(ch)));
+  else           return NULL;
+}  
 
 PyObject *PyChar_getrdesc(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
@@ -266,6 +274,31 @@ PyObject *PyChar_geteq(PyChar *self, PyObject *args) {
   return retval;
 }
 
+PyObject *PyChar_getbodyparts(PyChar *self, PyObject *args) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch == NULL) 
+    return NULL;
+
+  PyObject *list = PyList_New(0);
+  int i, num_bodyparts;
+  const char **bodyparts = bodyGetParts(charGetBody(ch), TRUE, &num_bodyparts);
+  for(i = 0; i < num_bodyparts; i++) {
+    PyObject *str = Py_BuildValue("s", bodyparts[i]);
+    PyList_Append(list, str);
+    Py_DECREF(str);
+  }
+  free(bodyparts);
+  return list;
+}
+
+
+PyObject *PyChar_getusergroups(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) 
+    return Py_BuildValue("s", bitvectorGetBits(charGetUserGroups(ch)));
+  else           
+    return NULL;
+}
 
 //
 // Standard check to make sure the character exists when
@@ -345,6 +378,24 @@ int PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
   CHAR_DATA *ch;
   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
   charSetDesc(ch, PyString_AsString(value));
+  return 0;
+}
+
+int PyChar_setlookbuf(PyChar *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete character's look buffer");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "Look bufers must be strings");
+    return -1;
+  }
+
+  CHAR_DATA *ch;
+  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+  bufferClear(charGetLookBuffer(ch));
+  bufferCat(charGetLookBuffer(ch), PyString_AsString(value));
   return 0;
 }
 
@@ -619,8 +670,9 @@ PyObject *PyChar_sendaround(PyChar *self, PyObject *value) {
 //
 // make the character perform an action
 PyObject *PyChar_act(PyChar *self, PyObject *value) {
-  char *act          = NULL;
-  if (!PyArg_ParseTuple(value, "s", &act)) {
+  char     *act = NULL;
+  bool alias_ok = FALSE; 
+  if (!PyArg_ParseTuple(value, "s|b", &act, &alias_ok)) {
     PyErr_Format(PyExc_TypeError, "Characters actions must be strings.");
     return NULL;
   }
@@ -629,7 +681,7 @@ PyObject *PyChar_act(PyChar *self, PyObject *value) {
   if(ch) {
     // do not send the actual act - if we edit it, things go awry
     char *working_act = strdupsafe(act);
-    do_cmd(ch, working_act, FALSE);
+    do_cmd(ch, working_act, alias_ok);
     free(working_act);
     return Py_BuildValue("i", 1);
   }
@@ -648,7 +700,7 @@ PyObject *PyChar_cansee(PyChar *self, PyObject *arg) {
   PyObject *py_tgt = NULL;
 
   if(!PyArg_ParseTuple(arg, "O", &py_tgt)) {
-    PyErr_Format(PyExc_TypeError, "Must supply obj or mob for cansee");
+    PyErr_Format(PyExc_TypeError, "Must supply obj, mob, or exit for cansee");
     return NULL;
   }
 
@@ -661,13 +713,16 @@ PyObject *PyChar_cansee(PyChar *self, PyObject *arg) {
   else {
     OBJ_DATA    *obj = NULL;
     CHAR_DATA  *pers = NULL;
+    EXIT_DATA    *ex = NULL;
 
     if(PyChar_Check(py_tgt))
       pers = PyChar_AsChar(py_tgt);
     else if(PyObj_Check(py_tgt))
       obj  = PyObj_AsObj(py_tgt);
+    else if(PyExit_Check(py_tgt))
+      ex   = PyExit_AsExit(py_tgt);
     else {
-      PyErr_Format(PyExc_TypeError, "Must supply obj or mob to cansee");
+      PyErr_Format(PyExc_TypeError, "Must supply obj, mob, or exit to cansee");
       return NULL;
     }
 
@@ -675,6 +730,8 @@ PyObject *PyChar_cansee(PyChar *self, PyObject *arg) {
       return Py_BuildValue("b", can_see_obj(ch, obj));
     else if(pers != NULL)
       return Py_BuildValue("b", can_see_char(ch, pers));
+    else if(ex != NULL)
+      return Py_BuildValue("b", can_see_exit(ch, ex));
     else {
       PyErr_Format(PyExc_StandardError, "Target of cansee did not exist!");
       return NULL;
@@ -810,7 +867,7 @@ PyObject *PyChar_equip(PyChar *self, PyObject *args) {
   ROOM_DATA    *old_room = NULL;
   OBJ_DATA     *old_cont = NULL;
 
-  if (!PyArg_ParseTuple(args, "O|s", &pobj, &pos)) {
+  if (!PyArg_ParseTuple(args, "O|z", &pobj, &pos)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Character equip must be supplied with an item to equip!");
     return NULL;
@@ -858,13 +915,36 @@ PyObject *PyChar_equip(PyChar *self, PyObject *args) {
       obj_to_char(obj, old_carrier);
     else if(old_wearer != NULL)
       try_equip(ch, obj, old_pos, NULL);
-    PyErr_Format(PyExc_StandardError,
-		 "Character is already equipped in all possible positions!");
-    return NULL;
+    return Py_BuildValue("i", 0);
+    //    PyErr_Format(PyExc_StandardError,
+    //		 "Character is already equipped in all possible positions!");
+    //    return NULL;
   }
   // success
   else 
     return Py_BuildValue("i", 1);
+}
+
+
+PyObject *PyChar_getequip(PyChar *self, PyObject *args) {  
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  OBJ_DATA *obj = NULL;
+  char     *pos = NULL;
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError, "Nonexistant character");
+    return NULL;
+  }
+
+  if(!PyArg_ParseTuple(args, "s", &pos)) {
+    PyErr_Format(PyExc_TypeError, "A position name must be supplied.");
+    return NULL;
+  }
+  
+  obj = bodyGetEquipment(charGetBody(ch), pos);
+  if(obj == NULL)
+    return Py_None;
+  else
+    return Py_BuildValue("O", objGetPyFormBorrowed(obj));
 }
 
 
@@ -1074,7 +1154,7 @@ PyObject *PyChar_get_auxiliary(PyChar *self, PyObject *args) {
     data = Py_None;
   }
   PyObject *retval = Py_BuildValue("O", data);
-  Py_DECREF(data);
+  //  Py_DECREF(data);
   return retval;
 }
 
@@ -1098,6 +1178,28 @@ PyObject *PyChar_isinstance(PyChar *self, PyObject *args) {
   else {
     PyErr_Format(PyExc_StandardError, 
 		 "Tried to check instances of nonexistent char, %d.", self->uid);
+    return NULL;
+  }
+}
+
+//
+// returns whether or not the character belongs to one of the specified groups
+PyObject *PyChar_is_in_groups(PyChar *self, PyObject *args) {  
+  char *groups = NULL;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "s", &groups)) {
+    PyErr_Format(PyExc_TypeError, "is_in_groups only accepts strings.");
+    return NULL;
+  }
+
+  // pull out the object and check the type
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL)
+    return Py_BuildValue("i", bitIsSet(charGetUserGroups(ch), groups));
+  else {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to check user groups of nonexistent char, %d.", self->uid);
     return NULL;
   }
 }
@@ -1442,12 +1544,16 @@ PyMODINIT_FUNC init_PyChar(void) {
 		      "returns a list of objects in the char's inventory");
   PyChar_addGetSetter("eq",   PyChar_geteq,  NULL,
 		      "returns a list of the character's equipment");
+  PyChar_addGetSetter("bodyparts", PyChar_getbodyparts, NULL,
+		      "Returns a list of the character's bodyparts");
   PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
 		      "handle the character's name");
   PyChar_addGetSetter("mname", PyChar_getmname, PyChar_setmname,
 		      "handle the character's multi-name");
   PyChar_addGetSetter("desc", PyChar_getdesc, PyChar_setdesc,
 		      "handle the character's description");
+  PyChar_addGetSetter("look_buf", PyChar_getlookbuf, PyChar_setlookbuf,
+		      "handle the character's look buffer");
   PyChar_addGetSetter("rdesc", PyChar_getrdesc, PyChar_setrdesc,
 		      "handle the character's room description");
   PyChar_addGetSetter("mdesc", PyChar_getmdesc, PyChar_setmdesc,
@@ -1483,12 +1589,14 @@ PyMODINIT_FUNC init_PyChar(void) {
   PyChar_addGetSetter("hisher", PyChar_gethisher, NULL,
 		      "Returns 'his' if the char is male, 'her' if female, and "
 		      "'its' for neuters");
-  PyChar_addGetSetter("himher", PyChar_gethisher, NULL,
+  PyChar_addGetSetter("himher", PyChar_gethimher, NULL,
 		      "Returns 'him' if the char is male, 'her' if female, and "
 		      "'it' for neuters");
-  PyChar_addGetSetter("heshe", PyChar_gethisher, NULL,
+  PyChar_addGetSetter("heshe", PyChar_getheshe, NULL,
 		      "Returns 'he' if the char is male, 'she' if female, and "
 		      "'it' for neuters");
+  PyChar_addGetSetter("user_groups", PyChar_getusergroups, NULL,
+		      "Returns the character's user groups");
 
   // add in all of our methods for the Char class
   PyChar_addMethod("attach", PyChar_attach, METH_VARARGS,
@@ -1514,6 +1622,8 @@ PyMODINIT_FUNC init_PyChar(void) {
   PyChar_addMethod("equip", PyChar_equip, METH_VARARGS,
 		   "equips a character with the given item. Removes the item "
 		   "from whatever it is currently in/on.");
+  PyChar_addMethod("get_equip", PyChar_getequip, METH_VARARGS,
+		   "Returns the person's equipment in the specified slot.");
   PyChar_addMethod("isActing", PyChar_is_acting, METH_VARARGS,
 		   "Returns True if the character is currently taking an "
 		   "action, and False otherwise.");
@@ -1529,6 +1639,8 @@ PyMODINIT_FUNC init_PyChar(void) {
 		   "page a bunch of text to the character.");
   PyChar_addMethod("isinstance", PyChar_isinstance, METH_VARARGS,
 		   "returns whether or not the char inherits from the proto");
+  PyChar_addMethod("isInGroup", PyChar_is_in_groups, METH_VARARGS,
+		   "returns whether or not the character belongs to one of the groups");
 
   // add in all the getsetters and methods
   makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);

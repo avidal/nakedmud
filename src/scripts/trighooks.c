@@ -285,23 +285,40 @@ void do_room_trigs(ROOM_DATA *rm, const char *type, void *thing, void *arg){
 //*****************************************************************************
 // trighooks
 //*****************************************************************************
-void do_give_trighooks(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
+void do_give_trighooks(const char *info) {
+  CHAR_DATA   *ch = NULL;
+  CHAR_DATA *recv = NULL;
+  OBJ_DATA   *obj = NULL;
+  hookParseInfo(info, &ch, &recv, &obj);
+
   do_char_trigs(ch,   "give",    recv, obj);
   do_char_trigs(recv, "receive", ch,   obj);
   do_obj_trigs (obj,  "give",    ch,  recv);
 }
 
-void do_get_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+void do_get_trighooks(const char *info) {
+  CHAR_DATA *ch = NULL;
+  OBJ_DATA *obj = NULL;
+  hookParseInfo(info, &ch, &obj);
+
   do_obj_trigs (obj,             "get", ch, NULL);
   do_room_trigs(charGetRoom(ch), "get", ch, obj);
 }
 
-void do_drop_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+void do_drop_trighooks(const char *info) {
+  CHAR_DATA *ch = NULL;
+  OBJ_DATA *obj = NULL;
+  hookParseInfo(info, &ch, &obj);
+
   do_obj_trigs (obj,             "drop", ch, NULL);
   do_room_trigs(charGetRoom(ch), "drop", ch,  obj);
 }
 
-void do_enter_trighooks(CHAR_DATA *ch, ROOM_DATA *room) {
+void do_enter_trighooks(const char *info) {
+  CHAR_DATA   *ch = NULL;
+  ROOM_DATA *room = NULL;
+  hookParseInfo(info, &ch, &room);
+
   LIST_ITERATOR *mob_i = newListIterator(roomGetCharacters(room));
   CHAR_DATA       *mob = NULL;
   ITERATE_LIST(mob, mob_i) {
@@ -311,7 +328,12 @@ void do_enter_trighooks(CHAR_DATA *ch, ROOM_DATA *room) {
   do_room_trigs(room, "enter", ch, NULL);
 }
 
-void do_exit_trighooks(CHAR_DATA *ch, ROOM_DATA *room, EXIT_DATA *exit) {
+void do_exit_trighooks(const char *info) {
+  CHAR_DATA   *ch = NULL;
+  ROOM_DATA *room = NULL;
+  EXIT_DATA *exit = NULL;
+  hookParseInfo(info, &ch, &room, &exit);
+
   LIST_ITERATOR *mob_i = newListIterator(roomGetCharacters(room));
   CHAR_DATA       *mob = NULL;
   ITERATE_LIST(mob, mob_i) {
@@ -322,11 +344,20 @@ void do_exit_trighooks(CHAR_DATA *ch, ROOM_DATA *room, EXIT_DATA *exit) {
   do_char_trigs(ch,   "move", exit, NULL);
 }
 
-void do_ask_trighooks(CHAR_DATA *ch, CHAR_DATA *listener, char *speech) {
+void do_ask_trighooks(const char *info) {
+  CHAR_DATA       *ch = NULL;
+  CHAR_DATA *listener = NULL;
+  char        *speech = NULL;
+  hookParseInfo(info, &ch, &listener, &speech);
   do_char_trigs(listener, "speech", ch, speech);
+  if(speech) free(speech);
 }
 
-void do_say_trighooks(CHAR_DATA *ch, char *speech) {
+void do_say_trighooks(const char *info) {
+  CHAR_DATA *ch = NULL;
+  char  *speech = NULL;
+  hookParseInfo(info, &ch, &speech);
+
   LIST_ITERATOR *mob_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
   CHAR_DATA       *mob = NULL;
   ITERATE_LIST(mob, mob_i) {
@@ -334,23 +365,41 @@ void do_say_trighooks(CHAR_DATA *ch, char *speech) {
       do_char_trigs(mob, "speech", ch, speech);
   } deleteListIterator(mob_i);
   do_room_trigs(charGetRoom(ch), "speech", ch, speech);
+  if(speech) free(speech);
 }
 
-void do_greet_trighooks(CHAR_DATA *ch, CHAR_DATA *greeted) {
+void do_greet_trighooks(const char *info) {
+  CHAR_DATA      *ch = NULL;
+  CHAR_DATA *greeted = NULL;
+  hookParseInfo(info, &ch, &greeted);
   do_char_trigs(greeted, "greet", ch, NULL);
 }
 
-void do_wear_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+void do_wear_trighooks(const char *info) {
+  CHAR_DATA *ch = NULL;
+  OBJ_DATA *obj = NULL;
+  hookParseInfo(info, &ch, &obj);
+  printf("%s\r\n", info);
+  printf("%s %s\r\n", charGetName(ch), objGetName(obj));
+
   do_char_trigs(ch,  "wear", obj, NULL);
   do_obj_trigs (obj, "wear", ch,  NULL);
 }
 
-void do_remove_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+void do_remove_trighooks(const char *info) {
+  CHAR_DATA *ch = NULL;
+  OBJ_DATA *obj = NULL;
+  hookParseInfo(info, &ch, &obj);
   do_char_trigs(ch,  "remove", obj, NULL);
   do_obj_trigs (obj, "remove", ch,  NULL);
 }
 
-void do_reset_trighooks(ZONE_DATA *zone) {
+void do_reset_trighooks(const char *info) {
+  char  *zone_key = NULL;
+  hookParseInfo(info, &zone_key);
+  ZONE_DATA *zone = worldGetZone(gameworld, zone_key);
+  free(zone_key);
+
   LIST_ITERATOR *res_i = newListIterator(zoneGetResettable(zone));
   char           *name = NULL;
   const char   *locale = zoneGetKey(zone);
@@ -361,11 +410,17 @@ void do_reset_trighooks(ZONE_DATA *zone) {
   } deleteListIterator(res_i);
 }
 
-void do_open_door_trighooks(CHAR_DATA *ch, EXIT_DATA *ex) {
+void do_open_door_trighooks(const char *info) {
+  CHAR_DATA *ch = NULL;
+  EXIT_DATA *ex = NULL;
+  hookParseInfo(info, &ch, &ex);
   do_room_trigs(charGetRoom(ch), "open", ch, ex);
 }
 
-void do_open_obj_trighooks(CHAR_DATA *ch, OBJ_DATA *obj) {
+void do_open_obj_trighooks(const char *info) {
+  CHAR_DATA *ch = NULL;
+  OBJ_DATA *obj = NULL;
+  hookParseInfo(info, &ch, &obj);
   do_obj_trigs(obj, "open", ch, NULL);
 }
 

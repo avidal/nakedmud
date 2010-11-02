@@ -97,6 +97,10 @@ PyObject *roomGetPyFormBorrowed(ROOM_DATA *room);
 PyObject  *objGetPyFormBorrowed(OBJ_DATA  *obj);
 
 //
+// returns a Python form of the given list
+PyObject *PyList_fromList(LIST *list, void *convertor);
+
+//
 // adds a trigger to the trigger list. Makes sure it's not a duplicate copy
 void triggerListAdd(LIST *list, const char *trigger);
 

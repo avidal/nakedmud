@@ -19,6 +19,11 @@
 //*****************************************************************************
 #include "mud.h"
 #include "utils.h"
+#include "character.h"
+#include "object.h"
+#include "room.h"
+#include "exit.h"
+#include "account.h"
 #include "hooks.h"
 
 
@@ -28,10 +33,13 @@
 //*****************************************************************************
 
 // the table of all our installed hooks
-HASHTABLE *hook_table = NULL;
+HASHTABLE *hook_table   = NULL;
 
-// a table of all our handlers for running hooks
-HASHTABLE *hook_handler_table = NULL;
+// the list of functions called whenever a hook is run
+LIST *monitors = NULL;
+
+// a buffer for building hook info on
+BUFFER      *info_buf = NULL;
 
 
 
@@ -39,141 +47,181 @@ HASHTABLE *hook_handler_table = NULL;
 // implementation of hooks.h
 //*****************************************************************************
 void init_hooks(void) {
-  // make our required tables
-  hook_handler_table = newHashtable();
-  hook_table         = newHashtable();
-
-  // set up our basic types of hooks
-  hook_add_handler("shutdown",             hook_handler_0_args);
-  hook_add_handler("create_account",       hook_handler_1_arg);
-  hook_add_handler("create_player",        hook_handler_1_arg);
-  hook_add_handler("enter",                hook_handler_2_args);
-  hook_add_handler("exit",                 hook_handler_3_args);
-  hook_add_handler("ask",                  hook_handler_3_args);
-  hook_add_handler("say",                  hook_handler_2_args);
-  hook_add_handler("greet",                hook_handler_2_args);
-  hook_add_handler("obj_to_game",          hook_handler_1_arg);
-  hook_add_handler("char_to_game",         hook_handler_1_arg);
-  hook_add_handler("room_to_game",         hook_handler_1_arg);
-  hook_add_handler("obj_from_game",        hook_handler_1_arg);
-  hook_add_handler("char_from_game",       hook_handler_1_arg);
-  hook_add_handler("room_from_game",       hook_handler_1_arg);
-  hook_add_handler("get",                  hook_handler_2_args);
-  hook_add_handler("give",                 hook_handler_3_args);
-  hook_add_handler("drop",                 hook_handler_2_args);
-  hook_add_handler("wear",                 hook_handler_2_args);
-  hook_add_handler("remove",               hook_handler_2_args);
-  hook_add_handler("reset",                hook_handler_1_arg);
-  hook_add_handler("open_door",            hook_handler_2_args);
-  hook_add_handler("open_obj",             hook_handler_2_args);
-  hook_add_handler("close_door",           hook_handler_2_args);
-  hook_add_handler("close_obj",            hook_handler_2_args);
+  // make our required variables
+  hook_table = newHashtable();
+  info_buf   = newBuffer(1);
+  monitors   = newList();
 }
 
-void hook_add_handler(const char *type, 
-		      void (* handler)(LIST *hooks, va_list args)) {
-  hashPut(hook_handler_table, type, handler);
+void hookRemove(const char *type, void (* func)(const char *)) {
+  LIST *list = hashGet(hook_table, type);
+  if(list != NULL) listRemove(list, func);
 }
 
-void hookAdd(const char *type, void *hook) {
+void hookAdd(const char *type, void (* func)(const char *)) {
   LIST *list = hashGet(hook_table, type);
   if(list == NULL) {
     list = newList();
     hashPut(hook_table, type, list);
   }
-  listQueue(list, hook);
+  listQueue(list, func);
 }
 
-void hookRun(const char *type, ...) {
+void hookAddMonitor(void (* func)(const char *, const char *)) {
+  listQueue(monitors, func);
+}
+
+void hookRun(const char *type, const char *info) {
   LIST *list = hashGet(hook_table, type);
-  void (* handler)(LIST *hooks, va_list args) = 
-    hashGet(hook_handler_table, type);
-  if(list != NULL && handler != NULL) {
-    va_list args;
-    va_start(args, type);
-    handler(list, args);
-    va_end(args);
+  if(list != NULL) {
+    char *info_dup = strdup(info);
+    LIST_ITERATOR *list_i = newListIterator(list);
+    void (* func)(const char *) = NULL;
+    ITERATE_LIST(func, list_i) {
+      func(info_dup);
+    } deleteListIterator(list_i);
+    free(info_dup);
   }
+
+  // run our monitors
+  LIST_ITERATOR *mon_i = newListIterator(monitors);
+  void (* mon)(const char *, const char *) = NULL;
+  ITERATE_LIST(mon, mon_i) {
+    mon(type, info);
+  } deleteListIterator(mon_i);
 }
 
-void hookRemove(const char *type, void *hook) {
-  LIST *list = hashGet(hook_table, type);
-  if(list != NULL) listRemove(list, hook);
+const char *hookBuildInfo(const char *format, ...) {
+  // clear our workspace
+  bufferClear(info_buf);
+
+  // parse out all of our tokens
+  LIST *tokens           = parse_strings(format, ' ');
+  LIST_ITERATOR *token_i = newListIterator(tokens);
+  char *token            = NULL;
+  int   len              = listSize(tokens);
+  int   count            = 0;
+
+  // go through all of our tokens
+  va_list vargs;
+  va_start(vargs, format);
+  ITERATE_LIST(token, token_i) {
+    if(!strcasecmp(token, "ch"))
+      bprintf(info_buf, "ch.%d", charGetUID(va_arg(vargs, CHAR_DATA *)));
+    else if(!strcasecmp(token, "obj"))
+      bprintf(info_buf, "obj.%d", objGetUID(va_arg(vargs, OBJ_DATA *)));
+    else if(!strcasecmp(token, "rm") || !strcasecmp(token, "room"))
+      bprintf(info_buf, "rm.%d", roomGetUID(va_arg(vargs, ROOM_DATA *)));
+    else if(!strcasecmp(token, "ex") || !strcasecmp(token, "exit"))
+      bprintf(info_buf, "ex.%d", exitGetUID(va_arg(vargs, EXIT_DATA *)));
+    else if(!strcasecmp(token, "str"))
+      bprintf(info_buf, "%c%s%c", HOOK_STR_MARKER, va_arg(vargs, char *), HOOK_STR_MARKER);
+    else if(!strcasecmp(token, "int"))
+      bprintf(info_buf, "%d", va_arg(vargs, int));
+    else if(!strcasecmp(token, "dbl"))
+      bprintf(info_buf, "%lf", va_arg(vargs, double));
+    // unknown type -- abort!
+    else
+      break;
+
+    // add a space for the next token to be printed
+    if(count < len - 1)
+      bprintf(info_buf, " ");
+    count++;
+  } deleteListIterator(token_i);
+  deleteListWith(tokens, free);
+  va_end(vargs);
+  return bufferString(info_buf);
 }
 
-void hook_handler_0_args(LIST *hooks, va_list args) {
-  LIST_ITERATOR *hook_i = newListIterator(hooks);
-  void   (* hook)(void) = NULL;
-  ITERATE_LIST(hook, hook_i) {
-    hook();
-  } deleteListIterator(hook_i);
+//
+// parses up info tokens
+LIST *parse_hook_info_tokens(const char *info) {
+  LIST *tokens = newList();
+  BUFFER  *buf = newBuffer(1);
+  while(*info) {
+    // skip leading spaces
+    while(isspace(*info))
+      info++;
+
+    char marker = ' ';
+    bufferClear(buf);
+    
+    // are we parsing a string or something else?
+    if(*info == HOOK_STR_MARKER) {
+      marker = HOOK_STR_MARKER;
+      bprintf(buf, "%c", HOOK_STR_MARKER);
+      info++;
+    }
+
+    // fill up to the end marker
+    for(;*info && *info != marker; info++)
+      bprintf(buf, "%c", *info);
+
+    // were we parsing a string?
+    if(marker == HOOK_STR_MARKER)
+      bprintf(buf, "%c", HOOK_STR_MARKER);
+
+    // skip past our marker
+    if(*info) info++;
+    
+    // append our token
+    listQueue(tokens, strdup(bufferString(buf)));
+  }
+  deleteBuffer(buf);
+  return tokens;
 }
 
-void hook_handler_1_arg(LIST *hooks, va_list args) {
-  LIST_ITERATOR *hook_i = newListIterator(hooks);
-  void *arg1 = va_arg(args, void *);
-  void (* hook)(void *) = NULL;
-  ITERATE_LIST(hook, hook_i) {
-    hook(arg1);
-  } deleteListIterator(hook_i);
-}
+void hookParseInfo(const char *info, ...) {
+  // parse out all of our tokens
+  LIST *tokens           = parse_hook_info_tokens(info);
+  LIST_ITERATOR *token_i = newListIterator(tokens);
+  char *token            = NULL;
 
-void hook_handler_2_args(LIST *hooks, va_list args) {
-  LIST_ITERATOR *hook_i = newListIterator(hooks);
-  void *arg1 = va_arg(args, void *);
-  void *arg2 = va_arg(args, void *);
-  void (* hook)(void *, void *) = NULL;
-  ITERATE_LIST(hook, hook_i) {
-    hook(arg1, arg2);
-  } deleteListIterator(hook_i);
-}
+  // id number we'll need for parsing some values
+  int id = 0;
 
-void hook_handler_3_args(LIST *hooks, va_list args) {
-  LIST_ITERATOR *hook_i = newListIterator(hooks);
-  void *arg1 = va_arg(args, void *);
-  void *arg2 = va_arg(args, void *);
-  void *arg3 = va_arg(args, void *);
-  void (* hook)(void *, void *, void *) = NULL;
-  ITERATE_LIST(hook, hook_i) {
-    hook(arg1, arg2, arg3);
-  } deleteListIterator(hook_i);
-}
-
-void hook_handler_4_args(LIST *hooks, va_list args) {
-  LIST_ITERATOR *hook_i = newListIterator(hooks);
-  void *arg1 = va_arg(args, void *);
-  void *arg2 = va_arg(args, void *);
-  void *arg3 = va_arg(args, void *);
-  void *arg4 = va_arg(args, void *);
-  void (* hook)(void *, void *, void *, void *) = NULL;
-  ITERATE_LIST(hook, hook_i) {
-    hook(arg1, arg2, arg3, arg4);
-  } deleteListIterator(hook_i);
-}
-
-void hook_handler_5_args(LIST *hooks, va_list args) {
-  LIST_ITERATOR *hook_i = newListIterator(hooks);
-  void *arg1 = va_arg(args, void *);
-  void *arg2 = va_arg(args, void *);
-  void *arg3 = va_arg(args, void *);
-  void *arg4 = va_arg(args, void *);
-  void *arg5 = va_arg(args, void *);
-  void (* hook)(void *, void *, void *, void *, void *) = NULL;
-  ITERATE_LIST(hook, hook_i) {
-    hook(arg1, arg2, arg3, arg4, arg5);
-  } deleteListIterator(hook_i);
-}
-
-void hook_handler_6_args(LIST *hooks, va_list args) {
-  LIST_ITERATOR *hook_i = newListIterator(hooks);
-  void *arg1 = va_arg(args, void *);
-  void *arg2 = va_arg(args, void *);
-  void *arg3 = va_arg(args, void *);
-  void *arg4 = va_arg(args, void *);
-  void *arg5 = va_arg(args, void *);
-  void *arg6 = va_arg(args, void *);
-  void (* hook)(void *, void *, void *, void *, void *, void *) = NULL;
-  ITERATE_LIST(hook, hook_i) {
-    hook(arg1, arg2, arg3, arg4, arg5, arg6);
-  } deleteListIterator(hook_i);
+  // go through all of our tokens
+  va_list vargs;
+  va_start(vargs, info);
+  ITERATE_LIST(token, token_i) {
+    if(startswith(token, "ch")) {
+      sscanf(token, "ch.%d", &id);
+      *va_arg(vargs, CHAR_DATA **) = propertyTableGet(mob_table, id);
+    }
+    else if(startswith(token, "obj")) {
+      sscanf(token, "obj.%d", &id);
+      *va_arg(vargs, OBJ_DATA **) = propertyTableGet(obj_table, id);
+    }
+    else if(startswith(token, "rm")) {
+      sscanf(token, "rm.%d", &id);
+      *va_arg(vargs, ROOM_DATA **) = propertyTableGet(room_table, id);
+    }
+    else if(startswith(token, "room")) {
+      sscanf(token, "room.%d", &id);
+      *va_arg(vargs, ROOM_DATA **) = propertyTableGet(room_table, id);
+    }
+    else if(startswith(token, "ex")) {
+      sscanf(token, "ex.%d", &id);
+      *va_arg(vargs, EXIT_DATA **) = propertyTableGet(exit_table, id);
+    }
+    else if(startswith(token, "exit")) {
+      sscanf(token, "exit.%d", &id);
+      *va_arg(vargs, EXIT_DATA **) = propertyTableGet(exit_table, id);
+    }
+    else if(*token == HOOK_STR_MARKER) {
+      char *str = strdup(token + 1);
+      str[strlen(str)-1] = '\0';
+      *va_arg(vargs, char **) = str;
+    }
+    else if(isdigit(*token)) {
+      // integer or double?
+      if(next_letter_in(token, '.') > -1)
+	*va_arg(vargs, double *) = atof(token);
+      else
+	*va_arg(vargs, int *) = atoi(token);
+    }
+  } deleteListIterator(token_i);
+  deleteListWith(tokens, free);
+  va_end(vargs);
 }

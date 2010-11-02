@@ -219,6 +219,10 @@ bool canEditZone(ZONE_DATA *zone, CHAR_DATA *ch);
 void *identity_func(void *data);
 
 //
+// returns a copy of the list with everything in reverse order
+LIST *reverse_list(LIST *list);
+
+//
 // checks to see if a file or directory exists
 bool file_exists(const char *fname);
 bool dir_exists (const char *dname);
