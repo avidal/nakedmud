@@ -1338,7 +1338,7 @@ void show_prompt(SOCKET_DATA *socket) {
 }
 
 const char *custom_prompt(CHAR_DATA *ch) {
-  static char prompt[MAX_BUFFER];
+  static char prompt[SMALL_BUFFER];
   *prompt = '\0';
   strcat(prompt, "\r\n{nprompt> ");    
   return prompt;

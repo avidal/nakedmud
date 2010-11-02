@@ -70,7 +70,7 @@ void deleteTriggerAuxData(TRIGGER_AUX_DATA *data) {
   deleteListWith(data->triggers, free);
   if(data->pyform && data->pyform->ob_refcnt > 1)
     log_string("LEAK: Memory leak (%d refcnt) on someone or something's pyform",
-	       data->pyform->ob_refcnt);
+	       (int)data->pyform->ob_refcnt);
   Py_XDECREF(data->pyform);
   free(data);
 }

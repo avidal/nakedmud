@@ -159,24 +159,28 @@ void print_key(FILE *fl, const char *key, int key_width, int indent) {
   fprintf(fl, fmt, key);
 }
 
-
 //
 // write a string containing newlines to a file
 //
 void write_string_data(const char *string, FILE *fl, int indent) {
   static char buf[SMALL_BUFFER];
-  int i, str_i;
+  int i, str_i, do_indent;
+  *buf = '\0';
+  do_indent = TRUE;
 
-  for(str_i = i = 0; string[str_i] != '\0'; str_i++) {
-    buf[i] = string[str_i];
-    if(buf[i] == '\n') {
-      buf[++i] = '\0';
-      print_indent(fl, indent);
+  for(i = str_i = 0; string[str_i] != '\0'; str_i++) {
+    buf[i++] = string[str_i];
+    if(i == SMALL_BUFFER-1 || string[str_i] == '\n') {
+      if(do_indent == TRUE) {
+	print_indent(fl, indent);
+	do_indent = FALSE;
+      }
+      buf[i] = '\0';
       fprintf(fl, "%s", buf);
       i = 0;
+      if(string[str_i] == '\n')
+	do_indent = TRUE;
     }
-    else
-      i++;
   }
 }
 
@@ -392,9 +396,31 @@ char *parse_key(FILE *fl) {
 // Read until we hit a newline. Return a copy of what we find
 //
 char *parse_line(FILE *fl) {
-  static char buf[SMALL_BUFFER];
-  fgetline(fl, buf, SMALL_BUFFER);
-  return strdup(buf);
+  static BUFFER *buf = NULL;
+  static char   sbuf[SMALL_BUFFER];
+  int              i = 0;
+  if(buf == NULL)
+    buf = newBuffer(1);
+  bufferClear(buf);
+  *sbuf = 0;
+
+  // fill up our small buffer to max, then copy it over
+  for(i = 0; (sbuf[i] = getc(fl)) != EOF && sbuf[i] != '\n';) {
+    if(i < SMALL_BUFFER-2)
+      i++;
+    else {
+      sbuf[++i] = '\0';
+      bprintf(buf, "%s", sbuf);
+      i = 0;
+      sbuf[i] = '\0';
+    }
+  }
+
+  // we found the newline
+  if(sbuf[i] == '\n')
+    sbuf[i] = '\0';
+  bprintf(buf, "%s", sbuf);
+  return strdup(bufferString(buf));
 }
 
 
@@ -402,20 +428,22 @@ char *parse_line(FILE *fl) {
 // read in a string that may possibly have multiple newlines in it
 //
 char *parse_string(FILE *fl, int indent) {
-  static char line[SMALL_BUFFER];
-  static char buf [MAX_BUFFER];
-  *buf = '\0';
-  int i = 0;
+  static BUFFER *buf = NULL;
+  char          *ptr = NULL;
+  if(buf == NULL)
+    buf = newBuffer(1);
+  bufferClear(buf);
 
   // as long as we can skip up our indent, we can read in data and
   // all is good. Once we can no longer skip up our indent, then
   // we have come to the end of our string
   while(skip_indent(fl, indent)) {
-    fgetline(fl, line, SMALL_BUFFER);
-    i += snprintf(buf+i, MAX_BUFFER-i-1, "%s\n", line);
+    ptr = parse_line(fl);
+    bprintf(buf, "%s\n", ptr);
+    free(ptr);
   }
 
-  return strdup(buf);
+  return strdup(bufferString(buf));
 }
 
 

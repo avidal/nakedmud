@@ -58,15 +58,4 @@ bool is_afternoon();
 bool is_evening();
 bool is_night();
 
-
-//
-// If we have the time module installed, there is the option of
-// supplying a night description for the room, that will be shifted
-// to when it becomes evening/night time.
-//
-const char *roomGetNightDesc      (ROOM_DATA *room);
-BUFFER     *roomGetNightDescBuffer(ROOM_DATA *room);
-void        roomSetNightDesc      (ROOM_DATA *room, const char *desc);
-
-
 #endif // __MUDTIME_H

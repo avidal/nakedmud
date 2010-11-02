@@ -438,6 +438,7 @@ BUFFER *build_help(const char *keyword) {
     for(i = 0, count = 0; i < HELP_TABLE_BUCKETS; i++) {
       LIST_ITERATOR *buck_i = newListIterator(help_table[i]);
       HELP_ENTRY     *entry = NULL;
+
       ITERATE_LIST(entry, buck_i) {
 	bprintf(buf, "%-16s", entry->keyword);
 	count++;

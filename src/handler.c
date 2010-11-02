@@ -790,21 +790,6 @@ void *find_one(CHAR_DATA *looker,
       return looker;
     }
   }
-
-  // seach our inventory
-  if(IS_SET(find_scope, FIND_SCOPE_INV) && 
-     IS_SET(find_types, FIND_TYPE_OBJ)) {
-    count = count_objs(looker, charGetInventory(looker), at, NULL, 
-		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
-    if(count >= at_count) {
-      if(found_type)
-	*found_type = FOUND_OBJ;
-      return find_obj(looker, charGetInventory(looker), at_count, at, NULL,
-		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
-    }
-    else
-      at_count -= count;
-  }
   
   // search our equipment
   if(IS_SET(find_scope, FIND_SCOPE_WORN) &&
@@ -825,6 +810,22 @@ void *find_one(CHAR_DATA *looker,
       at_count -= count;
     }
   }
+
+  // seach our inventory
+  if(IS_SET(find_scope, FIND_SCOPE_INV) && 
+     IS_SET(find_types, FIND_TYPE_OBJ)) {
+    count = count_objs(looker, charGetInventory(looker), at, NULL, 
+		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+    if(count >= at_count) {
+      if(found_type)
+	*found_type = FOUND_OBJ;
+      return find_obj(looker, charGetInventory(looker), at_count, at, NULL,
+		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+    }
+    else
+      at_count -= count;
+  }
+
 
 
   /************************************************************/

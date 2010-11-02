@@ -1,0 +1,3000 @@
+diff -ruN ../nakedmudv3.3/src/Makefile src/Makefile
+--- ../nakedmudv3.3/src/Makefile	2006-12-24 22:27:44.000000000 -0500
++++ src/Makefile	2007-09-22 23:06:28.000000000 -0400
+@@ -26,7 +26,7 @@
+ NOCOLOR := \x1B[0m
+ 
+ # the modules we have installed -- mandatory modules go here
+-MODULES := char_vars set_val olc2 editor items scripts
++MODULES := dyn_vars set_val olc2 editor items scripts
+ 
+ # optional modules go on this line
+ MODULES += time socials alias help
+diff -ruN ../nakedmudv3.3/src/SConstruct src/SConstruct
+--- ../nakedmudv3.3/src/SConstruct	2006-12-24 23:35:27.000000000 -0500
++++ src/SConstruct	2007-09-22 22:40:41.000000000 -0400
+@@ -59,7 +59,7 @@
+ binary = 'NakedMud'
+ 
+ # Required modules
+-modules = ['char_vars', 'set_val', 'olc2', 'editor', 'items', 'scripts']
++modules = ['dyn_vars', 'set_val', 'olc2', 'editor', 'items', 'scripts']
+ 
+ # Optional modules
+ modules += ['time', 'socials', 'alias', 'help']
+diff -ruN ../nakedmudv3.3/src/char_vars/char_vars.c src/char_vars/char_vars.c
+--- ../nakedmudv3.3/src/char_vars/char_vars.c	2006-12-24 22:15:56.000000000 -0500
++++ src/char_vars/char_vars.c	1969-12-31 19:00:00.000000000 -0500
+@@ -1,344 +0,0 @@
+-//*****************************************************************************
+-//
+-// char_vars.c
+-//
+-// This module allows key/value pairs to be stored on a character. The values
+-// can be strings, integers, or doubles. If a value is called for in the wrong
+-// type (e.g. you're trying to get a string as an integer) the module will
+-// automagically handle the conversion. Variable types default to ints.
+-//
+-//*****************************************************************************
+-
+-#include "../mud.h"
+-#include "../utils.h"
+-#include "../character.h"
+-#include "../storage.h"
+-#include "../auxiliary.h"
+-
+-#include "char_vars.h"
+-
+-
+-//*****************************************************************************
+-//
+-// local functions and datastructurs
+-//
+-//*****************************************************************************
+-
+-// used in storage_sets to keep track of what kind of data we're saving
+-const char *char_var_types[] = {
+-  "string",
+-  "int",
+-  "long",
+-  "double"
+-};
+-
+-
+-typedef struct char_var {
+-  char *str_val;
+-  int   type;
+-} CHAR_VAR;
+-
+-
+-CHAR_VAR *newCharVarString(const char *str) {
+-  CHAR_VAR *data = malloc(sizeof(CHAR_VAR));
+-  data->str_val  = strdupsafe(str);
+-  data->type     = CHAR_VAR_STRING;
+-  return data;
+-}
+-
+-CHAR_VAR *newCharVarInt(int val) {
+-  CHAR_VAR *data = malloc(sizeof(CHAR_VAR));
+-  char str_val[20]; sprintf(str_val, "%d", val);
+-  data->str_val  = strdup(str_val);
+-  data->type     = CHAR_VAR_INT;
+-  return data;
+-}
+-
+-CHAR_VAR *newCharVarLong(long val) {
+-  CHAR_VAR *data = malloc(sizeof(CHAR_VAR));
+-  char str_val[20]; sprintf(str_val, "%ld", val);
+-  data->str_val  = strdup(str_val);
+-  data->type     = CHAR_VAR_LONG;
+-  return data;
+-}
+-
+-CHAR_VAR *newCharVarDouble(double val) {
+-  CHAR_VAR *data = malloc(sizeof(CHAR_VAR));
+-  char str_val[20]; sprintf(str_val, "%lf", val);
+-  data->str_val  = strdup(str_val);
+-  data->type     = CHAR_VAR_DOUBLE;
+-  return data;
+-}
+-
+-void deleteCharVar(CHAR_VAR *data) {
+-  if(data->str_val) free(data->str_val);
+-  free(data);
+-}
+-
+-CHAR_VAR *charVarCopy(CHAR_VAR *data) {
+-  CHAR_VAR *new_data = malloc(sizeof(CHAR_VAR));
+-  new_data->str_val = strdup(data->str_val);
+-  new_data->type    = data->type;
+-  return new_data;
+-}
+-
+-//
+-// delete a hashtable of char vars
+-//
+-void deleteCharVarTable(HASHTABLE *table) {
+-  HASH_ITERATOR *hash_i = newHashIterator(table);
+-  const char       *key = NULL;
+-  CHAR_VAR         *val = NULL;
+-  
+-  ITERATE_HASH(key, val, hash_i)
+-    deleteCharVar(val);
+-  deleteHashIterator(hash_i);
+-  deleteHashtable(table);
+-}
+-
+-
+-
+-//*****************************************************************************
+-//
+-// char_var auxiliary data
+-//
+-//*****************************************************************************
+-typedef struct char_var_aux_data {
+-  HASHTABLE *char_vars;
+-} CHAR_VAR_AUX_DATA;
+-
+-
+-CHAR_VAR_AUX_DATA *
+-newCharVarAuxData() {
+-  CHAR_VAR_AUX_DATA *data = malloc(sizeof(CHAR_VAR_AUX_DATA));
+-  // Hashtables can take up lots of storage space. Because of this, let's
+-  // not create any tables until it's actually needed. This will cut down
+-  // on lots of memory usage w.r.t. NPCs who do not use character variables
+-  //  data->char_vars        = newHashtable();
+-  data->char_vars         = NULL;
+-  return data;
+-}
+-
+-
+-void
+-deleteCharVarAuxData(CHAR_VAR_AUX_DATA *data) {
+-  if(data->char_vars)
+-    deleteCharVarTable(data->char_vars);
+-  free(data);
+-}
+-
+-
+-void
+-charVarAuxDataCopyTo(CHAR_VAR_AUX_DATA *from, CHAR_VAR_AUX_DATA *to) {
+-  int from_size = (from->char_vars ? hashSize(from->char_vars) : 0);
+-  int to_size   = (to->char_vars   ? hashSize(to->char_vars)   : 0);
+-
+-  // clear out our current data
+-  if(to_size > 0) {
+-    deleteCharVarTable(to->char_vars);
+-    to->char_vars = NULL;
+-  }
+-
+-  // check to see if the "from" table exists
+-  if(from_size > 0) {
+-    // make sure the "to" table exists
+-    if(to->char_vars == NULL)
+-      to->char_vars = newHashtable();
+-
+-    // copy everything over
+-    HASH_ITERATOR *from_i = newHashIterator(from->char_vars);
+-    const char       *key = NULL;
+-    CHAR_VAR         *val = NULL;
+-
+-    ITERATE_HASH(key, val, from_i)
+-      hashPut(to->char_vars, key, charVarCopy(val));
+-    deleteHashIterator(from_i);
+-  }
+-}
+-
+-
+-CHAR_VAR_AUX_DATA *
+-charVarAuxDataCopy(CHAR_VAR_AUX_DATA *data) {
+-  CHAR_VAR_AUX_DATA *new_data = newCharVarAuxData();
+-  charVarAuxDataCopyTo(data, new_data);
+-  return new_data;
+-}
+-
+-
+-STORAGE_SET *charVarAuxDataStore(CHAR_VAR_AUX_DATA *data) {
+-  // first, check if the table even exists
+-  if(data->char_vars == NULL || hashSize(data->char_vars) == 0)
+-    return new_storage_set();
+-
+-  STORAGE_SET       *set = new_storage_set();
+-  HASH_ITERATOR  *hash_i = newHashIterator(data->char_vars);
+-  STORAGE_SET_LIST *list = new_storage_list();
+-  const char        *key = NULL;
+-  CHAR_VAR          *val = NULL;
+-
+-  store_list(set, "variables", list);
+-  // iterate across all the entries and add them
+-  ITERATE_HASH(key, val, hash_i) {
+-    STORAGE_SET *var_set = new_storage_set();
+-    store_string(var_set, "key",  key);
+-    store_string(var_set, "val",  val->str_val);
+-    store_string(var_set, "type", char_var_types[val->type]);
+-    storage_list_put(list, var_set);
+-  }
+-  deleteHashIterator(hash_i);
+-  return set;
+-}
+-
+-
+-HASHTABLE *variableRead(STORAGE_SET *set) {
+-  HASHTABLE *table       = newHashtable();
+-  STORAGE_SET_LIST *list = read_list(set, "list");
+-  STORAGE_SET *var       = NULL;
+-
+-  while( (var = storage_list_next(list)) != NULL)
+-    hashPut(table, read_string(var, "key"), (void *)read_int(var, "val"));
+-  return table;
+-}
+-
+-
+-CHAR_VAR_AUX_DATA *charVarAuxDataRead(STORAGE_SET *set) {
+-  // if the set doesn't contain any entries, don't bother trying to parse
+-  if(!storage_contains(set, "variables"))
+-    return newCharVarAuxData();
+-
+-  CHAR_VAR_AUX_DATA *data = newCharVarAuxData();
+-  STORAGE_SET_LIST  *list = read_list(set, "variables");
+-  STORAGE_SET    *var_set = NULL;
+-  data->char_vars         = newHashtable();
+-  
+-  while( (var_set = storage_list_next(list)) != NULL) {
+-    const char *var_type = read_string(var_set, "type");
+-    if(!strcasecmp(var_type, "int"))
+-      hashPut(data->char_vars, read_string(var_set, "key"),
+-	      newCharVarInt(read_int(var_set, "val")));
+-    else if(!strcasecmp(var_type, "long"))
+-      hashPut(data->char_vars, read_string(var_set, "key"),
+-	      newCharVarLong(read_long(var_set, "val")));
+-    else if(!strcasecmp(var_type, "double"))
+-      hashPut(data->char_vars, read_string(var_set, "key"),
+-	      newCharVarDouble(read_double(var_set, "val")));
+-    else if(!strcasecmp(var_type, "string"))
+-      hashPut(data->char_vars, read_string(var_set, "key"),
+-	      newCharVarString(read_string(var_set, "val")));
+-    else
+-      log_string("ERROR: Tried to read unknown char_var type, %s.", var_type);
+-  }
+-    
+-  return data;
+-}
+-
+-
+-void init_char_vars() {
+-  // install char vars on the character datastructure
+-  auxiliariesInstall("char_var_aux_data",
+-		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR,
+-				       newCharVarAuxData, deleteCharVarAuxData,
+-				       charVarAuxDataCopyTo, charVarAuxDataCopy,
+-				       charVarAuxDataStore,charVarAuxDataRead));
+-}
+-
+-
+-
+-
+-//*****************************************************************************
+-//
+-// functions for interacting with char_vars
+-//
+-//*****************************************************************************
+-int charGetVarType(CHAR_DATA *ch, const char *key) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *var = (data->char_vars ? hashGet(data->char_vars, key) : NULL);
+-  return (var ? var->type : CHAR_VAR_INT);
+-}
+-
+-
+-int charGetInt(CHAR_DATA *ch, const char *key) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *var = (data->char_vars ? hashGet(data->char_vars, key) : NULL);
+-  return (var ? atoi(var->str_val) : 0);
+-}
+-
+-
+-long charGetLong(CHAR_DATA *ch, const char *key) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *var = (data->char_vars ? hashGet(data->char_vars, key) : NULL);
+-  return (var ? atol(var->str_val) : 0);
+-}
+-
+-
+-double charGetDouble(CHAR_DATA *ch, const char *key) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *var = (data->char_vars ? hashGet(data->char_vars, key) : NULL);
+-  return (var ? atof(var->str_val) : 0);
+-}
+-
+-
+-const char *charGetString(CHAR_DATA *ch, const char *key) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *var = (data->char_vars ? hashGet(data->char_vars, key) : NULL);
+-  return (var ? var->str_val : "");
+-}
+-
+-
+-void charSetInt(CHAR_DATA *ch, const char *key, int val) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+-  if(data->char_vars == NULL && val != 0)
+-    data->char_vars = newHashtable();
+-  if(old != NULL) 
+-    deleteCharVar(old);
+-  if(val != 0)
+-    hashPut(data->char_vars, key, newCharVarInt(val));
+-}
+-
+-
+-void charSetLong(CHAR_DATA *ch, const char *key, long val) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+-  if(data->char_vars == NULL && val != 0)
+-    data->char_vars = newHashtable();
+-  if(old != NULL) 
+-    deleteCharVar(old);
+-  if(val != 0)
+-    hashPut(data->char_vars, key, newCharVarLong(val));
+-}
+-
+-
+-void charSetDouble(CHAR_DATA *ch, const char *key, double val) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+-  if(data->char_vars == NULL && val != 0)
+-    data->char_vars = newHashtable();
+-  if(old != NULL) 
+-    deleteCharVar(old);
+-  if(val != 0)
+-    hashPut(data->char_vars, key, newCharVarDouble(val));
+-}
+-
+-
+-void charSetString(CHAR_DATA *ch, const char *key, const char *val) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+-  if(data->char_vars == NULL && *val != '\0') 
+-    data->char_vars = newHashtable();
+-  if(old != NULL) 
+-    deleteCharVar(old);
+-  if(*val != '\0')
+-    hashPut(data->char_vars, key, newCharVarString(val));
+-}
+-
+-bool charHasVar(CHAR_DATA *ch, const char *key) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  return (data->char_vars ? hashIn(data->char_vars, key) : FALSE);
+-}
+-
+-void charDeleteVar(CHAR_DATA *ch, const char *key) {
+-  CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+-  CHAR_VAR *var = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+-  if(var != NULL) deleteCharVar(var);
+-}
+diff -ruN ../nakedmudv3.3/src/char_vars/char_vars.h src/char_vars/char_vars.h
+--- ../nakedmudv3.3/src/char_vars/char_vars.h	2006-12-24 22:15:56.000000000 -0500
++++ src/char_vars/char_vars.h	1969-12-31 19:00:00.000000000 -0500
+@@ -1,50 +0,0 @@
+-#ifndef __CHAR_VARS_H
+-#define __CHAR_VARS_H
+-//*****************************************************************************
+-//
+-// char_vars.h
+-//
+-// This module allows key/value pairs to be stored on a character. The values
+-// can be strings, integers, or doubles. If a value is called for in the wrong
+-// type (e.g. you're trying to get a string as an integer) the module will
+-// automagically handle the conversion. Variable types default to ints.
+-//
+-//*****************************************************************************
+-
+-
+-//
+-// This must be put at the top of mud.h so the rest of the MUD knows that
+-// we've got the alias module installed
+-// #define MODULE_CHAR_VARS
+-//
+-
+-
+-// the different types of data we can store
+-#define CHAR_VAR_STRING        0
+-#define CHAR_VAR_INT           1
+-#define CHAR_VAR_LONG          2
+-#define CHAR_VAR_DOUBLE        3
+-
+-
+-
+-//
+-// prepare char_vars for use
+-//
+-void         init_char_vars   ();
+-
+-int          charGetVarType   (CHAR_DATA *ch, const char *key);
+-
+-int          charGetInt       (CHAR_DATA *ch, const char *key);
+-long         charGetLong      (CHAR_DATA *ch, const char *key);
+-double       charGetDouble    (CHAR_DATA *ch, const char *key);
+-const char  *charGetString    (CHAR_DATA *ch, const char *key);
+-
+-void         charSetInt       (CHAR_DATA *ch, const char *key, int val);
+-void         charSetLong      (CHAR_DATA *ch, const char *key, long val);
+-void         charSetDouble    (CHAR_DATA *ch, const char *key, double val);
+-void         charSetString    (CHAR_DATA *ch, const char *key, const char *val);
+-
+-bool         charHasVar       (CHAR_DATA *ch, const char *key);
+-void         charDeleteVar    (CHAR_DATA *ch, const char *key);
+-
+-#endif // __CHAR_VARS_H
+diff -ruN ../nakedmudv3.3/src/char_vars/module.mk src/char_vars/module.mk
+--- ../nakedmudv3.3/src/char_vars/module.mk	2006-12-24 22:15:56.000000000 -0500
++++ src/char_vars/module.mk	1969-12-31 19:00:00.000000000 -0500
+@@ -1,2 +0,0 @@
+-# source files we need to add
+-SRC += char_vars/char_vars.c
+diff -ruN ../nakedmudv3.3/src/dyn_vars/dyn_vars.c src/dyn_vars/dyn_vars.c
+--- ../nakedmudv3.3/src/dyn_vars/dyn_vars.c	1969-12-31 19:00:00.000000000 -0500
++++ src/dyn_vars/dyn_vars.c	2007-09-22 22:44:09.000000000 -0400
+@@ -0,0 +1,463 @@
++//*****************************************************************************
++//
++// dyn_vars.c
++//
++// This module allows key/value pairs to be dynamically created on characters,
++// objects, and rooms. Values can be strings, integers, or doubles. If a value
++// is called for in the wrong type (e.g. you're trying to get a string as an 
++// integer) the module will automagically handle the conversion. Variable types
++// default to ints.
++//
++//*****************************************************************************
++
++#include "../mud.h"
++#include "../utils.h"
++#include "../character.h"
++#include "../room.h"
++#include "../object.h"
++#include "../storage.h"
++#include "../auxiliary.h"
++
++#include "dyn_vars.h"
++
++
++
++//*****************************************************************************
++//
++// local functions and datastructurs
++//
++//*****************************************************************************
++
++// used in storage_sets to keep track of what kind of data we're saving
++const char *dyn_var_types[] = {
++  "string",
++  "int",
++  "long",
++  "double"
++};
++
++
++typedef struct dyn_var {
++  char *str_val;
++  int   type;
++} DYN_VAR;
++
++
++DYN_VAR *newDynVarString(const char *str) {
++  DYN_VAR *data = malloc(sizeof(DYN_VAR));
++  data->str_val = strdupsafe(str);
++  data->type    = DYN_VAR_STRING;
++  return data;
++}
++
++DYN_VAR *newDynVarInt(int val) {
++  DYN_VAR  *data = malloc(sizeof(DYN_VAR));
++  char str_val[20]; sprintf(str_val, "%d", val);
++  data->str_val  = strdup(str_val);
++  data->type     = DYN_VAR_INT;
++  return data;
++}
++
++DYN_VAR *newDynVarLong(long val) {
++  DYN_VAR *data = malloc(sizeof(DYN_VAR));
++  char str_val[20]; sprintf(str_val, "%ld", val);
++  data->str_val  = strdup(str_val);
++  data->type     = DYN_VAR_LONG;
++  return data;
++}
++
++DYN_VAR *newDynVarDouble(double val) {
++  DYN_VAR  *data = malloc(sizeof(DYN_VAR));
++  char str_val[20]; sprintf(str_val, "%lf", val);
++  data->str_val  = strdup(str_val);
++  data->type     = DYN_VAR_DOUBLE;
++  return data;
++}
++
++void deleteDynVar(DYN_VAR *data) {
++  if(data->str_val) free(data->str_val);
++  free(data);
++}
++
++DYN_VAR *dynVarCopy(DYN_VAR *data) {
++  DYN_VAR *new_data = malloc(sizeof(DYN_VAR));
++  new_data->str_val = strdup(data->str_val);
++  new_data->type    = data->type;
++  return new_data;
++}
++
++//
++// delete a hashtable of vars
++//
++void deleteDynVarTable(HASHTABLE *table) {
++  HASH_ITERATOR *hash_i = newHashIterator(table);
++  const char       *key = NULL;
++  DYN_VAR          *val = NULL;
++  
++  ITERATE_HASH(key, val, hash_i) {
++    deleteDynVar(val);
++  } deleteHashIterator(hash_i);
++  deleteHashtable(table);
++}
++
++
++
++//*****************************************************************************
++//
++// dyn_var auxiliary data
++//
++//*****************************************************************************
++typedef struct dyn_var_aux_data {
++  HASHTABLE *dyn_vars;
++} DYN_VAR_AUX_DATA;
++
++
++DYN_VAR_AUX_DATA *
++newDynVarAuxData() {
++  DYN_VAR_AUX_DATA *data = malloc(sizeof(DYN_VAR_AUX_DATA));
++  // Hashtables can take up lots of storage space. Because of this, let's
++  // not create any tables until it's actually needed. This will cut down
++  // on lots of memory usage w.r.t. NPCs who do not use character variables
++  //  data->dyn_vars        = newHashtable();
++  data->dyn_vars         = NULL;
++  return data;
++}
++
++
++void
++deleteDynVarAuxData(DYN_VAR_AUX_DATA *data) {
++  if(data->dyn_vars)
++    deleteDynVarTable(data->dyn_vars);
++  free(data);
++}
++
++
++void
++dynVarAuxDataCopyTo(DYN_VAR_AUX_DATA *from, DYN_VAR_AUX_DATA *to) {
++  int from_size = (from->dyn_vars ? hashSize(from->dyn_vars) : 0);
++  int to_size   = (to->dyn_vars   ? hashSize(to->dyn_vars)   : 0);
++
++  // clear out our current data
++  if(to_size > 0) {
++    deleteDynVarTable(to->dyn_vars);
++    to->dyn_vars = NULL;
++  }
++
++  // check to see if the "from" table exists
++  if(from_size > 0) {
++    // make sure the "to" table exists
++    if(to->dyn_vars == NULL)
++      to->dyn_vars = newHashtable();
++
++    // copy everything over
++    HASH_ITERATOR *from_i = newHashIterator(from->dyn_vars);
++    const char       *key = NULL;
++    DYN_VAR         *val = NULL;
++
++    ITERATE_HASH(key, val, from_i)
++      hashPut(to->dyn_vars, key, dynVarCopy(val));
++    deleteHashIterator(from_i);
++  }
++}
++
++
++DYN_VAR_AUX_DATA *
++dynVarAuxDataCopy(DYN_VAR_AUX_DATA *data) {
++  DYN_VAR_AUX_DATA *new_data = newDynVarAuxData();
++  dynVarAuxDataCopyTo(data, new_data);
++  return new_data;
++}
++
++
++STORAGE_SET *dynVarAuxDataStore(DYN_VAR_AUX_DATA *data) {
++  // first, check if the table even exists
++  if(data->dyn_vars == NULL || hashSize(data->dyn_vars) == 0)
++    return new_storage_set();
++
++  STORAGE_SET       *set = new_storage_set();
++  HASH_ITERATOR  *hash_i = newHashIterator(data->dyn_vars);
++  STORAGE_SET_LIST *list = new_storage_list();
++  const char        *key = NULL;
++  DYN_VAR          *val = NULL;
++
++  store_list(set, "variables", list);
++  // iterate across all the entries and add them
++  ITERATE_HASH(key, val, hash_i) {
++    STORAGE_SET *var_set = new_storage_set();
++    store_string(var_set, "key",  key);
++    store_string(var_set, "val",  val->str_val);
++    store_string(var_set, "type", dyn_var_types[val->type]);
++    storage_list_put(list, var_set);
++  }
++  deleteHashIterator(hash_i);
++  return set;
++}
++
++
++HASHTABLE *variableRead(STORAGE_SET *set) {
++  HASHTABLE *table       = newHashtable();
++  STORAGE_SET_LIST *list = read_list(set, "list");
++  STORAGE_SET *var       = NULL;
++
++  while( (var = storage_list_next(list)) != NULL)
++    hashPut(table, read_string(var, "key"), (void *)read_int(var, "val"));
++  return table;
++}
++
++
++DYN_VAR_AUX_DATA *dynVarAuxDataRead(STORAGE_SET *set) {
++  // if the set doesn't contain any entries, don't bother trying to parse
++  if(!storage_contains(set, "variables"))
++    return newDynVarAuxData();
++
++  DYN_VAR_AUX_DATA *data = newDynVarAuxData();
++  STORAGE_SET_LIST  *list = read_list(set, "variables");
++  STORAGE_SET    *var_set = NULL;
++  data->dyn_vars         = newHashtable();
++  
++  while( (var_set = storage_list_next(list)) != NULL) {
++    const char *var_type = read_string(var_set, "type");
++    if(!strcasecmp(var_type, "int"))
++      hashPut(data->dyn_vars, read_string(var_set, "key"),
++	      newDynVarInt(read_int(var_set, "val")));
++    else if(!strcasecmp(var_type, "long"))
++      hashPut(data->dyn_vars, read_string(var_set, "key"),
++	      newDynVarLong(read_long(var_set, "val")));
++    else if(!strcasecmp(var_type, "double"))
++      hashPut(data->dyn_vars, read_string(var_set, "key"),
++	      newDynVarDouble(read_double(var_set, "val")));
++    else if(!strcasecmp(var_type, "string"))
++      hashPut(data->dyn_vars, read_string(var_set, "key"),
++	      newDynVarString(read_string(var_set, "val")));
++    else
++      log_string("ERROR: Tried to read unknown dyn_var type, %s.", var_type);
++  }
++    
++  return data;
++}
++
++
++void init_dyn_vars() {
++  // install dyn vars on the character datastructure
++  auxiliariesInstall("dyn_var_aux_data",
++		     newAuxiliaryFuncs(AUXILIARY_TYPE_CHAR |
++				       AUXILIARY_TYPE_ROOM |
++				       AUXILIARY_TYPE_OBJ,
++				       newDynVarAuxData, deleteDynVarAuxData,
++				       dynVarAuxDataCopyTo, dynVarAuxDataCopy,
++				       dynVarAuxDataStore,dynVarAuxDataRead));
++}
++
++
++
++
++//*****************************************************************************
++//
++// functions for interacting with dyn_vars
++//
++//*****************************************************************************
++int dynGetVarType(DYN_VAR_AUX_DATA *data, const char *key) {
++  DYN_VAR *var = (data->dyn_vars ? hashGet(data->dyn_vars, key) : NULL);
++  return (var ? var->type : DYN_VAR_INT);
++}  
++
++int dynGetInt(DYN_VAR_AUX_DATA *data, const char *key) {
++  DYN_VAR *var = (data->dyn_vars ? hashGet(data->dyn_vars, key) : NULL);
++  return (var ? atoi(var->str_val) : 0);
++}
++
++long dynGetLong(DYN_VAR_AUX_DATA *data, const char *key) {
++  DYN_VAR *var = (data->dyn_vars ? hashGet(data->dyn_vars, key) : NULL);
++  return (var ? atol(var->str_val) : 0);
++}
++
++double dynGetDouble(DYN_VAR_AUX_DATA *data, const char *key) {
++  DYN_VAR *var = (data->dyn_vars ? hashGet(data->dyn_vars, key) : NULL);
++  return (var ? atof(var->str_val) : 0);
++}
++
++const char *dynGetString(DYN_VAR_AUX_DATA *data, const char *key) {
++  DYN_VAR *var = (data->dyn_vars ? hashGet(data->dyn_vars, key) : NULL);
++  return (var ? var->str_val : "");
++}
++
++void dynSetInt(DYN_VAR_AUX_DATA *data, const char *key, int val) {
++  DYN_VAR *old = (data->dyn_vars ? hashRemove(data->dyn_vars, key) : NULL);
++  if(data->dyn_vars == NULL && val != 0)
++    data->dyn_vars = newHashtable();
++  if(old != NULL) 
++    deleteDynVar(old);
++  if(val != 0)
++    hashPut(data->dyn_vars, key, newDynVarInt(val));
++}
++
++void dynSetLong(DYN_VAR_AUX_DATA *data, const char *key, long val) {
++  DYN_VAR *old = (data->dyn_vars ? hashRemove(data->dyn_vars, key) : NULL);
++  if(data->dyn_vars == NULL && val != 0)
++    data->dyn_vars = newHashtable();
++  if(old != NULL) 
++    deleteDynVar(old);
++  if(val != 0)
++    hashPut(data->dyn_vars, key, newDynVarLong(val));
++}
++
++void dynSetDouble(DYN_VAR_AUX_DATA *data, const char *key, double val) {
++  DYN_VAR *old = (data->dyn_vars ? hashRemove(data->dyn_vars, key) : NULL);
++  if(data->dyn_vars == NULL && val != 0)
++    data->dyn_vars = newHashtable();
++  if(old != NULL) 
++    deleteDynVar(old);
++  if(val != 0)
++    hashPut(data->dyn_vars, key, newDynVarDouble(val));
++}
++
++void dynSetString(DYN_VAR_AUX_DATA *data, const char *key, const char *val) {
++  DYN_VAR *old = (data->dyn_vars ? hashRemove(data->dyn_vars, key) : NULL);
++  if(data->dyn_vars == NULL && *val != '\0') 
++    data->dyn_vars = newHashtable();
++  if(old != NULL) 
++    deleteDynVar(old);
++  if(*val != '\0')
++    hashPut(data->dyn_vars, key, newDynVarString(val));
++}
++
++bool dynHasVar(DYN_VAR_AUX_DATA *data, const char *key) {
++  return (data->dyn_vars ? hashIn(data->dyn_vars, key) : FALSE);
++}
++
++void dynDeleteVar(DYN_VAR_AUX_DATA *data, const char *key) {
++  DYN_VAR *var = (data->dyn_vars ? hashRemove(data->dyn_vars, key) : NULL);
++  if(var != NULL) deleteDynVar(var);
++}
++
++int charGetVarType(CHAR_DATA *ch, const char *key) {
++  return dynGetVarType(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key);
++}
++
++int charGetInt(CHAR_DATA *ch, const char *key) {
++  return dynGetInt(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key);
++}
++
++long charGetLong(CHAR_DATA *ch, const char *key) {
++  return dynGetLong(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key);
++}
++
++double charGetDouble(CHAR_DATA *ch, const char *key) {
++  return dynGetDouble(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key);
++}
++
++const char *charGetString(CHAR_DATA *ch, const char *key) {
++  return dynGetString(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key);
++}
++
++void charSetInt(CHAR_DATA *ch, const char *key, int val) {
++  dynSetInt(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key, val);
++}
++
++void charSetLong(CHAR_DATA *ch, const char *key, long val) {
++  dynSetLong(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key, val);
++}
++
++void charSetDouble(CHAR_DATA *ch, const char *key, double val) {
++  dynSetDouble(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key, val);
++}
++
++void charSetString(CHAR_DATA *ch, const char *key, const char *val) {
++  dynSetString(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key, val);
++}
++
++bool charHasVar(CHAR_DATA *ch, const char *key) {
++  return dynHasVar(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key);
++}
++
++void charDeleteVar(CHAR_DATA *ch, const char *key) {
++  dynDeleteVar(charGetAuxiliaryData(ch, "dyn_var_aux_data"), key);
++}
++
++int roomGetVarType(ROOM_DATA *rm, const char *key) {
++  return dynGetVarType(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key);
++}
++
++int roomGetInt(ROOM_DATA *rm, const char *key) {
++  return dynGetInt(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key);
++}
++
++long roomGetLong(ROOM_DATA *rm, const char *key) {
++  return dynGetLong(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key);
++}
++
++double roomGetDouble(ROOM_DATA *rm, const char *key) {
++  return dynGetDouble(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key);
++}
++
++const char *roomGetString(ROOM_DATA *rm, const char *key) {
++  return dynGetString(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key);
++}
++
++void roomSetInt(ROOM_DATA *rm, const char *key, int val) {
++  dynSetInt(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key, val);
++}
++
++void roomSetLong(ROOM_DATA *rm, const char *key, long val) {
++  dynSetLong(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key, val);
++}
++
++void roomSetDouble(ROOM_DATA *rm, const char *key, double val) {
++  dynSetDouble(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key, val);
++}
++
++void roomSetString(ROOM_DATA *rm, const char *key, const char *val) {
++  dynSetString(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key, val);
++}
++
++bool roomHasVar(ROOM_DATA *rm, const char *key) {
++  return dynHasVar(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key);
++}
++
++void roomDeleteVar(ROOM_DATA *rm, const char *key) {
++  dynDeleteVar(roomGetAuxiliaryData(rm, "dyn_var_aux_data"), key);
++}
++
++int objGetVarType(OBJ_DATA *ob, const char *key) {
++  return dynGetVarType(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key);
++}
++
++int objGetInt(OBJ_DATA *ob, const char *key) {
++  return dynGetInt(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key);
++}
++
++long objGetLong(OBJ_DATA *ob, const char *key) {
++  return dynGetLong(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key);
++}
++
++double objGetDouble(OBJ_DATA *ob, const char *key) {
++  return dynGetDouble(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key);
++}
++
++const char *objGetString(OBJ_DATA *ob, const char *key) {
++  return dynGetString(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key);
++}
++
++void objSetInt(OBJ_DATA *ob, const char *key, int val) {
++  dynSetInt(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key, val);
++}
++
++void objSetLong(OBJ_DATA *ob, const char *key, long val) {
++  dynSetLong(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key, val);
++}
++
++void objSetDouble(OBJ_DATA *ob, const char *key, double val) {
++  dynSetDouble(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key, val);
++}
++
++void objSetString(OBJ_DATA *ob, const char *key, const char *val) {
++  dynSetString(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key, val);
++}
++
++bool objHasVar(OBJ_DATA *ob, const char *key) {
++  return dynHasVar(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key);
++}
++
++void objDeleteVar(OBJ_DATA *ob, const char *key) {
++  dynDeleteVar(objGetAuxiliaryData(ob, "dyn_var_aux_data"), key);
++}
+diff -ruN ../nakedmudv3.3/src/dyn_vars/dyn_vars.h src/dyn_vars/dyn_vars.h
+--- ../nakedmudv3.3/src/dyn_vars/dyn_vars.h	1969-12-31 19:00:00.000000000 -0500
++++ src/dyn_vars/dyn_vars.h	2007-09-22 22:44:09.000000000 -0400
+@@ -0,0 +1,71 @@
++#ifndef __DYN_VARS_H
++#define __DYN_VARS_H
++//*****************************************************************************
++//
++// dyn_vars.c
++//
++// This module allows key/value pairs to be dynamically created on characters,
++// objects, and rooms. Values can be strings, integers, or doubles. If a value
++// is called for in the wrong type (e.g. you're trying to get a string as an 
++// integer) the module will automagically handle the conversion. Variable types
++// default to ints.
++//
++//*****************************************************************************
++
++//
++// This must be put at the top of mud.h so the rest of the MUD knows that
++// we've got the alias module installed
++// #define MODULE_DYN_VARS
++//
++
++
++// the different types of data we can store
++#define DYN_VAR_STRING        0
++#define DYN_VAR_INT           1
++#define DYN_VAR_LONG          2
++#define DYN_VAR_DOUBLE        3
++
++
++
++//
++// prepare dyn_vars for use
++//
++void         init_dyn_vars   (void);
++
++int          charGetVarType   (CHAR_DATA *ch, const char *key);
++int          charGetInt       (CHAR_DATA *ch, const char *key);
++long         charGetLong      (CHAR_DATA *ch, const char *key);
++double       charGetDouble    (CHAR_DATA *ch, const char *key);
++const char  *charGetString    (CHAR_DATA *ch, const char *key);
++void         charSetInt       (CHAR_DATA *ch, const char *key, int val);
++void         charSetLong      (CHAR_DATA *ch, const char *key, long val);
++void         charSetDouble    (CHAR_DATA *ch, const char *key, double val);
++void         charSetString    (CHAR_DATA *ch, const char *key, const char *val);
++bool         charHasVar       (CHAR_DATA *ch, const char *key);
++void         charDeleteVar    (CHAR_DATA *ch, const char *key);
++
++int          objGetVarType   (OBJ_DATA *ch, const char *key);
++int          objGetInt       (OBJ_DATA *ch, const char *key);
++long         objGetLong      (OBJ_DATA *ch, const char *key);
++double       objGetDouble    (OBJ_DATA *ch, const char *key);
++const char  *objGetString    (OBJ_DATA *ch, const char *key);
++void         objSetInt       (OBJ_DATA *ch, const char *key, int val);
++void         objSetLong      (OBJ_DATA *ch, const char *key, long val);
++void         objSetDouble    (OBJ_DATA *ch, const char *key, double val);
++void         objSetString    (OBJ_DATA *ch, const char *key, const char *val);
++bool         objHasVar       (OBJ_DATA *ch, const char *key);
++void         objDeleteVar    (OBJ_DATA *ch, const char *key);
++
++int          roomGetVarType   (ROOM_DATA *ch, const char *key);
++int          roomGetInt       (ROOM_DATA *ch, const char *key);
++long         roomGetLong      (ROOM_DATA *ch, const char *key);
++double       roomGetDouble    (ROOM_DATA *ch, const char *key);
++const char  *roomGetString    (ROOM_DATA *ch, const char *key);
++void         roomSetInt       (ROOM_DATA *ch, const char *key, int val);
++void         roomSetLong      (ROOM_DATA *ch, const char *key, long val);
++void         roomSetDouble    (ROOM_DATA *ch, const char *key, double val);
++void         roomSetString    (ROOM_DATA *ch, const char *key, const char *val);
++bool         roomHasVar       (ROOM_DATA *ch, const char *key);
++void         roomDeleteVar    (ROOM_DATA *ch, const char *key);
++
++#endif // __DYN_VARS_H
+diff -ruN ../nakedmudv3.3/src/dyn_vars/module.mk src/dyn_vars/module.mk
+--- ../nakedmudv3.3/src/dyn_vars/module.mk	1969-12-31 19:00:00.000000000 -0500
++++ src/dyn_vars/module.mk	2007-09-22 22:36:11.000000000 -0400
+@@ -0,0 +1,2 @@
++# source files we need to add
++SRC += dyn_vars/dyn_vars.c
+diff -ruN ../nakedmudv3.3/src/gameloop.c src/gameloop.c
+--- ../nakedmudv3.3/src/gameloop.c	2006-12-24 22:15:56.000000000 -0500
++++ src/gameloop.c	2007-09-22 22:36:11.000000000 -0400
+@@ -32,7 +32,7 @@
+ // mandatory modules
+ //*****************************************************************************
+ #include "editor/editor.h"
+-#include "char_vars/char_vars.h"
++#include "dyn_vars/dyn_vars.h"
+ #include "items/items.h"
+ #include "olc2/olc.h"
+ #include "set_val/set_val.h"
+@@ -214,8 +214,8 @@
+   init_editor();
+   init_notepad();
+ 
+-  log_string("Initializing character variables.");
+-  init_char_vars();
++  log_string("Initializing dynamic variables.");
++  init_dyn_vars();
+ 
+   log_string("Initializing OLC v2.0.");
+   init_olc2();
+@@ -300,6 +300,12 @@
+   /**********************************************************************/
+   /*             START THE GAME UP, AND HANDLE ITS SHUTDOWN             */
+   /**********************************************************************/
++
++  // Run our initialize hooks. Most C modules will have their own init
++  // functions, but some stuff may need to be set up after *all* modules are
++  // initialized
++  hookRun("initialize", "");
++
+   // main game loop
+   log_string("Entering game loop");
+   game_loop(control);
+diff -ruN ../nakedmudv3.3/src/handler.c src/handler.c
+--- ../nakedmudv3.3/src/handler.c	2006-12-24 22:15:56.000000000 -0500
++++ src/handler.c	2007-09-22 22:36:11.000000000 -0400
+@@ -790,21 +790,6 @@
+       return looker;
+     }
+   }
+-
+-  // seach our inventory
+-  if(IS_SET(find_scope, FIND_SCOPE_INV) && 
+-     IS_SET(find_types, FIND_TYPE_OBJ)) {
+-    count = count_objs(looker, charGetInventory(looker), at, NULL, 
+-		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+-    if(count >= at_count) {
+-      if(found_type)
+-	*found_type = FOUND_OBJ;
+-      return find_obj(looker, charGetInventory(looker), at_count, at, NULL,
+-		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+-    }
+-    else
+-      at_count -= count;
+-  }
+   
+   // search our equipment
+   if(IS_SET(find_scope, FIND_SCOPE_WORN) &&
+@@ -826,6 +811,22 @@
+     }
+   }
+ 
++  // seach our inventory
++  if(IS_SET(find_scope, FIND_SCOPE_INV) && 
++     IS_SET(find_types, FIND_TYPE_OBJ)) {
++    count = count_objs(looker, charGetInventory(looker), at, NULL, 
++		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
++    if(count >= at_count) {
++      if(found_type)
++	*found_type = FOUND_OBJ;
++      return find_obj(looker, charGetInventory(looker), at_count, at, NULL,
++		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
++    }
++    else
++      at_count -= count;
++  }
++
++
+ 
+   /************************************************************/
+   /*                      LOCAL SEARCHES                      */
+diff -ruN ../nakedmudv3.3/src/help/help.c src/help/help.c
+--- ../nakedmudv3.3/src/help/help.c	2006-12-24 22:15:56.000000000 -0500
++++ src/help/help.c	2007-09-22 22:36:11.000000000 -0400
+@@ -438,6 +438,7 @@
+     for(i = 0, count = 0; i < HELP_TABLE_BUCKETS; i++) {
+       LIST_ITERATOR *buck_i = newListIterator(help_table[i]);
+       HELP_ENTRY     *entry = NULL;
++
+       ITERATE_LIST(entry, buck_i) {
+ 	bprintf(buf, "%-16s", entry->keyword);
+ 	count++;
+diff -ruN ../nakedmudv3.3/src/hooks.c src/hooks.c
+--- ../nakedmudv3.3/src/hooks.c	2006-12-24 22:15:56.000000000 -0500
++++ src/hooks.c	2007-09-22 22:36:11.000000000 -0400
+@@ -74,14 +74,13 @@
+ 
+ void hookRun(const char *type, const char *info) {
+   LIST *list = hashGet(hook_table, type);
++  char *info_dup = strdup(info);
+   if(list != NULL) {
+-    char *info_dup = strdup(info);
+     LIST_ITERATOR *list_i = newListIterator(list);
+     void (* func)(const char *) = NULL;
+     ITERATE_LIST(func, list_i) {
+       func(info_dup);
+     } deleteListIterator(list_i);
+-    free(info_dup);
+   }
+ 
+   // run our monitors
+@@ -90,6 +89,7 @@
+   ITERATE_LIST(mon, mon_i) {
+     mon(type, info);
+   } deleteListIterator(mon_i);
++  free(info_dup);
+ }
+ 
+ const char *hookBuildInfo(const char *format, ...) {
+diff -ruN ../nakedmudv3.3/src/interpret.c src/interpret.c
+--- ../nakedmudv3.3/src/interpret.c	2006-12-24 22:15:56.000000000 -0500
++++ src/interpret.c	2007-09-22 22:36:11.000000000 -0400
+@@ -115,6 +115,22 @@
+     }
+   } deleteNearIterator(near_i);
+ 
++  // do room commands as well
++  if(roomGetCmdTable(charGetRoom(ch)) != NULL) {
++    near_i = newNearIterator(roomGetCmdTable(charGetRoom(ch)));
++    abbrev = NULL;
++    cmd    = NULL;
++    bufferCat(buf, "{c");
++    ITERATE_NEARMAP(abbrev, cmd, near_i) {
++      if(is_keyword(user_groups, cmdGetUserGroup(cmd), FALSE)) {
++	bprintf(buf, "%-13.13s", cmdGetName(cmd));
++	if (!(++col % 6))
++	  bufferCat(buf, "\r\n");
++      }
++    } deleteNearIterator(near_i);
++    bufferCat(buf, "{n");
++  }
++
+   // tag on our last newline if neccessary, and show commands
+   if (col % 6) bprintf(buf, "\r\n");
+   text_to_char(ch, bufferString(buf));
+diff -ruN ../nakedmudv3.3/src/items/worn.c src/items/worn.c
+--- ../nakedmudv3.3/src/items/worn.c	2006-12-25 19:32:04.000000000 -0500
++++ src/items/worn.c	2007-09-22 22:36:11.000000000 -0400
+@@ -339,10 +339,10 @@
+ 		     "Adds a new worn type to the game.");
+   
+   // add in our basic worn types
+-  //
+-  // As of v3.3, worn types can now be added via Python as well as C. People are
+-  // encouraged to do so, outside of this module. These are left for historical
+-  // purpposes and backwards compatibility with previous version equipment.
++  /*
++    Removed as of v3.3 -- These can now be added via Python with the function,
++    mudsys.add_worn_type(<type>, <position list>)
++
+   worn_add_type("shirt",                        "torso");
+   worn_add_type("gloves",       "left hand, right hand");
+   worn_add_type("left glove",               "left hand");
+@@ -350,4 +350,5 @@
+   worn_add_type("earrings",                  "ear, ear");
+   worn_add_type("earring",                        "ear");
+   worn_add_type("ring",                        "finger");
++  */
+ }
+diff -ruN ../nakedmudv3.3/src/list.c src/list.c
+--- ../nakedmudv3.3/src/list.c	2006-12-24 22:15:56.000000000 -0500
++++ src/list.c	2007-09-22 22:36:11.000000000 -0400
+@@ -82,6 +82,7 @@
+   // go through and kill all of the elements we removed if removes are pending
+   if(L->remove_pending) {
+     LIST_NODE *node = L->head;
++    L->remove_pending = FALSE;
+ 
+     // while our head is a removed element, 
+     // pop it off and delete the list node
+diff -ruN ../nakedmudv3.3/src/mud.h src/mud.h
+--- ../nakedmudv3.3/src/mud.h	2006-12-24 22:15:56.000000000 -0500
++++ src/mud.h	2007-09-22 22:36:11.000000000 -0400
+@@ -23,7 +23,7 @@
+ #define MODULE_ITEMS
+ #define MODULE_OLC2
+ #define MODULE_SCRIPTS
+-#define MODULE_CHAR_VARS
++#define MODULE_DYN_VARS
+ #define MODULE_SET_VAL
+ #define MODULE_EDITOR
+ 
+diff -ruN ../nakedmudv3.3/src/olc2/redit.c src/olc2/redit.c
+--- ../nakedmudv3.3/src/olc2/redit.c	2006-12-24 22:15:56.000000000 -0500
++++ src/olc2/redit.c	2007-09-22 22:36:11.000000000 -0400
+@@ -116,17 +116,17 @@
+ // functions for printing room reset data
+ //*****************************************************************************
+ const char *write_reset_arg(int type, const char *arg, const char *locale) {
+-  static char buf[SMALL_BUFFER];
+-  PROTO_DATA  *obj = 
+-    worldGetType(gameworld, "oproto", get_fullkey_relative(arg, locale));
+-  PROTO_DATA  *mob = 
+-    worldGetType(gameworld, "mproto", get_fullkey_relative(arg, locale));
++  static char buf[MAX_BUFFER];
++  PROTO_DATA  *obj = NULL;
++  PROTO_DATA  *mob = NULL;
+   int pos          = atoi(arg);
+   switch(type) { 
+   case RESET_LOAD_OBJECT:
++    obj = worldGetType(gameworld, "oproto", get_fullkey_relative(arg, locale));
+     sprintf(buf, "load %s", (obj ? protoGetKey(obj) : "{RNOTHING{c"));
+     break;
+   case RESET_LOAD_MOBILE:
++    mob = worldGetType(gameworld, "mproto", get_fullkey_relative(arg, locale));
+     sprintf(buf, "load %s", (mob ? protoGetKey(mob) : "{RNOBODY{c"));
+     break;
+   case RESET_POSITION:
+@@ -134,15 +134,19 @@
+ 	    (pos < 0 || pos >= NUM_POSITIONS ? "{RNOTHING{c":posGetName(pos)));
+     break;
+   case RESET_FIND_MOBILE:
++    mob = worldGetType(gameworld, "mproto", get_fullkey_relative(arg, locale));
+     sprintf(buf, "find %s", (mob ? protoGetKey(mob) : "{RNOBODY{c"));
+     break;
+   case RESET_FIND_OBJECT:
++    obj = worldGetType(gameworld, "oproto", get_fullkey_relative(arg, locale));
+     sprintf(buf, "find %s", (obj ? protoGetKey(obj) : "{RNOTHING{c"));
+     break;
+   case RESET_PURGE_MOBILE:
++    mob = worldGetType(gameworld, "mproto", get_fullkey_relative(arg, locale));
+     sprintf(buf, "purge %s", (mob ? protoGetKey(mob) : "{RNOBODY{c"));
+     break;
+   case RESET_PURGE_OBJECT:
++    obj = worldGetType(gameworld, "oproto", get_fullkey_relative(arg, locale));
+     sprintf(buf, "purge %s", (obj ? protoGetKey(obj) : "{RNOTHING{c"));
+     break;
+   case RESET_OPEN:
+@@ -154,6 +158,9 @@
+   case RESET_LOCK:
+     sprintf(buf, "close/lock dir %s or container", arg);
+     break;
++  case RESET_SCRIPT:
++    sprintf(buf, "run a script on the parent reset");
++    break;
+   default:
+     sprintf(buf, "UNFINISHED OLC");
+     break;
+@@ -265,9 +272,15 @@
+ 		 resetGetChance(data->reset),
+ 		 resetGetMax(data->reset),
+ 		 resetGetRoomMax(data->reset),
+-		 resetGetArg(data->reset),
++		 (resetGetType(data->reset) != RESET_SCRIPT ? 
++		  resetGetArg(data->reset) : ""),
+ 		 write_reset(data->reset, 0, FALSE, data->locale)
+ 		 );
++
++  if(resetGetType(data->reset) == RESET_SCRIPT) {
++    send_to_socket(sock, "\r\n");
++    script_display(sock, resetGetArg(data->reset), FALSE);
++  }
+ }
+ 
+ int resedit_chooser(SOCKET_DATA *sock, RESET_OLC *data, const char *option) {
+@@ -289,8 +302,14 @@
+     text_to_buffer(sock, "What is the max that can exit in room (0 = no limit): ");
+     return RESEDIT_ROOM_MAX;
+   case '6':
+-    text_to_buffer(sock, "What is the reset argument (i.e. obj name, direction, etc...): ");
+-    return RESEDIT_ARGUMENT;
++    if(resetGetType(data->reset) == RESET_SCRIPT) {
++      socketStartEditor(sock, script_editor, resetGetArgBuffer(data->reset));
++      return MENU_NOCHOICE;
++    }
++    else {
++      text_to_buffer(sock, "What is the reset argument (i.e. obj name, direction, etc...): ");
++      return RESEDIT_ARGUMENT;
++    }
+   case '7':
+     do_olc(sock, reslistedit_menu, reslistedit_chooser, reslistedit_parser, 
+ 	   NULL, NULL, deleteReslistOLC, NULL, 
+@@ -781,20 +800,6 @@
+       bufferReplace(roomGetDescBuffer(room), "\\\"", "\"", TRUE);
+       bufferFormat(roomGetDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
+     }
+-#ifdef MODULE_TIME
+-    else if(!strncmp(lptr, "me.ndesc",  13)) {
+-      // we have three "'s to skip by, because this lptr will take the form:
+-      // me.desc = me.desc + " " + "..."
+-      while(*lptr != '\"') lptr++; lptr++;
+-      while(*lptr != '\"') lptr++; lptr++;
+-      while(*lptr != '\"') lptr++; lptr++;
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      roomSetDesc(room, lptr);
+-      // replace our \"s with "
+-      bufferReplace(roomGetNightDescBuffer(room), "\\\"", "\"", TRUE);
+-      bufferFormat(roomGetNightDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
+-    }
+-#endif
+     else if(!strncmp(lptr, "me.terrain", 10)) {
+       while(*lptr != '\"') lptr++;
+       lptr++;                      // kill the leading "
+@@ -923,17 +928,6 @@
+ 	    bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+   }
+-#ifdef MODULE_TIME
+-  if(*roomGetNightDesc(room)) {
+-    BUFFER *desc_copy = bufferCopy(roomGetNightDescBuffer(room));
+-    bufferReplace(desc_copy, "\n", " ",    TRUE);
+-    bufferReplace(desc_copy, "\r", "",     TRUE);
+-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+-    bprintf(buf, "me.ndesc = me.ndesc + \" \" + \"%s\"\n", 
+-	    bufferString(desc_copy));
+-    deleteBuffer(desc_copy);
+-  }
+-#endif
+ 
+   // extra descriptions
+   if(listSize(edescSetGetList(roomGetEdescs(room))) > 0) {
+@@ -1054,9 +1048,6 @@
+ 		 "{c%s\r\n"
+ 		 "{g3) Name\r\n{c%s\r\n"
+ 		 "{g4) Description\r\n{c%s"
+-#ifdef MODULE_TIME
+-		 "{g5) Night description (optional)\r\n{c%s"
+-#endif
+ 		 "{gL) Land type {y[{c%s{y]\r\n"
+ 		 "{gB) Set Bits: {c%s\r\n"
+ 		 "{gZ) Room can be reset: {c%s\r\n"
+@@ -1071,9 +1062,6 @@
+ 		 roomOLCGetParents(data),
+ 		 roomGetName(roomOLCGetRoom(data)), 
+ 		 roomGetDesc(roomOLCGetRoom(data)),
+-#ifdef MODULE_TIME
+-		 roomGetNightDesc(roomOLCGetRoom(data)),
+-#endif
+ 		 (roomGetTerrain(roomOLCGetRoom(data)) == TERRAIN_NONE ? 
+ 		  "leave unchanged" :
+ 		  terrainGetName(roomGetTerrain(roomOLCGetRoom(data)))),
+@@ -1105,12 +1093,6 @@
+     text_to_buffer(sock, "Enter a new room description:\r\n");
+     socketStartEditor(sock, text_editor, roomGetDescBuffer(roomOLCGetRoom(data)));
+     return MENU_NOCHOICE;
+-#ifdef MODULE_TIME
+-  case '5':
+-    text_to_buffer(sock, "Enter a new night description:\r\n");
+-    socketStartEditor(sock, text_editor, roomGetNightDescBuffer(roomOLCGetRoom(data)));
+-    return MENU_NOCHOICE;
+-#endif
+   case 'Z':
+     roomOLCSetResettable(data, (roomOLCGetResettable(data) + 1) % 2);
+     return MENU_NOCHOICE;
+diff -ruN ../nakedmudv3.3/src/prototype.c src/prototype.c
+--- ../nakedmudv3.3/src/prototype.c	2006-12-24 22:15:56.000000000 -0500
++++ src/prototype.c	2007-09-22 22:36:11.000000000 -0400
+@@ -205,6 +205,11 @@
+     }
+   }
+ 
++  // remove us from the dictionary just incase it doesn't GC immediately. It
++  // happens sometimes if we define a new method in the prototype
++  PyDict_DelItemString(dict, "me");
++  // PyDict_SetItemString(dict, "me", Py_None);
++
+   Py_DECREF(dict);
+   Py_DECREF(pyme);
+   return last_script_ok();
+diff -ruN ../nakedmudv3.3/src/room_reset.c src/room_reset.c
+--- ../nakedmudv3.3/src/room_reset.c	2006-12-24 22:15:56.000000000 -0500
++++ src/room_reset.c	2007-09-22 22:36:11.000000000 -0400
+@@ -33,6 +33,8 @@
+ #include "items/container.h"
+ #include "items/furniture.h"
+ #include "items/worn.h"
++#include "scripts/scripts.h"
++#include "scripts/pyplugs.h"
+ 
+ 
+ 
+@@ -117,7 +119,7 @@
+   int      chance; // what is our chance of success?
+   int         max; // what is the max number of us that can be in the game?
+   int    room_max; // what is the max number of us that can be in the room?
+-  char       *arg; // what is our reset arg (e.g. mob proto, direction name)
++  BUFFER     *arg; // what is our reset arg (e.g. mob proto, direction name)
+   LIST        *in; // what resets do we put into ourself?
+   LIST        *on; // what resets do we put onto ourself?
+   LIST      *then; // if this succeeds, what else do we do?
+@@ -133,7 +135,8 @@
+   "open exit or object",
+   "close exit or object",
+   "lock exit or object",
+-  "change mobile position"
++  "change mobile position",
++  "run script"
+ };
+ 
+ 
+@@ -145,7 +148,7 @@
+ RESET_DATA    *newReset         () {
+   RESET_DATA *reset = calloc(1, sizeof(RESET_DATA));
+   reset->type     = RESET_LOAD_OBJECT;
+-  reset->arg      = strdup("");
++  reset->arg      = newBuffer(1);
+   reset->times    = 1;
+   reset->chance   = 100;
+   reset->max      = 0;
+@@ -162,7 +165,7 @@
+   deleteListWith(reset->in,   deleteReset);
+   deleteListWith(reset->on,   deleteReset);
+   deleteListWith(reset->then, deleteReset);
+-  if(reset->arg) free(reset->arg);
++  deleteBuffer(reset->arg);
+   free(reset);
+ }
+ 
+@@ -200,7 +203,7 @@
+   store_int   (set, "chance",   reset->chance);
+   store_int   (set, "max",      reset->max);
+   store_int   (set, "room_max", reset->room_max);
+-  store_string(set, "arg",      reset->arg);
++  store_string(set, "arg",      bufferString(reset->arg));
+   store_list  (set, "in",       gen_store_list(reset->in,   resetStore));
+   store_list  (set, "on",       gen_store_list(reset->on,   resetStore));
+   store_list  (set, "then",     gen_store_list(reset->then, resetStore));
+@@ -215,10 +218,11 @@
+   reset->chance   = read_int(set, "chance");
+   reset->max      = read_int(set, "max");
+   reset->room_max = read_int(set, "room_max");
+-  reset->arg      = strdup(read_string(set, "arg"));
+   reset->on       = gen_read_list(read_list(set, "on"),   resetRead);
+   reset->in       = gen_read_list(read_list(set, "in"),   resetRead);
+   reset->then     = gen_read_list(read_list(set, "then"), resetRead);
++  reset->arg = newBuffer(1);
++  bufferCat(reset->arg, read_string(set, "arg"));
+   return reset;
+ }
+ 
+@@ -244,6 +248,10 @@
+ }
+ 
+ const char    *resetGetArg      (const RESET_DATA *reset) {
++  return bufferString(reset->arg);
++}
++
++BUFFER *resetGetArgBuffer       (const RESET_DATA *reset) {
+   return reset->arg;
+ }
+ 
+@@ -280,8 +288,8 @@
+ }
+ 
+ void           resetSetArg      (RESET_DATA *reset, const char *arg) {
+-  if(reset->arg) free(reset->arg);
+-  reset->arg = strdupsafe(arg);
++  bufferClear(reset->arg);
++  bufferCat(reset->arg, arg);
+ }
+ 
+ void           resetAddOn       (RESET_DATA *reset, RESET_DATA *on) {
+@@ -651,6 +659,41 @@
+   return try_reset_opening(reset, initiator, initiator_type, TRUE, TRUE);
+ }
+ 
++//
++// Try running a script on the initiator
++bool try_reset_script(RESET_DATA *reset, void *initiator, int initiator_type,
++		      const char *locale) {
++  PyObject *pyme = NULL;
++  PyObject *dict = NULL;
++  if(initiator_type == INITIATOR_ROOM)
++    pyme = roomGetPyFormBorrowed(initiator);
++  else if(initiator_type == INITIATOR_THEN_OBJ)
++    pyme = objGetPyFormBorrowed(initiator);
++  else if(initiator_type == INITIATOR_THEN_MOB)
++    pyme = charGetPyFormBorrowed(initiator);
++  else
++    return FALSE;
++
++  // build our dictionary and add ourself to it as 'me'
++  dict = restricted_script_dict();
++  PyDict_SetItemString(dict, "me", pyme);
++
++  // run the script
++  run_script(dict, resetGetArg(reset), locale);
++
++  // check to see if we had an error
++  if(!last_script_ok()) {
++    char *tb = getPythonTraceback();
++    log_string("Reset script in locale %s terminated with an error:\r\n%s\r\n"
++	       "\r\nTraceback is:\r\n%s\r\n", 
++	       locale, resetGetArg(reset), tb);
++    free(tb);
++  }
++
++  // garbage collection and return our outcome
++  Py_DECREF(dict);
++  return last_script_ok();
++}
+ 
+ //
+ // run the reset data
+@@ -698,6 +741,9 @@
+     case RESET_POSITION:
+       ret_val = try_reset_position(reset, initiator, initiator_type);
+       break;
++    case RESET_SCRIPT:
++      ret_val = try_reset_script(reset, initiator, initiator_type, locale);
++      break;
+     default:
+       return FALSE;
+     }
+diff -ruN ../nakedmudv3.3/src/room_reset.h src/room_reset.h
+--- ../nakedmudv3.3/src/room_reset.h	2006-12-24 22:15:56.000000000 -0500
++++ src/room_reset.h	2007-09-22 22:36:11.000000000 -0400
+@@ -29,7 +29,8 @@
+ #define RESET_CLOSE           7 // close an exit/object
+ #define RESET_LOCK            8 // lock an exit/object
+ #define RESET_POSITION        9 // change the position of a mobile
+-#define NUM_RESETS           10
++#define RESET_SCRIPT         10 // run a script on the initiator
++#define NUM_RESETS           11
+ 
+ 
+ // must be called before room resets are usable. Attaches a reset hook
+@@ -50,6 +51,7 @@
+ int            resetGetMax      (const RESET_DATA *reset);
+ int            resetGetRoomMax  (const RESET_DATA *reset);
+ const char    *resetGetArg      (const RESET_DATA *reset);
++BUFFER        *resetGetArgBuffer(const RESET_DATA *reset);
+ LIST          *resetGetOn       (const RESET_DATA *reset);
+ LIST          *resetGetIn       (const RESET_DATA *reset);
+ LIST          *resetGetThen     (const RESET_DATA *reset);
+diff -ruN ../nakedmudv3.3/src/scripts/pyauxiliary.c src/scripts/pyauxiliary.c
+--- ../nakedmudv3.3/src/scripts/pyauxiliary.c	2006-12-24 22:15:56.000000000 -0500
++++ src/scripts/pyauxiliary.c	2007-09-22 22:36:11.000000000 -0400
+@@ -50,7 +50,7 @@
+ }
+ 
+ void deletePyAuxiliaryData(PyObject *data) {
+-  Py_DECREF(data);
++  Py_XDECREF(data);
+ }
+ 
+ void pyAuxiliaryDataCopyTo(PyObject *from, PyObject *to) {
+diff -ruN ../nakedmudv3.3/src/scripts/pychar.c src/scripts/pychar.c
+--- ../nakedmudv3.3/src/scripts/pychar.c	2006-12-24 22:15:56.000000000 -0500
++++ src/scripts/pychar.c	2007-09-22 22:36:11.000000000 -0400
+@@ -38,7 +38,7 @@
+ //*****************************************************************************
+ // mandatory modules
+ //*****************************************************************************
+-#include "../char_vars/char_vars.h"
++#include "../dyn_vars/dyn_vars.h"
+ #include "../items/items.h"
+ #include "../items/worn.h"
+ 
+@@ -106,6 +106,10 @@
+     return 1;
+ }
+ 
++long PyChar_Hash(PyChar *ch) {
++  return ch->uid;
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -246,6 +250,12 @@
+   else           return NULL;
+ }
+ 
++PyObject *PyChar_getclass(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) return Py_BuildValue("s", charGetClass(ch));
++  else           return NULL;
++}
++
+ PyObject *PyChar_getinv(PyChar *self, PyObject *args) {
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch == NULL) 
+@@ -703,19 +713,28 @@
+   }
+ 
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+-  if(ch) {
++
++  // we don't exist
++  if(ch == NULL) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Nonexistant character, %d, tried to perform an action.", 
++		    self->uid);
++    return NULL;
++  }
++  // It's not safe to act if we don't have a room to act in yet
++  else if(charGetRoom(ch) == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Character, %d, tried to act without first having a room "
++		 "to act in.", self->uid);
++    return NULL;
++  }
++  else {
+     // do not send the actual act - if we edit it, things go awry
+     char *working_act = strdupsafe(act);
+     do_cmd(ch, working_act, alias_ok);
+     free(working_act);
+     return Py_BuildValue("i", 1);
+   }
+-  else {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Nonexistant character, %d, tried to perform an action.", 
+-		    self->uid);
+-    return NULL;
+-  }
+ }
+ 
+ 
+@@ -822,11 +841,11 @@
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch != NULL) {
+     int vartype = charGetVarType(ch, var);
+-    if(vartype == CHAR_VAR_INT)
++    if(vartype == DYN_VAR_INT)
+       return Py_BuildValue("i", charGetInt(ch, var));
+-    else if(vartype == CHAR_VAR_LONG)
++    else if(vartype == DYN_VAR_LONG)
+       return Py_BuildValue("i", charGetLong(ch, var));
+-    else if(vartype == CHAR_VAR_DOUBLE)
++    else if(vartype == DYN_VAR_DOUBLE)
+       return Py_BuildValue("d", charGetDouble(ch, var));
+     else
+       return Py_BuildValue("s", charGetString(ch, var));
+@@ -876,7 +895,6 @@
+   }
+ }
+ 
+-
+ PyObject *PyChar_getbodypct(PyChar *self, PyObject *args) {
+   char   *parts = NULL;
+   CHAR_DATA *ch = NULL;
+@@ -896,6 +914,7 @@
+   return Py_BuildValue("d", bodyPartRatio(charGetBody(ch), parts));
+ }
+ 
++
+ //
+ // equips a character with an item
+ PyObject *PyChar_equip(PyChar *self, PyObject *args) {  
+@@ -1266,7 +1285,7 @@
+     0,                         /*tp_as_number*/
+     0,                         /*tp_as_sequence*/
+     0,                         /*tp_as_mapping*/
+-    0,                         /*tp_hash */
++    (hashfunc)PyChar_Hash,     /*tp_hash */
+     0,                         /*tp_call*/
+     0,                         /*tp_str*/
+     0,                         /*tp_getattro*/
+@@ -1569,7 +1588,7 @@
+   PyChar_addGetSetter("objs", PyChar_getinv, NULL,
+ 		      "returns a list of objects in the char's inventory");
+   PyChar_addGetSetter("eq",   PyChar_geteq,  NULL,
+-		      "returns a list of the character's equipment");
++		      "returns a list of the character's equipment.");
+   PyChar_addGetSetter("bodyparts", PyChar_getbodyparts, NULL,
+ 		      "Returns a list of the character's bodyparts");
+   PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
+@@ -1608,6 +1627,8 @@
+ 		      "the character's unique identification number");
+   PyChar_addGetSetter("prototypes", PyChar_getprototypes, NULL,
+ 		      "The prototypes for a mobile");
++  PyChar_addGetSetter("mob_class", PyChar_getclass, NULL,
++		      "The main prototype of the mobile.");
+   PyChar_addGetSetter("is_npc", PyChar_getisnpc, NULL,
+ 		      "Returns 1 if the char is an NPC, and 0 otherwise.");
+   PyChar_addGetSetter("is_pc", PyChar_getispc, NULL,
+diff -ruN ../nakedmudv3.3/src/scripts/pyevent.c src/scripts/pyevent.c
+--- ../nakedmudv3.3/src/scripts/pyevent.c	2006-12-24 22:15:56.000000000 -0500
++++ src/scripts/pyevent.c	2007-09-22 22:36:11.000000000 -0400
+@@ -14,6 +14,7 @@
+ #include "../mud.h"
+ #include "../event.h"
+ 
++#include "scripts.h"
+ #include "pychar.h"
+ #include "pyroom.h"
+ #include "pyobj.h"
+@@ -27,9 +28,19 @@
+   PyObject *PyOwner = NULL;
+   PyObject   *efunc = NULL;
+   PyObject   *edata = NULL;
++  char       *otype = NULL;
+ 
+   // make sure we parse everything before we call the function
+-  if(PyArg_ParseTuple(tuple, "OOO", &PyOwner, &efunc, &edata)) {
++  if(PyArg_ParseTuple(tuple, "sOO", &otype, &efunc, &edata)) {
++    if(!strcasecmp(otype, "char"))
++      PyOwner = charGetPyFormBorrowed(owner);
++    else if(!strcasecmp(otype, "room"))
++      PyOwner = roomGetPyFormBorrowed(owner);
++    else if(!strcasecmp(otype, "obj"))
++      PyOwner = objGetPyFormBorrowed(owner);
++    else
++      PyOwner = Py_None;
++
+     PyObject *ret = PyObject_CallFunction(efunc, "OOs", PyOwner, edata, arg);
+     Py_XDECREF(ret);
+   }
+@@ -55,6 +66,7 @@
+   char         *arg = NULL;    // the arg we will be supplying to the function
+   double      delay = 0;       // how long the event delay is (in seconds)
+   void       *owner = NULL;    // actual owner supplied to the event handler
++  char    otype[20];           // is the owner a char, room, obj, or None?
+ 
+   // try to parse all of our values
+   if(!PyArg_ParseTuple(args, "OdO|Os", &PyOwner, &delay, &efunc, &edata, &arg)){
+@@ -71,14 +83,22 @@
+   }
+ 
+   // figure out what type of data our owner is
+-  if(PyOwner == Py_None)
++  if(PyOwner == Py_None) {
+     owner = Py_None;
+-  else if(PyChar_Check(PyOwner))
++    sprintf(otype, "none");
++  }
++  else if(PyChar_Check(PyOwner)) {
+     owner = PyChar_AsChar(PyOwner);
+-  else if(PyRoom_Check(PyOwner))
++    sprintf(otype, "char");
++  }
++  else if(PyRoom_Check(PyOwner)) {
+     owner = PyRoom_AsRoom(PyOwner);
+-  else if(PyObj_Check(PyOwner))
++    sprintf(otype, "room");
++  }
++  else if(PyObj_Check(PyOwner)) {
+     owner = PyObj_AsObj(PyOwner);
++    sprintf(otype, "obj");
++  }
+   // invalid type
+   else {
+     PyErr_Format(PyExc_TypeError,
+@@ -94,7 +114,7 @@
+   
+   // now, queue up the action
+   start_func(owner, (int)(delay SECONDS), PyEvent_on_complete, NULL, 
+-	     Py_BuildValue("OOO", PyOwner, efunc, edata), arg);
++	     Py_BuildValue("sOO", otype, efunc, edata), arg);
+ 
+   // everything seems ok. exit normally
+   return Py_BuildValue("i", 1);
+diff -ruN ../nakedmudv3.3/src/scripts/pyobj.c src/scripts/pyobj.c
+--- ../nakedmudv3.3/src/scripts/pyobj.c	2006-12-24 22:15:56.000000000 -0500
++++ src/scripts/pyobj.c	2007-09-22 22:36:11.000000000 -0400
+@@ -33,6 +33,7 @@
+ //*****************************************************************************
+ // mandatory modules
+ //*****************************************************************************
++#include "../dyn_vars/dyn_vars.h"
+ #include "../items/items.h"
+ #include "../items/worn.h"
+ 
+@@ -694,6 +695,118 @@
+ }
+ 
+ 
++//
++// Returns TRUE if the obj has the given variable set
++PyObject *PyObj_hasvar(PyObj *self, PyObject *arg) {
++  char *var = NULL;
++  if (!PyArg_ParseTuple(arg, "s", &var)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Obj variables must have string names.");
++    return NULL;
++  }
++
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL)
++    return Py_BuildValue("b", objHasVar(obj, var));
++
++  PyErr_Format(PyExc_TypeError, 
++	       "Tried to get a variable value for nonexistant obj, %d",
++	       self->uid);
++  return NULL;
++}
++
++
++//
++// Delete the variable set on the obj with the specified name
++PyObject *PyObj_deletevar(PyObj *self, PyObject *arg) {
++  char *var = NULL;
++  if (!PyArg_ParseTuple(arg, "s", &var)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Obj variables must have string names.");
++    return NULL;
++  }
++
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL) {
++    objDeleteVar(obj, var);
++    return Py_BuildValue("i", 1);
++  }
++
++  PyErr_Format(PyExc_TypeError, 
++	       "Tried to get a variable value for nonexistant obj, %d",
++	       self->uid);
++  return NULL;
++}
++
++
++//
++// Get the value of a variable stored on the obj
++PyObject *PyObj_getvar(PyObj *self, PyObject *arg) {
++  char *var = NULL;
++  if (!PyArg_ParseTuple(arg, "s", &var)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Obj variables must have string names.");
++    return NULL;
++  }
++
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL) {
++    int vartype = objGetVarType(obj, var);
++    if(vartype == DYN_VAR_INT)
++      return Py_BuildValue("i", objGetInt(obj, var));
++    else if(vartype == DYN_VAR_LONG)
++      return Py_BuildValue("i", objGetLong(obj, var));
++    else if(vartype == DYN_VAR_DOUBLE)
++      return Py_BuildValue("d", objGetDouble(obj, var));
++    else
++      return Py_BuildValue("s", objGetString(obj, var));
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to get a variable value for nonexistant obj, %d",
++		 self->uid);
++    return NULL;
++  }
++}
++
++
++//
++// Set the value of a variable assocciated with the character
++PyObject *PyObj_setvar(PyObj *self, PyObject *args) {  
++  char     *var = NULL;
++  PyObject *val = NULL;
++
++  if (!PyArg_ParseTuple(args, "sO", &var, &val)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Obj setvar must be supplied with a var name and integer value.");
++    return NULL;
++  }
++
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL) {
++    if(PyInt_Check(val))
++      objSetInt(obj, var, (int)PyInt_AsLong(val));
++    else if(PyFloat_Check(val))
++      objSetDouble(obj, var, PyFloat_AsDouble(val));
++    else if(PyString_Check(val))
++      objSetString(obj, var, PyString_AsString(val));
++    else {
++      PyErr_Format(PyExc_TypeError,
++		   "Tried to store a obj_var of invalid type on obj %d.",
++		   self->uid);
++      return NULL;
++    }
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to set a variable value for nonexistant obj, %d",
++		 self->uid);
++    return NULL;
++  }
++}
++
++
+ 
+ //*****************************************************************************
+ // structures to define our methods and classes
+@@ -1092,6 +1205,16 @@
+ 		    "adds an extra description to the object.");
+     PyObj_addMethod("getAuxiliary", PyObj_get_auxiliary, METH_VARARGS,
+ 		    "get's the specified piece of aux data from the obj");
++    PyObj_addMethod("getvar", PyObj_getvar, METH_VARARGS,
++		    "get the value of a special variable the object has.");
++    PyObj_addMethod("setvar", PyObj_setvar, METH_VARARGS,
++		    "set the value of a special variable the object has.");
++    PyObj_addMethod("hasvar", PyObj_hasvar, METH_VARARGS,
++		    "return whether or not the object has a given variable.");
++    PyObj_addMethod("deletevar", PyObj_deletevar, METH_VARARGS,
++		    "delete a variable from the object's variable table.");
++    PyObj_addMethod("delvar", PyObj_deletevar, METH_VARARGS,
++		    "delete a variable from the object's variable table.");
+ 
+     makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
+     deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;
+diff -ruN ../nakedmudv3.3/src/scripts/pyplugs.c src/scripts/pyplugs.c
+--- ../nakedmudv3.3/src/scripts/pyplugs.c	2006-12-24 22:15:56.000000000 -0500
++++ src/scripts/pyplugs.c	2007-09-22 22:36:11.000000000 -0400
+@@ -149,8 +149,8 @@
+     int nlen = strlen(entry->d_name);
+     sprintf(fname, "%s/%s", PYMOD_LIB, entry->d_name);
+ 
+-    // skip ourself and our parent
+-    if(!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
++    // skip hidden files, ourself, and our parent
++    if(*entry->d_name == '.')
+       continue;
+     // python file == module
+     else if(nlen >= 4 && !strcasecmp(".py", entry->d_name + nlen-3)) {
+diff -ruN ../nakedmudv3.3/src/scripts/pyroom.c src/scripts/pyroom.c
+--- ../nakedmudv3.3/src/scripts/pyroom.c	2006-12-24 22:15:56.000000000 -0500
++++ src/scripts/pyroom.c	2007-09-22 22:36:11.000000000 -0400
+@@ -34,6 +34,13 @@
+ 
+ 
+ //*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../dyn_vars/dyn_vars.h"
++
++
++
++//*****************************************************************************
+ // local structures and defines
+ //*****************************************************************************
+ 
+@@ -74,7 +81,7 @@
+     return -1;
+   }
+ 
+-  // make sure a room with the vnum exists
++  // make sure a room with the uid exists
+   if(!propertyTableGet(room_table, uid)) {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Room with uid, %d, does not exist", uid);
+@@ -94,6 +101,38 @@
+     return 1;
+ }
+ 
++long PyRoom_Hash(PyRoom *room) {
++  return room->uid;
++}
++
++
++
++//*****************************************************************************
++// methods in the room module
++//*****************************************************************************
++PyObject *PyRoom_get_room(PyObject *self, PyObject *args) {
++  char     *room_key = NULL;
++  ROOM_DATA    *room = NULL;
++  
++  if (!PyArg_ParseTuple(args, "s", &room_key)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "get room failed - it needs a room key/locale.");
++    return NULL;
++  }
++
++  // try to find the room
++  room = worldGetRoom(gameworld, get_fullkey_relative(room_key, get_script_locale()));
++
++  if(room == NULL) {
++    PyErr_Format(PyExc_TypeError, "get room failed: room does not exist or "
++		 "is abstract.");
++    return NULL;
++  }
++
++  // create a python object for the new char, and return it
++  return Py_BuildValue("O", roomGetPyFormBorrowed(room));
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -673,6 +712,117 @@
+ }
+ 
+ 
++//
++// Returns TRUE if the room has the given variable set
++PyObject *PyRoom_hasvar(PyRoom *self, PyObject *arg) {
++  char *var = NULL;
++  if (!PyArg_ParseTuple(arg, "s", &var)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Room variables must have string names.");
++    return NULL;
++  }
++
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room != NULL)
++    return Py_BuildValue("b", roomHasVar(room, var));
++
++  PyErr_Format(PyExc_TypeError, 
++	       "Tried to get a variable value for nonexistant room, %d",
++	       self->uid);
++  return NULL;
++}
++
++
++//
++// Delete the variable set on the room with the specified name
++PyObject *PyRoom_deletevar(PyRoom *self, PyObject *arg) {
++  char *var = NULL;
++  if (!PyArg_ParseTuple(arg, "s", &var)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Room variables must have string names.");
++    return NULL;
++  }
++
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room != NULL) {
++    roomDeleteVar(room, var);
++    return Py_BuildValue("i", 1);
++  }
++
++  PyErr_Format(PyExc_TypeError, 
++	       "Tried to get a variable value for nonexistant room, %d",
++	       self->uid);
++  return NULL;
++}
++
++
++//
++// Get the value of a variable stored on the room
++PyObject *PyRoom_getvar(PyRoom *self, PyObject *arg) {
++  char *var = NULL;
++  if (!PyArg_ParseTuple(arg, "s", &var)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Room variables must have string names.");
++    return NULL;
++  }
++
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room != NULL) {
++    int vartype = roomGetVarType(room, var);
++    if(vartype == DYN_VAR_INT)
++      return Py_BuildValue("i", roomGetInt(room, var));
++    else if(vartype == DYN_VAR_LONG)
++      return Py_BuildValue("i", roomGetLong(room, var));
++    else if(vartype == DYN_VAR_DOUBLE)
++      return Py_BuildValue("d", roomGetDouble(room, var));
++    else
++      return Py_BuildValue("s", roomGetString(room, var));
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to get a variable value for nonexistant room, %d",
++		 self->uid);
++    return NULL;
++  }
++}
++
++
++//
++// Set the value of a variable assocciated with the character
++PyObject *PyRoom_setvar(PyRoom *self, PyObject *args) {  
++  char     *var = NULL;
++  PyObject *val = NULL;
++
++  if (!PyArg_ParseTuple(args, "sO", &var, &val)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Room setvar must be supplied with a var name and integer value.");
++    return NULL;
++  }
++
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room != NULL) {
++    if(PyInt_Check(val))
++      roomSetInt(room, var, (int)PyInt_AsLong(val));
++    else if(PyFloat_Check(val))
++      roomSetDouble(room, var, PyFloat_AsDouble(val));
++    else if(PyString_Check(val))
++      roomSetString(room, var, PyString_AsString(val));
++    else {
++      PyErr_Format(PyExc_TypeError,
++		   "Tried to store a room_var of invalid type on room %d.",
++		   self->uid);
++      return NULL;
++    }
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_TypeError, 
++		 "Tried to set a variable value for nonexistant room, %d",
++		 self->uid);
++    return NULL;
++  }
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -693,7 +843,7 @@
+     0,                         /*tp_as_number*/
+     0,                         /*tp_as_sequence*/
+     0,                         /*tp_as_mapping*/
+-    0,                         /*tp_hash */
++    (hashfunc)PyRoom_Hash,     /*tp_hash */
+     0,                         /*tp_call*/
+     0,                         /*tp_str*/
+     0,                         /*tp_getattro*/
+@@ -721,6 +871,8 @@
+ };
+ 
+ PyMethodDef room_module_methods[] = {
++  { "get_room", (PyCFunction)PyRoom_get_room, METH_NOARGS,
++    "Takes a room key/locale and returns a pointer to that room." },
+   {NULL, NULL, 0, NULL}  /* Sentinel */
+ };
+ 
+@@ -807,6 +959,16 @@
+ 		     "returns whether or not the room inherits from the proto");
+     PyRoom_addMethod("getAuxiliary", PyRoom_get_auxiliary, METH_VARARGS,
+ 		     "get's the specified piece of aux data from the room");
++    PyRoom_addMethod("getvar", PyRoom_getvar, METH_VARARGS,
++		    "get the value of a special variable the room has.");
++    PyRoom_addMethod("setvar", PyRoom_setvar, METH_VARARGS,
++		    "set the value of a special variable the room has.");
++    PyRoom_addMethod("hasvar", PyRoom_hasvar, METH_VARARGS,
++		    "return whether or not the room has a given variable.");
++    PyRoom_addMethod("deletevar", PyRoom_deletevar, METH_VARARGS,
++		    "delete a variable from the room's variable table.");
++    PyRoom_addMethod("delvar", PyRoom_deletevar, METH_VARARGS,
++		    "delete a variable from the room's variable table.");
+ 
+     // add in all the getsetters and methods
+     makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);
+diff -ruN ../nakedmudv3.3/src/scripts/scripts.c src/scripts/scripts.c
+--- ../nakedmudv3.3/src/scripts/scripts.c	2006-12-24 22:15:56.000000000 -0500
++++ src/scripts/scripts.c	2007-09-22 22:36:11.000000000 -0400
+@@ -70,7 +70,7 @@
+   deleteListWith(data->triggers, free);
+   if(data->pyform && data->pyform->ob_refcnt > 1)
+     log_string("LEAK: Memory leak (%d refcnt) on someone or something's pyform",
+-	       data->pyform->ob_refcnt);
++	       (int)data->pyform->ob_refcnt);
+   Py_XDECREF(data->pyform);
+   free(data);
+ }
+diff -ruN ../nakedmudv3.3/src/storage.c src/storage.c
+--- ../nakedmudv3.3/src/storage.c	2006-12-24 22:15:56.000000000 -0500
++++ src/storage.c	2007-09-22 22:36:11.000000000 -0400
+@@ -159,24 +159,28 @@
+   fprintf(fl, fmt, key);
+ }
+ 
+-
+ //
+ // write a string containing newlines to a file
+ //
+ void write_string_data(const char *string, FILE *fl, int indent) {
+   static char buf[SMALL_BUFFER];
+-  int i, str_i;
++  int i, str_i, do_indent;
++  *buf = '\0';
++  do_indent = TRUE;
+ 
+-  for(str_i = i = 0; string[str_i] != '\0'; str_i++) {
+-    buf[i] = string[str_i];
+-    if(buf[i] == '\n') {
+-      buf[++i] = '\0';
+-      print_indent(fl, indent);
++  for(i = str_i = 0; string[str_i] != '\0'; str_i++) {
++    buf[i++] = string[str_i];
++    if(i == SMALL_BUFFER-1 || string[str_i] == '\n') {
++      if(do_indent == TRUE) {
++	print_indent(fl, indent);
++	do_indent = FALSE;
++      }
++      buf[i] = '\0';
+       fprintf(fl, "%s", buf);
+       i = 0;
++      if(string[str_i] == '\n')
++	do_indent = TRUE;
+     }
+-    else
+-      i++;
+   }
+ }
+ 
+@@ -392,9 +396,31 @@
+ // Read until we hit a newline. Return a copy of what we find
+ //
+ char *parse_line(FILE *fl) {
+-  static char buf[SMALL_BUFFER];
+-  fgetline(fl, buf, SMALL_BUFFER);
+-  return strdup(buf);
++  static BUFFER *buf = NULL;
++  static char   sbuf[SMALL_BUFFER];
++  int              i = 0;
++  if(buf == NULL)
++    buf = newBuffer(1);
++  bufferClear(buf);
++  *sbuf = 0;
++
++  // fill up our small buffer to max, then copy it over
++  for(i = 0; (sbuf[i] = getc(fl)) != EOF && sbuf[i] != '\n';) {
++    if(i < SMALL_BUFFER-2)
++      i++;
++    else {
++      sbuf[++i] = '\0';
++      bprintf(buf, "%s", sbuf);
++      i = 0;
++      sbuf[i] = '\0';
++    }
++  }
++
++  // we found the newline
++  if(sbuf[i] == '\n')
++    sbuf[i] = '\0';
++  bprintf(buf, "%s", sbuf);
++  return strdup(bufferString(buf));
+ }
+ 
+ 
+@@ -402,20 +428,22 @@
+ // read in a string that may possibly have multiple newlines in it
+ //
+ char *parse_string(FILE *fl, int indent) {
+-  static char line[SMALL_BUFFER];
+-  static char buf [MAX_BUFFER];
+-  *buf = '\0';
+-  int i = 0;
++  static BUFFER *buf = NULL;
++  char          *ptr = NULL;
++  if(buf == NULL)
++    buf = newBuffer(1);
++  bufferClear(buf);
+ 
+   // as long as we can skip up our indent, we can read in data and
+   // all is good. Once we can no longer skip up our indent, then
+   // we have come to the end of our string
+   while(skip_indent(fl, indent)) {
+-    fgetline(fl, line, SMALL_BUFFER);
+-    i += snprintf(buf+i, MAX_BUFFER-i-1, "%s\n", line);
++    ptr = parse_line(fl);
++    bprintf(buf, "%s\n", ptr);
++    free(ptr);
+   }
+ 
+-  return strdup(buf);
++  return strdup(bufferString(buf));
+ }
+ 
+ 
+diff -ruN ../nakedmudv3.3/src/time/mudtime.h src/time/mudtime.h
+--- ../nakedmudv3.3/src/time/mudtime.h	2006-12-24 22:15:56.000000000 -0500
++++ src/time/mudtime.h	2007-09-22 22:36:11.000000000 -0400
+@@ -58,15 +58,4 @@
+ bool is_evening();
+ bool is_night();
+ 
+-
+-//
+-// If we have the time module installed, there is the option of
+-// supplying a night description for the room, that will be shifted
+-// to when it becomes evening/night time.
+-//
+-const char *roomGetNightDesc      (ROOM_DATA *room);
+-BUFFER     *roomGetNightDescBuffer(ROOM_DATA *room);
+-void        roomSetNightDesc      (ROOM_DATA *room, const char *desc);
+-
+-
+ #endif // __MUDTIME_H
+diff -ruN ../nakedmudv3.3/src/time/time.c src/time/time.c
+--- ../nakedmudv3.3/src/time/time.c	2006-12-24 22:15:56.000000000 -0500
++++ src/time/time.c	2007-09-22 22:36:11.000000000 -0400
+@@ -6,8 +6,7 @@
+ //
+ //*****************************************************************************
+ 
+-#include <Python.h>        // to add nightdesc
+-#include <structmember.h>
++#include <Python.h>        // to add Python hooks
+ 
+ #include "../mud.h"
+ #include "../utils.h"
+@@ -91,107 +90,6 @@
+ 
+ 
+ //*****************************************************************************
+-//
+-// auxiliary data
+-//
+-// the time module gives rooms the ability to have different day and night
+-// descriptions. Below are the functions required for installing this.
+-//
+-//*****************************************************************************
+-typedef struct time_aux_data {
+-  BUFFER *night_desc;        // our description at night time
+-} TIME_AUX_DATA;
+-
+-TIME_AUX_DATA *
+-newTimeAuxData() {
+-  TIME_AUX_DATA *data = malloc(sizeof(TIME_AUX_DATA));
+-  data->night_desc = newBuffer(1);
+-  return data;
+-}
+-
+-void
+-deleteTimeAuxData(TIME_AUX_DATA *data) {
+-  if(data->night_desc) deleteBuffer(data->night_desc);
+-  free(data);
+-}
+-
+-void
+-timeAuxDataCopyTo(TIME_AUX_DATA *from, TIME_AUX_DATA *to) {
+-  bufferCopyTo(from->night_desc, to->night_desc);
+-}
+-
+-TIME_AUX_DATA *
+-timeAuxDataCopy(TIME_AUX_DATA *data) {
+-  TIME_AUX_DATA *newdata = newTimeAuxData();
+-  timeAuxDataCopyTo(data, newdata);
+-  return newdata;
+-}
+-
+-STORAGE_SET *timeAuxDataStore(TIME_AUX_DATA *data) {
+-  STORAGE_SET *set = new_storage_set();
+-  store_string(set, "night_desc", bufferString(data->night_desc));
+-  return set;
+-}
+-
+-TIME_AUX_DATA *timeAuxDataRead(STORAGE_SET *set) {
+-  TIME_AUX_DATA *data = newTimeAuxData();
+-  bufferCat(data->night_desc, read_string(set, "night_desc"));
+-  return data;
+-}
+-
+-const char *roomGetNightDesc(ROOM_DATA *room) {
+-  TIME_AUX_DATA *data = roomGetAuxiliaryData(room, "time_aux_data");
+-  return bufferString(data->night_desc);
+-}
+-
+-BUFFER *roomGetNightDescBuffer(ROOM_DATA *room) {
+-  TIME_AUX_DATA *data = roomGetAuxiliaryData(room, "time_aux_data");
+-  return data->night_desc;
+-}
+-
+-void roomSetNightDesc(ROOM_DATA *room, const char *desc) {
+-  TIME_AUX_DATA *data = roomGetAuxiliaryData(room, "time_aux_data");
+-  bufferClear(data->night_desc);
+-  bufferCat(data->night_desc, (desc ? desc : ""));
+-}
+-
+-
+-
+-//*****************************************************************************
+-// Python getters and setters
+-//*****************************************************************************
+-PyObject *PyRoom_getndesc(PyObject *self, void *closure) {
+-  ROOM_DATA *room = PyRoom_AsRoom(self);
+-  if(room != NULL)  return Py_BuildValue("s", roomGetNightDesc(room));
+-  else              return NULL;
+-}
+-
+-int PyRoom_setndesc(PyObject *self, PyObject *value, void *closure) {
+-  if (value == NULL) {
+-    PyErr_Format(PyExc_TypeError, "Cannot delete room's night desc");
+-    return -1;
+-  }
+-  
+-  if (!PyString_Check(value)) {
+-    PyErr_Format(PyExc_TypeError, 
+-                    "Room night descs must be strings");
+-    return -1;
+-  }
+-
+-  ROOM_DATA *room = PyRoom_AsRoom(self);
+-  if(room == NULL) {
+-    PyErr_Format(PyExc_TypeError,
+-		 "Tried to modify nonexistent room, %d", PyRoom_AsUid(self));
+-    return -1;                                                                
+-  }
+-
+-  roomSetNightDesc(room, PyString_AsString(value));
+-  return 0;
+-}
+-
+-
+-
+-//*****************************************************************************
+ // Python methods
+ //*****************************************************************************
+ PyObject *PyMud_GetHour(PyObject *self) {
+@@ -221,22 +119,6 @@
+ //*****************************************************************************
+ 
+ //
+-// If it's in the night, swap out our desc for the room's night desc
+-void room_nightdesc_hook(const char *info) {
+-  ROOM_DATA   *room = NULL;
+-  CHAR_DATA *looker = NULL;
+-  hookParseInfo(info, &room, &looker);
+-
+-  if((is_evening() || is_night()) && *roomGetNightDesc(room)) {
+-    // if it's the room desc and not an edesc, cat the night desc...
+-    if(!strcasecmp(bufferString(charGetLookBuffer(looker)),roomGetDesc(room))) {
+-      bufferClear(charGetLookBuffer(looker));
+-      bufferCat(charGetLookBuffer(looker), roomGetNightDesc(room));
+-    }
+-  }
+-}
+-
+-//
+ // Handle the hourly update of our times
+ //
+ void handle_time_update(void *self, void *data, char *arg) {
+@@ -297,39 +179,19 @@
+   else
+     curr_hour = curr_day_of_week = curr_day_of_month = curr_month = curr_year = 0;
+ 
+-  // add a nightdesc get-setter to rooms
+-  PyRoom_addGetSetter("ndesc", PyRoom_getndesc, PyRoom_setndesc,
+-		      "the room's night desc");
+-  PyRoom_addGetSetter("night_desc", PyRoom_getndesc, PyRoom_setndesc,
+-		      "the room's night desc");
+-
+   // add our mud methods
+   PyMud_addMethod("get_hour",     PyMud_GetHour,     METH_NOARGS, NULL);
+   PyMud_addMethod("is_morning",   PyMud_IsMorning,   METH_NOARGS, NULL);
+   PyMud_addMethod("is_afternoon", PyMud_IsAfternoon, METH_NOARGS, NULL);
+   PyMud_addMethod("is_evening",   PyMud_IsEvening,   METH_NOARGS, NULL);
+   PyMud_addMethod("is_night",     PyMud_IsNight,     METH_NOARGS, NULL);
+-  
+-  // add our set fields
+-#ifdef MODULE_SET_VAL
+-  add_set("ndesc",      SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
+-  add_set("night_desc", SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
+-#endif
+ 
+   // add the time command
+   add_cmd("time", NULL, cmd_time, POS_SITTING,  POS_FLYING,
+ 	  "player", TRUE, FALSE);
+ 
+-  // add night descriptions for rooms
+-  auxiliariesInstall("time_aux_data",
+-		     newAuxiliaryFuncs(AUXILIARY_TYPE_ROOM,
+-				       newTimeAuxData, deleteTimeAuxData,
+-				       timeAuxDataCopyTo, timeAuxDataCopy,
+-				       timeAuxDataStore, timeAuxDataRead));
+-
+   // start our time updater
+   start_update(NULL, TIME_UPDATE_DELAY, handle_time_update, NULL, NULL, NULL);
+-  hookAdd("preprocess_room_desc", room_nightdesc_hook);
+ }
+ 
+ 
+diff -ruN ../nakedmudv3.3/src/utils.c src/utils.c
+--- ../nakedmudv3.3/src/utils.c	2006-12-24 22:15:56.000000000 -0500
++++ src/utils.c	2007-09-22 22:36:11.000000000 -0400
+@@ -1338,7 +1338,7 @@
+ }
+ 
+ const char *custom_prompt(CHAR_DATA *ch) {
+-  static char prompt[MAX_BUFFER];
++  static char prompt[SMALL_BUFFER];
+   *prompt = '\0';
+   strcat(prompt, "\r\n{nprompt> ");    
+   return prompt;
+Binary files ../nakedmudv3.3/lib/pymodules/.DS_Store and lib/pymodules/.DS_Store differ
+diff -ruN ../nakedmudv3.3/lib/pymodules/account_handler.py lib/pymodules/account_handler.py
+--- ../nakedmudv3.3/lib/pymodules/account_handler.py	2006-12-24 22:31:26.000000000 -0500
++++ lib/pymodules/account_handler.py	2007-09-22 22:36:20.000000000 -0400
+@@ -52,7 +52,7 @@
+ def acct_name_handler(sock, arg):
+     '''the first prompt a socket encounters; enter a name of an account or
+        a new name of an account to create one'''
+-    if mudsys.account_exists(arg):
++    if arg and mudsys.account_exists(arg):
+         # logging on to an already existing account
+         mud.log_string("Account '" + arg + "' is trying to connect.")
+         acct = mudsys.load_account(arg)
+@@ -207,7 +207,10 @@
+         sock.push_ih(acct_new_password_handler, acct_new_password_prompt)
+         sock.push_ih(acct_password_handler, acct_password_prompt)
+     elif arg == 'N':
+-        hooks.run("create_character", hooks.build_info("sk", (sock,)))
++        if "player" in [x.strip() for x in mudsys.sys_getval("lockdown").split(",")]:
++            sock.send("New characters are not allowed to be created at this time.")
++        else:
++            hooks.run("create_character", hooks.build_info("sk", (sock,)))
+     else:
+         sock.send("Invalid choice!")
+ 
+diff -ruN ../nakedmudv3.3/lib/pymodules/char_gen.py lib/pymodules/char_gen.py
+--- ../nakedmudv3.3/lib/pymodules/char_gen.py	2006-12-24 22:31:26.000000000 -0500
++++ lib/pymodules/char_gen.py	2007-09-22 22:36:20.000000000 -0400
+@@ -60,15 +60,15 @@
+ 
+     # send them the motd
+     sock.ch.page(mud.get_motd())
+-
+-    # put him in the starting room
+-    sock.ch.room = mudsys.sys_getval("start_room")
+     
+-    # run the init_player hook
+-    hooks.run("init_player", hooks.build_info("ch", (sock.ch,)))
+-
+     # register and save him to disk and to an account
+     mudsys.do_register(sock.ch)
++
++    # make him exist in the game for functions to look him up
++    mudsys.try_enter_game(sock.ch)
++
++    # run the init_player hook
++    hooks.run("init_player", hooks.build_info("ch", (sock.ch,)))
+     
+     # attach him to his account and save the accoutn
+     sock.account.add_char(sock.ch)
+diff -ruN ../nakedmudv3.3/lib/pymodules/cmd_comm.py lib/pymodules/cmd_comm.py
+--- ../nakedmudv3.3/lib/pymodules/cmd_comm.py	2006-12-25 21:37:11.000000000 -0500
++++ lib/pymodules/cmd_comm.py	2007-09-22 22:36:20.000000000 -0400
+@@ -115,7 +115,7 @@
+          emote does a little dance.
+          emote A gunshot sounds, and $n is laying on the ground, dead.'''
+     if arg == '':
+-        ch.send("Emote we must, but emote what?")
++        ch.send(ch, "Emote we must, but emote what?")
+     else:
+         # see if a $n is within the argument ... if there is, let the person
+         # put his or her name where it's wanted. Otherwise, tag it onto the
+@@ -127,7 +127,7 @@
+ def cmd_gemote(ch, cmd, arg):
+     '''cmd_gemote is similar to emote, but it sends a global message'''
+     if arg == '':
+-        ch.send("Gemote we must, but gemote what?")
++        ch.send(ch, "Gemote we must, but gemote what?")
+     else:
+         # same as emote, but global
+         if arg.find("$n") == -1:
+diff -ruN ../nakedmudv3.3/lib/pymodules/mud_test.py lib/pymodules/mud_test.py
+--- ../nakedmudv3.3/lib/pymodules/mud_test.py	2006-12-24 22:16:28.000000000 -0500
++++ lib/pymodules/mud_test.py	1969-12-31 19:00:00.000000000 -0500
+@@ -1,53 +0,0 @@
+-from mudsys import add_cmd
+-import auxiliary
+-import storage
+-
+-# Example auxiliary data class. Holds a single string variable that
+-# people are allowed to get and set the value of
+-class ExampleAux:
+-    # Create a new instance of the auxiliary data. If a storage set is supplied,
+-    # read our values from that
+-    def __init__(self, set = None):
+-        if not set:
+-            self.val = "abcxyz"
+-        else:
+-            self.val = set.readString("val")
+-
+-    # copy the variables in this auxiliary data to another auxiliary data
+-    def copyTo(self, to):
+-        to.val = self.val
+-
+-    # create a duplicate of this auxiliary data
+-    def copy(self):
+-        newVal = ExampleAux()
+-        newVal.val = self.val
+-        return newVal
+-
+-    # returns a storage set representation of the auxiliary data
+-    def store(self):
+-        set = storage.StorageSet()
+-        set.storeString("val", self.val)
+-        return set
+-
+-# allows people to peek at the value stored in their ExampleAux data
+-def cmd_getaux(ch, cmd, arg):
+-    aux = ch.account.getAuxiliary("example_aux")
+-    ch.send("The val is " + aux.val)
+-
+-# allows people to set the value stored in their ExampleAux data
+-def cmd_setaux(ch, cmd, arg):
+-    aux = ch.account.getAuxiliary("example_aux")
+-    aux.val = arg
+-    ch.send("val set to " + arg)
+-
+-# install our auxiliary data on characters when this module is loaded.
+-# auxiliary data can also be installed onto rooms and objects. You can install
+-# auxiliary data onto more than one type of thing by comma-separating them in
+-# the third argument of this method.
+-auxiliary.install("example_aux", ExampleAux, "account")
+-
+-# add in our two commands
+-add_cmd("getaux", None, cmd_getaux, "unconscious", "flying", "admin",
+-        False, False)
+-add_cmd("setaux", None, cmd_setaux, "unconscious", "flying", "admin",
+-        False, False)
+diff -ruN ../nakedmudv3.3/lib/pymodules/path.py lib/pymodules/path.py
+--- ../nakedmudv3.3/lib/pymodules/path.py	1969-12-31 19:00:00.000000000 -0500
++++ lib/pymodules/path.py	2007-09-22 22:36:20.000000000 -0400
+@@ -0,0 +1,213 @@
++'''
++path.py
++
++Plugs into the routine module to allow for the easy construction of paths and
++path following.
++'''
++from mud import *
++from mudsys import add_cmd
++import mud, mudsys
++
++
++
++################################################################################
++# functions
++################################################################################
++def leads_to(frm, to):
++    '''returns whether from leads directly to to'''
++    for ex in frm.exnames:
++        if frm.exit(ex).dest is to:
++            return True
++    return False
++
++def shortest_path_bfs(frm, to, ignore_doors = False, ignore = None):
++    '''calculates the shortest path, but uses a breadth first search. More
++       efficient than depth-first seach for very short paths with lots of
++       branches or very large muds.'''
++    if frm == to:
++        return [frm]
++
++    rooms = []
++    depth = []
++
++    if ignore == None:
++        ignore = set()
++    ignore.add(frm)
++
++    # what is our highest depth
++    i = 1
++
++    # the index of the room our last depth started at
++    j = 0
++
++    # append ourself and our depth
++    rooms.append(frm)
++    depth.append(i)
++
++    # keep going until we find To, or we can't go any deeper
++    found = False
++    while not found:
++        prev_depth = rooms[j:]
++        for rm in prev_depth:
++            for ex in rm.exnames:
++                dest = rm.exit(ex).dest
++                if dest in ignore:
++                    continue
++                rooms.append(dest)
++                depth.append(i)
++                if dest is to:
++                    found = True
++                    break
++                ignore.add(rm)
++            if found:
++                break
++
++        i += 1
++        j += len(prev_depth)
++
++    # go backwards from our destination
++    rooms.reverse()
++    depth.reverse()
++
++    # first step, pull out our destination room
++    path = [to]
++
++    # pull out all other rooms on the shortest path
++    while len(rooms) > 0:
++        curr_depth = depth[0]
++        
++        # figure out which room in our current layer
++        # links to our previous room in the shortest path
++        for next in rooms:
++            if leads_to(next, path[len(path)-1]):
++                path.append(next)
++                break
++
++        # clear our last layer
++        i = 0
++        while i < len(depth) and depth[i] == curr_depth:
++            i += 1
++        rooms = rooms[i:]
++        depth = depth[i:]
++
++    # put it back in order
++    path.reverse()
++    return path
++
++def shortest_path_dfs(frm, to, ignore_doors = False, ignore = None):
++    '''returns the steps needed to take to go from one room to another. More
++       efficient than breadth-first search for very long paths with only a few
++       branches, or very small muds.'''
++    path = []
++
++    if ignore == None:
++        ignore = set()
++
++    # a list of rooms we ignore for tracking. Add ourself so we don't loop back
++    ignore.add(frm)
++
++    # if we're the target room, return an empty list
++    if frm is to:
++        return [frm]
++
++    # build the shortest path 
++    for ex in frm.exnames:
++        # check if it has a door, and if we ignore it
++        if frm.exit(ex).is_closed:
++            continue
++
++        # get the dest room. if there is none, skip this exit
++        next_room = frm.exit(ex).dest
++        
++        if next_room is None:
++            continue
++
++        # if we already know this is a dead end or a loopback, skip it
++        if next_room in ignore:
++            continue
++
++        next_path = shortest_path(next_room, to, ignore_doors, ignore)
++
++        # dead end
++        if len(next_path) == 0:
++            continue
++
++        # we found a path, append ourself
++        next_path.insert(0, frm)
++
++        # are we shorter than the previous one?
++        if len(path) == 0 or len(path) > len(next_path):
++            path = next_path
++
++    return path
++
++# set whether we are using bfs or dfs as our main pathing method
++shortest_path = shortest_path_bfs
++
++def path_to_dirs(path):
++    '''takes a path of rooms and converts it to directions'''
++
++    dirs = []
++    i    = 0
++    while i < len(path) - 1:
++        for ex in path[i].exnames:
++            if path[i].exit(ex).dest == path[i+1]:
++                dirs.append(ex)
++                break
++        i = i + 1
++
++    # return the directions we generated, if any
++    return dirs
++
++def build_patrol(rms, reverse = True):
++    '''builds a set of directions that need to be followed to do a patrol
++       between the rooms. If reverse is true, also supplies the directions
++       to loop back on itself'''
++    if reverse == True:
++        loopback = [x for x in rms]
++        loopback.reverse()
++        rms      = rms + loopback[1:]
++
++    path = []
++    i    = 0
++    while i < len(rms) - 1:
++        path = path + shortest_path(rms[i], rms[i+1])
++        i += 1
++    return path_to_dirs(path)
++
++def step(frm, to, ignore_doors = False):
++    '''returns the first step needed to take to go from one room to another'''
++    steps = shortest_path(frm, to, ignore_doors)
++    if steps == None or len(steps) <= 1:
++        return None
++    return path_to_dirs(steps)[0]
++
++
++
++################################################################################
++# commands
++################################################################################
++def cmd_path(ch, cmd, arg):
++    '''This is really just for purposes of testing to make sure the module
++       works properly'''
++    try:
++        tgt, = parse_args(ch, True, cmd, arg, "ch.world.noself")
++    except: return
++
++    path = build_patrol([ch.room, tgt.room])
++    if len(path) == 0:
++        ch.send("Path doesn't exist")
++    else:
++        ch.send(str(path))
++
++
++
++################################################################################
++# initialization
++################################################################################
++
++# add our commands
++add_cmd("path", None, cmd_path, "sitting", "flying", "admin", False, False)
++
++# mud initialization
++mud.build_patrol = build_patrol
+diff -ruN ../nakedmudv3.3/lib/pymodules/routine.py lib/pymodules/routine.py
+--- ../nakedmudv3.3/lib/pymodules/routine.py	1969-12-31 19:00:00.000000000 -0500
++++ lib/pymodules/routine.py	2007-09-22 22:36:20.000000000 -0400
+@@ -0,0 +1,203 @@
++'''
++routine.py
++
++This is a module for setting up one-time or repeatable routines for mobs. This
++can include walking a path, forging a sword, singing verses of a song, or
++anything else. This was primarily meant to be for path-following, but I figured
++it was worth the time to generalize it out for more complex actions
++'''
++from mud import *
++from mudsys import add_cmd
++import mud, mudsys, auxiliary, storage, event
++
++
++
++################################################################################
++# defines
++################################################################################
++__dflt_routine_step_time__ = 10 # seconds between routine steps
++__global_routine_checks__  = []
++
++
++
++################################################################################
++# auxiliary data
++################################################################################
++class RoutineAuxData:
++    def __init__(self, set = None):
++        self.routine = None   # the routine we follow
++        self.repeat  = False  # after we finish it, do we repeat?
++        self.step    = None   # what step of the routine are we on
++        self.checks  = None   # what checks do we perform before each step
++
++    def copyTo(self, to):
++        if isinstance(self.routine, list):
++            to.routine = [x for x in self.routine]
++        else:
++            to.routine = None
++        if isinstance(self.checks, list):
++            to.checks = [x for x in self.checks]
++        else:
++            to.checks = None
++        to.repeat = self.repeat
++        to.step   = self.step
++
++    def copy(self):
++        newdata = RoutineAuxData()
++        self.copyTo(newdata)
++        return newdata
++
++    def store(self):
++        return storage.StorageSet()
++
++    def read(self, set):
++        return
++
++
++
++################################################################################
++# functions
++################################################################################
++def register_routine_check(check):
++    '''adds a routine check to the global list. Must be a function taking one
++       argument, which is the character doing the routine'''
++    __global_routine_checks__.append(check)
++
++def start_routine(ch):
++    '''starts a character routine event in motion'''
++    time = __dflt_routine_step_time__
++    aux  = ch.getAuxiliary("routine_data")
++    item = aux.routine[aux.step]
++    if isinstance(item, tuple):
++        time = item[0]
++    event.start_event(ch, time, routine_event)
++
++def set_routine(ch, routine, repeat = False, checks = None):
++    '''Sets a routine to a character. Routine steps can constain commands
++       (character strings), functions (one argument, ch), or tuples
++       (delay, string | function). If a tuple is not supplied, the default
++       step time is used'''
++    aux = ch.getAuxiliary("routine_data")
++    aux.checks  = None
++    if checks != None:
++        aux.checks  = [x for x in checks]
++    aux.repeat  = repeat
++    aux.routine = None
++    aux.step    = None
++    if routine != None:
++        aux.routine = [x for x in routine]
++        aux.step    = 0
++        start_routine(ch)
++
++def do_step(ch):
++    '''Performs the current step increments'''
++    aux  = ch.getAuxiliary("routine_data")
++    step = aux.routine[aux.step]
++    time = __dflt_routine_step_time__
++
++    # increment or decrement as necessary
++    aux.step += 1
++
++    # parse out the step
++    if isinstance(step, tuple):
++        time = step[0]
++        step = step[1]
++
++    # if it's a string, do it as an action. Otherwise, assume it is a function
++    # and call it with ch as the only argument
++    if isinstance(step, str):
++        ch.act(step)
++    else:
++        step(ch)
++
++    # figure out if we need to repeat it
++    if aux.step == len(aux.routine) and aux.repeat == True:
++        aux.step = 0
++
++    # see if we need to queue up another event
++    if aux.step < len(aux.routine):
++        start_routine(ch)
++    else:
++        set_routine(ch, None)
++
++def try_step(ch):
++    '''Checks to see if we can perform a step in the routine. Returns true or
++       false if it did or not'''
++    aux = ch.getAuxiliary("routine_data")
++
++    if aux.routine == None:
++        return False
++
++    # build a list of the checks we need to perform
++    checks = __global_routine_checks__
++    if aux.checks != None:
++        checks = checks + aux.checks
++
++    # If we have checks, run them
++    if checks != None:
++        for check in checks:
++            if check(ch) == True:
++                # queue us back up to try again later
++                start_routine(ch)
++                return False
++
++    # If we had no checks or they were all passed, do the step
++    do_step(ch)
++    return True
++
++
++
++################################################################################
++# events
++################################################################################
++def routine_event(owner, data, arg):
++    '''this is the event that perpetuates NPC routines. Each NPC that has a
++       routine running has one of these events tied to him or her. When the
++       routine time expires, a check is made to see if the routine can go on.
++       If it can, the routine step is performed and the step number is
++       incremented'''
++    try_step(owner)
++
++
++    
++################################################################################
++# commands
++################################################################################
++def cmd_routine(ch, cmd, arg):
++    '''Appends a routine onto a character. The second argument needs to be an
++       evaluable list statement. Put it in parentheses to avoid being cut off
++       as spaces, since parse treats it as a single word
++
++       e.g., routine man "[\'say hi\', (3, \'say I am a little teapot\')]" True
++
++       this will say hi after the default delay, and I am a little teapot after
++       a delay of 3. It will then loop through this process indefinitely.
++       Alternatively, these commands can be replaced with function calls.
++       '''
++    try:
++        tgt, routine, repeat = parse_args(ch, True, cmd, arg,
++                                          "ch.room.noself word | bool")
++    except:
++        return
++
++    set_routine(tgt, eval(routine), repeat)
++    ch.send("Routine set.")
++
++
++
++################################################################################
++# initialization
++################################################################################
++
++# auxiliary data
++auxiliary.install("routine_data", RoutineAuxData, "character")
++
++# base check. Don't do a routine if we're currently doing an action
++register_routine_check(lambda ch: ch.isActing())
++
++# commands
++add_cmd("routine", None, cmd_routine, "sitting", "flying", "admin",
++        False, False)
++
++# misc initialization
++mud.set_routine = set_routine

@@ -116,17 +116,17 @@ void reload_room(const char *key) {
 // functions for printing room reset data
 //*****************************************************************************
 const char *write_reset_arg(int type, const char *arg, const char *locale) {
-  static char buf[SMALL_BUFFER];
-  PROTO_DATA  *obj = 
-    worldGetType(gameworld, "oproto", get_fullkey_relative(arg, locale));
-  PROTO_DATA  *mob = 
-    worldGetType(gameworld, "mproto", get_fullkey_relative(arg, locale));
+  static char buf[MAX_BUFFER];
+  PROTO_DATA  *obj = NULL;
+  PROTO_DATA  *mob = NULL;
   int pos          = atoi(arg);
   switch(type) { 
   case RESET_LOAD_OBJECT:
+    obj = worldGetType(gameworld, "oproto", get_fullkey_relative(arg, locale));
     sprintf(buf, "load %s", (obj ? protoGetKey(obj) : "{RNOTHING{c"));
     break;
   case RESET_LOAD_MOBILE:
+    mob = worldGetType(gameworld, "mproto", get_fullkey_relative(arg, locale));
     sprintf(buf, "load %s", (mob ? protoGetKey(mob) : "{RNOBODY{c"));
     break;
   case RESET_POSITION:
@@ -134,15 +134,19 @@ const char *write_reset_arg(int type, const char *arg, const char *locale) {
 	    (pos < 0 || pos >= NUM_POSITIONS ? "{RNOTHING{c":posGetName(pos)));
     break;
   case RESET_FIND_MOBILE:
+    mob = worldGetType(gameworld, "mproto", get_fullkey_relative(arg, locale));
     sprintf(buf, "find %s", (mob ? protoGetKey(mob) : "{RNOBODY{c"));
     break;
   case RESET_FIND_OBJECT:
+    obj = worldGetType(gameworld, "oproto", get_fullkey_relative(arg, locale));
     sprintf(buf, "find %s", (obj ? protoGetKey(obj) : "{RNOTHING{c"));
     break;
   case RESET_PURGE_MOBILE:
+    mob = worldGetType(gameworld, "mproto", get_fullkey_relative(arg, locale));
     sprintf(buf, "purge %s", (mob ? protoGetKey(mob) : "{RNOBODY{c"));
     break;
   case RESET_PURGE_OBJECT:
+    obj = worldGetType(gameworld, "oproto", get_fullkey_relative(arg, locale));
     sprintf(buf, "purge %s", (obj ? protoGetKey(obj) : "{RNOTHING{c"));
     break;
   case RESET_OPEN:
@@ -153,6 +157,9 @@ const char *write_reset_arg(int type, const char *arg, const char *locale) {
     break;
   case RESET_LOCK:
     sprintf(buf, "close/lock dir %s or container", arg);
+    break;
+  case RESET_SCRIPT:
+    sprintf(buf, "run a script on the parent reset");
     break;
   default:
     sprintf(buf, "UNFINISHED OLC");
@@ -265,9 +272,15 @@ void resedit_menu(SOCKET_DATA *sock, RESET_OLC *data) {
 		 resetGetChance(data->reset),
 		 resetGetMax(data->reset),
 		 resetGetRoomMax(data->reset),
-		 resetGetArg(data->reset),
+		 (resetGetType(data->reset) != RESET_SCRIPT ? 
+		  resetGetArg(data->reset) : ""),
 		 write_reset(data->reset, 0, FALSE, data->locale)
 		 );
+
+  if(resetGetType(data->reset) == RESET_SCRIPT) {
+    send_to_socket(sock, "\r\n");
+    script_display(sock, resetGetArg(data->reset), FALSE);
+  }
 }
 
 int resedit_chooser(SOCKET_DATA *sock, RESET_OLC *data, const char *option) {
@@ -289,8 +302,14 @@ int resedit_chooser(SOCKET_DATA *sock, RESET_OLC *data, const char *option) {
     text_to_buffer(sock, "What is the max that can exit in room (0 = no limit): ");
     return RESEDIT_ROOM_MAX;
   case '6':
-    text_to_buffer(sock, "What is the reset argument (i.e. obj name, direction, etc...): ");
-    return RESEDIT_ARGUMENT;
+    if(resetGetType(data->reset) == RESET_SCRIPT) {
+      socketStartEditor(sock, script_editor, resetGetArgBuffer(data->reset));
+      return MENU_NOCHOICE;
+    }
+    else {
+      text_to_buffer(sock, "What is the reset argument (i.e. obj name, direction, etc...): ");
+      return RESEDIT_ARGUMENT;
+    }
   case '7':
     do_olc(sock, reslistedit_menu, reslistedit_chooser, reslistedit_parser, 
 	   NULL, NULL, deleteReslistOLC, NULL, 
@@ -781,20 +800,6 @@ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
       bufferReplace(roomGetDescBuffer(room), "\\\"", "\"", TRUE);
       bufferFormat(roomGetDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
     }
-#ifdef MODULE_TIME
-    else if(!strncmp(lptr, "me.ndesc",  13)) {
-      // we have three "'s to skip by, because this lptr will take the form:
-      // me.desc = me.desc + " " + "..."
-      while(*lptr != '\"') lptr++; lptr++;
-      while(*lptr != '\"') lptr++; lptr++;
-      while(*lptr != '\"') lptr++; lptr++;
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      roomSetDesc(room, lptr);
-      // replace our \"s with "
-      bufferReplace(roomGetNightDescBuffer(room), "\\\"", "\"", TRUE);
-      bufferFormat(roomGetNightDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
-    }
-#endif
     else if(!strncmp(lptr, "me.terrain", 10)) {
       while(*lptr != '\"') lptr++;
       lptr++;                      // kill the leading "
@@ -923,17 +928,6 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
 	    bufferString(desc_copy));
     deleteBuffer(desc_copy);
   }
-#ifdef MODULE_TIME
-  if(*roomGetNightDesc(room)) {
-    BUFFER *desc_copy = bufferCopy(roomGetNightDescBuffer(room));
-    bufferReplace(desc_copy, "\n", " ",    TRUE);
-    bufferReplace(desc_copy, "\r", "",     TRUE);
-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
-    bprintf(buf, "me.ndesc = me.ndesc + \" \" + \"%s\"\n", 
-	    bufferString(desc_copy));
-    deleteBuffer(desc_copy);
-  }
-#endif
 
   // extra descriptions
   if(listSize(edescSetGetList(roomGetEdescs(room))) > 0) {
@@ -1054,9 +1048,6 @@ void redit_menu(SOCKET_DATA *sock, ROOM_OLC *data) {
 		 "{c%s\r\n"
 		 "{g3) Name\r\n{c%s\r\n"
 		 "{g4) Description\r\n{c%s"
-#ifdef MODULE_TIME
-		 "{g5) Night description (optional)\r\n{c%s"
-#endif
 		 "{gL) Land type {y[{c%s{y]\r\n"
 		 "{gB) Set Bits: {c%s\r\n"
 		 "{gZ) Room can be reset: {c%s\r\n"
@@ -1071,9 +1062,6 @@ void redit_menu(SOCKET_DATA *sock, ROOM_OLC *data) {
 		 roomOLCGetParents(data),
 		 roomGetName(roomOLCGetRoom(data)), 
 		 roomGetDesc(roomOLCGetRoom(data)),
-#ifdef MODULE_TIME
-		 roomGetNightDesc(roomOLCGetRoom(data)),
-#endif
 		 (roomGetTerrain(roomOLCGetRoom(data)) == TERRAIN_NONE ? 
 		  "leave unchanged" :
 		  terrainGetName(roomGetTerrain(roomOLCGetRoom(data)))),
@@ -1105,12 +1093,6 @@ int redit_chooser(SOCKET_DATA *sock, ROOM_OLC *data, const char *option) {
     text_to_buffer(sock, "Enter a new room description:\r\n");
     socketStartEditor(sock, text_editor, roomGetDescBuffer(roomOLCGetRoom(data)));
     return MENU_NOCHOICE;
-#ifdef MODULE_TIME
-  case '5':
-    text_to_buffer(sock, "Enter a new night description:\r\n");
-    socketStartEditor(sock, text_editor, roomGetNightDescBuffer(roomOLCGetRoom(data)));
-    return MENU_NOCHOICE;
-#endif
   case 'Z':
     roomOLCSetResettable(data, (roomOLCGetResettable(data) + 1) % 2);
     return MENU_NOCHOICE;

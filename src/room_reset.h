@@ -29,7 +29,8 @@
 #define RESET_CLOSE           7 // close an exit/object
 #define RESET_LOCK            8 // lock an exit/object
 #define RESET_POSITION        9 // change the position of a mobile
-#define NUM_RESETS           10
+#define RESET_SCRIPT         10 // run a script on the initiator
+#define NUM_RESETS           11
 
 
 // must be called before room resets are usable. Attaches a reset hook
@@ -50,6 +51,7 @@ int            resetGetChance   (const RESET_DATA *reset);
 int            resetGetMax      (const RESET_DATA *reset);
 int            resetGetRoomMax  (const RESET_DATA *reset);
 const char    *resetGetArg      (const RESET_DATA *reset);
+BUFFER        *resetGetArgBuffer(const RESET_DATA *reset);
 LIST          *resetGetOn       (const RESET_DATA *reset);
 LIST          *resetGetIn       (const RESET_DATA *reset);
 LIST          *resetGetThen     (const RESET_DATA *reset);

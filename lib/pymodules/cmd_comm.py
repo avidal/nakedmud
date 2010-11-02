@@ -115,7 +115,7 @@ def cmd_emote(ch, cmd, arg):
          emote does a little dance.
          emote A gunshot sounds, and $n is laying on the ground, dead.'''
     if arg == '':
-        ch.send("Emote we must, but emote what?")
+        ch.send(ch, "Emote we must, but emote what?")
     else:
         # see if a $n is within the argument ... if there is, let the person
         # put his or her name where it's wanted. Otherwise, tag it onto the
@@ -127,7 +127,7 @@ def cmd_emote(ch, cmd, arg):
 def cmd_gemote(ch, cmd, arg):
     '''cmd_gemote is similar to emote, but it sends a global message'''
     if arg == '':
-        ch.send("Gemote we must, but gemote what?")
+        ch.send(ch, "Gemote we must, but gemote what?")
     else:
         # same as emote, but global
         if arg.find("$n") == -1:

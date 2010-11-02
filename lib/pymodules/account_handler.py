@@ -52,7 +52,7 @@ def acct_wait_dns_handler(sock, arg):
 def acct_name_handler(sock, arg):
     '''the first prompt a socket encounters; enter a name of an account or
        a new name of an account to create one'''
-    if mudsys.account_exists(arg):
+    if arg and mudsys.account_exists(arg):
         # logging on to an already existing account
         mud.log_string("Account '" + arg + "' is trying to connect.")
         acct = mudsys.load_account(arg)
@@ -207,7 +207,10 @@ def acct_menu_handler(sock, arg):
         sock.push_ih(acct_new_password_handler, acct_new_password_prompt)
         sock.push_ih(acct_password_handler, acct_password_prompt)
     elif arg == 'N':
-        hooks.run("create_character", hooks.build_info("sk", (sock,)))
+        if "player" in [x.strip() for x in mudsys.sys_getval("lockdown").split(",")]:
+            sock.send("New characters are not allowed to be created at this time.")
+        else:
+            hooks.run("create_character", hooks.build_info("sk", (sock,)))
     else:
         sock.send("Invalid choice!")
 

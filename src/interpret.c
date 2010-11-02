@@ -115,6 +115,22 @@ void show_commands(CHAR_DATA *ch, const char *user_groups) {
     }
   } deleteNearIterator(near_i);
 
+  // do room commands as well
+  if(roomGetCmdTable(charGetRoom(ch)) != NULL) {
+    near_i = newNearIterator(roomGetCmdTable(charGetRoom(ch)));
+    abbrev = NULL;
+    cmd    = NULL;
+    bufferCat(buf, "{c");
+    ITERATE_NEARMAP(abbrev, cmd, near_i) {
+      if(is_keyword(user_groups, cmdGetUserGroup(cmd), FALSE)) {
+	bprintf(buf, "%-13.13s", cmdGetName(cmd));
+	if (!(++col % 6))
+	  bufferCat(buf, "\r\n");
+      }
+    } deleteNearIterator(near_i);
+    bufferCat(buf, "{n");
+  }
+
   // tag on our last newline if neccessary, and show commands
   if (col % 6) bprintf(buf, "\r\n");
   text_to_char(ch, bufferString(buf));

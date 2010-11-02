@@ -23,7 +23,7 @@
 #define MODULE_ITEMS
 #define MODULE_OLC2
 #define MODULE_SCRIPTS
-#define MODULE_CHAR_VARS
+#define MODULE_DYN_VARS
 #define MODULE_SET_VAL
 #define MODULE_EDITOR
 

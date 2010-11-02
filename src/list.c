@@ -82,6 +82,7 @@ void listCleanRemoved(LIST *L) {
   // go through and kill all of the elements we removed if removes are pending
   if(L->remove_pending) {
     LIST_NODE *node = L->head;
+    L->remove_pending = FALSE;
 
     // while our head is a removed element, 
     // pop it off and delete the list node

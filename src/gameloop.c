@@ -32,7 +32,7 @@
 // mandatory modules
 //*****************************************************************************
 #include "editor/editor.h"
-#include "char_vars/char_vars.h"
+#include "dyn_vars/dyn_vars.h"
 #include "items/items.h"
 #include "olc2/olc.h"
 #include "set_val/set_val.h"
@@ -214,8 +214,8 @@ int main(int argc, char **argv)
   init_editor();
   init_notepad();
 
-  log_string("Initializing character variables.");
-  init_char_vars();
+  log_string("Initializing dynamic variables.");
+  init_dyn_vars();
 
   log_string("Initializing OLC v2.0.");
   init_olc2();
@@ -300,6 +300,12 @@ int main(int argc, char **argv)
   /**********************************************************************/
   /*             START THE GAME UP, AND HANDLE ITS SHUTDOWN             */
   /**********************************************************************/
+
+  // Run our initialize hooks. Most C modules will have their own init
+  // functions, but some stuff may need to be set up after *all* modules are
+  // initialized
+  hookRun("initialize", "");
+
   // main game loop
   log_string("Entering game loop");
   game_loop(control);

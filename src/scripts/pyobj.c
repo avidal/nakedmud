@@ -33,6 +33,7 @@
 //*****************************************************************************
 // mandatory modules
 //*****************************************************************************
+#include "../dyn_vars/dyn_vars.h"
 #include "../items/items.h"
 #include "../items/worn.h"
 
@@ -694,6 +695,118 @@ PyObject *PyObj_get_auxiliary(PyObj *self, PyObject *args) {
 }
 
 
+//
+// Returns TRUE if the obj has the given variable set
+PyObject *PyObj_hasvar(PyObj *self, PyObject *arg) {
+  char *var = NULL;
+  if (!PyArg_ParseTuple(arg, "s", &var)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Obj variables must have string names.");
+    return NULL;
+  }
+
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL)
+    return Py_BuildValue("b", objHasVar(obj, var));
+
+  PyErr_Format(PyExc_TypeError, 
+	       "Tried to get a variable value for nonexistant obj, %d",
+	       self->uid);
+  return NULL;
+}
+
+
+//
+// Delete the variable set on the obj with the specified name
+PyObject *PyObj_deletevar(PyObj *self, PyObject *arg) {
+  char *var = NULL;
+  if (!PyArg_ParseTuple(arg, "s", &var)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Obj variables must have string names.");
+    return NULL;
+  }
+
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) {
+    objDeleteVar(obj, var);
+    return Py_BuildValue("i", 1);
+  }
+
+  PyErr_Format(PyExc_TypeError, 
+	       "Tried to get a variable value for nonexistant obj, %d",
+	       self->uid);
+  return NULL;
+}
+
+
+//
+// Get the value of a variable stored on the obj
+PyObject *PyObj_getvar(PyObj *self, PyObject *arg) {
+  char *var = NULL;
+  if (!PyArg_ParseTuple(arg, "s", &var)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Obj variables must have string names.");
+    return NULL;
+  }
+
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) {
+    int vartype = objGetVarType(obj, var);
+    if(vartype == DYN_VAR_INT)
+      return Py_BuildValue("i", objGetInt(obj, var));
+    else if(vartype == DYN_VAR_LONG)
+      return Py_BuildValue("i", objGetLong(obj, var));
+    else if(vartype == DYN_VAR_DOUBLE)
+      return Py_BuildValue("d", objGetDouble(obj, var));
+    else
+      return Py_BuildValue("s", objGetString(obj, var));
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to get a variable value for nonexistant obj, %d",
+		 self->uid);
+    return NULL;
+  }
+}
+
+
+//
+// Set the value of a variable assocciated with the character
+PyObject *PyObj_setvar(PyObj *self, PyObject *args) {  
+  char     *var = NULL;
+  PyObject *val = NULL;
+
+  if (!PyArg_ParseTuple(args, "sO", &var, &val)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Obj setvar must be supplied with a var name and integer value.");
+    return NULL;
+  }
+
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) {
+    if(PyInt_Check(val))
+      objSetInt(obj, var, (int)PyInt_AsLong(val));
+    else if(PyFloat_Check(val))
+      objSetDouble(obj, var, PyFloat_AsDouble(val));
+    else if(PyString_Check(val))
+      objSetString(obj, var, PyString_AsString(val));
+    else {
+      PyErr_Format(PyExc_TypeError,
+		   "Tried to store a obj_var of invalid type on obj %d.",
+		   self->uid);
+      return NULL;
+    }
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to set a variable value for nonexistant obj, %d",
+		 self->uid);
+    return NULL;
+  }
+}
+
+
 
 //*****************************************************************************
 // structures to define our methods and classes
@@ -1092,6 +1205,16 @@ init_PyObj(void) {
 		    "adds an extra description to the object.");
     PyObj_addMethod("getAuxiliary", PyObj_get_auxiliary, METH_VARARGS,
 		    "get's the specified piece of aux data from the obj");
+    PyObj_addMethod("getvar", PyObj_getvar, METH_VARARGS,
+		    "get the value of a special variable the object has.");
+    PyObj_addMethod("setvar", PyObj_setvar, METH_VARARGS,
+		    "set the value of a special variable the object has.");
+    PyObj_addMethod("hasvar", PyObj_hasvar, METH_VARARGS,
+		    "return whether or not the object has a given variable.");
+    PyObj_addMethod("deletevar", PyObj_deletevar, METH_VARARGS,
+		    "delete a variable from the object's variable table.");
+    PyObj_addMethod("delvar", PyObj_deletevar, METH_VARARGS,
+		    "delete a variable from the object's variable table.");
 
     makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
     deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;

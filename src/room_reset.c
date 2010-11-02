@@ -33,6 +33,8 @@
 #include "items/container.h"
 #include "items/furniture.h"
 #include "items/worn.h"
+#include "scripts/scripts.h"
+#include "scripts/pyplugs.h"
 
 
 
@@ -117,7 +119,7 @@ struct reset_data {
   int      chance; // what is our chance of success?
   int         max; // what is the max number of us that can be in the game?
   int    room_max; // what is the max number of us that can be in the room?
-  char       *arg; // what is our reset arg (e.g. mob proto, direction name)
+  BUFFER     *arg; // what is our reset arg (e.g. mob proto, direction name)
   LIST        *in; // what resets do we put into ourself?
   LIST        *on; // what resets do we put onto ourself?
   LIST      *then; // if this succeeds, what else do we do?
@@ -133,7 +135,8 @@ const char *reset_names[NUM_RESETS] = {
   "open exit or object",
   "close exit or object",
   "lock exit or object",
-  "change mobile position"
+  "change mobile position",
+  "run script"
 };
 
 
@@ -145,7 +148,7 @@ const char     *resetTypeGetName (int type) {
 RESET_DATA    *newReset         () {
   RESET_DATA *reset = calloc(1, sizeof(RESET_DATA));
   reset->type     = RESET_LOAD_OBJECT;
-  reset->arg      = strdup("");
+  reset->arg      = newBuffer(1);
   reset->times    = 1;
   reset->chance   = 100;
   reset->max      = 0;
@@ -162,7 +165,7 @@ void           deleteReset      (RESET_DATA *reset) {
   deleteListWith(reset->in,   deleteReset);
   deleteListWith(reset->on,   deleteReset);
   deleteListWith(reset->then, deleteReset);
-  if(reset->arg) free(reset->arg);
+  deleteBuffer(reset->arg);
   free(reset);
 }
 
@@ -200,7 +203,7 @@ STORAGE_SET   *resetStore       (RESET_DATA *reset) {
   store_int   (set, "chance",   reset->chance);
   store_int   (set, "max",      reset->max);
   store_int   (set, "room_max", reset->room_max);
-  store_string(set, "arg",      reset->arg);
+  store_string(set, "arg",      bufferString(reset->arg));
   store_list  (set, "in",       gen_store_list(reset->in,   resetStore));
   store_list  (set, "on",       gen_store_list(reset->on,   resetStore));
   store_list  (set, "then",     gen_store_list(reset->then, resetStore));
@@ -215,10 +218,11 @@ RESET_DATA    *resetRead        (STORAGE_SET *set) {
   reset->chance   = read_int(set, "chance");
   reset->max      = read_int(set, "max");
   reset->room_max = read_int(set, "room_max");
-  reset->arg      = strdup(read_string(set, "arg"));
   reset->on       = gen_read_list(read_list(set, "on"),   resetRead);
   reset->in       = gen_read_list(read_list(set, "in"),   resetRead);
   reset->then     = gen_read_list(read_list(set, "then"), resetRead);
+  reset->arg = newBuffer(1);
+  bufferCat(reset->arg, read_string(set, "arg"));
   return reset;
 }
 
@@ -244,6 +248,10 @@ int            resetGetRoomMax  (const RESET_DATA *reset) {
 }
 
 const char    *resetGetArg      (const RESET_DATA *reset) {
+  return bufferString(reset->arg);
+}
+
+BUFFER *resetGetArgBuffer       (const RESET_DATA *reset) {
   return reset->arg;
 }
 
@@ -280,8 +288,8 @@ void           resetSetRoomMax  (RESET_DATA *reset, int room_max) {
 }
 
 void           resetSetArg      (RESET_DATA *reset, const char *arg) {
-  if(reset->arg) free(reset->arg);
-  reset->arg = strdupsafe(arg);
+  bufferClear(reset->arg);
+  bufferCat(reset->arg, arg);
 }
 
 void           resetAddOn       (RESET_DATA *reset, RESET_DATA *on) {
@@ -651,6 +659,41 @@ bool try_reset_lock(RESET_DATA *reset, void *initiator, int initiator_type) {
   return try_reset_opening(reset, initiator, initiator_type, TRUE, TRUE);
 }
 
+//
+// Try running a script on the initiator
+bool try_reset_script(RESET_DATA *reset, void *initiator, int initiator_type,
+		      const char *locale) {
+  PyObject *pyme = NULL;
+  PyObject *dict = NULL;
+  if(initiator_type == INITIATOR_ROOM)
+    pyme = roomGetPyFormBorrowed(initiator);
+  else if(initiator_type == INITIATOR_THEN_OBJ)
+    pyme = objGetPyFormBorrowed(initiator);
+  else if(initiator_type == INITIATOR_THEN_MOB)
+    pyme = charGetPyFormBorrowed(initiator);
+  else
+    return FALSE;
+
+  // build our dictionary and add ourself to it as 'me'
+  dict = restricted_script_dict();
+  PyDict_SetItemString(dict, "me", pyme);
+
+  // run the script
+  run_script(dict, resetGetArg(reset), locale);
+
+  // check to see if we had an error
+  if(!last_script_ok()) {
+    char *tb = getPythonTraceback();
+    log_string("Reset script in locale %s terminated with an error:\r\n%s\r\n"
+	       "\r\nTraceback is:\r\n%s\r\n", 
+	       locale, resetGetArg(reset), tb);
+    free(tb);
+  }
+
+  // garbage collection and return our outcome
+  Py_DECREF(dict);
+  return last_script_ok();
+}
 
 //
 // run the reset data
@@ -697,6 +740,9 @@ bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type,
       break;
     case RESET_POSITION:
       ret_val = try_reset_position(reset, initiator, initiator_type);
+      break;
+    case RESET_SCRIPT:
+      ret_val = try_reset_script(reset, initiator, initiator_type, locale);
       break;
     default:
       return FALSE;

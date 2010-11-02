@@ -38,7 +38,7 @@
 //*****************************************************************************
 // mandatory modules
 //*****************************************************************************
-#include "../char_vars/char_vars.h"
+#include "../dyn_vars/dyn_vars.h"
 #include "../items/items.h"
 #include "../items/worn.h"
 
@@ -104,6 +104,10 @@ int PyChar_compare(PyChar *ch1, PyChar *ch2) {
     return -1;
   else
     return 1;
+}
+
+long PyChar_Hash(PyChar *ch) {
+  return ch->uid;
 }
 
 
@@ -243,6 +247,12 @@ PyObject *PyChar_getuid(PyChar *self, void *closure) {
 PyObject *PyChar_getprototypes(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", charGetPrototypes(ch));
+  else           return NULL;
+}
+
+PyObject *PyChar_getclass(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) return Py_BuildValue("s", charGetClass(ch));
   else           return NULL;
 }
 
@@ -703,18 +713,27 @@ PyObject *PyChar_act(PyChar *self, PyObject *value) {
   }
 
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
-  if(ch) {
+
+  // we don't exist
+  if(ch == NULL) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Nonexistant character, %d, tried to perform an action.", 
+		    self->uid);
+    return NULL;
+  }
+  // It's not safe to act if we don't have a room to act in yet
+  else if(charGetRoom(ch) == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Character, %d, tried to act without first having a room "
+		 "to act in.", self->uid);
+    return NULL;
+  }
+  else {
     // do not send the actual act - if we edit it, things go awry
     char *working_act = strdupsafe(act);
     do_cmd(ch, working_act, alias_ok);
     free(working_act);
     return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_TypeError, 
-                    "Nonexistant character, %d, tried to perform an action.", 
-		    self->uid);
-    return NULL;
   }
 }
 
@@ -822,11 +841,11 @@ PyObject *PyChar_getvar(PyChar *self, PyObject *arg) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) {
     int vartype = charGetVarType(ch, var);
-    if(vartype == CHAR_VAR_INT)
+    if(vartype == DYN_VAR_INT)
       return Py_BuildValue("i", charGetInt(ch, var));
-    else if(vartype == CHAR_VAR_LONG)
+    else if(vartype == DYN_VAR_LONG)
       return Py_BuildValue("i", charGetLong(ch, var));
-    else if(vartype == CHAR_VAR_DOUBLE)
+    else if(vartype == DYN_VAR_DOUBLE)
       return Py_BuildValue("d", charGetDouble(ch, var));
     else
       return Py_BuildValue("s", charGetString(ch, var));
@@ -876,7 +895,6 @@ PyObject *PyChar_setvar(PyChar *self, PyObject *args) {
   }
 }
 
-
 PyObject *PyChar_getbodypct(PyChar *self, PyObject *args) {
   char   *parts = NULL;
   CHAR_DATA *ch = NULL;
@@ -895,6 +913,7 @@ PyObject *PyChar_getbodypct(PyChar *self, PyObject *args) {
 
   return Py_BuildValue("d", bodyPartRatio(charGetBody(ch), parts));
 }
+
 
 //
 // equips a character with an item
@@ -1266,7 +1285,7 @@ PyTypeObject PyChar_Type = {
     0,                         /*tp_as_number*/
     0,                         /*tp_as_sequence*/
     0,                         /*tp_as_mapping*/
-    0,                         /*tp_hash */
+    (hashfunc)PyChar_Hash,     /*tp_hash */
     0,                         /*tp_call*/
     0,                         /*tp_str*/
     0,                         /*tp_getattro*/
@@ -1569,7 +1588,7 @@ PyMODINIT_FUNC init_PyChar(void) {
   PyChar_addGetSetter("objs", PyChar_getinv, NULL,
 		      "returns a list of objects in the char's inventory");
   PyChar_addGetSetter("eq",   PyChar_geteq,  NULL,
-		      "returns a list of the character's equipment");
+		      "returns a list of the character's equipment.");
   PyChar_addGetSetter("bodyparts", PyChar_getbodyparts, NULL,
 		      "Returns a list of the character's bodyparts");
   PyChar_addGetSetter("name", PyChar_getname, PyChar_setname,
@@ -1608,6 +1627,8 @@ PyMODINIT_FUNC init_PyChar(void) {
 		      "the character's unique identification number");
   PyChar_addGetSetter("prototypes", PyChar_getprototypes, NULL,
 		      "The prototypes for a mobile");
+  PyChar_addGetSetter("mob_class", PyChar_getclass, NULL,
+		      "The main prototype of the mobile.");
   PyChar_addGetSetter("is_npc", PyChar_getisnpc, NULL,
 		      "Returns 1 if the char is an NPC, and 0 otherwise.");
   PyChar_addGetSetter("is_pc", PyChar_getispc, NULL,

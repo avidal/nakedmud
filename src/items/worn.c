@@ -339,10 +339,10 @@ void init_worn(void) {
 		     "Adds a new worn type to the game.");
   
   // add in our basic worn types
-  //
-  // As of v3.3, worn types can now be added via Python as well as C. People are
-  // encouraged to do so, outside of this module. These are left for historical
-  // purpposes and backwards compatibility with previous version equipment.
+  /*
+    Removed as of v3.3 -- These can now be added via Python with the function,
+    mudsys.add_worn_type(<type>, <position list>)
+
   worn_add_type("shirt",                        "torso");
   worn_add_type("gloves",       "left hand, right hand");
   worn_add_type("left glove",               "left hand");
@@ -350,4 +350,5 @@ void init_worn(void) {
   worn_add_type("earrings",                  "ear, ear");
   worn_add_type("earring",                        "ear");
   worn_add_type("ring",                        "finger");
+  */
 }

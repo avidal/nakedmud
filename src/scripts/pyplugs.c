@@ -149,8 +149,8 @@ void init_py_modules() {
     int nlen = strlen(entry->d_name);
     sprintf(fname, "%s/%s", PYMOD_LIB, entry->d_name);
 
-    // skip ourself and our parent
-    if(!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+    // skip hidden files, ourself, and our parent
+    if(*entry->d_name == '.')
       continue;
     // python file == module
     else if(nlen >= 4 && !strcasecmp(".py", entry->d_name + nlen-3)) {

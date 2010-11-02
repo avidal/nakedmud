@@ -34,6 +34,13 @@
 
 
 //*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../dyn_vars/dyn_vars.h"
+
+
+
+//*****************************************************************************
 // local structures and defines
 //*****************************************************************************
 
@@ -74,7 +81,7 @@ int PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
     return -1;
   }
 
-  // make sure a room with the vnum exists
+  // make sure a room with the uid exists
   if(!propertyTableGet(room_table, uid)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Room with uid, %d, does not exist", uid);
@@ -92,6 +99,38 @@ int PyRoom_compare(PyRoom *room1, PyRoom *room2) {
     return -1;
   else
     return 1;
+}
+
+long PyRoom_Hash(PyRoom *room) {
+  return room->uid;
+}
+
+
+
+//*****************************************************************************
+// methods in the room module
+//*****************************************************************************
+PyObject *PyRoom_get_room(PyObject *self, PyObject *args) {
+  char     *room_key = NULL;
+  ROOM_DATA    *room = NULL;
+  
+  if (!PyArg_ParseTuple(args, "s", &room_key)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "get room failed - it needs a room key/locale.");
+    return NULL;
+  }
+
+  // try to find the room
+  room = worldGetRoom(gameworld, get_fullkey_relative(room_key, get_script_locale()));
+
+  if(room == NULL) {
+    PyErr_Format(PyExc_TypeError, "get room failed: room does not exist or "
+		 "is abstract.");
+    return NULL;
+  }
+
+  // create a python object for the new char, and return it
+  return Py_BuildValue("O", roomGetPyFormBorrowed(room));
 }
 
 
@@ -673,6 +712,117 @@ PyObject *PyRoom_get_auxiliary(PyRoom *self, PyObject *args) {
 }
 
 
+//
+// Returns TRUE if the room has the given variable set
+PyObject *PyRoom_hasvar(PyRoom *self, PyObject *arg) {
+  char *var = NULL;
+  if (!PyArg_ParseTuple(arg, "s", &var)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Room variables must have string names.");
+    return NULL;
+  }
+
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL)
+    return Py_BuildValue("b", roomHasVar(room, var));
+
+  PyErr_Format(PyExc_TypeError, 
+	       "Tried to get a variable value for nonexistant room, %d",
+	       self->uid);
+  return NULL;
+}
+
+
+//
+// Delete the variable set on the room with the specified name
+PyObject *PyRoom_deletevar(PyRoom *self, PyObject *arg) {
+  char *var = NULL;
+  if (!PyArg_ParseTuple(arg, "s", &var)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Room variables must have string names.");
+    return NULL;
+  }
+
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL) {
+    roomDeleteVar(room, var);
+    return Py_BuildValue("i", 1);
+  }
+
+  PyErr_Format(PyExc_TypeError, 
+	       "Tried to get a variable value for nonexistant room, %d",
+	       self->uid);
+  return NULL;
+}
+
+
+//
+// Get the value of a variable stored on the room
+PyObject *PyRoom_getvar(PyRoom *self, PyObject *arg) {
+  char *var = NULL;
+  if (!PyArg_ParseTuple(arg, "s", &var)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Room variables must have string names.");
+    return NULL;
+  }
+
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL) {
+    int vartype = roomGetVarType(room, var);
+    if(vartype == DYN_VAR_INT)
+      return Py_BuildValue("i", roomGetInt(room, var));
+    else if(vartype == DYN_VAR_LONG)
+      return Py_BuildValue("i", roomGetLong(room, var));
+    else if(vartype == DYN_VAR_DOUBLE)
+      return Py_BuildValue("d", roomGetDouble(room, var));
+    else
+      return Py_BuildValue("s", roomGetString(room, var));
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to get a variable value for nonexistant room, %d",
+		 self->uid);
+    return NULL;
+  }
+}
+
+
+//
+// Set the value of a variable assocciated with the character
+PyObject *PyRoom_setvar(PyRoom *self, PyObject *args) {  
+  char     *var = NULL;
+  PyObject *val = NULL;
+
+  if (!PyArg_ParseTuple(args, "sO", &var, &val)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Room setvar must be supplied with a var name and integer value.");
+    return NULL;
+  }
+
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL) {
+    if(PyInt_Check(val))
+      roomSetInt(room, var, (int)PyInt_AsLong(val));
+    else if(PyFloat_Check(val))
+      roomSetDouble(room, var, PyFloat_AsDouble(val));
+    else if(PyString_Check(val))
+      roomSetString(room, var, PyString_AsString(val));
+    else {
+      PyErr_Format(PyExc_TypeError,
+		   "Tried to store a room_var of invalid type on room %d.",
+		   self->uid);
+      return NULL;
+    }
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to set a variable value for nonexistant room, %d",
+		 self->uid);
+    return NULL;
+  }
+}
+
 
 
 //*****************************************************************************
@@ -693,7 +843,7 @@ PyTypeObject PyRoom_Type = {
     0,                         /*tp_as_number*/
     0,                         /*tp_as_sequence*/
     0,                         /*tp_as_mapping*/
-    0,                         /*tp_hash */
+    (hashfunc)PyRoom_Hash,     /*tp_hash */
     0,                         /*tp_call*/
     0,                         /*tp_str*/
     0,                         /*tp_getattro*/
@@ -721,6 +871,8 @@ PyTypeObject PyRoom_Type = {
 };
 
 PyMethodDef room_module_methods[] = {
+  { "get_room", (PyCFunction)PyRoom_get_room, METH_NOARGS,
+    "Takes a room key/locale and returns a pointer to that room." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -807,6 +959,16 @@ init_PyRoom(void) {
 		     "returns whether or not the room inherits from the proto");
     PyRoom_addMethod("getAuxiliary", PyRoom_get_auxiliary, METH_VARARGS,
 		     "get's the specified piece of aux data from the room");
+    PyRoom_addMethod("getvar", PyRoom_getvar, METH_VARARGS,
+		    "get the value of a special variable the room has.");
+    PyRoom_addMethod("setvar", PyRoom_setvar, METH_VARARGS,
+		    "set the value of a special variable the room has.");
+    PyRoom_addMethod("hasvar", PyRoom_hasvar, METH_VARARGS,
+		    "return whether or not the room has a given variable.");
+    PyRoom_addMethod("deletevar", PyRoom_deletevar, METH_VARARGS,
+		    "delete a variable from the room's variable table.");
+    PyRoom_addMethod("delvar", PyRoom_deletevar, METH_VARARGS,
+		    "delete a variable from the room's variable table.");
 
     // add in all the getsetters and methods
     makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);

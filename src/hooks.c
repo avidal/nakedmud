@@ -74,14 +74,13 @@ void hookAddMonitor(void (* func)(const char *, const char *)) {
 
 void hookRun(const char *type, const char *info) {
   LIST *list = hashGet(hook_table, type);
+  char *info_dup = strdup(info);
   if(list != NULL) {
-    char *info_dup = strdup(info);
     LIST_ITERATOR *list_i = newListIterator(list);
     void (* func)(const char *) = NULL;
     ITERATE_LIST(func, list_i) {
       func(info_dup);
     } deleteListIterator(list_i);
-    free(info_dup);
   }
 
   // run our monitors
@@ -90,6 +89,7 @@ void hookRun(const char *type, const char *info) {
   ITERATE_LIST(mon, mon_i) {
     mon(type, info);
   } deleteListIterator(mon_i);
+  free(info_dup);
 }
 
 const char *hookBuildInfo(const char *format, ...) {

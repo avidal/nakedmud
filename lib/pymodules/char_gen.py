@@ -60,15 +60,15 @@ def cg_finish_handler(sock, arg):
 
     # send them the motd
     sock.ch.page(mud.get_motd())
-
-    # put him in the starting room
-    sock.ch.room = mudsys.sys_getval("start_room")
     
-    # run the init_player hook
-    hooks.run("init_player", hooks.build_info("ch", (sock.ch,)))
-
     # register and save him to disk and to an account
     mudsys.do_register(sock.ch)
+
+    # make him exist in the game for functions to look him up
+    mudsys.try_enter_game(sock.ch)
+
+    # run the init_player hook
+    hooks.run("init_player", hooks.build_info("ch", (sock.ch,)))
     
     # attach him to his account and save the accoutn
     sock.account.add_char(sock.ch)

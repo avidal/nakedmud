@@ -6,8 +6,7 @@
 //
 //*****************************************************************************
 
-#include <Python.h>        // to add nightdesc
-#include <structmember.h>
+#include <Python.h>        // to add Python hooks
 
 #include "../mud.h"
 #include "../utils.h"
@@ -91,107 +90,6 @@ int curr_year         = 0; // what year is it?
 
 
 //*****************************************************************************
-//
-// auxiliary data
-//
-// the time module gives rooms the ability to have different day and night
-// descriptions. Below are the functions required for installing this.
-//
-//*****************************************************************************
-typedef struct time_aux_data {
-  BUFFER *night_desc;        // our description at night time
-} TIME_AUX_DATA;
-
-TIME_AUX_DATA *
-newTimeAuxData() {
-  TIME_AUX_DATA *data = malloc(sizeof(TIME_AUX_DATA));
-  data->night_desc = newBuffer(1);
-  return data;
-}
-
-void
-deleteTimeAuxData(TIME_AUX_DATA *data) {
-  if(data->night_desc) deleteBuffer(data->night_desc);
-  free(data);
-}
-
-void
-timeAuxDataCopyTo(TIME_AUX_DATA *from, TIME_AUX_DATA *to) {
-  bufferCopyTo(from->night_desc, to->night_desc);
-}
-
-TIME_AUX_DATA *
-timeAuxDataCopy(TIME_AUX_DATA *data) {
-  TIME_AUX_DATA *newdata = newTimeAuxData();
-  timeAuxDataCopyTo(data, newdata);
-  return newdata;
-}
-
-STORAGE_SET *timeAuxDataStore(TIME_AUX_DATA *data) {
-  STORAGE_SET *set = new_storage_set();
-  store_string(set, "night_desc", bufferString(data->night_desc));
-  return set;
-}
-
-TIME_AUX_DATA *timeAuxDataRead(STORAGE_SET *set) {
-  TIME_AUX_DATA *data = newTimeAuxData();
-  bufferCat(data->night_desc, read_string(set, "night_desc"));
-  return data;
-}
-
-const char *roomGetNightDesc(ROOM_DATA *room) {
-  TIME_AUX_DATA *data = roomGetAuxiliaryData(room, "time_aux_data");
-  return bufferString(data->night_desc);
-}
-
-BUFFER *roomGetNightDescBuffer(ROOM_DATA *room) {
-  TIME_AUX_DATA *data = roomGetAuxiliaryData(room, "time_aux_data");
-  return data->night_desc;
-}
-
-void roomSetNightDesc(ROOM_DATA *room, const char *desc) {
-  TIME_AUX_DATA *data = roomGetAuxiliaryData(room, "time_aux_data");
-  bufferClear(data->night_desc);
-  bufferCat(data->night_desc, (desc ? desc : ""));
-}
-
-
-
-//*****************************************************************************
-// Python getters and setters
-//*****************************************************************************
-PyObject *PyRoom_getndesc(PyObject *self, void *closure) {
-  ROOM_DATA *room = PyRoom_AsRoom(self);
-  if(room != NULL)  return Py_BuildValue("s", roomGetNightDesc(room));
-  else              return NULL;
-}
-
-int PyRoom_setndesc(PyObject *self, PyObject *value, void *closure) {
-  if (value == NULL) {
-    PyErr_Format(PyExc_TypeError, "Cannot delete room's night desc");
-    return -1;
-  }
-  
-  if (!PyString_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Room night descs must be strings");
-    return -1;
-  }
-
-  ROOM_DATA *room = PyRoom_AsRoom(self);
-  if(room == NULL) {
-    PyErr_Format(PyExc_TypeError,
-		 "Tried to modify nonexistent room, %d", PyRoom_AsUid(self));
-    return -1;                                                                
-  }
-
-  roomSetNightDesc(room, PyString_AsString(value));
-  return 0;
-}
-
-
-
-//*****************************************************************************
 // Python methods
 //*****************************************************************************
 PyObject *PyMud_GetHour(PyObject *self) {
@@ -219,22 +117,6 @@ PyObject *PyMud_IsNight(PyObject *self) {
 //*****************************************************************************
 // time handling functions
 //*****************************************************************************
-
-//
-// If it's in the night, swap out our desc for the room's night desc
-void room_nightdesc_hook(const char *info) {
-  ROOM_DATA   *room = NULL;
-  CHAR_DATA *looker = NULL;
-  hookParseInfo(info, &room, &looker);
-
-  if((is_evening() || is_night()) && *roomGetNightDesc(room)) {
-    // if it's the room desc and not an edesc, cat the night desc...
-    if(!strcasecmp(bufferString(charGetLookBuffer(looker)),roomGetDesc(room))) {
-      bufferClear(charGetLookBuffer(looker));
-      bufferCat(charGetLookBuffer(looker), roomGetNightDesc(room));
-    }
-  }
-}
 
 //
 // Handle the hourly update of our times
@@ -297,39 +179,19 @@ void init_time() {
   else
     curr_hour = curr_day_of_week = curr_day_of_month = curr_month = curr_year = 0;
 
-  // add a nightdesc get-setter to rooms
-  PyRoom_addGetSetter("ndesc", PyRoom_getndesc, PyRoom_setndesc,
-		      "the room's night desc");
-  PyRoom_addGetSetter("night_desc", PyRoom_getndesc, PyRoom_setndesc,
-		      "the room's night desc");
-
   // add our mud methods
   PyMud_addMethod("get_hour",     PyMud_GetHour,     METH_NOARGS, NULL);
   PyMud_addMethod("is_morning",   PyMud_IsMorning,   METH_NOARGS, NULL);
   PyMud_addMethod("is_afternoon", PyMud_IsAfternoon, METH_NOARGS, NULL);
   PyMud_addMethod("is_evening",   PyMud_IsEvening,   METH_NOARGS, NULL);
   PyMud_addMethod("is_night",     PyMud_IsNight,     METH_NOARGS, NULL);
-  
-  // add our set fields
-#ifdef MODULE_SET_VAL
-  add_set("ndesc",      SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
-  add_set("night_desc", SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
-#endif
 
   // add the time command
   add_cmd("time", NULL, cmd_time, POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
 
-  // add night descriptions for rooms
-  auxiliariesInstall("time_aux_data",
-		     newAuxiliaryFuncs(AUXILIARY_TYPE_ROOM,
-				       newTimeAuxData, deleteTimeAuxData,
-				       timeAuxDataCopyTo, timeAuxDataCopy,
-				       timeAuxDataStore, timeAuxDataRead));
-
   // start our time updater
   start_update(NULL, TIME_UPDATE_DELAY, handle_time_update, NULL, NULL, NULL);
-  hookAdd("preprocess_room_desc", room_nightdesc_hook);
 }
 
 

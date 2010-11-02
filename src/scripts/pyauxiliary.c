@@ -50,7 +50,7 @@ PyObject *newPyAuxiliaryData(const char *keyword) {
 }
 
 void deletePyAuxiliaryData(PyObject *data) {
-  Py_DECREF(data);
+  Py_XDECREF(data);
 }
 
 void pyAuxiliaryDataCopyTo(PyObject *from, PyObject *to) {

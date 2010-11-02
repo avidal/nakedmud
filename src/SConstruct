@@ -59,7 +59,7 @@ nakedmud.Append(LIBS=['python%d.%d' % version_info[0:2]])
 binary = 'NakedMud'
 
 # Required modules
-modules = ['char_vars', 'set_val', 'olc2', 'editor', 'items', 'scripts']
+modules = ['dyn_vars', 'set_val', 'olc2', 'editor', 'items', 'scripts']
 
 # Optional modules
 modules += ['time', 'socials', 'alias', 'help']

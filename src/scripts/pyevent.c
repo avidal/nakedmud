@@ -14,6 +14,7 @@
 #include "../mud.h"
 #include "../event.h"
 
+#include "scripts.h"
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
@@ -27,9 +28,19 @@ void PyEvent_on_complete(void *owner, PyObject *tuple, const char *arg) {
   PyObject *PyOwner = NULL;
   PyObject   *efunc = NULL;
   PyObject   *edata = NULL;
+  char       *otype = NULL;
 
   // make sure we parse everything before we call the function
-  if(PyArg_ParseTuple(tuple, "OOO", &PyOwner, &efunc, &edata)) {
+  if(PyArg_ParseTuple(tuple, "sOO", &otype, &efunc, &edata)) {
+    if(!strcasecmp(otype, "char"))
+      PyOwner = charGetPyFormBorrowed(owner);
+    else if(!strcasecmp(otype, "room"))
+      PyOwner = roomGetPyFormBorrowed(owner);
+    else if(!strcasecmp(otype, "obj"))
+      PyOwner = objGetPyFormBorrowed(owner);
+    else
+      PyOwner = Py_None;
+
     PyObject *ret = PyObject_CallFunction(efunc, "OOs", PyOwner, edata, arg);
     Py_XDECREF(ret);
   }
@@ -55,6 +66,7 @@ PyObject *PyEvent_start(PyObject *self, PyObject *args, void *func) {
   char         *arg = NULL;    // the arg we will be supplying to the function
   double      delay = 0;       // how long the event delay is (in seconds)
   void       *owner = NULL;    // actual owner supplied to the event handler
+  char    otype[20];           // is the owner a char, room, obj, or None?
 
   // try to parse all of our values
   if(!PyArg_ParseTuple(args, "OdO|Os", &PyOwner, &delay, &efunc, &edata, &arg)){
@@ -71,14 +83,22 @@ PyObject *PyEvent_start(PyObject *self, PyObject *args, void *func) {
   }
 
   // figure out what type of data our owner is
-  if(PyOwner == Py_None)
+  if(PyOwner == Py_None) {
     owner = Py_None;
-  else if(PyChar_Check(PyOwner))
+    sprintf(otype, "none");
+  }
+  else if(PyChar_Check(PyOwner)) {
     owner = PyChar_AsChar(PyOwner);
-  else if(PyRoom_Check(PyOwner))
+    sprintf(otype, "char");
+  }
+  else if(PyRoom_Check(PyOwner)) {
     owner = PyRoom_AsRoom(PyOwner);
-  else if(PyObj_Check(PyOwner))
+    sprintf(otype, "room");
+  }
+  else if(PyObj_Check(PyOwner)) {
     owner = PyObj_AsObj(PyOwner);
+    sprintf(otype, "obj");
+  }
   // invalid type
   else {
     PyErr_Format(PyExc_TypeError,
@@ -94,7 +114,7 @@ PyObject *PyEvent_start(PyObject *self, PyObject *args, void *func) {
   
   // now, queue up the action
   start_func(owner, (int)(delay SECONDS), PyEvent_on_complete, NULL, 
-	     Py_BuildValue("OOO", PyOwner, efunc, edata), arg);
+	     Py_BuildValue("sOO", otype, efunc, edata), arg);
 
   // everything seems ok. exit normally
   return Py_BuildValue("i", 1);

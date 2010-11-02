@@ -205,6 +205,11 @@ bool protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc,
     }
   }
 
+  // remove us from the dictionary just incase it doesn't GC immediately. It
+  // happens sometimes if we define a new method in the prototype
+  PyDict_DelItemString(dict, "me");
+  // PyDict_SetItemString(dict, "me", Py_None);
+
   Py_DECREF(dict);
   Py_DECREF(pyme);
   return last_script_ok();
