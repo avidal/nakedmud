@@ -231,7 +231,7 @@ const char *dialogGetName(DIALOG_DATA *dialog) {
   return dialog->name;
 }
 
-dialog_vnum dialogGetVnum(DIALOG_DATA *dialog) {
+int dialogGetVnum(DIALOG_DATA *dialog) {
   return dialog->vnum;
 }
 
@@ -256,7 +256,7 @@ void dialogSetGreet(DIALOG_DATA *dialog, const char *greet) {
   bufferCat(dialog->greet, (greet ? greet : ""));
 }
 
-void dialogSetVnum(DIALOG_DATA *dialog, dialog_vnum vnum) {
+void dialogSetVnum(DIALOG_DATA *dialog, int vnum) {
   dialog->vnum = vnum;
 }
 

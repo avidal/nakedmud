@@ -108,7 +108,16 @@ clean:
 # include all of our dependencies
 include $(patsubst %.c,%.d, $(SRC))
 
-# calculate all of our dependencies
+# calculate all of our dependencies. It's messy, but it works
 %.d: %.c
 	@echo "Building dependencies for $(patsubst %.d,%.c, $@)"
-	@./depend.sh $(patsubst %.d,%.c, $@) > $@
+	@case $(shell dirname $@) in					 \
+	"" | ".") 							 \
+	  gcc $(C_FLAGS) -MM $(patsubst %.d,%.c, $@) | 			 \
+	    sed -e 's@^\(.*\)\.o:@\1.d \1.o:@' > $@			 \
+	;; 								 \
+	*) 								 \
+	  gcc $(C_FLAGS) -MM $(patsubst %.d,%.c, $@) | 			 \
+	    sed -e "s@^\(.*\)\.o:@$(shell dirname $@)/\1.d $(shell dirname $@)/\1.o:@" > $@ 					 			 \
+        ;;                                                               \
+	esac

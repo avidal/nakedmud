@@ -24,9 +24,9 @@ bool try_move(CHAR_DATA *ch, int dir, const char *specdir);
 //
 // Go through an exit. use dir for display purposes to the room
 // (e.g. bob leaves north). If dir == DIR_NONE, no direction info
-// is said
+// is said. Return the new room we are in, if we moved
 //
-bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir);
+ROOM_DATA *try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir);
 
 //
 // Try creating a new room in the specified direction, drawn from the

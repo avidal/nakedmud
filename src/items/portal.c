@@ -97,8 +97,10 @@ COMMAND(cmd_enter) {
 
 
     // we're trying to enter an exit
-    if(found && found_type == FOUND_EXIT)
-      try_exit(ch, found, DIR_NONE);
+    if(found && found_type == FOUND_EXIT) {
+      ROOM_DATA *to = try_exit(ch, found, DIR_NONE);
+      if(to != NULL) look_at_room(ch, to);
+    }
 
     // we're trying to enter a portal
     else if(found && found_type == FOUND_OBJ) {

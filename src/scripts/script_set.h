@@ -17,8 +17,8 @@
 SCRIPT_SET *newScriptSet();
 void deleteScriptSet(SCRIPT_SET *set);
 
-void scriptSetAdd   (SCRIPT_SET *set, script_vnum vnum);
-void scriptSetRemove(SCRIPT_SET *set, script_vnum vnum);
+void scriptSetAdd   (SCRIPT_SET *set, int vnum);
+void scriptSetRemove(SCRIPT_SET *set, int vnum);
 
 void copyScriptSetTo(SCRIPT_SET *from, SCRIPT_SET *to);
 SCRIPT_SET *copyScriptSet(SCRIPT_SET *set);

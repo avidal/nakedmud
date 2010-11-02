@@ -23,7 +23,7 @@ fgets, ferror, printf, vsnprintf, fileno, stdout, stderr, FILE, EOF  */
 /* errno, EINTR */
 #include <sys/errno.h>
 /* htons, htonl, inet_pton */
-#include <arpa/inet.h> 
+//#include <arpa/inet.h> 
 /* storage size of struct address, INADDR_ANY */
 #include <netinet/in.h> 
 /* va_list, va_start, va_end */

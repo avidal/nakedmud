@@ -7,6 +7,7 @@
 #include "wrapsock.h"
 #include <netdb.h>
 #include <sys/ioctl.h>
+#include <arpa/inet.h> 
 
 /* including main header file */
 #include "mud.h"

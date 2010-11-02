@@ -211,7 +211,7 @@ int bufferReplaceLine(BUFFER *buf, const char *newline, int line) {
 void bufferFormat(BUFFER *buf, int max_width, int indent) {
   char formatted[(buf->len * 3)/2];
   bool needs_capital = TRUE, needs_indent = FALSE;
-  int fmt_i = 0, buf_i = 0, col = 0;
+  int fmt_i = 0, buf_i = 0, col = 0, next_space = 0;
 
   // put in our indent
   if(indent > 0) {
@@ -229,7 +229,10 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
 
   for(; buf->data[buf_i] != '\0'; buf_i++) {
     // we have to put a newline in because the word won't fit on the line
-    if(col + next_space_in(buf->data+buf_i) > max_width-2) {
+    next_space = next_space_in(buf->data + buf_i);
+    if(next_space == -1)
+      next_space = buf->len - buf_i;
+    if(col + next_space > max_width-2) {
       formatted[fmt_i] = '\r'; fmt_i++;
       formatted[fmt_i] = '\n'; fmt_i++;
       col = 0;
@@ -268,7 +271,10 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
       // check if indenting will make it so we don't
       // have enough room to print the word. If that's the
       // case, then skip down to a new line instead
-      if(col + 2 + next_space_in(buf->data+buf_i) > max_width-2) {
+      next_space = next_space_in(buf->data + buf_i);
+      if(next_space == -1)
+	next_space = buf->len - buf_i;
+      if(col + 2 + next_space > max_width-2) {
 	formatted[fmt_i] = '\r'; fmt_i++;
 	formatted[fmt_i] = '\n'; fmt_i++;
 	col = 0;

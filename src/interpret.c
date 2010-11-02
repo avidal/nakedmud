@@ -97,6 +97,8 @@ void init_commands() {
 	  "player", TRUE, FALSE);
   add_cmd("at",         NULL, cmd_at,       0, POS_UNCONCIOUS, POS_FLYING,
 	  "builder", TRUE, FALSE);
+  add_cmd("attach",     NULL, cmd_attach,   0, POS_UNCONCIOUS, POS_FLYING,
+	  "scripter", FALSE, FALSE);
 
   // B
   add_cmd("back",       NULL, cmd_back,     0, POS_UNCONCIOUS, POS_FLYING,
@@ -129,6 +131,8 @@ void init_commands() {
 	  "builder", FALSE, FALSE);
   add_cmd("drop",       NULL, cmd_drop,     0, POS_SITTING,  POS_FLYING,
 	  "player", TRUE, TRUE );
+  add_cmd("detach",     NULL, cmd_detach,   0, POS_UNCONCIOUS, POS_FLYING,
+	  "scripter", FALSE, FALSE);
 
   // E
   add_cmd("emote",      NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,

@@ -29,6 +29,17 @@
 // auxiliary functions on our datatypes
 HASHTABLE *auxiliary_manip_funcs = NULL;
 
+struct auxiliary_functions {
+  bitvector_t aux_type;
+  bool           is_py;
+  void          *(* new)(void);
+  void        (* delete)(void *data);
+  void        (* copyTo)(void *from, void *to);
+  void        *(*  copy)(void *data);
+  STORAGE_SET *(* store)(void *data);
+  void        *(*  read)(STORAGE_SET *set);
+};
+
 
 
 //*****************************************************************************
@@ -46,6 +57,7 @@ AUXILIARY_FUNCS *
 newAuxiliaryFuncs(bitvector_t aux_type, void *new, void *delete, 
 		  void *copyTo, void *copy, void *store, void *read) {
   AUXILIARY_FUNCS *newfuncs = malloc(sizeof(AUXILIARY_FUNCS));
+  newfuncs->is_py    = FALSE;
   newfuncs->aux_type = aux_type;
   newfuncs->new      = new;
   newfuncs->delete   = delete;
@@ -61,6 +73,9 @@ deleteAuxiliaryFuncs(AUXILIARY_FUNCS *funcs) {
   free(funcs);
 }
 
+void auxiliaryFuncSetIsPy(AUXILIARY_FUNCS *funcs, bool val) {
+  funcs->is_py = val;
+}
 
 void
 auxiliariesInstall(const char *name, AUXILIARY_FUNCS *funcs) {
@@ -90,8 +105,16 @@ newAuxiliaryData(bitvector_t aux_type) {
   const char       *name = NULL;
 
   ITERATE_HASH(name, funcs, hash_i) {
-    if(IS_SET(funcs->aux_type, aux_type))
-      hashPut(data, name, funcs->new());
+    if(IS_SET(funcs->aux_type, aux_type)) {
+      // are we dealing with python data or not?
+      if(!funcs->is_py) 
+	hashPut(data, name, funcs->new());
+      else {
+	// recast the new function
+	void *(* new)(const char *) = (void *)funcs->new;
+	hashPut(data, name, new(name));
+      }
+    }
   } deleteHashIterator(hash_i);
   return data;
 }
@@ -104,8 +127,16 @@ auxiliaryEnsureDataComplete(HASHTABLE *data, bitvector_t aux_type) {
   const char       *name = NULL;
 
   ITERATE_HASH(name, funcs, hash_i) {
-    if(IS_SET(funcs->aux_type, aux_type) && !hashGet(data, name))
-      hashPut(data, name, funcs->new());
+    if(IS_SET(funcs->aux_type, aux_type) && !hashGet(data, name)) {
+      // are we dealing with python data or not?
+      if(!funcs->is_py) 
+	hashPut(data, name, funcs->new());
+      else {
+	// recast the new function
+	void *(* new)(const char *) = (void *)funcs->new;
+	hashPut(data, name, new(name));
+      }
+    }
   } deleteHashIterator(hash_i);
 }
 
@@ -153,10 +184,22 @@ auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type) {
   ITERATE_HASH(name, funcs, hash_i) {
     if(!IS_SET(funcs->aux_type, aux_type))
       continue;
-    if(funcs->read)
+    // are we dealing with python data or not?
+    if(!funcs->is_py && funcs->read)
       hashPut(data, name, funcs->read(read_set(set, name)));
-    else
+    else if(funcs->read) {
+      // recast the read function
+      void *(* read)(const char *, STORAGE_SET *) = (void *)funcs->read;
+      hashPut(data, name, read(name, read_set(set, name)));
+    }
+    // are we dealing with python data or not?
+    else if(!funcs->is_py) 
       hashPut(data, name, funcs->new());
+    else {
+      // recast the new function
+      void *(* new)(const char *) = (void *)funcs->new;
+      hashPut(data, name, new(name));
+    }
   } deleteHashIterator(hash_i);
   return data;
 }

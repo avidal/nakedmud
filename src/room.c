@@ -37,7 +37,7 @@
 
 
 struct room_data {
-  room_vnum   vnum;              // what vnum are we?
+  int   vnum;              // what vnum are we?
 
   int         terrain;           // what kind of terrain do we have?
   char       *name;              // what is the name of our room?
@@ -252,7 +252,7 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
 }
 
 
-void       roomDigExit        (ROOM_DATA *room, int dir, room_vnum to) {
+void       roomDigExit        (ROOM_DATA *room, int dir, int to) {
   // we already have an exit in that direction... change the destination
   if(roomGetExit(room, dir))
     exitSetTo(roomGetExit(room, dir), to);
@@ -264,7 +264,7 @@ void       roomDigExit        (ROOM_DATA *room, int dir, room_vnum to) {
   }
 }
 
-void roomDigExitSpecial (ROOM_DATA *room, const char *dir, room_vnum to) {
+void roomDigExitSpecial (ROOM_DATA *room, const char *dir, int to) {
   // we already have an exit in that direction ... change the destination
   if(roomGetExitSpecial(room, dir))
     exitSetTo(roomGetExitSpecial(room, dir), to);
@@ -332,7 +332,7 @@ LIST       *roomGetCharacters  (const ROOM_DATA *room) {
   return room->characters;
 };
 
-room_vnum   roomGetVnum        (const ROOM_DATA *room) {
+int   roomGetVnum        (const ROOM_DATA *room) {
   return room->vnum;
 };
 
@@ -393,7 +393,7 @@ void        roomSetEdescs      (ROOM_DATA *room, EDESC_SET *edescs) {
   room->edescs = edescs;
 }
 
-void        roomSetVnum        (ROOM_DATA *room, room_vnum vnum) {
+void        roomSetVnum        (ROOM_DATA *room, int vnum) {
   room->vnum = vnum;
 };
 

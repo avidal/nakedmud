@@ -11,11 +11,17 @@
 typedef struct set_data                   SET;
 typedef struct set_iterator               SET_ITERATOR;
 
-SET  *newSet   (int buckets);
-void  deleteSet(SET *set);
-void  setPut   (SET *set, void *elem);
-void  setRemove(SET *set, void *elem);
-int   setIn    (SET *set, void *elem);
+SET  *newSet         (void);
+void  deleteSet      (SET *set);
+void  setPut         (SET *set, void *elem);
+void  setRemove      (SET *set, void *elem);
+int   setIn          (SET *set, void *elem);
+int   setSize        (SET *set);
+LIST *setCollect     (SET *set);
+SET  *setCopy        (SET *set);
+SET  *setUnion       (SET *set1, SET *set2);
+SET  *setIntersection(SET *set1, SET *set2);
+
 
 
 //*****************************************************************************
@@ -26,6 +32,13 @@ int   setIn    (SET *set, void *elem);
 // this lets us do so.
 //
 //*****************************************************************************
+
+// iterate across all the elements in a set
+#define ITERATE_SET(elem, it) \
+  for(elem = setIteratorCurrent(it); \
+      elem != NULL; \
+      setIteratorNext(it), elem = setIteratorCurrent(it))
+
 
 SET_ITERATOR *newSetIterator    (SET *S);
 void          deleteSetIterator (SET_ITERATOR *I);

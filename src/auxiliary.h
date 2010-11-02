@@ -25,7 +25,7 @@
 
 //
 // A structure containing 6 functions that are needed for storing and saving
-// auxiliary data that is used by auxiliarys outside the core of the MUD.
+// auxiliary data that is used by auxiliaries outside the core of the MUD.
 //
 // aux_type is a list of the types of datastructures this auxiliary data is
 // intended for.
@@ -48,16 +48,7 @@
 //
 // read should be a function that takes a storage set, and parses auxiliary
 // data from that.
-//
-typedef struct auxiliary_functions {
-  bitvector_t aux_type;
-  void          *(* new)();
-  void        (* delete)(void *data);
-  void        (* copyTo)(void *from, void *to);
-  void        *(*  copy)(void *data);
-  STORAGE_SET *(* store)(void *data);
-  void        *(*  read)(STORAGE_SET *set);
-} AUXILIARY_FUNCS;
+typedef struct auxiliary_functions AUXILIARY_FUNCS;
 
 
 //
@@ -72,6 +63,22 @@ void init_auxiliaries();
 AUXILIARY_FUNCS *
 newAuxiliaryFuncs(bitvector_t aux_type, void *new, void *delete, 
 		  void *copyTo, void *copy, void *store, void *read);
+
+
+//
+// Creating auxiliary data in python is poses a problem. Ideally, we would like
+// to be able to arbitrarily add new data to chars/objs/rooms/etc... in Python
+// without touching any C aspects of the code. But then, how do we create new()
+// and read() functions (the others are trivial) for creating the auxiliary
+// data? The simple answer is that we can't, really. We have to do a little bit
+// of a work-around and allow Python auxiliary data new() and read() functions
+// to be looked up in a table when they are added via the python modules. Python
+// auxiliary data can set this special flag on auxiliary functions. If the flag
+// is set, the key for the auxiliary data will also be passed along to the new()
+// and read() functions so the proper python methods can be looked up and 
+// called. NO NORMAL auxiliary data should even touch this! This is for Python
+// use only.
+void auxiliaryFuncSetIsPy(AUXILIARY_FUNCS *funcs, bool val);
 
 
 //

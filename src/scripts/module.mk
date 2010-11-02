@@ -104,7 +104,8 @@
 # Object files we generate
 SRC      += scripts/script_set.c scripts/script.c scripts/pychar.c \
 	    scripts/pyobj.c scripts/pymud.c scripts/pyroom.c \
-	    scripts/script_editor.c scripts/script_edit.c scripts/pyplugs.c
+	    scripts/script_editor.c scripts/script_edit.c scripts/pyplugs.c \
+	    scripts/pyevent.c scripts/pystorage.c scripts/pyauxiliary.c
 
 # the top level directory of python.
 PYTHONTOP = /usr/local/include

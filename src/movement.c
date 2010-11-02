@@ -29,7 +29,7 @@
 
 
 
-bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
+ROOM_DATA *try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
   ROOM_DATA *to   = NULL;
 
   if(exitIsClosed(exit))
@@ -49,7 +49,6 @@ bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
 
     char_from_room(ch);
     char_to_room(ch, to);
-    look_at_room(ch, to);
 
     if(*exitGetSpecEnter(exit))
       message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, exitGetSpecEnter(exit));
@@ -59,9 +58,9 @@ bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
     else
       send_around_char(ch, TRUE, "%s has arrived.\r\n", charGetName(ch));
 
-    return TRUE;
+    return to;
   }
-  return FALSE;
+  return NULL;
 }
 
 
@@ -77,7 +76,7 @@ bool try_buildwalk(CHAR_DATA *ch, int dir) {
     log_string("ERROR: %s tried to buildwalk %s, but room %d was not in a zone!", charGetName(ch), dirGetName(dir), roomGetVnum(charGetRoom(ch)));
   }
   else {
-    room_vnum vnum = getFreeRoomVnum(zone);
+    int vnum = getFreeRoomVnum(zone);
     if(vnum == NOWHERE)
       send_to_char(ch, 
 		   "Zone #%d has no free rooms left. "
@@ -125,14 +124,19 @@ bool try_move(CHAR_DATA *ch, int dir, const char *specdir) {
 
   else {
     ROOM_DATA *old_room = charGetRoom(ch);
-    bool success = try_exit(ch, exit, dir);
-    if(success) {
+    ROOM_DATA *new_room = try_exit(ch, exit, dir);
+    if(new_room) {
+      // move ourself back for a second so we can do the exit script...
+      char_to_room(ch, old_room);
       try_exit_script(ch, old_room, 
 		      (dir != DIR_NONE ? dirGetName(dir) : specdir));
+      char_to_room(ch, new_room);
+
       try_enterance_script(ch, charGetRoom(ch),
 			   (dir != DIR_NONE ? dirGetName(dir) : specdir));
+      look_at_room(ch, new_room);
     }
-    return success;
+    return (new_room != NULL);
   }
 }
 

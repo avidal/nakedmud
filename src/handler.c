@@ -245,6 +245,8 @@ void do_give(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
 
 void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
   send_to_char(ch, "You drop %s.\r\n", objGetName(obj));
+  message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
+	  "$n drops $o.");
   obj_from_char(obj);
   obj_to_room(obj, charGetRoom(ch));
 
@@ -259,7 +261,7 @@ void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
 
 
 void do_wear(CHAR_DATA *ch, OBJ_DATA *obj, const char *where) {
-  if(objIsType(obj, "worn"))
+  if(!objIsType(obj, "worn"))
     send_to_char(ch, "You cannot wear %s!\r\n", objGetName(obj));
   else {
     obj_from_char(obj);

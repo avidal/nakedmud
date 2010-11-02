@@ -1,0 +1,4087 @@
+diff -ruN ../nakedmudv2.4/src/Makefile src/Makefile
+--- ../nakedmudv2.4/src/Makefile	Sat Jun  4 23:44:07 2005
++++ src/Makefile	Sat Jun 18 15:03:27 2005
+@@ -108,7 +108,16 @@
+ # include all of our dependencies
+ include $(patsubst %.c,%.d, $(SRC))
+ 
+-# calculate all of our dependencies
++# calculate all of our dependencies. It's messy, but it works
+ %.d: %.c
+ 	@echo "Building dependencies for $(patsubst %.d,%.c, $@)"
+-	@./depend.sh $(patsubst %.d,%.c, $@) > $@
++	@case $(shell dirname $@) in					 \
++	"" | ".") 							 \
++	  gcc $(C_FLAGS) -MM $(patsubst %.d,%.c, $@) | 			 \
++	    sed -e 's@^\(.*\)\.o:@\1.d \1.o:@' > $@			 \
++	;; 								 \
++	*) 								 \
++	  gcc $(C_FLAGS) -MM $(patsubst %.d,%.c, $@) | 			 \
++	    sed -e "s@^\(.*\)\.o:@$(shell dirname $@)/\1.d $(shell dirname $@)/\1.o:@" > $@ 					 			 \
++        ;;                                                               \
++	esac
+diff -ruN ../nakedmudv2.4/src/action.c src/action.c
+--- ../nakedmudv2.4/src/action.c	Sat Jun  4 23:40:30 2005
++++ src/action.c	Sat Jun 18 14:46:43 2005
+@@ -65,8 +65,12 @@
+ }
+ 
+ COMMAND(cmd_dsay) {
+-  send_to_char(ch, "You start a delayed say.\r\n");
+-  start_action(ch, 3 SECOND, 1, do_dsay, dsay_interrupt, NULL, arg);
++  if(!*arg)
++    send_to_char(ch, "What did you want to delay-say?\r\n");
++  else {
++    send_to_char(ch, "You start a delayed say.\r\n");
++    start_action(ch, 3 SECOND, 1, do_dsay, dsay_interrupt, NULL, arg);
++  }
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.4/src/auxiliary.c src/auxiliary.c
+--- ../nakedmudv2.4/src/auxiliary.c	Sat Jun  4 23:40:30 2005
++++ src/auxiliary.c	Sat Jun 18 14:46:43 2005
+@@ -29,6 +29,17 @@
+ // auxiliary functions on our datatypes
+ HASHTABLE *auxiliary_manip_funcs = NULL;
+ 
++struct auxiliary_functions {
++  bitvector_t aux_type;
++  bool           is_py;
++  void          *(* new)(void);
++  void        (* delete)(void *data);
++  void        (* copyTo)(void *from, void *to);
++  void        *(*  copy)(void *data);
++  STORAGE_SET *(* store)(void *data);
++  void        *(*  read)(STORAGE_SET *set);
++};
++
+ 
+ 
+ //*****************************************************************************
+@@ -46,6 +57,7 @@
+ newAuxiliaryFuncs(bitvector_t aux_type, void *new, void *delete, 
+ 		  void *copyTo, void *copy, void *store, void *read) {
+   AUXILIARY_FUNCS *newfuncs = malloc(sizeof(AUXILIARY_FUNCS));
++  newfuncs->is_py    = FALSE;
+   newfuncs->aux_type = aux_type;
+   newfuncs->new      = new;
+   newfuncs->delete   = delete;
+@@ -61,6 +73,9 @@
+   free(funcs);
+ }
+ 
++void auxiliaryFuncSetIsPy(AUXILIARY_FUNCS *funcs, bool val) {
++  funcs->is_py = val;
++}
+ 
+ void
+ auxiliariesInstall(const char *name, AUXILIARY_FUNCS *funcs) {
+@@ -90,8 +105,16 @@
+   const char       *name = NULL;
+ 
+   ITERATE_HASH(name, funcs, hash_i) {
+-    if(IS_SET(funcs->aux_type, aux_type))
+-      hashPut(data, name, funcs->new());
++    if(IS_SET(funcs->aux_type, aux_type)) {
++      // are we dealing with python data or not?
++      if(!funcs->is_py) 
++	hashPut(data, name, funcs->new());
++      else {
++	// recast the new function
++	void *(* new)(const char *) = (void *)funcs->new;
++	hashPut(data, name, new(name));
++      }
++    }
+   } deleteHashIterator(hash_i);
+   return data;
+ }
+@@ -104,8 +127,16 @@
+   const char       *name = NULL;
+ 
+   ITERATE_HASH(name, funcs, hash_i) {
+-    if(IS_SET(funcs->aux_type, aux_type) && !hashGet(data, name))
+-      hashPut(data, name, funcs->new());
++    if(IS_SET(funcs->aux_type, aux_type) && !hashGet(data, name)) {
++      // are we dealing with python data or not?
++      if(!funcs->is_py) 
++	hashPut(data, name, funcs->new());
++      else {
++	// recast the new function
++	void *(* new)(const char *) = (void *)funcs->new;
++	hashPut(data, name, new(name));
++      }
++    }
+   } deleteHashIterator(hash_i);
+ }
+ 
+@@ -153,10 +184,22 @@
+   ITERATE_HASH(name, funcs, hash_i) {
+     if(!IS_SET(funcs->aux_type, aux_type))
+       continue;
+-    if(funcs->read)
++    // are we dealing with python data or not?
++    if(!funcs->is_py && funcs->read)
+       hashPut(data, name, funcs->read(read_set(set, name)));
+-    else
++    else if(funcs->read) {
++      // recast the read function
++      void *(* read)(const char *, STORAGE_SET *) = (void *)funcs->read;
++      hashPut(data, name, read(name, read_set(set, name)));
++    }
++    // are we dealing with python data or not?
++    else if(!funcs->is_py) 
+       hashPut(data, name, funcs->new());
++    else {
++      // recast the new function
++      void *(* new)(const char *) = (void *)funcs->new;
++      hashPut(data, name, new(name));
++    }
+   } deleteHashIterator(hash_i);
+   return data;
+ }
+diff -ruN ../nakedmudv2.4/src/auxiliary.h src/auxiliary.h
+--- ../nakedmudv2.4/src/auxiliary.h	Sat Jun  4 23:40:29 2005
++++ src/auxiliary.h	Sat Jun 18 14:46:43 2005
+@@ -25,7 +25,7 @@
+ 
+ //
+ // A structure containing 6 functions that are needed for storing and saving
+-// auxiliary data that is used by auxiliarys outside the core of the MUD.
++// auxiliary data that is used by auxiliaries outside the core of the MUD.
+ //
+ // aux_type is a list of the types of datastructures this auxiliary data is
+ // intended for.
+@@ -48,16 +48,7 @@
+ //
+ // read should be a function that takes a storage set, and parses auxiliary
+ // data from that.
+-//
+-typedef struct auxiliary_functions {
+-  bitvector_t aux_type;
+-  void          *(* new)();
+-  void        (* delete)(void *data);
+-  void        (* copyTo)(void *from, void *to);
+-  void        *(*  copy)(void *data);
+-  STORAGE_SET *(* store)(void *data);
+-  void        *(*  read)(STORAGE_SET *set);
+-} AUXILIARY_FUNCS;
++typedef struct auxiliary_functions AUXILIARY_FUNCS;
+ 
+ 
+ //
+@@ -72,6 +63,22 @@
+ AUXILIARY_FUNCS *
+ newAuxiliaryFuncs(bitvector_t aux_type, void *new, void *delete, 
+ 		  void *copyTo, void *copy, void *store, void *read);
++
++
++//
++// Creating auxiliary data in python is poses a problem. Ideally, we would like
++// to be able to arbitrarily add new data to chars/objs/rooms/etc... in Python
++// without touching any C aspects of the code. But then, how do we create new()
++// and read() functions (the others are trivial) for creating the auxiliary
++// data? The simple answer is that we can't, really. We have to do a little bit
++// of a work-around and allow Python auxiliary data new() and read() functions
++// to be looked up in a table when they are added via the python modules. Python
++// auxiliary data can set this special flag on auxiliary functions. If the flag
++// is set, the key for the auxiliary data will also be passed along to the new()
++// and read() functions so the proper python methods can be looked up and 
++// called. NO NORMAL auxiliary data should even touch this! This is for Python
++// use only.
++void auxiliaryFuncSetIsPy(AUXILIARY_FUNCS *funcs, bool val);
+ 
+ 
+ //
+diff -ruN ../nakedmudv2.4/src/bitvector.h src/bitvector.h
+--- ../nakedmudv2.4/src/bitvector.h	Sat Jun  4 23:40:29 2005
++++ src/bitvector.h	Sat Jun 18 14:46:43 2005
+@@ -108,7 +108,7 @@
+ //
+ // return a list of the possible bits that this vector can have set. The list
+ // must be deleted after use, as well as all the contents. 
+-// try: listDeleteWith(list, free)
++// try: deleteListWith(list, free)
+ LIST *bitvectorListBits(BITVECTOR *v);
+ 
+ #endif // BITVECTOR_H
+diff -ruN ../nakedmudv2.4/src/buffer.c src/buffer.c
+--- ../nakedmudv2.4/src/buffer.c	Sat Jun  4 23:40:29 2005
++++ src/buffer.c	Sat Jun 18 14:46:43 2005
+@@ -211,7 +211,7 @@
+ void bufferFormat(BUFFER *buf, int max_width, int indent) {
+   char formatted[(buf->len * 3)/2];
+   bool needs_capital = TRUE, needs_indent = FALSE;
+-  int fmt_i = 0, buf_i = 0, col = 0;
++  int fmt_i = 0, buf_i = 0, col = 0, next_space = 0;
+ 
+   // put in our indent
+   if(indent > 0) {
+@@ -229,7 +229,10 @@
+ 
+   for(; buf->data[buf_i] != '\0'; buf_i++) {
+     // we have to put a newline in because the word won't fit on the line
+-    if(col + next_space_in(buf->data+buf_i) > max_width-2) {
++    next_space = next_space_in(buf->data + buf_i);
++    if(next_space == -1)
++      next_space = buf->len - buf_i;
++    if(col + next_space > max_width-2) {
+       formatted[fmt_i] = '\r'; fmt_i++;
+       formatted[fmt_i] = '\n'; fmt_i++;
+       col = 0;
+@@ -268,7 +271,10 @@
+       // check if indenting will make it so we don't
+       // have enough room to print the word. If that's the
+       // case, then skip down to a new line instead
+-      if(col + 2 + next_space_in(buf->data+buf_i) > max_width-2) {
++      next_space = next_space_in(buf->data + buf_i);
++      if(next_space == -1)
++	next_space = buf->len - buf_i;
++      if(col + 2 + next_space > max_width-2) {
+ 	formatted[fmt_i] = '\r'; fmt_i++;
+ 	formatted[fmt_i] = '\n'; fmt_i++;
+ 	col = 0;
+diff -ruN ../nakedmudv2.4/src/character.c src/character.c
+--- ../nakedmudv2.4/src/character.c	Sat Jun  4 23:40:29 2005
++++ src/character.c	Sat Jun 18 14:46:43 2005
+@@ -90,7 +90,7 @@
+ 
+ struct char_data {
+   // data for PCs only
+-  room_vnum              loadroom;
++  int              loadroom;
+ 
+   // shared data for PCs and NPCs
+   int                    uid;
+@@ -112,12 +112,12 @@
+   BITVECTOR            * user_groups;
+ 
+   // data for NPCs only
+-  dialog_vnum            dialog;
++  int            dialog;
+   char                 * rdesc;
+   char                 * multi_name;
+   char                 * multi_rdesc;
+   char                 * keywords;
+-  mob_vnum               vnum;  
++  int               vnum;  
+ };
+ 
+ 
+@@ -249,7 +249,7 @@
+   return ch->uid;
+ }
+ 
+-room_vnum    charGetLoadroom (CHAR_DATA *ch) {
++int    charGetLoadroom (CHAR_DATA *ch) {
+   return ch->loadroom;
+ }
+ 
+@@ -316,7 +316,7 @@
+   charSetBody(ch, raceCreateBody(ch->race));
+ }
+ 
+-void charSetLoadroom(CHAR_DATA *ch, room_vnum loadroom) {
++void charSetLoadroom(CHAR_DATA *ch, int loadroom) {
+   ch->loadroom = loadroom;
+ }
+ 
+@@ -472,19 +472,19 @@
+   ch->keywords = strdup(keywords ? keywords : "");
+ }
+ 
+-void charSetVnum(CHAR_DATA *ch, mob_vnum vnum) {
++void charSetVnum(CHAR_DATA *ch, int vnum) {
+   ch->vnum = vnum;
+ }
+ 
+-void charSetDialog(CHAR_DATA *ch, dialog_vnum vnum) {
++void charSetDialog(CHAR_DATA *ch, int vnum) {
+   ch->dialog = vnum;
+ }
+ 
+-mob_vnum     charGetVnum       ( CHAR_DATA *ch) {
++int     charGetVnum       ( CHAR_DATA *ch) {
+   return ch->vnum;
+ }
+ 
+-dialog_vnum  charGetDialog     ( CHAR_DATA *ch) {
++int  charGetDialog     ( CHAR_DATA *ch) {
+   return ch->dialog;
+ }
+ 
+diff -ruN ../nakedmudv2.4/src/character.h src/character.h
+--- ../nakedmudv2.4/src/character.h	Sat Jun  4 23:40:29 2005
++++ src/character.h	Sat Jun 18 14:46:43 2005
+@@ -84,7 +84,7 @@
+ LIST        *charGetInventory ( CHAR_DATA *ch);
+ BODY_DATA   *charGetBody      ( CHAR_DATA *ch);
+ const char  *charGetRace      ( CHAR_DATA *ch);
+-room_vnum    charGetLoadroom  ( CHAR_DATA *ch);
++int    charGetLoadroom  ( CHAR_DATA *ch);
+ OBJ_DATA    *charGetFurniture ( CHAR_DATA *ch);
+ int          charGetPos       ( CHAR_DATA *ch);
+ int          charGetUID       ( const CHAR_DATA *ch);
+@@ -104,7 +104,7 @@
+ void         charSetBody      ( CHAR_DATA *ch, BODY_DATA *body);
+ void         charSetRace      ( CHAR_DATA *ch, const char *race);
+ void         charSetUID       ( CHAR_DATA *ch, int uid);
+-void         charSetLoadroom  ( CHAR_DATA *ch, room_vnum loadroom);
++void         charSetLoadroom  ( CHAR_DATA *ch, int loadroom);
+ void         charSetFurniture ( CHAR_DATA *ch, OBJ_DATA *furniture);
+ void         charSetPos       ( CHAR_DATA *ch, int pos);
+ 
+@@ -113,12 +113,12 @@
+ //*****************************************************************************
+ // mob-specific functions
+ //*****************************************************************************
+-mob_vnum     charGetVnum       (CHAR_DATA *ch);
+-dialog_vnum  charGetDialog     (CHAR_DATA *ch);
++int     charGetVnum       (CHAR_DATA *ch);
++int  charGetDialog     (CHAR_DATA *ch);
+ const char  *charGetKeywords   (CHAR_DATA *ch);
+ 
+-void         charSetVnum       (CHAR_DATA *ch, mob_vnum vnum);
+-void         charSetDialog     (CHAR_DATA *ch, dialog_vnum vnum);
++void         charSetVnum       (CHAR_DATA *ch, int vnum);
++void         charSetDialog     (CHAR_DATA *ch, int vnum);
+ void         charSetKeywords   (CHAR_DATA *ch, const char *keywords);
+ 
+ 
+diff -ruN ../nakedmudv2.4/src/cmd_builder.c src/cmd_builder.c
+--- ../nakedmudv2.4/src/cmd_builder.c	Sat Jun  4 23:40:29 2005
++++ src/cmd_builder.c	Sat Jun 18 14:46:43 2005
+@@ -37,7 +37,7 @@
+ // Try to dig a special exit in a specific direction. Unlike cmd_dig,
+ // specdig does not link the room we're digging to, back to us, since
+ // we can't really figure out what the opposite direction is
+-void try_specdig(CHAR_DATA *ch, const char *dir, room_vnum to) {
++void try_specdig(CHAR_DATA *ch, const char *dir, int to) {
+   if(roomGetExitSpecial(charGetRoom(ch), dir))
+     send_to_char(ch, "You must fill in the %s exit before you dig a new exit.\r\n", dir);
+   else if(!worldGetRoom(gameworld, to))
+@@ -329,6 +329,82 @@
+   bitToggle(charGetPrfs(ch), "buildwalk");
+   send_to_char(ch, "Buildwalk %s.\r\n",
+ 	       (bitIsOneSet(charGetPrfs(ch), "buildwalk") ? "on":"off"));
++}
++
++
++//
++// attach a new script to the given instanced object/mobile/room
++COMMAND(cmd_attach) {
++  char vbuf[SMALL_BUFFER];
++  arg = one_arg(arg, vbuf);
++  int vnum = atoi(vbuf);
++
++  // check to make sure our vnum is OK
++  if(!isdigit(*vbuf) || vnum == 0)
++    send_to_char(ch, "Invalid script vnum!\r\n");
++  else if(!worldGetScript(gameworld, vnum))
++    send_to_char(ch, "No script exists with that vnum.\r\n");
++  // we're trying to edit the room, not a char or mobile
++  if(!strcasecmp(arg, "room")) {
++    scriptSetAdd(roomGetScripts(charGetRoom(ch)), vnum);
++    send_to_char(ch, "Script number %d attached to the room.\r\n", vnum);
++  }
++  else {
++    int tgt_type = FOUND_NONE;
++    void    *tgt = generic_find(ch, arg, FIND_TYPE_CHAR | FIND_TYPE_OBJ,
++				FIND_SCOPE_IMMEDIATE, FALSE, &tgt_type);
++
++    // make sure the target exists
++    if(tgt == NULL || tgt_type == FOUND_NONE)
++      send_to_char(ch, "Target not found.\r\n");
++    else if(tgt_type == FOUND_CHAR) {
++      send_to_char(ch, "Script number %d attached to %s.\r\n", vnum,
++		   charGetName(tgt));
++      scriptSetAdd(charGetScripts(tgt), vnum);
++    }
++    else {
++      send_to_char(ch, "Script number %d attached to %s.\r\n", vnum,
++		   objGetName(tgt));
++      scriptSetAdd(objGetScripts(tgt), vnum);
++    }
++  }  
++}
++
++
++//
++// attach a new script to the given instanced object/mobile/room
++COMMAND(cmd_detach) {
++  char vbuf[SMALL_BUFFER];
++  arg = one_arg(arg, vbuf);
++  int vnum = atoi(vbuf);
++
++  // check to make sure our vnum is OK
++  if(!isdigit(*vbuf) || vnum == 0)
++    send_to_char(ch, "Invalid script vnum!\r\n");
++  // we're trying to edit the room, not a char or mobile
++  if(!strcasecmp(arg, "room")) {
++    scriptSetRemove(roomGetScripts(charGetRoom(ch)), vnum);
++    send_to_char(ch, "Script number %d detached from the room.\r\n", vnum);
++  }
++  else {
++    int tgt_type = FOUND_NONE;
++    void    *tgt = generic_find(ch, arg, FIND_TYPE_CHAR | FIND_TYPE_OBJ,
++				FIND_SCOPE_IMMEDIATE, FALSE, &tgt_type);
++
++    // make sure the target exists
++    if(tgt == NULL || tgt_type == FOUND_NONE)
++      send_to_char(ch, "Target not found.\r\n");
++    else if(tgt_type == FOUND_CHAR) {
++      send_to_char(ch, "Script number %d detached to %s.\r\n", vnum,
++		   charGetName(tgt));
++      scriptSetRemove(charGetScripts(tgt), vnum);
++    }
++    else {
++      send_to_char(ch, "Script number %d detached to %s.\r\n", vnum,
++		   objGetName(tgt));
++      scriptSetRemove(objGetScripts(tgt), vnum);
++    }
++  }  
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.4/src/commands.h src/commands.h
+--- ../nakedmudv2.4/src/commands.h	Sat Jun  4 23:40:29 2005
++++ src/commands.h	Sat Jun 18 14:46:43 2005
+@@ -37,6 +37,8 @@
+ COMMAND(cmd_mdelete);
+ COMMAND(cmd_odelete);
+ COMMAND(cmd_ddelete);
++COMMAND(cmd_detach);
++COMMAND(cmd_attach);
+ 
+ 
+ /* cmd_manip.c */
+diff -ruN ../nakedmudv2.4/src/dialog.c src/dialog.c
+--- ../nakedmudv2.4/src/dialog.c	Sat Jun  4 23:40:29 2005
++++ src/dialog.c	Sat Jun 18 14:46:43 2005
+@@ -231,7 +231,7 @@
+   return dialog->name;
+ }
+ 
+-dialog_vnum dialogGetVnum(DIALOG_DATA *dialog) {
++int dialogGetVnum(DIALOG_DATA *dialog) {
+   return dialog->vnum;
+ }
+ 
+@@ -256,7 +256,7 @@
+   bufferCat(dialog->greet, (greet ? greet : ""));
+ }
+ 
+-void dialogSetVnum(DIALOG_DATA *dialog, dialog_vnum vnum) {
++void dialogSetVnum(DIALOG_DATA *dialog, int vnum) {
+   dialog->vnum = vnum;
+ }
+ 
+diff -ruN ../nakedmudv2.4/src/dialog.h src/dialog.h
+--- ../nakedmudv2.4/src/dialog.h	Sat Jun  4 23:40:29 2005
++++ src/dialog.h	Sat Jun 18 14:46:43 2005
+@@ -51,8 +51,8 @@
+ const char    *dialogGetGreet    (DIALOG_DATA *dialog);
+ void           dialogSetGreet    (DIALOG_DATA *dialog, const char *greet);
+ 
+-void           dialogSetVnum     (DIALOG_DATA *dialog, dialog_vnum vnum);
+-dialog_vnum    dialogGetVnum     (DIALOG_DATA *dialog);
++void           dialogSetVnum     (DIALOG_DATA *dialog, int vnum);
++int    dialogGetVnum     (DIALOG_DATA *dialog);
+ 
+ void           dialogSetName     (DIALOG_DATA *dialog, const char *name);
+ const char    *dialogGetName     (DIALOG_DATA *dialog);
+diff -ruN ../nakedmudv2.4/src/event.c src/event.c
+--- ../nakedmudv2.4/src/event.c	Sat Jun  4 23:40:29 2005
++++ src/event.c	Sat Jun 18 14:46:43 2005
+@@ -42,28 +42,23 @@
+ // a small test for delayed events ... proof of concept
+ //
+ //******************************************************************************
+-struct devent_data {
+-  CHAR_DATA *speaker;
+-};
+-
+-void devent_on_complete(CHAR_DATA *owner, struct devent_data *data, char *arg) {
+-  communicate(data->speaker, arg, COMM_GLOBAL);
+-  free(data);
++void devent_on_complete(CHAR_DATA *owner, void *data, char *arg) {
++  communicate(owner, arg, COMM_GLOBAL);
+ }
+ 
+-bool check_devent_involvement(void *thing, struct devent_data *data) {
+-  if(thing == data->speaker)
+-    return TRUE;
+-  return FALSE;
++bool check_devent_involvement(void *thing, void *data) {
++  return (thing == data);
+ }
+ 
+ COMMAND(cmd_devent) {
+-  struct devent_data *data = malloc(sizeof(struct devent_data));
+-  data->speaker = ch;
+-  start_event(ch,
+-	      5 SECONDS,
+-	      devent_on_complete, check_devent_involvement, 
+-	      data, arg);
++  if(!*arg)
++    send_to_char(ch, "What did you want to delay-chat?\r\n");
++  else {
++    start_event(ch,
++		5 SECONDS,
++		devent_on_complete, check_devent_involvement, 
++		ch, arg);
++  }
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.4/src/exit.c src/exit.c
+--- ../nakedmudv2.4/src/exit.c	Sat Jun  4 23:40:29 2005
++++ src/exit.c	Sat Jun 18 14:46:43 2005
+@@ -27,11 +27,11 @@
+   bitvector_t status;      // closable, closed, locked, etc...
+ 
+   int closable;            // is the exit closable?
+-  obj_vnum key;            // what is the vnum of the key?
++  int key;            // what is the vnum of the key?
+   int hide_lev;            // how hidden is this exit?
+   int pick_lev;            // how hard is it to pick this exit?
+ 
+-  room_vnum to;            // where do we exit to?
++  int to;            // where do we exit to?
+ };
+ 
+ 
+@@ -149,11 +149,11 @@
+   return exit->pick_lev;
+ };
+ 
+-obj_vnum    exitGetKey(const EXIT_DATA *exit) {
++int    exitGetKey(const EXIT_DATA *exit) {
+   return exit->key;
+ };
+ 
+-room_vnum   exitGetTo(const EXIT_DATA *exit) {
++int   exitGetTo(const EXIT_DATA *exit) {
+   return exit->to;
+ };
+ 
+@@ -195,7 +195,7 @@
+   else          REMOVE_BIT(exit->status, EX_LOCKED);
+ };
+ 
+-void        exitSetKey(EXIT_DATA *exit, obj_vnum key) {
++void        exitSetKey(EXIT_DATA *exit, int key) {
+   exit->key = key;
+ };
+ 
+@@ -207,7 +207,7 @@
+   exit->pick_lev = pick_lev;
+ };
+ 
+-void        exitSetTo(EXIT_DATA *exit, room_vnum room) {
++void        exitSetTo(EXIT_DATA *exit, int room) {
+   exit->to = room;
+ };
+ 
+diff -ruN ../nakedmudv2.4/src/exit.h src/exit.h
+--- ../nakedmudv2.4/src/exit.h	Sat Jun  4 23:40:29 2005
++++ src/exit.h	Sat Jun 18 14:46:43 2005
+@@ -58,8 +58,8 @@
+ 
+ int         exitGetHidden      (const EXIT_DATA *exit);
+ int         exitGetPickLev     (const EXIT_DATA *exit);
+-obj_vnum    exitGetKey         (const EXIT_DATA *exit);
+-room_vnum   exitGetTo          (const EXIT_DATA *exit);
++int    exitGetKey         (const EXIT_DATA *exit);
++int   exitGetTo          (const EXIT_DATA *exit);
+ const char *exitGetName        (const EXIT_DATA *exit);
+ const char *exitGetKeywords    (const EXIT_DATA *exit);
+ const char *exitGetDesc        (const EXIT_DATA *exit);
+@@ -70,10 +70,10 @@
+ void        exitSetClosable    (EXIT_DATA *exit, bool closable);
+ void        exitSetClosed      (EXIT_DATA *exit, bool closed);
+ void        exitSetLocked      (EXIT_DATA *exit, bool locked);
+-void        exitSetKey         (EXIT_DATA *exit, obj_vnum key);
++void        exitSetKey         (EXIT_DATA *exit, int key);
+ void        exitSetHidden      (EXIT_DATA *exit, int hide_lev);
+ void        exitSetPickLev     (EXIT_DATA *exit, int pick_lev);
+-void        exitSetTo          (EXIT_DATA *exit, room_vnum room);
++void        exitSetTo          (EXIT_DATA *exit, int room);
+ void        exitSetName        (EXIT_DATA *exit, const char *name);
+ void        exitSetKeywords    (EXIT_DATA *exit, const char *keywords);
+ void        exitSetDesc        (EXIT_DATA *exit, const char *desc);
+diff -ruN ../nakedmudv2.4/src/gameloop.c src/gameloop.c
+--- ../nakedmudv2.4/src/gameloop.c	Sat Jun  4 23:40:29 2005
++++ src/gameloop.c	Sat Jun 18 14:49:04 2005
+@@ -53,7 +53,6 @@
+ #endif
+ 
+ 
+-
+ /* local procedures */
+ void game_loop    ( int control );
+ bool gameloop_end = FALSE;
+diff -ruN ../nakedmudv2.4/src/handler.c src/handler.c
+--- ../nakedmudv2.4/src/handler.c	Sat Jun  4 23:40:29 2005
++++ src/handler.c	Sat Jun 18 14:46:43 2005
+@@ -245,6 +245,8 @@
+ 
+ void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
+   send_to_char(ch, "You drop %s.\r\n", objGetName(obj));
++  message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
++	  "$n drops $o.");
+   obj_from_char(obj);
+   obj_to_room(obj, charGetRoom(ch));
+ 
+@@ -259,7 +261,7 @@
+ 
+ 
+ void do_wear(CHAR_DATA *ch, OBJ_DATA *obj, const char *where) {
+-  if(objIsType(obj, "worn"))
++  if(!objIsType(obj, "worn"))
+     send_to_char(ch, "You cannot wear %s!\r\n", objGetName(obj));
+   else {
+     obj_from_char(obj);
+diff -ruN ../nakedmudv2.4/src/hashtable.h src/hashtable.h
+--- ../nakedmudv2.4/src/hashtable.h	Sat Jun  4 23:40:29 2005
++++ src/hashtable.h	Sat Jun 18 14:46:43 2005
+@@ -40,6 +40,19 @@
+ // must be deleted after use. Try: deleteListWith(list, free)
+ LIST *hashCollect(HASHTABLE *table);
+ 
++
++
++//*****************************************************************************
++// prototypes for the hashtable iterator
++//*****************************************************************************
++
++// iterate across all the elements in a hashtable
++#define ITERATE_HASH(key, val, it) \
++  for(key = hashIteratorCurrentKey(it), val = hashIteratorCurrentVal(it); \
++      key != NULL; \
++      hashIteratorNext(it), \
++      key = hashIteratorCurrentKey(it), val = hashIteratorCurrentVal(it))
++
+ HASH_ITERATOR *newHashIterator     (HASHTABLE *table);
+ void        deleteHashIterator     (HASH_ITERATOR *I);
+ 
+diff -ruN ../nakedmudv2.4/src/inform.c src/inform.c
+--- ../nakedmudv2.4/src/inform.c	Sat Jun  4 23:40:29 2005
++++ src/inform.c	Sat Jun 18 14:46:43 2005
+@@ -726,12 +726,12 @@
+ 	break;
+       case 's':
+ 	if(!ch) break;
+-	sprintf(buf+j, (can_see_char(to, ch) ? HISHERS(ch) :SOMEONE"'s"));
++	sprintf(buf+j, (can_see_char(to, ch) ? HISHER(ch) :SOMEONE"'s"));
+ 	while(buf[j] != '\0') j++;
+ 	break;
+       case 'S':
+ 	if(!vict) break;
+-	sprintf(buf+j, (can_see_char(to, vict) ? HISHERS(vict) :SOMEONE"'s"));
++	sprintf(buf+j, (can_see_char(to, vict) ? HISHER(vict) :SOMEONE"'s"));
+ 	while(buf[j] != '\0') j++;
+ 	break;
+       case 'e':
+diff -ruN ../nakedmudv2.4/src/interpret.c src/interpret.c
+--- ../nakedmudv2.4/src/interpret.c	Sat Jun  4 23:40:29 2005
++++ src/interpret.c	Sat Jun 18 14:46:43 2005
+@@ -97,6 +97,8 @@
+ 	  "player", TRUE, FALSE);
+   add_cmd("at",         NULL, cmd_at,       0, POS_UNCONCIOUS, POS_FLYING,
+ 	  "builder", TRUE, FALSE);
++  add_cmd("attach",     NULL, cmd_attach,   0, POS_UNCONCIOUS, POS_FLYING,
++	  "scripter", FALSE, FALSE);
+ 
+   // B
+   add_cmd("back",       NULL, cmd_back,     0, POS_UNCONCIOUS, POS_FLYING,
+@@ -129,6 +131,8 @@
+ 	  "builder", FALSE, FALSE);
+   add_cmd("drop",       NULL, cmd_drop,     0, POS_SITTING,  POS_FLYING,
+ 	  "player", TRUE, TRUE );
++  add_cmd("detach",     NULL, cmd_detach,   0, POS_UNCONCIOUS, POS_FLYING,
++	  "scripter", FALSE, FALSE);
+ 
+   // E
+   add_cmd("emote",      NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,
+diff -ruN ../nakedmudv2.4/src/items/portal.c src/items/portal.c
+--- ../nakedmudv2.4/src/items/portal.c	Sat Jun  4 23:40:29 2005
++++ src/items/portal.c	Sat Jun 18 14:46:43 2005
+@@ -97,8 +97,10 @@
+ 
+ 
+     // we're trying to enter an exit
+-    if(found && found_type == FOUND_EXIT)
+-      try_exit(ch, found, DIR_NONE);
++    if(found && found_type == FOUND_EXIT) {
++      ROOM_DATA *to = try_exit(ch, found, DIR_NONE);
++      if(to != NULL) look_at_room(ch, to);
++    }
+ 
+     // we're trying to enter a portal
+     else if(found && found_type == FOUND_OBJ) {
+diff -ruN ../nakedmudv2.4/src/list.h src/list.h
+--- ../nakedmudv2.4/src/list.h	Sat Jun  4 23:40:30 2005
++++ src/list.h	Sat Jun 18 14:46:43 2005
+@@ -148,6 +148,15 @@
+ LIST *listCopyWith(LIST *L, void *func);
+ 
+ 
++
++//*****************************************************************************
++// list iterator function prototypes
++//*****************************************************************************
++
++// iterate across all the elements in a list
++#define ITERATE_LIST(val, it) \
++  for(val = listIteratorCurrent(it); val != NULL; val = listIteratorNext(it))
++
+ //
+ // Create an iterator to go over the list
+ //
+diff -ruN ../nakedmudv2.4/src/map.h src/map.h
+--- ../nakedmudv2.4/src/map.h	Sat Jun  4 23:40:30 2005
++++ src/map.h	Sat Jun 18 14:46:43 2005
+@@ -31,6 +31,18 @@
+ int   mapIn     (MAP *map, const void *key);
+ int   mapSize   (MAP *map);
+ 
++
++//*****************************************************************************
++// map iterator function prototypes
++//*****************************************************************************
++
++// iterate across all of the elements in a map
++#define ITERATE_MAP(key, val, it) \
++  for(key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it); \
++      key != NULL; \
++      mapIteratorNext(it), \
++      key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it))
++
+ MAP_ITERATOR *newMapIterator(MAP *map);
+ void          deleteMapIterator(MAP_ITERATOR *I);
+ 
+diff -ruN ../nakedmudv2.4/src/movement.c src/movement.c
+--- ../nakedmudv2.4/src/movement.c	Sat Jun  4 23:40:30 2005
++++ src/movement.c	Sat Jun 18 14:46:43 2005
+@@ -29,7 +29,7 @@
+ 
+ 
+ 
+-bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
++ROOM_DATA *try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
+   ROOM_DATA *to   = NULL;
+ 
+   if(exitIsClosed(exit))
+@@ -49,7 +49,6 @@
+ 
+     char_from_room(ch);
+     char_to_room(ch, to);
+-    look_at_room(ch, to);
+ 
+     if(*exitGetSpecEnter(exit))
+       message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, exitGetSpecEnter(exit));
+@@ -59,9 +58,9 @@
+     else
+       send_around_char(ch, TRUE, "%s has arrived.\r\n", charGetName(ch));
+ 
+-    return TRUE;
++    return to;
+   }
+-  return FALSE;
++  return NULL;
+ }
+ 
+ 
+@@ -77,7 +76,7 @@
+     log_string("ERROR: %s tried to buildwalk %s, but room %d was not in a zone!", charGetName(ch), dirGetName(dir), roomGetVnum(charGetRoom(ch)));
+   }
+   else {
+-    room_vnum vnum = getFreeRoomVnum(zone);
++    int vnum = getFreeRoomVnum(zone);
+     if(vnum == NOWHERE)
+       send_to_char(ch, 
+ 		   "Zone #%d has no free rooms left. "
+@@ -125,14 +124,19 @@
+ 
+   else {
+     ROOM_DATA *old_room = charGetRoom(ch);
+-    bool success = try_exit(ch, exit, dir);
+-    if(success) {
++    ROOM_DATA *new_room = try_exit(ch, exit, dir);
++    if(new_room) {
++      // move ourself back for a second so we can do the exit script...
++      char_to_room(ch, old_room);
+       try_exit_script(ch, old_room, 
+ 		      (dir != DIR_NONE ? dirGetName(dir) : specdir));
++      char_to_room(ch, new_room);
++
+       try_enterance_script(ch, charGetRoom(ch),
+ 			   (dir != DIR_NONE ? dirGetName(dir) : specdir));
++      look_at_room(ch, new_room);
+     }
+-    return success;
++    return (new_room != NULL);
+   }
+ }
+ 
+diff -ruN ../nakedmudv2.4/src/movement.h src/movement.h
+--- ../nakedmudv2.4/src/movement.h	Sat Jun  4 23:40:30 2005
++++ src/movement.h	Sat Jun 18 14:46:43 2005
+@@ -24,9 +24,9 @@
+ //
+ // Go through an exit. use dir for display purposes to the room
+ // (e.g. bob leaves north). If dir == DIR_NONE, no direction info
+-// is said
++// is said. Return the new room we are in, if we moved
+ //
+-bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir);
++ROOM_DATA *try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir);
+ 
+ //
+ // Try creating a new room in the specified direction, drawn from the
+diff -ruN ../nakedmudv2.4/src/mud.h src/mud.h
+--- ../nakedmudv2.4/src/mud.h	Sat Jun  4 23:40:30 2005
++++ src/mud.h	Sat Jun 18 15:33:28 2005
+@@ -65,13 +65,6 @@
+ typedef struct body_data                  BODY_DATA;
+ typedef struct reset_data                 RESET_DATA;
+ 
+-typedef int                               shop_vnum;
+-typedef int                               room_vnum;
+-typedef int                               zone_vnum;
+-typedef int                               mob_vnum;
+-typedef int                               obj_vnum;
+-typedef int                               script_vnum;
+-typedef int                               dialog_vnum;
+ typedef long                              bitvector_t;
+ 
+ // define simple types
+diff -ruN ../nakedmudv2.4/src/object.c src/object.c
+--- ../nakedmudv2.4/src/object.c	Sat Jun  4 23:40:30 2005
++++ src/object.c	Sat Jun 18 14:46:43 2005
+@@ -27,7 +27,7 @@
+ 
+ 
+ struct object_data {
+-  obj_vnum vnum;                 // our number for builders
++  int vnum;                 // our number for builders
+   int      uid;                  // our unique identifier
+   double   weight;               // how much do we weigh, minus contents
+   
+@@ -196,7 +196,7 @@
+   return obj->users;
+ }
+ 
+-obj_vnum objGetVnum(OBJ_DATA *obj) {
++int objGetVnum(OBJ_DATA *obj) {
+   return obj->vnum;
+ }
+ 
+@@ -283,7 +283,7 @@
+   return hashGet(obj->auxiliary_data, name);
+ }
+ 
+-void objSetVnum(OBJ_DATA *obj, obj_vnum vnum) {
++void objSetVnum(OBJ_DATA *obj, int vnum) {
+   obj->vnum = vnum;
+ }
+ 
+diff -ruN ../nakedmudv2.4/src/object.h src/object.h
+--- ../nakedmudv2.4/src/object.h	Sat Jun  4 23:40:30 2005
++++ src/object.h	Sat Jun 18 14:46:43 2005
+@@ -34,7 +34,7 @@
+ // set and get functions
+ //
+ //*****************************************************************************
+-obj_vnum     objGetVnum      (OBJ_DATA *obj);
++int     objGetVnum      (OBJ_DATA *obj);
+ const char  *objGetName      (OBJ_DATA *obj);
+ const char  *objGetKeywords  (OBJ_DATA *obj);
+ const char  *objGetRdesc     (OBJ_DATA *obj);
+@@ -56,7 +56,7 @@
+ void        *objGetAuxiliaryData(const OBJ_DATA *obj, const char *name);
+ BITVECTOR   *objGetBits      (OBJ_DATA *obj);
+ 
+-void         objSetVnum      (OBJ_DATA *obj, obj_vnum vnum);
++void         objSetVnum      (OBJ_DATA *obj, int vnum);
+ void         objSetName      (OBJ_DATA *obj, const char *name);
+ void         objSetKeywords  (OBJ_DATA *obj, const char *keywords);
+ void         objSetRdesc     (OBJ_DATA *obj, const char *rdesc);
+diff -ruN ../nakedmudv2.4/src/olc2/medit.c src/olc2/medit.c
+--- ../nakedmudv2.4/src/olc2/medit.c	Sat Jun  4 23:40:29 2005
++++ src/olc2/medit.c	Sat Jun 18 14:46:43 2005
+@@ -179,7 +179,7 @@
+   // we're editing a mobile by vnum... edit the prototype
+   else {
+     ZONE_DATA *zone = NULL;
+-    mob_vnum vnum   = atoi(arg);
++    int vnum   = atoi(arg);
+ 
+     // make sure there is a corresponding zone ...
+     if((zone = worldZoneBounding(gameworld, vnum)) == NULL)
+diff -ruN ../nakedmudv2.4/src/olc2/oedit.c src/olc2/oedit.c
+--- ../nakedmudv2.4/src/olc2/oedit.c	Sat Jun  4 23:40:29 2005
++++ src/olc2/oedit.c	Sat Jun 18 14:46:43 2005
+@@ -168,7 +168,7 @@
+   // we're editing an object by vnum... edit the prototype
+   else {
+     ZONE_DATA *zone = NULL;
+-    obj_vnum   vnum = atoi(arg);
++    int   vnum = atoi(arg);
+ 
+     // make sure there is a corresponding zone ...
+     if((zone = worldZoneBounding(gameworld, vnum)) == NULL)
+diff -ruN ../nakedmudv2.4/src/olc2/redit.c src/olc2/redit.c
+--- ../nakedmudv2.4/src/olc2/redit.c	Sat Jun  4 23:40:29 2005
++++ src/olc2/redit.c	Sat Jun 18 14:46:43 2005
+@@ -645,7 +645,7 @@
+ COMMAND(cmd_redit) {
+   ZONE_DATA *zone;
+   ROOM_DATA *room;
+-  room_vnum vnum;
++  int vnum;
+ 
+   // if no argument is supplied, default to the current room
+   if(!arg || !*arg)
+diff -ruN ../nakedmudv2.4/src/olc2/zedit.c src/olc2/zedit.c
+--- ../nakedmudv2.4/src/olc2/zedit.c	Sat Jun  4 23:40:29 2005
++++ src/olc2/zedit.c	Sat Jun 18 14:46:43 2005
+@@ -83,8 +83,8 @@
+ COMMAND(cmd_zedit) {
+   // we want to create a new zone?
+   if(!strncasecmp(arg, "new ", 4)) {
+-    zone_vnum vnum = 0;
+-    room_vnum min = 0, max = 0;
++    int vnum = 0;
++    int min = 0, max = 0;
+ 
+     // scan for the parameters
+     sscanf(arg+4, "%d %d %d", &vnum, &min, &max);
+@@ -114,7 +114,7 @@
+   // we want to edit a preexisting zone
+   else {
+     ZONE_DATA *zone = NULL;
+-    zone_vnum vnum   = (!*arg ? 
++    int vnum   = (!*arg ? 
+ 			zoneGetVnum(worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch)))) : atoi(arg));
+  
+     // make sure there is a corresponding zone ...
+diff -ruN ../nakedmudv2.4/src/room.c src/room.c
+--- ../nakedmudv2.4/src/room.c	Sat Jun  4 23:40:30 2005
++++ src/room.c	Sat Jun 18 14:46:43 2005
+@@ -37,7 +37,7 @@
+ 
+ 
+ struct room_data {
+-  room_vnum   vnum;              // what vnum are we?
++  int   vnum;              // what vnum are we?
+ 
+   int         terrain;           // what kind of terrain do we have?
+   char       *name;              // what is the name of our room?
+@@ -252,7 +252,7 @@
+ }
+ 
+ 
+-void       roomDigExit        (ROOM_DATA *room, int dir, room_vnum to) {
++void       roomDigExit        (ROOM_DATA *room, int dir, int to) {
+   // we already have an exit in that direction... change the destination
+   if(roomGetExit(room, dir))
+     exitSetTo(roomGetExit(room, dir), to);
+@@ -264,7 +264,7 @@
+   }
+ }
+ 
+-void roomDigExitSpecial (ROOM_DATA *room, const char *dir, room_vnum to) {
++void roomDigExitSpecial (ROOM_DATA *room, const char *dir, int to) {
+   // we already have an exit in that direction ... change the destination
+   if(roomGetExitSpecial(room, dir))
+     exitSetTo(roomGetExitSpecial(room, dir), to);
+@@ -332,7 +332,7 @@
+   return room->characters;
+ };
+ 
+-room_vnum   roomGetVnum        (const ROOM_DATA *room) {
++int   roomGetVnum        (const ROOM_DATA *room) {
+   return room->vnum;
+ };
+ 
+@@ -393,7 +393,7 @@
+   room->edescs = edescs;
+ }
+ 
+-void        roomSetVnum        (ROOM_DATA *room, room_vnum vnum) {
++void        roomSetVnum        (ROOM_DATA *room, int vnum) {
+   room->vnum = vnum;
+ };
+ 
+diff -ruN ../nakedmudv2.4/src/room.h src/room.h
+--- ../nakedmudv2.4/src/room.h	Sat Jun  4 23:40:30 2005
++++ src/room.h	Sat Jun 18 14:46:43 2005
+@@ -105,8 +105,8 @@
+ void       roomAddChar        (ROOM_DATA *room, CHAR_DATA *ch);
+ void       roomAddObj         (ROOM_DATA *room, OBJ_DATA *obj);
+ 
+-void       roomDigExit        (ROOM_DATA *room, int dir, room_vnum to);
+-void       roomDigExitSpecial (ROOM_DATA *room, const char *dir, room_vnum to);
++void       roomDigExit        (ROOM_DATA *room, int dir, int to);
++void       roomDigExitSpecial (ROOM_DATA *room, const char *dir, int to);
+ 
+ //*****************************************************************************
+ //
+@@ -114,7 +114,7 @@
+ //
+ //*****************************************************************************
+ 
+-room_vnum   roomGetVnum        (const ROOM_DATA *room);
++int   roomGetVnum        (const ROOM_DATA *room);
+ const char *roomGetName        (const ROOM_DATA *room);
+ const char *roomGetDesc        (const ROOM_DATA *room);
+ int         roomGetTerrain     (const ROOM_DATA *room);
+@@ -135,7 +135,7 @@
+ void        roomAddReset       (ROOM_DATA *room, RESET_DATA *reset);
+ 
+ void        roomSetEdescs      (ROOM_DATA *room, EDESC_SET *edescs);
+-void        roomSetVnum        (ROOM_DATA *room, room_vnum vnum);
++void        roomSetVnum        (ROOM_DATA *room, int vnum);
+ void        roomSetName        (ROOM_DATA *room, const char *name);
+ void        roomSetDesc        (ROOM_DATA *room, const char *desc);
+ void        roomSetTerrain     (ROOM_DATA *room, int terrain_type);
+diff -ruN ../nakedmudv2.4/src/scripts/module.mk src/scripts/module.mk
+--- ../nakedmudv2.4/src/scripts/module.mk	Sat Jun  4 23:40:48 2005
++++ src/scripts/module.mk	Sat Jun 18 15:03:10 2005
+@@ -104,7 +104,8 @@
+ # Object files we generate
+ SRC      += scripts/script_set.c scripts/script.c scripts/pychar.c \
+ 	    scripts/pyobj.c scripts/pymud.c scripts/pyroom.c \
+-	    scripts/script_editor.c scripts/script_edit.c scripts/pyplugs.c
++	    scripts/script_editor.c scripts/script_edit.c scripts/pyplugs.c \
++	    scripts/pyevent.c scripts/pystorage.c scripts/pyauxiliary.c
+ 
+ # the top level directory of python.
+ PYTHONTOP = /usr/local/include
+diff -ruN ../nakedmudv2.4/src/scripts/pyauxiliary.c src/scripts/pyauxiliary.c
+--- ../nakedmudv2.4/src/scripts/pyauxiliary.c	Wed Dec 31 17:00:00 1969
++++ src/scripts/pyauxiliary.c	Sat Jun 18 14:46:43 2005
+@@ -0,0 +1,174 @@
++//*****************************************************************************
++//
++// pyauxiliary.c
++//
++// This is a wrapper around the auxiliary data system so python can make use
++// of it. Allows python modules to install new auxiliary data on characters,
++// rooms, objects, etc...
++//
++//*****************************************************************************
++
++#include <Python.h>
++#include <structmember.h>
++
++#include "../mud.h"
++#include "../utils.h"
++#include "../storage.h"
++#include "../auxiliary.h"
++
++#include "pystorage.h"
++
++
++
++//*****************************************************************************
++// local variables and datastructures
++//*****************************************************************************
++
++// the minimum size of our aux table
++#define MIN_AUX_TABLE_SIZE       50
++
++// holds a map from auxiliary data names to their prototype
++HASHTABLE *aux_table = NULL;
++
++
++
++//*****************************************************************************
++// the wrapper layer between python and C auxiliary data
++//*****************************************************************************
++PyObject *newPyAuxiliaryData(const char *keyword) {
++  // look up the prototype
++  PyObject *proto = hashGet(aux_table, keyword);
++  
++  // make sure we've got an OK proto
++  if(proto == NULL)
++    return NULL;
++  else {
++    // create a new instance of the proto
++    PyObject *instance = PyInstance_New(proto, NULL, NULL);
++    return instance;
++  }
++}
++
++void deletePyAuxiliaryData(PyObject *data) {
++  Py_DECREF(data);
++}
++
++void pyAuxiliaryDataCopyTo(PyObject *from, PyObject *to) {
++  PyObject *retval = PyObject_CallMethod(from, "copyTo", "O", to);
++  Py_XDECREF(retval);
++}
++
++PyObject *pyAuxiliaryDataCopy(PyObject *data) {
++  PyObject *retval = PyObject_CallMethod(data, "copy", NULL);
++  return retval;
++}
++
++STORAGE_SET *pyAuxiliaryDataStore(PyObject *data) {
++  PyObject  *pyset = PyObject_CallMethod(data, "store", NULL);
++  STORAGE_SET *set = NULL;
++
++  // make sure the set exists
++  if(pyset == NULL || pyset == Py_None)
++    set = new_storage_set();
++  else
++    set = PyStorageSet_AsSet(pyset);
++  Py_XDECREF(pyset);
++  return set;
++}
++
++PyObject *pyAuxiliaryDataRead(const char *keyword, STORAGE_SET *set) {
++  // look up the prototype
++  PyObject *proto = hashGet(aux_table, keyword);
++  
++  // make sure we've got an OK proto
++  if(proto == NULL)
++    return NULL;
++  else {
++    // build our arguments and keywords
++    PyObject     *args = Py_BuildValue("(O)", newPyStorageSet(set));
++    PyObject *instance = PyInstance_New(proto, args, NULL);
++    Py_DECREF(args);
++    return instance;
++  }
++}
++
++
++
++//*****************************************************************************
++//  implementation of the pyauxiliary method 
++//*****************************************************************************
++
++//
++// install new python auxiliary data. Auxiliary data must be a python CLASS
++// OBJECT that has 4 functions:
++//   __init__   this function initializes the auxiliary data. It takes an
++//              optional argument that is a storage set which should be used
++//              to initialize the values of the auxiliary data if it is supplied
++//   copy       returns a copy of the auxiliary data
++//   copyTo     the values of the auxiliary data to another auxiliary data
++//              supplied as an argument to the function
++//   store      returns a storage set representation of the auxiliary data
++PyObject *PyAuxiliary_install(PyObject *self, PyObject *args) {
++  PyObject   *proto = NULL; // the class proto
++  char        *name = NULL; // the name of the auxiliary data
++  char *installs_on = NULL; // a list of datatypes it installs onto
++  bitvector_t  type = 0;    // bitvector representation of we we install on
++
++  // try parsing the install
++  if(!PyArg_ParseTuple(args, "sOs", &name, &proto, &installs_on)) {
++    PyErr_Format(PyExc_TypeError,
++		 "Installed auxiliaries require a name, a proto class, and "
++		 "a comma-separated list of datatypes to install onto");
++    return NULL;
++  }
++
++  // parse the data types that this auxiliary data installs to
++  if(is_keyword(installs_on, "character", FALSE))
++    SET_BIT(type, AUXILIARY_TYPE_CHAR);
++  if(is_keyword(installs_on, "room",      FALSE))
++    SET_BIT(type, AUXILIARY_TYPE_ROOM);
++  if(is_keyword(installs_on, "object",    FALSE))
++    SET_BIT(type, AUXILIARY_TYPE_OBJ);
++  // more types to come soon!!
++  //***********
++  // FINISH ME
++  //***********
++
++  // add proto to our table
++  Py_INCREF(proto);
++  hashPut(aux_table, name, proto);
++  AUXILIARY_FUNCS *funcs = newAuxiliaryFuncs(type, 
++	newPyAuxiliaryData, deletePyAuxiliaryData,
++	pyAuxiliaryDataCopyTo, pyAuxiliaryDataCopy,
++	pyAuxiliaryDataStore, pyAuxiliaryDataRead);
++  auxiliaryFuncSetIsPy(funcs, TRUE);
++					     
++  auxiliariesInstall(name, funcs);
++  return Py_BuildValue("i", 1);
++}
++
++PyMethodDef pyauxiliary_module_methods[] = {
++  { "install", PyAuxiliary_install, METH_VARARGS,
++    "installs new python auxiliary data into the mud. Auxiliary Data must "
++    "take the form of an uninstanced class that has a ClassXXX(set = None) "
++    "init function, a copy() function, a copyTo(to) function, and a store() "
++    "function" },
++  {NULL, NULL, 0, NULL}  /* Sentinel */
++};
++
++
++//*****************************************************************************
++// implementation of pyauxiliary.h
++//*****************************************************************************
++
++// initialize python auxiliary data for use
++PyMODINIT_FUNC init_PyAuxiliary(void) {
++  aux_table = newHashtableSize(MIN_AUX_TABLE_SIZE);
++  Py_InitModule3("auxiliary", pyauxiliary_module_methods,
++		 "The module for installing auxiliary data");
++}
++
++// returns TRUE if auxiliary data of the given name has been installed by python
++bool pyAuxiliaryDataExists(const char *name) {
++  return hashIn(aux_table, name);
++}
+diff -ruN ../nakedmudv2.4/src/scripts/pyauxiliary.h src/scripts/pyauxiliary.h
+--- ../nakedmudv2.4/src/scripts/pyauxiliary.h	Wed Dec 31 17:00:00 1969
++++ src/scripts/pyauxiliary.h	Sat Jun 18 14:46:43 2005
+@@ -0,0 +1,19 @@
++#ifndef PYAUXILIARY_H
++#define PYAUXILIARY_H
++//*****************************************************************************
++//
++// pyauxiliary.h
++//
++// This is a wrapper around the auxiliary data system so python can make use
++// of it. Allows python modules to install new auxiliary data on characters,
++// rooms, objects, etc...
++//
++//*****************************************************************************
++
++// initialize python auxiliary data for use
++PyMODINIT_FUNC init_PyAuxiliary(void);
++
++// returns TRUE if auxiliary data of the given name has been installed by python
++bool pyAuxiliaryDataExists(const char *name);
++
++#endif // PYAUXILIARY_H
+diff -ruN ../nakedmudv2.4/src/scripts/pychar.c src/scripts/pychar.c
+--- ../nakedmudv2.4/src/scripts/pychar.c	Sat Jun  4 23:40:29 2005
++++ src/scripts/pychar.c	Sat Jun 18 15:28:32 2005
+@@ -14,10 +14,13 @@
+ #include "../world.h"
+ #include "../room.h"
+ #include "../character.h"
++#include "../body.h"
+ #include "../object.h"
+ #include "../races.h"
+ #include "../handler.h"
+ #include "../utils.h"
++#include "../action.h"
++#include "../socket.h"
+ 
+ #include "pyplugs.h"
+ #include "script.h"
+@@ -25,6 +28,7 @@
+ #include "pychar.h"
+ #include "pyroom.h"
+ #include "pyobj.h"
++#include "pyauxiliary.h"
+ 
+ 
+ 
+@@ -169,6 +173,24 @@
+   else           return NULL;
+ }
+ 
++PyObject *PyChar_gethisher(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) return Py_BuildValue("s", HISHER(ch));
++  else           return NULL;
++}
++
++PyObject *PyChar_gethimher(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) return Py_BuildValue("s", HIMHER(ch));
++  else           return NULL;
++}
++
++PyObject *PyChar_getheshe(PyChar *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) return Py_BuildValue("s", HESHE(ch));
++  else           return NULL;
++}
++
+ PyObject *PyChar_geton(PyChar *self, void *closure) {
+   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+   if(ch == NULL) 
+@@ -546,6 +568,49 @@
+   }
+ }
+ 
++//
++// Returns TRUE if the character has the given variable set
++PyObject *PyChar_hasvar(PyChar *self, PyObject *arg) {
++  char *var = NULL;
++  if (!PyArg_ParseTuple(arg, "s", &var)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Character variables must have string names.");
++    return NULL;
++  }
++
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL)
++    return Py_BuildValue("b", charHasVar(ch, var));
++
++  PyErr_Format(PyExc_TypeError, 
++	       "Tried to get a variable value for nonexistant character, %d",
++	       self->uid);
++  return NULL;
++}
++
++
++//
++// Delete the variable set on the character with the specified name
++PyObject *PyChar_deletevar(PyChar *self, PyObject *arg) {
++  char *var = NULL;
++  if (!PyArg_ParseTuple(arg, "s", &var)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Character variables must have string names.");
++    return NULL;
++  }
++
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch != NULL) {
++    charDeleteVar(ch, var);
++    return Py_BuildValue("i", 1);
++  }
++
++  PyErr_Format(PyExc_TypeError, 
++	       "Tried to get a variable value for nonexistant character, %d",
++	       self->uid);
++  return NULL;
++}
++
+ 
+ //
+ // Get the value of a variable stored on the character
+@@ -615,6 +680,79 @@
+ }
+ 
+ 
++//
++// equips a character with an item
++PyObject *PyChar_equip(PyChar *self, PyObject *args) {  
++  OBJ_DATA  *obj = NULL;
++  CHAR_DATA  *ch = NULL;
++  PyObject *pobj = NULL;
++  char      *pos = NULL;
++
++  // incase the equip fails, keep item in the original place.. here's the vars
++  CHAR_DATA *old_carrier = NULL;
++  CHAR_DATA  *old_wearer = NULL;
++  const char    *old_pos = NULL;
++  ROOM_DATA    *old_room = NULL;
++  OBJ_DATA     *old_cont = NULL;
++
++  if (!PyArg_ParseTuple(args, "O|s", &pobj, &pos)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Character equip must be supplied with an item to equip!");
++    return NULL;
++  }
++
++  if(!PyObj_Check(pobj)) {
++    PyErr_Format(PyExc_TypeError,
++		 "Only objects may be equipped to characters!");
++    return NULL;
++  }
++
++  ch = PyChar_AsChar((PyObject *)self);
++  if(ch == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to equip nonexistant character!");
++    return NULL;
++  }
++
++  obj = PyObj_AsObj(pobj);
++  if(obj == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to equip character with existant object!");
++    return NULL;
++  }
++
++  // remove the object from whatever it's in/on currently
++  if((old_room = objGetRoom(obj)) != NULL)
++    obj_from_room(obj);
++  if((old_cont = objGetContainer(obj)) != NULL)
++    obj_from_obj(obj);
++  if((old_carrier = objGetCarrier(obj)) != NULL)
++    obj_from_char(obj);
++  if((old_wearer = objGetWearer(obj)) != NULL) {
++    old_pos = bodyEquippedWhere(charGetBody(old_wearer), obj);
++    try_unequip(old_wearer, obj);
++  }
++
++  // try equipping the object. If we fail, put it back wherever it came from
++  if(!objIsType(obj, "worn") || !try_equip(ch, obj, pos)) {
++    if(old_room != NULL)
++      obj_to_room(obj, old_room);
++    else if(old_cont != NULL)
++      obj_to_obj(obj, old_cont);
++    else if(old_carrier != NULL)
++      obj_to_char(obj, old_carrier);
++    else if(old_wearer != NULL)
++      try_equip(ch, obj, old_pos);
++    PyErr_Format(PyExc_StandardError,
++		 "Character is already equipped in all possible positions!");
++    return NULL;
++  }
++  // success
++  else 
++    return Py_BuildValue("i", 1);
++}
++
++
+ PyObject *PyChar_attach(PyChar *self, PyObject *args) {  
+   long vnum = NOTHING;
+ 
+@@ -633,7 +771,7 @@
+     return Py_BuildValue("i", 1);
+   }
+   else {
+-    PyErr_Format(PyExc_TypeError, 
++    PyErr_Format(PyExc_StandardError, 
+ 		 "Tried to attach script to nonexistant char, %d, or script %d "
+ 		 "does not exit.", self->uid, (int)vnum);
+     return NULL;
+@@ -659,7 +797,7 @@
+     return Py_BuildValue("i", 1);
+   }
+   else {
+-    PyErr_Format(PyExc_TypeError, 
++    PyErr_Format(PyExc_StandardError, 
+ 		 "Tried to detach script from nonexistant char, %d, or script "
+ 		 "%d does not exit.", self->uid, (int)vnum);
+     return NULL;
+@@ -667,6 +805,156 @@
+ }
+ 
+ 
++//
++// handles the completion of an action queued up by Python
++void PyAction_on_complete(CHAR_DATA *ch, PyObject *tuple, bitvector_t where,
++			  const char *arg) {
++  PyObject *pychar = NULL; // the python representation of our ch
++  PyObject  *cfunc = NULL; // the function called on completion
++  PyObject  *ifunc = NULL; // the function called on interruption
++  PyObject   *data = NULL; // the data we need to send back
++
++  // only run the action of our arguments parse properly
++  if(PyArg_ParseTuple(tuple, "OOOO", &pychar, &data, &cfunc, &ifunc)) {
++    if(cfunc != Py_None) {
++      PyObject *ret = PyObject_CallFunction(cfunc, "OOs", pychar, data, arg);
++      Py_XDECREF(ret);
++    }
++  }
++  
++  Py_DECREF(tuple);
++}
++
++
++//
++// handles the interruption of an action queued up by Python
++void PyAction_on_interrupt(CHAR_DATA *ch, PyObject *tuple, bitvector_t where,
++			   const char *arg) {
++  PyObject *pychar = NULL; // the python representation of our ch
++  PyObject  *cfunc = NULL; // the function called on completion
++  PyObject  *ifunc = NULL; // the function called on interruption
++  PyObject   *data = NULL; // the data we need to send back
++
++  // only run the action of our arguments parse properly
++  if(PyArg_ParseTuple(tuple, "OOOO", &pychar, &data, &cfunc, &ifunc)) {
++    if(ifunc != Py_None) {
++      PyObject *ret = PyObject_CallFunction(ifunc, "OOs", pychar, data, arg);
++      Py_XDECREF(ret);
++    }
++  }
++  
++  Py_DECREF(tuple);
++}
++
++
++//
++// start a new action (and interrupt old ones)
++PyObject *PyChar_start_action(PyChar *self, PyObject *args) {  
++  CHAR_DATA          *ch = NULL;    // our normal character representation
++  PyObject  *on_complete = Py_None; // func called when action is completed
++  PyObject *on_interrupt = Py_None; // func called when action is interrupted
++  PyObject         *data = Py_None; // the function's data value
++  double           delay = 0;       // the delay of the action (seconds)
++  char              *arg = NULL;    // the action's string argument
++
++  // parse all of our values
++  if(!PyArg_ParseTuple(args, "dO|OOs", &delay,  &on_complete, &on_interrupt,
++		      &data, &arg)) {
++    PyErr_Format(PyExc_TypeError,
++		 "startAction supplied with invalid arguments!");
++    return NULL;
++  }
++
++  // make sure we exist
++  if((ch = PyChar_AsChar((PyObject *)self)) == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to start action for nonexistant character!");
++    return NULL;
++  }
++
++  // now, queue up the action
++  start_action(ch, (int)(delay SECONDS), 1, 
++	       PyAction_on_complete, PyAction_on_interrupt, 
++	       Py_BuildValue("OOOO", self, data, on_complete, on_interrupt),
++	       arg);
++
++  // success!
++  return Py_BuildValue("i", 1);
++}
++
++
++//
++// check to see if a character currently has an action in progress
++PyObject *PyChar_is_acting(PyChar *self, PyObject *args) {  
++  // make sure we exist
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++
++  // make sure the character exists
++  if(ch == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to query action status for a nonexistant character.");
++    return NULL;
++  }
++
++  // return our value
++  return Py_BuildValue("i", is_acting(ch, 1));
++}
++
++
++//
++// interrupt any actions the character is currently performing
++PyObject *PyChar_interrupt_action(PyChar *self, PyObject *args) {  
++  // make sure we exist
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++
++  // make sure the character exists
++  if(ch == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to interrupt actions for a nonexistant character.");
++    return NULL;
++  }
++
++  interrupt_action(ch, 1);
++  return Py_BuildValue("i", 1);
++}
++
++
++//
++// returns the specified piece of auxiliary data from the character
++// if it is a piece of python auxiliary data.
++PyObject *PyChar_get_auxiliary(PyChar *self, PyObject *args) {
++  char *keyword = NULL;
++  if(!PyArg_ParseTuple(args, "s", &keyword)) {
++    PyErr_Format(PyExc_TypeError,
++		 "getAuxiliary() must be supplied with the name that the "
++		 "auxiliary data was installed under!");
++    return NULL;
++  }
++
++  // make sure we exist
++  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
++  if(ch == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to get auxiliary data for a nonexistant character.");
++    return NULL;
++  }
++
++  // make sure the auxiliary data exists
++  if(!pyAuxiliaryDataExists(keyword)) {
++    PyErr_Format(PyExc_StandardError,
++		 "No auxiliary data named '%s' exists!", keyword);
++    return NULL;
++  }
++
++  PyObject *data = charGetAuxiliaryData(ch, keyword);
++  if(data == NULL) {
++    printf("Data is NULL for %s!!\r\n", keyword);
++    data = Py_None;
++  }
++  return Py_BuildValue("O", data);
++}
++
++
+ 
+ //*****************************************************************************
+ // comparators, getattr, setattr, and all that other class stuff
+@@ -719,7 +1007,7 @@
+ // methods in the char module
+ //*****************************************************************************
+ PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
+-  int mob_vnum    = NOBODY, room_vnum = NOWHERE;
++  int mob_vnum    = NOBODY, to_vnum = NOWHERE;
+   PyObject *to    = NULL;
+ 
+   ROOM_DATA *room  = NULL;
+@@ -734,9 +1022,9 @@
+ 
+   // see what we're trying to load to
+   if(PyInt_Check(to))
+-    room_vnum = (int)PyInt_AsLong(to);
++    to_vnum = (int)PyInt_AsLong(to);
+   else if(PyRoom_Check(to))
+-    room_vnum = (int)PyRoom_AsVnum(to);
++    to_vnum = (int)PyRoom_AsVnum(to);
+   else if(PyObj_Check(to))
+     on = propertyTableGet(obj_table, PyObj_AsUid(to));
+   else {
+@@ -758,7 +1046,7 @@
+   if(on)
+     room = objGetRoom(on);
+   else
+-    room = worldGetRoom(gameworld, room_vnum);
++    room = worldGetRoom(gameworld, to_vnum);
+ 
+   if(room == NULL) {
+     PyErr_Format(PyExc_TypeError, 
+@@ -867,9 +1155,23 @@
+   return Py_BuildValue("O", list);
+ }
+ 
++PyObject *PyChar_all_sockets(PyObject *self) {
++  PyObject        *list = PyList_New(0);
++  LIST_ITERATOR *sock_i = newListIterator(socket_list);
++  SOCKET_DATA     *sock = NULL;
++  ITERATE_LIST(sock, sock_i) {
++    // only add sockets with attached characters who are in game
++    if(socketGetChar(sock) && charGetRoom(socketGetChar(sock)))
++      PyList_Append(list, newPyChar(socketGetChar(sock)));
++  } deleteListIterator(sock_i);
++  return Py_BuildValue("O", list);
++}
++
+ PyMethodDef char_module_methods[] = {
+-  { "all_chars", (PyCFunction)PyChar_all_chars, METH_NOARGS,
++  { "char_list", (PyCFunction)PyChar_all_chars, METH_NOARGS,
+     "Return a python list containing an entry for every character in game." },
++  { "socket_list", (PyCFunction)PyChar_all_sockets, METH_NOARGS,
++    "Returns a list of all characters with attached sockets." },
+   { "load_mob", PyChar_load_mob, METH_VARARGS,
+     "load a mobile with the specified vnum to a room." },
+   { "count_mobs", PyChar_count_mobs, METH_VARARGS,
+@@ -952,6 +1254,15 @@
+ 		      "Returns 1 if the char is an NPC, and 0 otherwise.");
+   PyChar_addGetSetter("is_pc", PyChar_getispc, NULL,
+ 		      "Returns 1 if the char is a PC, and 0 otherwise.");
++  PyChar_addGetSetter("hisher", PyChar_gethisher, NULL,
++		      "Returns 'his' if the char is male, 'her' if female, and "
++		      "'its' for neuters");
++  PyChar_addGetSetter("himher", PyChar_gethisher, NULL,
++		      "Returns 'him' if the char is male, 'her' if female, and "
++		      "'it' for neuters");
++  PyChar_addGetSetter("heshe", PyChar_gethisher, NULL,
++		      "Returns 'he' if the char is male, 'she' if female, and "
++		      "'it' for neuters");
+ 
+   // add in all of our methods for the Char class
+   PyChar_addMethod("attach", PyChar_attach, METH_VARARGS,
+@@ -960,7 +1271,7 @@
+ 		   "detach an old script from the character.");
+   PyChar_addMethod("send", PyChar_send, METH_VARARGS,
+ 		   "send a message to the character.");
+-  PyChar_addMethod("sendarond", PyChar_sendaround, METH_VARARGS,
++  PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
+ 		   "send a message to everyone around the character.");
+   PyChar_addMethod("act", PyChar_act, METH_VARARGS,
+ 		   "make the character perform an action.");
+@@ -968,6 +1279,22 @@
+ 		   "get the value of a special variable the character has.");
+   PyChar_addMethod("setvar", PyChar_setvar, METH_VARARGS,
+ 		   "set the value of a special variable the character has.");
++  PyChar_addMethod("hasvar", PyChar_hasvar, METH_VARARGS,
++		   "return whether or not the character has a given variable.");
++  PyChar_addMethod("deletevar", PyChar_deletevar, METH_VARARGS,
++		   "delete a variable from the character's variable table.");
++  PyChar_addMethod("equip", PyChar_equip, METH_VARARGS,
++		   "equips a character with the given item. Removes the item "
++		   "from whatever it is currently in/on.");
++  PyChar_addMethod("isActing", PyChar_is_acting, METH_VARARGS,
++		   "Returns True if the character is currently taking an "
++		   "action, and False otherwise.");
++  PyChar_addMethod("startAction", PyChar_start_action, METH_VARARGS,
++		   "Begins the character starting a new action");
++  PyChar_addMethod("interrupt", PyChar_interrupt_action, METH_VARARGS,
++		   "Interrupts the character's current action.");
++  PyChar_addMethod("getAuxiliary", PyChar_get_auxiliary, METH_VARARGS,
++		   "get's the specified piece of aux data from the char");
+ 
+   // add in all the getsetters and methods
+   makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);
+@@ -987,8 +1314,9 @@
+     return;
+ 
+   // add the Char class to the module
++  PyTypeObject *type = &PyChar_Type;
+   Py_INCREF(&PyChar_Type);
+-  PyModule_AddObject(m, "Char", (PyObject *)&PyChar_Type);
++  PyModule_AddObject(m, "Char", (PyObject *)type);
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.4/src/scripts/pyevent.c src/scripts/pyevent.c
+--- ../nakedmudv2.4/src/scripts/pyevent.c	Wed Dec 31 17:00:00 1969
++++ src/scripts/pyevent.c	Sat Jun 18 14:46:43 2005
+@@ -0,0 +1,163 @@
++//*****************************************************************************
++//
++// pyevent.c
++//
++// pyevent gives Python access to NakedMud's event handler in a limited form.
++// Unlike normal events which can have owners of any sort, python events can
++// only have owners that are characters, objects, or rooms. Other than that,
++// python events are identical to normal events.
++//
++//*****************************************************************************
++
++#include <Python.h>
++
++#include "../mud.h"
++#include "../event.h"
++
++#include "pychar.h"
++#include "pyroom.h"
++#include "pyobj.h"
++
++
++
++//*****************************************************************************
++// local functions
++//*****************************************************************************
++void PyEvent_on_complete(void *owner, PyObject *tuple, const char *arg) {
++  PyObject *PyOwner = NULL;
++  PyObject   *efunc = NULL;
++  PyObject   *edata = NULL;
++
++  // make sure we parse everything before we call the function
++  if(PyArg_ParseTuple(tuple, "OOO", &PyOwner, &efunc, &edata)) {
++    PyObject *ret = PyObject_CallFunction(efunc, "OOs", PyOwner, edata, arg);
++    Py_XDECREF(ret);
++  }
++
++  // decrease the reference on our function and data
++  //  Py_DECREF(tuple);
++}
++
++
++
++//*****************************************************************************
++// implementation of our methods and method table
++//*****************************************************************************
++
++//
++// no point in reinventing the wheel; start_event and start_update both
++// need to be handled exactly the same, so here's a function to do just that
++PyObject *PyEvent_start(PyObject *self, PyObject *args, void *func) {
++  void (* start_func)(void *, int, void *, void *, void *, const char *) = func;
++  PyObject *PyOwner = NULL;    // the python representation of our owner
++  PyObject   *efunc = NULL;    // the event function
++  PyObject   *edata = Py_None; // the event data
++  char         *arg = NULL;    // the arg we will be supplying to the function
++  double      delay = 0;       // how long the event delay is (in seconds)
++  void       *owner = NULL;    // actual owner supplied to the event handler
++
++  // try to parse all of our values
++  if(!PyArg_ParseTuple(args, "OdO|Os", &PyOwner, &delay, &efunc, &edata, &arg)){
++    PyErr_Format(PyExc_TypeError, 
++		 "Invalid arguments provided to event handler");
++    return NULL;
++  }
++
++  // make sure our event is a function
++  if(!PyFunction_Check(efunc)) {
++    PyErr_Format(PyExc_TypeError,
++		 "The event handler supplied must be a python function");
++    return NULL;
++  }
++
++  // figure out what type of data our owner is
++  if(PyOwner == Py_None)
++    owner = Py_None;
++  else if(PyChar_Check(PyOwner))
++    owner = PyChar_AsChar(PyOwner);
++  else if(PyRoom_Check(PyOwner))
++    owner = PyRoom_AsRoom(PyOwner);
++  else if(PyObj_Check(PyOwner))
++    owner = PyObj_AsObj(PyOwner);
++  // invalid type
++  else {
++    PyErr_Format(PyExc_TypeError,
++		 "An event owner must be a room, char, obj, or none");
++    return NULL;
++  }
++
++  // make sure the owner exists
++  if(owner == NULL) {
++    PyErr_Format(PyExc_StandardError, "Owner supplied does not exist in game");
++    return NULL;
++  }
++  
++  // now, queue up the action
++  start_func(owner, (int)(delay SECONDS), PyEvent_on_complete, NULL, 
++	     Py_BuildValue("OOO", PyOwner, efunc, edata), arg);
++
++  // everything seems ok. exit normally
++  return Py_BuildValue("i", 1);
++}
++
++
++//
++// start a new event
++PyObject *PyEvent_start_event(PyObject *self, PyObject *args) {
++  return PyEvent_start(self, args, start_event);
++}
++
++
++//
++// start a new update (event that re-queues itself after completion)
++PyObject *PyEvent_start_update(PyObject *self, PyObject *args) {
++  return PyEvent_start(self, args, start_update);
++}
++
++//
++// interrupt an event involving the given room, object, or mobile
++PyObject *PyEvent_interrupt_event(PyObject *self, PyObject *args) {
++  PyObject *PyOwner = NULL; // the python representation of our owner
++
++  // parse our owner
++  if(!PyArg_ParseTuple(args, "O", &PyOwner)) {
++    PyErr_Format(PyExc_TypeError,
++		 "A target must be specified for interrupting events.");
++    return NULL;
++  }
++
++  // check the possibilities
++  if(PyOwner == Py_None)
++    interrupt_events_involving(NULL);
++  else if(PyChar_Check(PyOwner))
++    interrupt_events_involving(PyChar_AsChar(PyOwner));
++  else if(PyRoom_Check(PyOwner))
++    interrupt_events_involving(PyRoom_AsRoom(PyOwner));
++  else if(PyObj_Check(PyOwner))
++    interrupt_events_involving(PyObj_AsObj(PyOwner));
++
++  // everything ok
++  return Py_BuildValue("i", 1);
++}
++
++
++//
++// the all methods that are contained within the event module
++PyMethodDef event_module_methods[] = {
++  {"start_event",  PyEvent_start_event, METH_VARARGS,
++   "Add a new python event to the event queue."},
++  {"start_update",  PyEvent_start_update, METH_VARARGS,
++   "Add a new python update to the event queue. Like an event, but readds "
++   "itself to the event queue after completion."},
++  {"interrupt_events_involving",  PyEvent_interrupt_event, METH_VARARGS,
++   "Interrupt all of the events involving the given object, room, or char."},
++};
++
++
++
++//*****************************************************************************
++// implementation of pyevent.h
++//*****************************************************************************
++PyMODINIT_FUNC init_PyEvent(void) {
++  Py_InitModule3("event", event_module_methods, "The mud's event handler.");
++}
+diff -ruN ../nakedmudv2.4/src/scripts/pyevent.h src/scripts/pyevent.h
+--- ../nakedmudv2.4/src/scripts/pyevent.h	Wed Dec 31 17:00:00 1969
++++ src/scripts/pyevent.h	Sat Jun 18 14:46:43 2005
+@@ -0,0 +1,17 @@
++#ifndef PYEVENT_H
++#define PYEVENT_H
++//*****************************************************************************
++//
++// pyevent.c
++//
++// pyevent gives Python access to NakedMud's event handler in a limited form.
++// Unlike normal events which can have owners of any sort, python events can
++// only have owners that are characters, objects, or rooms. Other than that,
++// python events are identical to normal events.
++//
++//*****************************************************************************
++
++// initialize the pyevent system for use
++PyMODINIT_FUNC init_PyEvent(void);
++
++#endif // PYEVENT_H
+diff -ruN ../nakedmudv2.4/src/scripts/pymud.c src/scripts/pymud.c
+--- ../nakedmudv2.4/src/scripts/pymud.c	Sat Jun  4 23:40:29 2005
++++ src/scripts/pymud.c	Sat Jun 18 15:30:35 2005
+@@ -17,6 +17,7 @@
+ #include "../mud.h"
+ #include "../utils.h"
+ #include "../character.h"
++#include "../inform.h"
+ 
+ #include "script.h"
+ #include "pyroom.h"
+@@ -75,8 +76,7 @@
+ //   erase_global(key)
+ //
+ //*****************************************************************************
+-static PyObject *
+-mud_get_global(PyObject *self, PyObject *args) {
++PyObject *mud_get_global(PyObject *self, PyObject *args) {
+   PyObject *key = NULL;
+ 
+   // get the key
+@@ -94,8 +94,7 @@
+   return val;
+ }
+ 
+-static PyObject *
+-mud_set_global(PyObject *self, PyObject *args) {
++PyObject *mud_set_global(PyObject *self, PyObject *args) {
+   PyObject *key = NULL, *val = NULL;
+ 
+   if (!PyArg_ParseTuple(args, "OO", &key, &val)) {
+@@ -109,8 +108,7 @@
+ }
+ 
+ 
+-static PyObject *
+-mud_erase_global(PyObject *self, PyObject *args) {
++PyObject *mud_erase_global(PyObject *self, PyObject *args) {
+   PyObject *key = NULL;
+ 
+   if (!PyArg_ParseTuple(args, "O", &key)) {
+@@ -130,8 +128,7 @@
+ // and maximum position in the form of strings, a level, and boolean values
+ // for whether the command can be performed by mobiles, and whether it 
+ // interrupts actions.
+-static PyObject *
+-mud_add_cmd(PyObject *self, PyObject *args) {
++PyObject *mud_add_cmd(PyObject *self, PyObject *args) {
+   PyObject *func = NULL;
+   char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
+        *group = NULL;
+@@ -167,8 +164,7 @@
+ 
+ //
+ // format a string to be into a typical description style
+-static PyObject *
+-mud_format_string(PyObject *self, PyObject *args) {
++PyObject *mud_format_string(PyObject *self, PyObject *args) {
+   char *string = NULL;
+ 
+   // parse all of the values
+@@ -178,12 +174,120 @@
+     return NULL;
+   }
+ 
++  // dup the string so we can work with it and not intrude on the PyString data
++  string = strdupsafe(string);
+   format_string(&string, 80, MAX_BUFFER, TRUE);
+   PyObject *ret = Py_BuildValue("s", string);
+   free(string);
+   return ret;
+ }
+ 
++//
++// execute message() from inform.h
++PyObject *mud_message(PyObject *self, PyObject *args) {
++  // the python/C representations of the various variables that message() needs
++  PyObject    *pych = NULL;     CHAR_DATA     *ch = NULL;
++  PyObject  *pyvict = NULL;     CHAR_DATA   *vict = NULL;
++  PyObject   *pyobj = NULL;     OBJ_DATA     *obj = NULL;
++  PyObject  *pyvobj = NULL;     OBJ_DATA    *vobj = NULL;
++  char     *pyrange = NULL;     bitvector_t range = 0;
++  char        *mssg = NULL;
++  int    hide_nosee = 0;
++
++  // parse all of the arguments
++  if(!PyArg_ParseTuple(args, "OOOObss", &pych, &pyvict, &pyobj, &pyvobj,
++		       &hide_nosee, &pyrange, &mssg)) {
++    PyErr_Format(PyExc_TypeError,"Invalid arguments supplied to mud.message()");
++    return NULL;
++  }
++
++  // convert the character
++  if(pych != Py_None) {
++    if(!PyChar_Check(pych) || (ch = PyChar_AsChar(pych)) == NULL) {
++      PyErr_Format(PyExc_TypeError, 
++		   "First argument must be an existent character or None!");
++      return NULL;
++    }
++  }
++
++  // convert the victim
++  if(pyvict != Py_None) {
++    if(!PyChar_Check(pyvict) || (vict = PyChar_AsChar(pyvict)) == NULL) {
++      PyErr_Format(PyExc_TypeError, 
++		   "Second argument must be an existent character or None!");
++      return NULL;
++    }
++  }
++
++  // convert the object
++  if(pyobj != Py_None) {
++    if(!PyObj_Check(pyobj) || (obj = PyObj_AsObj(pyobj)) == NULL) {
++      PyErr_Format(PyExc_TypeError, 
++		   "Third argument must be an existent object or None!");
++      return NULL;
++    }
++  }
++
++  // convert the target object
++  if(pyvobj != Py_None) {
++    if(!PyObj_Check(pyvobj) || (vobj = PyObj_AsObj(pyvobj)) == NULL) {
++      PyErr_Format(PyExc_TypeError, 
++		   "Fourth argument must be an existent object or None!");
++      return NULL;
++    }
++  }
++
++  // check all of our keywords: char, vict, room
++  if(is_keyword(pyrange, "to_char", FALSE))
++    SET_BIT(range, TO_CHAR);
++  if(is_keyword(pyrange, "to_vict", FALSE))
++    SET_BIT(range, TO_VICT);
++  if(is_keyword(pyrange, "to_room", FALSE))
++    SET_BIT(range, TO_ROOM);
++
++  // finally, send out the message
++  message(ch, vict, obj, vobj, hide_nosee, range, mssg);
++  return Py_BuildValue("i", 1);
++}
++
++
++//
++// extracts an mob or object from the game
++PyObject *mud_extract(PyObject *self, PyObject *args) {
++  PyObject *thing = NULL;
++
++  // parse the value
++  if (!PyArg_ParseTuple(args, "O", &thing)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "extract must be provided with an object or mob to extract!.");
++    return NULL;
++  }
++
++  // check its type
++  if(PyChar_Check(thing)) {
++    CHAR_DATA *ch = PyChar_AsChar(thing);
++    if(ch != NULL)
++      extract_mobile(ch);
++    else {
++      PyErr_Format(PyExc_StandardError,
++		   "Tried to extract nonexistent character!");
++      return NULL;
++    }
++  }
++  else if(PyObj_Check(thing)) {
++    OBJ_DATA *obj = PyObj_AsObj(thing);
++    if(obj != NULL)
++      extract_obj(obj);
++    else {
++      PyErr_Format(PyExc_StandardError,
++		   "Tried to extract nonexistent object!");
++      return NULL;
++    }
++  }
++  
++  // success
++  return Py_BuildValue("i", 1);
++}
+ 
+ 
+ //*****************************************************************************
+@@ -191,7 +295,7 @@
+ // MUD module
+ //
+ //*****************************************************************************
+-static PyMethodDef mud_module_methods[] = {
++PyMethodDef mud_module_methods[] = {
+     {"get_global",  mud_get_global, METH_VARARGS,
+      "Get the value of a global variable."},
+     {"set_global",  mud_set_global, METH_VARARGS,
+@@ -200,8 +304,14 @@
+      "Erase the value of a global variable."},
+     {"add_cmd", mud_add_cmd, METH_VARARGS,
+      "Add a new command to the game."},
++    {"message", mud_message, METH_VARARGS,
++     "plugs into the message() function from inform.h" },
+     {"format_string", mud_format_string, METH_VARARGS,
+      "format a string to be 80 chars wide and indented. Like a desc."},
++    {"extract", mud_extract, METH_VARARGS,
++    "extracts an object or character from the game. This method is dangerous, "
++    "sicne the object may still be needed in whichever function called the "
++    "script that activated this method" },
+     {NULL, NULL, 0, NULL}        /* Sentinel */
+ };
+ 
+diff -ruN ../nakedmudv2.4/src/scripts/pyobj.c src/scripts/pyobj.c
+--- ../nakedmudv2.4/src/scripts/pyobj.c	Sat Jun  4 23:40:29 2005
++++ src/scripts/pyobj.c	Sat Jun 18 15:31:20 2005
+@@ -186,6 +186,32 @@
+   return Py_BuildValue("O", list);
+ }
+ 
++PyObject *PyObj_getcarrier(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj == NULL)
++    return NULL;
++  if(objGetCarrier(obj) == NULL)
++    return Py_None;
++  return Py_BuildValue("O", newPyChar(objGetCarrier(obj)));
++}
++
++PyObject *PyObj_getroom(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj == NULL)
++    return NULL;
++  if(objGetRoom(obj) == NULL)
++    return Py_None;
++  return Py_BuildValue("O", newPyRoom(objGetRoom(obj)));
++}
++
++PyObject *PyObj_getcontainer(PyObj *self, void *closure) {
++  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
++  if(obj == NULL)
++    return NULL;
++  if(objGetContainer(obj) == NULL)
++    return Py_None;
++  return Py_BuildValue("O", newPyObj(objGetContainer(obj)));
++}
+ 
+ //
+ // Standard check to make sure the object exists when
+@@ -329,7 +355,7 @@
+ int PyObj_setweight(PyObj *self, PyObject *value, void *closure) {
+   if (value == NULL) {
+     PyErr_Format(PyExc_TypeError, "Cannot delete object's weight");
+-    return 0;
++    return -1;
+   }
+ 
+   if (!PyFloat_Check(value)) {
+@@ -344,6 +370,111 @@
+   return 0;
+ }
+ 
++int PyObj_setcarrier(PyObj *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete object's carrier");
++    return -1;
++  }
++
++  if (!PyChar_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Carrier must be a character!");
++    return -1;
++  }
++
++  OBJ_DATA *obj;
++  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
++  CHAR_DATA *carrier = PyChar_AsChar(value);
++  // remove us from whatever we're currently in
++  if(objGetRoom(obj))
++    obj_from_room(obj);
++  if(objGetCarrier(obj))
++    obj_from_char(obj);
++  if(objGetContainer(obj))
++    obj_from_obj(obj);
++  if(objGetWearer(obj)) {
++    // weird... we couldn't unequip the item from the current wearer
++    if(!try_unequip(objGetWearer(obj), obj)) {
++      PyErr_Format(PyExc_StandardError, "Could not unequip previous wearer.");
++      return -1;
++    }
++  }
++
++  // give the obj to the character
++  obj_to_char(obj, carrier);
++  return 0;
++}
++
++int PyObj_setroom(PyObj *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete object's room");
++    return -1;
++  }
++
++  if (!PyRoom_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Room must be a room!");
++    return -1;
++  }
++
++  OBJ_DATA *obj;
++  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
++  ROOM_DATA *room = PyRoom_AsRoom(value);
++  // remove us from whatever we're currently in
++  if(objGetRoom(obj))
++    obj_from_room(obj);
++  if(objGetCarrier(obj))
++    obj_from_char(obj);
++  if(objGetContainer(obj))
++    obj_from_obj(obj);
++  if(objGetWearer(obj)) {
++    // weird... we couldn't unequip the item from the current wearer
++    if(!try_unequip(objGetWearer(obj), obj)) {
++      PyErr_Format(PyExc_StandardError, "Could not unequip wearer.");
++      return -1;
++    }
++  }
++
++  // give the obj to the character
++  obj_to_room(obj, room);
++  return 0;
++}
++
++int PyObj_setcontainer(PyObj *self, PyObject *value, void *closure) {
++  if (value == NULL) {
++    PyErr_Format(PyExc_TypeError, "Cannot delete object's container");
++    return -1;
++  }
++
++  if (!PyObj_Check(value)) {
++    PyErr_Format(PyExc_TypeError, 
++                    "Container must be an object!");
++    return -1;
++  }
++
++  OBJ_DATA *obj, *cont;
++  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
++  PYOBJ_CHECK_OBJ_EXISTS(((PyObj *)value)->uid, cont);
++  // remove us from whatever we're currently in
++  if(objGetRoom(obj))
++    obj_from_room(obj);
++  if(objGetCarrier(obj))
++    obj_from_char(obj);
++  if(objGetContainer(obj))
++    obj_from_obj(obj);
++  if(objGetWearer(obj)) {
++    // weird... we couldn't unequip the item from the current wearer
++    if(!try_unequip(objGetWearer(obj), obj)) {
++      PyErr_Format(PyExc_StandardError, "Could not unequip wearer.");
++      return -1;
++    }
++  }
++
++  // give the obj to the character
++  obj_to_obj(obj, cont);
++  return 0;
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -367,7 +498,7 @@
+     return Py_BuildValue("i", 1);
+   }
+   else {
+-    PyErr_Format(PyExc_TypeError, 
++    PyErr_Format(PyExc_StandardError, 
+ 		 "Tried to attach script to nonexistant obj, %d, or script %d "
+ 		 "does not exit.", self->uid, (int)vnum);
+     return NULL;
+@@ -393,7 +524,7 @@
+     return Py_BuildValue("i", 1);
+   }
+   else {
+-    PyErr_Format(PyExc_TypeError, 
++    PyErr_Format(PyExc_StandardError, 
+ 		 "Tried to detach script from nonexistant obj, %d, or script "
+ 		 "%d does not exit.", self->uid, (int)vnum);
+     return NULL;
+@@ -453,7 +584,7 @@
+ // the obj module
+ //*****************************************************************************
+ PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
+-  int obj_vnum = NOBODY;
++  int vnum     = NOBODY;
+   PyObject *in = NULL;
+ 
+   ROOM_DATA *room = NULL; // are we loading to a room?
+@@ -461,14 +592,14 @@
+   CHAR_DATA *ch   = NULL; // are we loading to a character?
+   char *equip_to  = NULL; // are we trying to equip the character?
+ 
+-  if (!PyArg_ParseTuple(args, "iO|s", &obj_vnum, &in, &equip_to)) {
++  if (!PyArg_ParseTuple(args, "iO|s", &vnum, &in, &equip_to)) {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Load obj failed - it needs a vnum and destination.");
+     return NULL;
+   }
+ 
+   // check the obj
+-  OBJ_DATA *obj_proto = worldGetObj(gameworld, obj_vnum);
++  OBJ_DATA *obj_proto = worldGetObj(gameworld, vnum);
+   if(obj_proto == NULL) {
+     PyErr_Format(PyExc_TypeError, 
+                     "Load obj failed: object number does not exist.");
+@@ -720,6 +851,15 @@
+ 		       "the virtual number for the object.");
+     PyObj_addGetSetter("bits", PyObj_getbits, PyObj_setbits,
+ 		       "the object's basic bitvector.");
++    PyObj_addGetSetter("carrier", PyObj_getcarrier, PyObj_setcarrier,
++		       "the person carrying the object");
++    PyObj_addGetSetter("room", PyObj_getroom, PyObj_setroom,
++		       "The room this object is in. "
++		       "None if on a character or in another object");
++    PyObj_addGetSetter("container", PyObj_getcontainer, PyObj_setcontainer,
++		       "The container this object is in. "
++		       "None if on a character or in a room");
++
+ 
+     // methods
+     PyObj_addMethod("attach", PyObj_attach, METH_VARARGS,
+@@ -744,8 +884,9 @@
+       return;
+ 
+     // add the obj class to the obj module
++    PyTypeObject *type = &PyObj_Type;
+     Py_INCREF(&PyObj_Type);
+-    PyModule_AddObject(m, "Obj", (PyObject *)&PyObj_Type);
++    PyModule_AddObject(m, "Obj", (PyObject *)type);
+ }
+ 
+ 
+diff -ruN ../nakedmudv2.4/src/scripts/pyroom.c src/scripts/pyroom.c
+--- ../nakedmudv2.4/src/scripts/pyroom.c	Sat Jun  4 23:40:29 2005
++++ src/scripts/pyroom.c	Sat Jun 18 15:29:15 2005
+@@ -40,7 +40,7 @@
+ 
+ typedef struct {
+   PyObject_HEAD
+-  room_vnum vnum;
++  int vnum;
+ } PyRoom;
+ 
+ 
+@@ -481,7 +481,7 @@
+     return Py_BuildValue("i", 1);
+   }
+   else {
+-    PyErr_Format(PyExc_TypeError, 
++    PyErr_Format(PyExc_StandardError, 
+ 		 "Tried to attach script to nonexistant room, %d, or script %d "
+ 		 "does not exit.", self->vnum, (int)vnum);
+     return NULL;
+@@ -507,7 +507,7 @@
+     return Py_BuildValue("i", 1);
+   }
+   else {
+-    PyErr_Format(PyExc_TypeError, 
++    PyErr_Format(PyExc_StandardError, 
+ 		 "Tried to detach script from nonexistant room, %d, or script "
+ 		 "%d does not exit.", self->vnum, (int)vnum);
+     return NULL;
+@@ -653,7 +653,8 @@
+       return;
+ 
+     // add the Room class to the room module
+-    PyModule_AddObject(module, "Room", (PyObject *)&PyRoom_Type);
++    PyTypeObject *type = &PyRoom_Type;
++    PyModule_AddObject(module, "Room", (PyObject *)type);
+     Py_INCREF(&PyRoom_Type);
+ }
+ 
+diff -ruN ../nakedmudv2.4/src/scripts/pystorage.c src/scripts/pystorage.c
+--- ../nakedmudv2.4/src/scripts/pystorage.c	Wed Dec 31 17:00:00 1969
++++ src/scripts/pystorage.c	Sat Jun 18 15:30:08 2005
+@@ -0,0 +1,555 @@
++//*****************************************************************************
++//
++// pystorage.c
++//
++// Provides a wrapper around NakedMud's storage structure for use by scripts
++// and python modules.
++//
++//*****************************************************************************
++
++#include <Python.h>
++#include <structmember.h>
++
++#include "../mud.h"
++#include "../storage.h"
++
++#include "pystorage.h"
++
++
++
++//*****************************************************************************
++// local data structures
++//*****************************************************************************
++typedef struct {
++  PyObject_HEAD
++  STORAGE_SET *set;
++} PyStorageSet;
++
++typedef struct {
++  PyObject_HEAD
++  STORAGE_SET_LIST *list;
++} PyStorageList;
++
++
++
++//*****************************************************************************
++// local function prototypes
++//*****************************************************************************
++PyObject *newPyStorageList(STORAGE_SET_LIST *list);
++int     PyStorageSet_Check(PyObject *value);
++int    PyStorageList_Check(PyObject *value);
++
++
++
++//*****************************************************************************
++// py storage lists
++//*****************************************************************************
++
++//
++// deallocate the storage list
++void PyStorageList_dealloc(PyStorageList *self) {
++  // do NOT free this!! People will need to close the encapsulating set
++  //  if(self->list) storage_list_delete(self->list);
++  self->ob_type->tp_free((PyObject*)self);
++}
++
++//
++// create a new python storage list
++PyObject *PyStorageList_new(PyTypeObject *type, PyObject *args, PyObject *kwds){
++    PyStorageList *self = (PyStorageList *)type->tp_alloc(type, 0);
++    self->list = NULL;
++    return (PyObject *)self;
++}
++
++//
++// initialize a new storage list
++int PyStorageList_init(PyStorageList *self, PyObject *args, PyObject *kwds) {
++  self->list = new_storage_list();
++  return 0;
++}
++
++//
++// return a python list of the sets in our storage list
++PyObject *PyStorageList_sets(PyObject *self, PyObject *args) {
++  STORAGE_SET_LIST *set_list = ((PyStorageList *)self)->list;
++  STORAGE_SET           *set = NULL;
++  PyObject             *list = PyList_New(0);
++
++  // add in all of the elements
++  while( (set = storage_list_next(set_list)) != NULL)
++    PyList_Append(list, newPyStorageSet(set));
++
++  // return the new list
++  return Py_BuildValue("O", list);
++}
++
++//
++// add a new set to the storage list
++PyObject *PyStorageList_add(PyObject *self, PyObject *args) {
++  PyStorageSet *set = NULL;
++  if(!PyArg_ParseTuple(args, "O", &set)) {
++    PyErr_Format(PyExc_TypeError,
++		 "Only storage sets can be added to storage lists");
++    return NULL;
++  }
++
++  // make sure it is indeed a storage set
++  if(!PyStorageSet_Check((PyObject *)set)) {
++    PyErr_Format(PyExc_TypeError,
++		 "Only storage sets can be added to storage lists");
++    return NULL;
++  }
++
++  // add it to the list and return
++  storage_list_put(((PyStorageList *)self)->list, set->set);
++  return Py_BuildValue("i", 1);
++}
++
++
++
++//*****************************************************************************
++// The type object for PyStorageLists and method list
++//*****************************************************************************
++PyMethodDef PyStorageList_class_methods[] = {
++  {"sets", PyStorageList_sets, METH_VARARGS,
++   "Returns a python list of all the sets in the storage list" },
++  {"add",  PyStorageList_add,  METH_VARARGS,
++   "Adds a new storage set to the list" },
++  {NULL, NULL, 0, NULL}  /* Sentinel */
++};
++
++PyTypeObject PyStorageList_Type = {
++    PyObject_HEAD_INIT(NULL)
++    0,                                /*ob_size*/
++    "storage.StorageList",            /*tp_name*/
++    sizeof(PyStorageList),            /*tp_basicsize*/
++    0,                                /*tp_itemsize*/
++    (destructor)PyStorageList_dealloc,/*tp_dealloc*/
++    0,                                /*tp_print*/
++    0,                                /*tp_getattr*/
++    0,                                /*tp_setattr*/
++    0,                                /*tp_compare*/
++    0,                                /*tp_repr*/
++    0,                                /*tp_as_number*/
++    0,                                /*tp_as_sequence*/
++    0,                                /*tp_as_mapping*/
++    0,                                /*tp_hash */
++    0,                                /*tp_call*/
++    0,                                /*tp_str*/
++    0,                                /*tp_getattro*/
++    0,                                /*tp_setattro*/
++    0,                                /*tp_as_buffer*/
++    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
++    "storage lists",                  /* tp_doc */
++    0,		                      /* tp_traverse */
++    0,		                      /* tp_clear */
++    0,		                      /* tp_richcompare */
++    0,		                      /* tp_weaklistoffset */
++    0,		                      /* tp_iter */
++    0,		                      /* tp_iternext */
++    PyStorageList_class_methods,      /* tp_methods */
++    0,                                /* tp_members */
++    0,                                /* tp_getset */
++    0,                                /* tp_base */
++    0,                                /* tp_dict */
++    0,                                /* tp_descr_get */
++    0,                                /* tp_descr_set */
++    0,                                /* tp_dictoffset */
++    (initproc)PyStorageList_init,     /* tp_init */
++    0,                                /* tp_alloc */
++    PyStorageList_new,                /* tp_new */
++};
++
++
++
++
++//*****************************************************************************
++// py storage sets
++//*****************************************************************************
++
++//
++// deallocate the storage set
++void PyStorageSet_dealloc(PyStorageSet *self) {
++  // do NOT close or free this!! People will need to use the close() function
++  //  if(self->set) storage_close(self->set);
++  self->ob_type->tp_free((PyObject*)self);
++}
++
++//
++// create a new python storage set
++PyObject *PyStorageSet_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
++    PyStorageSet *self = (PyStorageSet *)type->tp_alloc(type, 0);
++    self->set = NULL;
++    return (PyObject *)self;
++}
++
++//
++// initialize a new storage set
++int PyStorageSet_init(PyStorageSet *self, PyObject *args, PyObject *kwds) {
++  static char *kwlist[] = {"file", NULL};
++  char            *file = NULL;
++
++  // get the universal id
++  if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", kwlist, &file)) {
++    PyErr_Format(PyExc_TypeError,
++		 "Storage Set initializers may only take filename args.");
++    return -1;
++  }
++
++  // if we have a filename, load up the storage set there
++  if(file != NULL) {
++    self->set = storage_read(file);
++    // the file doesn't exist... just make a blank storage set
++    if(self->set == NULL)
++      self->set = new_storage_set();
++  }
++  // no argument... make a new storage set
++  else
++    self->set = new_storage_set();
++
++  // no errors
++  return 0;
++}
++
++
++//
++// parses out the key of some argument list provided to a read function
++char *PyStorageSet_readParseKey(PyObject *args) {
++  char *key = NULL;
++  if(!PyArg_ParseTuple(args, "s", &key)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "String keys must be provided for storage read methods");
++    return NULL;
++  }
++  return key;
++}
++
++
++//
++// read a string from the storage set
++PyObject *PyStorageSet_readString(PyObject *self, PyObject *args) { 
++  char *key = PyStorageSet_readParseKey(args);
++  if(key != NULL) 
++    return Py_BuildValue("s", read_string(((PyStorageSet *)self)->set, key));
++  else            
++    return NULL;
++}
++
++//
++// read an integer value from the storage set
++PyObject *PyStorageSet_readInt   (PyObject *self, PyObject *args) { 
++  char *key = PyStorageSet_readParseKey(args);
++  if(key != NULL) 
++    return Py_BuildValue("i", read_int(((PyStorageSet *)self)->set, key));
++  else
++    return NULL;
++}
++
++//
++// read a double value from the storage set
++PyObject *PyStorageSet_readDouble(PyObject *self, PyObject *args) {
++  char *key = PyStorageSet_readParseKey(args);
++  if(key != NULL) 
++    return Py_BuildValue("d", read_double(((PyStorageSet *)self)->set, key));
++  else
++    return NULL;
++}
++
++//
++// read a boolean value from the storage set
++PyObject *PyStorageSet_readBool  (PyObject *self, PyObject *args) { 
++  char *key = PyStorageSet_readParseKey(args);
++  if(key != NULL) 
++    return Py_BuildValue("i", read_bool(((PyStorageSet *)self)->set, key));
++  else
++    return NULL;
++}
++
++//
++// read a storage list from the storage set
++PyObject *PyStorageSet_readList  (PyObject *self, PyObject *args) { 
++  char *key = PyStorageSet_readParseKey(args);
++  if(key != NULL) 
++    return Py_BuildValue("O", 
++			 newPyStorageList(read_list(((PyStorageSet*)self)->set, 
++						   key)));
++  else
++    return NULL;
++}
++
++//
++// read a storage set from within the set
++PyObject *PyStorageSet_readSet   (PyObject *self, PyObject *args) { 
++  char *key = PyStorageSet_readParseKey(args);
++  if(key != NULL) 
++    return Py_BuildValue("O", 
++			 newPyStorageSet(read_set(((PyStorageSet *)self)->set, 
++						  key)));
++  else
++    return NULL;
++}
++
++
++//
++// here's a yucky macro for handling to store end of thigns
++#define PYSTORE_PARSE(args, key, val, fmt)			\
++  if(!PyArg_ParseTuple(args, fmt, &key, &val)) {		\
++    PyErr_Format(PyExc_TypeError,				\
++		 "Invalid types supplied to storage method");	\
++    return NULL;						\
++  }
++
++
++//
++// store a string in the set
++PyObject *PyStorageSet_storeString(PyObject *self, PyObject *args) { 
++  char *key = NULL;
++  char *val = NULL;
++  PYSTORE_PARSE(args, key, val, "ss");
++  store_string(((PyStorageSet *)self)->set, key, val);
++  return Py_BuildValue("i", 1);
++}
++
++//
++// store an integer in the set
++PyObject *PyStorageSet_storeInt   (PyObject *self, PyObject *args) { 
++  char *key = NULL;
++  int   val = 0;
++  PYSTORE_PARSE(args, key, val, "si");
++  store_int(((PyStorageSet *)self)->set, key, val);
++  return Py_BuildValue("i", 1);
++}
++
++//
++// store a double in the set
++PyObject *PyStorageSet_storeDouble(PyObject *self, PyObject *args) { 
++  char  *key = NULL;
++  double val = 0;
++  PYSTORE_PARSE(args, key, val, "sd");
++  store_double(((PyStorageSet *)self)->set, key, val);
++  return Py_BuildValue("i", 1);
++}
++
++//
++// store a boolean in the set
++PyObject *PyStorageSet_storeBool  (PyObject *self, PyObject *args) { 
++  return PyStorageSet_storeInt(self, args);
++}
++
++//
++// store a list in the set
++PyObject *PyStorageSet_storeList  (PyObject *self, PyObject *args) { 
++  PyStorageList *val = NULL;
++  char          *key = NULL;
++  PYSTORE_PARSE(args, key, val, "sO");
++  store_list(((PyStorageSet *)self)->set, key, val->list);
++  return Py_BuildValue("i", 1);
++}
++
++//
++// store a set in the set
++PyObject *PyStorageSet_storeSet   (PyObject *self, PyObject *args) { 
++  PyStorageSet *val = NULL;
++  char         *key = NULL;
++  PYSTORE_PARSE(args, key, val, "sO");
++  store_set(((PyStorageSet *)self)->set, key, val->set);
++  return Py_BuildValue("i", 1);
++}
++
++//
++// write the set to file
++PyObject *PyStorageSet_write      (PyObject *self, PyObject *args) { 
++  char *fname = NULL;
++  if(!PyArg_ParseTuple(args, "s", &fname)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Filenames must be in string form");
++    return NULL;
++  }
++  storage_write(((PyStorageSet *)self)->set, fname);
++  return Py_BuildValue("i", 1);
++}
++
++//
++// close a storage set, and clean up its memory
++PyObject *PyStorageSet_close      (PyObject *self, PyObject *args) { 
++  storage_close(((PyStorageSet *)self)->set);
++  ((PyStorageSet *)self)->set = NULL;
++  return Py_BuildValue("i", 1);
++}
++
++//
++// return whether or not the set contains a given key
++PyObject *PyStorageSet_contains   (PyObject *self, PyObject *args) { 
++  char *key = NULL;
++  if(!PyArg_ParseTuple(args, "s", &key)) {
++    PyErr_Format(PyExc_TypeError, 
++		"You can only check if storage sets contain string key values");
++    return NULL;
++  }
++  return Py_BuildValue("i", storage_contains(((PyStorageSet *)self)->set, key));
++}
++
++
++
++//*****************************************************************************
++// The type object for PyStorageSets and method list
++//*****************************************************************************
++PyMethodDef PyStorageSet_class_methods[] = {
++  // read functions
++  { "readString", PyStorageSet_readString, METH_VARARGS,
++    "Read in the string value of a storage set entry, by key." },
++  { "readInt",    PyStorageSet_readInt,    METH_VARARGS,
++    "Read in the integer value of a storage set entry, by key." },
++  { "readDouble", PyStorageSet_readDouble, METH_VARARGS,
++    "Read in the double value of a storage set entry, by key." },
++  { "readBool",   PyStorageSet_readBool,   METH_VARARGS,
++    "Read in the boolean value of a storage set entry, by key." },
++  { "readList",   PyStorageSet_readList,   METH_VARARGS,
++    "Read in the list value of a storage set entry, by key." },
++  { "readSet",    PyStorageSet_readSet,   METH_VARARGS,
++    "Read in the set value of a storage set entry, by key." },
++
++  // write store functions
++  { "storeString", PyStorageSet_storeString, METH_VARARGS,
++    "Store the string value of a storage set entry, by key." },
++  { "storeInt",    PyStorageSet_storeInt,    METH_VARARGS,
++    "Store the integer value of a storage set entry, by key." },
++  { "storeDouble", PyStorageSet_storeDouble, METH_VARARGS,
++    "Store the double value of a storage set entry, by key." },
++  { "storeBool",   PyStorageSet_storeBool,   METH_VARARGS,
++    "Store the boolean value of a storage set entry, by key." },
++  { "storeList",   PyStorageSet_storeList,   METH_VARARGS,
++    "Store the list value of a storage set entry, by key." },
++  { "storeSet",    PyStorageSet_storeSet,    METH_VARARGS,
++    "Store the set value of a storage set entry, by key." },
++
++  // other functions
++  { "write",       PyStorageSet_write,       METH_VARARGS,
++    "Store the contents of the storage set to the specified filename" },
++  { "close",       PyStorageSet_close,       METH_VARARGS,
++    "Close a storage set. MUST be called when the storage set is done "
++    "being used. Garbage collection will not delete the set." },
++  { "contains",    PyStorageSet_contains,    METH_VARARGS,
++    "Returns True if the set contains the given key, and false otherwise." },
++
++  {NULL, NULL, 0, NULL}  /* Sentinel */
++};
++
++
++PyTypeObject PyStorageSet_Type = {
++    PyObject_HEAD_INIT(NULL)
++    0,                                /*ob_size*/
++    "storage.StorageSet",             /*tp_name*/
++    sizeof(PyStorageSet),             /*tp_basicsize*/
++    0,                                /*tp_itemsize*/
++    (destructor)PyStorageSet_dealloc, /*tp_dealloc*/
++    0,                                /*tp_print*/
++    0,                                /*tp_getattr*/
++    0,                                /*tp_setattr*/
++    0,                                /*tp_compare*/
++    0,                                /*tp_repr*/
++    0,                                /*tp_as_number*/
++    0,                                /*tp_as_sequence*/
++    0,                                /*tp_as_mapping*/
++    0,                                /*tp_hash */
++    0,                                /*tp_call*/
++    0,                                /*tp_str*/
++    0,                                /*tp_getattro*/
++    0,                                /*tp_setattro*/
++    0,                                /*tp_as_buffer*/
++    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
++    "storage sets",                   /* tp_doc */
++    0,		                      /* tp_traverse */
++    0,		                      /* tp_clear */
++    0,		                      /* tp_richcompare */
++    0,		                      /* tp_weaklistoffset */
++    0,		                      /* tp_iter */
++    0,		                      /* tp_iternext */
++    PyStorageSet_class_methods,       /* tp_methods */
++    0,                                /* tp_members */
++    0,                                /* tp_getset */
++    0,                                /* tp_base */
++    0,                                /* tp_dict */
++    0,                                /* tp_descr_get */
++    0,                                /* tp_descr_set */
++    0,                                /* tp_dictoffset */
++    (initproc)PyStorageSet_init,      /* tp_init */
++    0,                                /* tp_alloc */
++    PyStorageSet_new,                 /* tp_new */
++};
++
++
++
++//
++// all of the methods assocciated with the storage module
++PyMethodDef PyStorage_module_methods[] = {
++  {NULL, NULL, 0, NULL}  /* Sentinel */
++};
++
++
++
++//*****************************************************************************
++// implementation of pystorage.h
++//*****************************************************************************
++PyMODINIT_FUNC init_PyStorage(void) {
++  PyObject *module = Py_InitModule3("storage", PyStorage_module_methods,
++				    "Python wrapper for storage sets.");
++  // something went wrong... abort!
++  if(module == NULL)
++    return;
++
++  // make sure the storage class is ready to be made
++  if (!(PyType_Ready(&PyStorageSet_Type) < 0)) {
++    PyTypeObject *type = &PyStorageSet_Type;
++    // add our two classes
++    Py_INCREF(&PyStorageSet_Type);
++    PyModule_AddObject(module, "StorageSet", (PyObject *)type);
++  }
++
++  // make sure the list calss is ready to be made
++  if(!(PyType_Ready(&PyStorageList_Type) < 0)) {
++    PyTypeObject *type = &PyStorageList_Type;
++    Py_INCREF(&PyStorageList_Type);
++    PyModule_AddObject(module, "StorageList", (PyObject *)type);
++  }
++}
++
++
++//
++// create a new python representation of a storage set
++PyObject *newPyStorageSet(STORAGE_SET *set) {
++  PyStorageSet *pyset = 
++    (PyStorageSet *)PyStorageSet_new(&PyStorageSet_Type, NULL, NULL);
++  pyset->set = set;
++  return (PyObject *)pyset;
++}
++
++
++//
++// create a new list representation of a storage set
++PyObject *newPyStorageList(STORAGE_SET_LIST *list) {
++  PyStorageList *pylist = 
++    (PyStorageList *)PyStorageList_new(&PyStorageList_Type, NULL, NULL);
++  pylist->list = list;
++  return (PyObject *)pylist;
++}
++
++
++//
++// checks to see if the python object is a storage set
++int PyStorageSet_Check(PyObject *value) {
++  return PyObject_TypeCheck(value, &PyStorageSet_Type);
++}
++
++
++//
++// checks to see if the python object is a storage list
++int PyStorageList_Check(PyObject *value) {
++  return PyObject_TypeCheck(value, &PyStorageList_Type);
++}
++
++//
++// return the storage set that is contained within it.
++STORAGE_SET *PyStorageSet_AsSet(PyObject *set) {
++  return ((PyStorageSet *)set)->set;
++}
+diff -ruN ../nakedmudv2.4/src/scripts/pystorage.h src/scripts/pystorage.h
+--- ../nakedmudv2.4/src/scripts/pystorage.h	Wed Dec 31 17:00:00 1969
++++ src/scripts/pystorage.h	Sat Jun 18 14:46:43 2005
+@@ -0,0 +1,24 @@
++#ifndef PYSTORAGE_H
++#define PYSTORAGE_H
++//*****************************************************************************
++//
++// pystorage.c
++//
++// Provides a wrapper around NakedMud's storage system for use by scripts
++// and python modules.
++//
++//*****************************************************************************
++
++//
++// initialize the pystorage system for use
++PyMODINIT_FUNC init_PyStorage(void);
++
++//
++// create a new python representation of the storage set
++PyObject *newPyStorageSet (STORAGE_SET *set);
++
++//
++// return the storage set that is contained within it.
++STORAGE_SET *PyStorageSet_AsSet(PyObject *set);
++
++#endif // PYSTORAGE_H
+diff -ruN ../nakedmudv2.4/src/scripts/script.c src/scripts/script.c
+--- ../nakedmudv2.4/src/scripts/script.c	Sat Jun  4 23:40:29 2005
++++ src/scripts/script.c	Sat Jun 18 14:46:43 2005
+@@ -28,6 +28,9 @@
+ #include "pyobj.h"
+ #include "pymud.h"
+ #include "pyplugs.h"
++#include "pyevent.h"
++#include "pystorage.h"
++#include "pyauxiliary.h"
+ 
+ // online editor stuff
+ #include "../editor/editor.h"
+@@ -35,7 +38,6 @@
+ #include "../olc2/olc.h"
+ 
+ 
+-
+ //*****************************************************************************
+ // local functions, variables, and commands
+ //*****************************************************************************
+@@ -175,7 +177,7 @@
+ // functions 'n such for the script object
+ //*****************************************************************************
+ struct script_data {
+-  script_vnum vnum;
++  int vnum;
+   int         type;
+   char       *name;
+   char       *args;
+@@ -263,7 +265,7 @@
+   to->num_arg = from->num_arg;
+ }
+ 
+-script_vnum scriptGetVnum(SCRIPT_DATA *script) {
++int scriptGetVnum(SCRIPT_DATA *script) {
+   return script->vnum;
+ }
+ 
+@@ -291,7 +293,7 @@
+   return script->code;
+ }
+ 
+-void scriptSetVnum(SCRIPT_DATA *script, script_vnum vnum) {
++void scriptSetVnum(SCRIPT_DATA *script, int vnum) {
+   script->vnum = vnum;
+ }
+ 
+@@ -373,6 +375,9 @@
+   mudmod = PyImport_ImportModule("obj");
+   PyDict_Update(dict, PyModule_GetDict(mudmod));
+   Py_DECREF(mudmod);
++  mudmod = PyImport_ImportModule("event");
++  PyDict_Update(dict, PyModule_GetDict(mudmod));
++  Py_DECREF(mudmod);
+ 
+   return dict;
+ }
+@@ -409,6 +414,9 @@
+   Py_Initialize();
+ 
+   // initialize all of our modules written in C
++  init_PyAuxiliary();
++  init_PyEvent();
++  init_PyStorage();
+   init_PyChar();
+   init_PyRoom();
+   init_PyObj();
+@@ -509,10 +517,13 @@
+ // statements we need to highlight
+ const char *control_table[] = {
+   "import",
++  "except",
+   "while",
+   "from",
+   "elif",
+   "else",
++  "pass",
++  "try",
+   "def",
+   "for",
+   "if",
+@@ -618,7 +629,7 @@
+ 	  *line_num_info = '\0';
+ 
+ 	line[line_i] = '\0';
+-	send_to_socket(sock, "%s{g%s\r\n", line_num_info, line);
++	send_to_socket(sock, "%s{g%s{n\r\n", line_num_info, line);
+ 	*line = '\0';
+ 	line_i = 0;
+ 	line_num++;
+@@ -642,13 +653,13 @@
+   line[line_i] = '\0';
+   // send the last line
+   if(*line)
+-    send_to_socket(sock, "{c%2d]{g  %s\r\n", line_num, line);
++    send_to_socket(sock, "{c%2d]{g  %s{n\r\n", line_num, line);
+   // there was nothing on the first line
+   else if(line_num == 1)
+     send_to_socket(sock, "The buffer is empty.\r\n");
+ 
+   // and kill any color that is leaking
+-  send_to_socket(sock, "{n");
++  //  send_to_socket(sock, "{n");
+ 
+   if(ptr[strlen(ptr)-1] != '\n')
+     send_to_socket(sock, "Buffer does not end in newline!\r\n");
+@@ -786,8 +797,9 @@
+       break;
+ 
+     case SCRIPT_TYPE_COMMAND:
+-      // if the keyword isn't on our list, continue
+-      if(!is_keyword(scriptGetArgs(script), cmd, FALSE))
++      // if the keyword doesn't match our command, continue
++      //      if(!is_keyword(scriptGetArgs(script), cmd, FALSE))
++      if(!cmd_matches(scriptGetArgs(script), cmd))
+ 	continue;
+       // if the numeric argument of the script is 1,
+       // we need to switch our retval to 1 and return
+diff -ruN ../nakedmudv2.4/src/scripts/script.h src/scripts/script.h
+--- ../nakedmudv2.4/src/scripts/script.h	Sat Jun  4 23:40:29 2005
++++ src/scripts/script.h	Sat Jun 18 14:46:43 2005
+@@ -101,6 +101,7 @@
+ //     me   = ourself
+ //     ch   = the character entering the room
+ //     room = the room we are in (if applicable) or ourself
++//     cmd  = the direction that ch left his old room from
+ 
+ //*****************************************************************************
+ // SCRIPT_TYPE_EXIT
+@@ -145,7 +146,7 @@
+ //   Numeric Arguments:
+ //     None
+ //   Works with:
+-//     mobiles (gods)
++//     mobiles (game staff)
+ //   Parameters:
+ //     me   = the person running the script
+ //     arg  = the argument supplied to scrun
+@@ -174,7 +175,7 @@
+ SCRIPT_DATA *scriptCopy(SCRIPT_DATA *script);
+ void         scriptCopyTo(SCRIPT_DATA *from, SCRIPT_DATA *to);
+ 
+-script_vnum scriptGetVnum(SCRIPT_DATA *script);
++int scriptGetVnum(SCRIPT_DATA *script);
+ int         scriptGetType(SCRIPT_DATA *script);
+ int         scriptGetNumArg(SCRIPT_DATA *script);
+ const char *scriptGetArgs(SCRIPT_DATA *script);
+@@ -182,7 +183,7 @@
+ const char *scriptGetCode(SCRIPT_DATA *script);
+ BUFFER     *scriptGetCodeBuffer(SCRIPT_DATA *script);
+ 
+-void scriptSetVnum(SCRIPT_DATA *script, script_vnum vnum);
++void scriptSetVnum(SCRIPT_DATA *script, int vnum);
+ void scriptSetType(SCRIPT_DATA *script, int type);
+ void scriptSetNumArg(SCRIPT_DATA *script, int num_arg);
+ void scriptSetArgs(SCRIPT_DATA *script, const char *args);
+diff -ruN ../nakedmudv2.4/src/scripts/script_edit.c src/scripts/script_edit.c
+--- ../nakedmudv2.4/src/scripts/script_edit.c	Sat Jun  4 23:40:29 2005
++++ src/scripts/script_edit.c	Sat Jun 18 14:46:43 2005
+@@ -129,6 +129,9 @@
+     case SCRIPT_TYPE_RUNNABLE:
+       text_to_buffer(sock, "Enter user groups allowed to run this script: ");
+       return SCEDIT_ARGS;
++    case SCRIPT_TYPE_COMMAND:
++      text_to_buffer(sock, "Enter command that triggers this script. * denotes wildcard: ");
++      return SCEDIT_ARGS;
+     default:
+       send_to_socket(sock, 
+ 		     "This script type does not use string arguments.\r\n"
+@@ -222,7 +225,7 @@
+ COMMAND(cmd_scedit) {
+   ZONE_DATA *zone;
+   SCRIPT_DATA *script;
+-  script_vnum vnum;
++  int vnum;
+ 
+   // we need a vnum
+   if(!arg || !*arg)
+diff -ruN ../nakedmudv2.4/src/scripts/script_editor.c src/scripts/script_editor.c
+--- ../nakedmudv2.4/src/scripts/script_editor.c	Sat Jun  4 23:40:29 2005
++++ src/scripts/script_editor.c	Sat Jun 18 14:46:43 2005
+@@ -70,9 +70,11 @@
+ // of spaces before the addition, and increment/decrement our indent as needed
+ void scriptEditorAppend(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
+   // if we're playing with else/elif/case, take down the input a notch
+-  if(!strncmp(arg, "else:", 5) ||
+-     !strncmp(arg, "elif ", 5) ||
+-     !strncmp(arg, "case ", 5))
++  if(!strncmp(arg, "except:", 7) ||
++     !strncmp(arg, "except ", 7) ||
++     !strncmp(arg, "else:",   5) ||
++     !strncmp(arg, "elif ",   5) ||
++     !strncmp(arg, "case ",   5))
+     scriptEditorUndent(sock, NULL, NULL);
+ 
+   // add in our indents if neccessary
+@@ -126,7 +128,7 @@
+   if(!isdigit(*tmp) || !bufferInsert(buf, arg, line))
+     text_to_buffer(sock, "Insertion failed.\r\n");
+   else {
+-    text_to_buffer(sock, "Line inserted");
++    text_to_buffer(sock, "Line inserted.\r\n");
+     bufferReplace(buf, "\r", "", TRUE);    
+   }
+ }
+diff -ruN ../nakedmudv2.4/src/scripts/script_set.c src/scripts/script_set.c
+--- ../nakedmudv2.4/src/scripts/script_set.c	Sat Jun  4 23:40:29 2005
++++ src/scripts/script_set.c	Sat Jun 18 15:32:58 2005
+@@ -17,58 +17,50 @@
+ 
+ 
+ struct script_set_data {
+-  LIST *script_vnums; // LIST is typically used for pointers, but because
++  LIST *ints; // LIST is typically used for pointers, but because
+                       // they are the same number of bits as an int, we can
+                       // use them to store script vnum values as well
+ };
+ 
+ SCRIPT_SET *newScriptSet() {
+   SCRIPT_SET *set = malloc(sizeof(SCRIPT_SET));
+-  set->script_vnums = newList();
++  set->ints = newList();
+   return set;
+ }
+ 
+ void deleteScriptSet(SCRIPT_SET *set) {
+   // we don't have to delete any of the elements in here, since
+   // we are not actually using the list to point to anything
+-  deleteList(set->script_vnums);
++  deleteList(set->ints);
+   free(set);
+ }
+ 
+-void scriptSetAdd   (SCRIPT_SET *set, script_vnum vnum) {
+-  listQueue(set->script_vnums, (void *)vnum);
++void scriptSetAdd   (SCRIPT_SET *set, int vnum) {
++  if(!listIn(set->ints, (void *)vnum))
++    listQueue(set->ints, (void *)vnum);
+ }
+ 
+-void scriptSetRemove(SCRIPT_SET *set, script_vnum vnum) {
+-  listRemove(set->script_vnums, (void *)vnum);
++void scriptSetRemove(SCRIPT_SET *set, int vnum) {
++  listRemove(set->ints, (void *)vnum);
+ }
+ 
+ LIST *scriptSetList (SCRIPT_SET *set, int type) {
+   LIST *scripts = newList();
+-  int i = 0, script_vnum = NOTHING;
+-
+-  //*************************************
+-  // USE A LIST ITERATOR TO OPTIMIZE THIS
+-  //*************************************
+-  for(i = 0; i < listSize(set->script_vnums); i++) {
+-    script_vnum = (int)listGet(set->script_vnums, i);
+-    SCRIPT_DATA *script = worldGetScript(gameworld, script_vnum);
++  void *vnum;
++  LIST_ITERATOR *sc_i = newListIterator(set->ints);
++  ITERATE_LIST(vnum, sc_i) {
++    SCRIPT_DATA *script = worldGetScript(gameworld, (int)vnum);
+     if(script != NULL &&
+        (type == SCRIPT_TYPE_NONE || scriptGetType(script) == type))
+       listPut(scripts, script);
+-  }
++  } deleteListIterator(sc_i);
+   return scripts;
+ }
+ 
+ void copyScriptSetTo(SCRIPT_SET *from, SCRIPT_SET *to) {
+   // clear the "to" list
+-  while(listSize(to->script_vnums) > 0)
+-    listPop(to->script_vnums);
+-
+-  // copy everything over
+-  int i;
+-  for(i = 0; i < listSize(from->script_vnums); i++)
+-    listQueue(to->script_vnums, listGet(from->script_vnums, i));
++  deleteList(to->ints);
++  to->ints = listCopyWith(from->ints, identity_func);
+ }
+ 
+ SCRIPT_SET *copyScriptSet(SCRIPT_SET *set) {
+diff -ruN ../nakedmudv2.4/src/scripts/script_set.h src/scripts/script_set.h
+--- ../nakedmudv2.4/src/scripts/script_set.h	Sat Jun  4 23:40:29 2005
++++ src/scripts/script_set.h	Sat Jun 18 14:46:43 2005
+@@ -17,8 +17,8 @@
+ SCRIPT_SET *newScriptSet();
+ void deleteScriptSet(SCRIPT_SET *set);
+ 
+-void scriptSetAdd   (SCRIPT_SET *set, script_vnum vnum);
+-void scriptSetRemove(SCRIPT_SET *set, script_vnum vnum);
++void scriptSetAdd   (SCRIPT_SET *set, int vnum);
++void scriptSetRemove(SCRIPT_SET *set, int vnum);
+ 
+ void copyScriptSetTo(SCRIPT_SET *from, SCRIPT_SET *to);
+ SCRIPT_SET *copyScriptSet(SCRIPT_SET *set);
+diff -ruN ../nakedmudv2.4/src/set.c src/set.c
+--- ../nakedmudv2.4/src/set.c	Sat Jun  4 23:40:30 2005
++++ src/set.c	Sat Jun 18 14:46:43 2005
+@@ -10,6 +10,9 @@
+ #include "list.h"
+ #include "set.h"
+ 
++// how big of a size do our set start out at?
++#define DEFAULT_SET_SIZE        5
++
+ struct set_data {
+   int    num_buckets;
+   int    size;
+@@ -17,9 +20,9 @@
+ };
+ 
+ struct set_iterator {
+-  int                curr_bucket; // the bucket number we're currently on
+-  struct set_data           *set; // the set we're iterating over
+-  LIST_ITERATOR *bucket_i;        // the iterator for our current bucket
++  int         curr_bucket; // the bucket number we're currently on
++  struct set_data    *set; // the set we're iterating over
++  LIST_ITERATOR *bucket_i; // the iterator for our current bucket
+ };
+ 
+ 
+@@ -28,33 +31,54 @@
+ // local functions
+ //*****************************************************************************
+ 
+-
+ //
+ // Find the bucket the set element belongs to
+ int set_elem_bucket(void *elem, int num_buckets) {
+   // simple for now: just take the modulo
+-  return ((int)elem) % num_buckets;
++  return ((int)elem < 0 ? -1 * (int)elem : (int)elem) % num_buckets;
+ };
+ 
+ 
++//
++// expand a set to the new number of buckets
++void setExpand(SET *set, int size) {
++  // collect all of the key:value pairs
++  LIST *entries = setCollect(set);
++  void *entry = NULL;
++  int i;
++
++  // delete all of the current buckets
++  for(i = 0; i < set->num_buckets; i++) {
++    if(set->buckets[i] == NULL) continue;
++    deleteList(set->buckets[i]);
++  }
++  free(set->buckets);
++
++  // now, make new buckets and set them to NULL
++  set->buckets = calloc(size, sizeof(LIST *));
++  set->num_buckets = size;
++
++  // now, we put all of our entries back into the new buckets
++  while((entry = listPop(entries)) != NULL) {
++    int bucket = set_elem_bucket(entry, set->num_buckets);
++    if(set->buckets[bucket] == NULL) set->buckets[bucket] = newList();
++    listPut(set->buckets[bucket], entry);
++  }
++  deleteList(entries);
++}
++
++
+ 
+ //*****************************************************************************
+ // implementation of set.h
+ //*****************************************************************************
+-SET *newSet(int num_buckets) {
+-  int i;
+-
+-  SET *set = malloc(sizeof(SET));
+-  set->buckets = malloc(sizeof(LIST *) * num_buckets);
+-  set->size    = 0;
+-
+-  // all NULL until they actually get a content
+-  for(i = 0; i < num_buckets; i++)
+-    set->buckets[i] = NULL;
+-  set->num_buckets = num_buckets;
+-
++SET *newSet(void) {
++  SET *set         = calloc(1, sizeof(SET));
++  set->buckets     = calloc(DEFAULT_SET_SIZE, sizeof(LIST *));
++  set->num_buckets = DEFAULT_SET_SIZE;
++  set->size        = 0;
+   return set;
+-};
++}
+ 
+ void deleteSet(SET *set) {
+   int i;
+@@ -67,7 +91,19 @@
+   free(set);
+ };
+ 
++int setSize(SET *set) {
++  return set->size;
++}
++
+ void setPut(SET *set, void *elem) {
++  // only one copy per set
++  if(setIn(set, elem))
++    return;
++
++  // first, see if we'll need to expand the table
++  if((set->size * 80)/100 > set->num_buckets)
++    setExpand(set, (set->num_buckets * 150)/100);
++
+   // find out what bucket we belong to
+   int hash_bucket = set_elem_bucket(elem, set->num_buckets);
+ 
+@@ -76,7 +112,8 @@
+     set->buckets[hash_bucket] = newList();
+   // listPut ensures only one copy is in the list
+   listPut(set->buckets[hash_bucket], elem);
+-};
++  set->size++;
++}
+ 
+ void setRemove(SET *set, void *elem) {
+   // find out what bucket we belong to
+@@ -84,8 +121,9 @@
+ 
+   // see if the bucket exists
+   if(set->buckets[hash_bucket] != NULL)
+-    listRemove(set->buckets[hash_bucket], elem);
+-};
++    if(listRemove(set->buckets[hash_bucket], elem))
++      set->size--;
++}
+ 
+ int setIn(SET *set, void *elem) {
+   // find out what bucket we belong to
+@@ -95,7 +133,77 @@
+     return listIn(set->buckets[hash_bucket], elem);
+   else
+     return 0;
+-};
++}
++
++LIST *setCollect(SET *set) {
++  LIST *list = newList();
++  int i;
++
++  for(i = 0; i < set->num_buckets; i++) {
++    if(set->buckets[i] == NULL) continue;
++    LIST_ITERATOR *list_i = newListIterator(set->buckets[i]);
++    void            *elem = NULL;
++    for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
++      listPut(list, elem);
++    deleteListIterator(list_i);
++  }
++  return list;
++}
++
++SET  *setCopy(SET *set) {
++  SET *newset = newSet();
++  setExpand(newset, set->num_buckets);
++  SET_ITERATOR *set_i = newSetIterator(set);
++  void          *elem = NULL;
++  ITERATE_SET(elem, set_i) {
++    setPut(newset, elem);
++  } deleteSetIterator(set_i);
++  return newset;
++}
++
++SET  *setUnion(SET *set1, SET *set2) {
++  SET *newset   = NULL;
++  SET *copyfrom = NULL; 
++  if(set1->size > set2->size) {
++    copyfrom = set2;
++    newset   = setCopy(set1);
++  }
++  else {
++    copyfrom = set1;
++    newset   = setCopy(set2);
++  }
++
++  // copy all of the remaining elements
++  SET_ITERATOR *set_i = newSetIterator(copyfrom);
++  void          *elem = NULL;
++  ITERATE_SET(elem, set_i) {
++    setPut(newset, elem);
++  } deleteSetIterator(set_i);
++
++  return newset;
++}
++
++SET  *setIntersection(SET *set1, SET *set2) {
++  SET *intersection = NULL;
++  SET *compagainst  = NULL;
++  if(set1->size > set2->size) {
++    intersection = setCopy(set2);
++    compagainst  = set1;
++  }
++  else {
++    intersection = setCopy(set1);
++    compagainst  = set2;
++  }
++
++  // remove everything not in the intersection
++  SET_ITERATOR *set_i = newSetIterator(intersection);
++  void          *elem = NULL;
++  ITERATE_SET(elem, set_i) {
++    if(!setIn(compagainst, elem))
++      setRemove(intersection, elem);
++  } deleteSetIterator(set_i);
++  return intersection;
++}
+ 
+ 
+ 
+diff -ruN ../nakedmudv2.4/src/set.h src/set.h
+--- ../nakedmudv2.4/src/set.h	Sat Jun  4 23:40:30 2005
++++ src/set.h	Sat Jun 18 14:46:43 2005
+@@ -11,11 +11,17 @@
+ typedef struct set_data                   SET;
+ typedef struct set_iterator               SET_ITERATOR;
+ 
+-SET  *newSet   (int buckets);
+-void  deleteSet(SET *set);
+-void  setPut   (SET *set, void *elem);
+-void  setRemove(SET *set, void *elem);
+-int   setIn    (SET *set, void *elem);
++SET  *newSet         (void);
++void  deleteSet      (SET *set);
++void  setPut         (SET *set, void *elem);
++void  setRemove      (SET *set, void *elem);
++int   setIn          (SET *set, void *elem);
++int   setSize        (SET *set);
++LIST *setCollect     (SET *set);
++SET  *setCopy        (SET *set);
++SET  *setUnion       (SET *set1, SET *set2);
++SET  *setIntersection(SET *set1, SET *set2);
++
+ 
+ 
+ //*****************************************************************************
+@@ -26,6 +32,13 @@
+ // this lets us do so.
+ //
+ //*****************************************************************************
++
++// iterate across all the elements in a set
++#define ITERATE_SET(elem, it) \
++  for(elem = setIteratorCurrent(it); \
++      elem != NULL; \
++      setIteratorNext(it), elem = setIteratorCurrent(it))
++
+ 
+ SET_ITERATOR *newSetIterator    (SET *S);
+ void          deleteSetIterator (SET_ITERATOR *I);
+diff -ruN ../nakedmudv2.4/src/socket.c src/socket.c
+--- ../nakedmudv2.4/src/socket.c	Sat Jun  4 23:40:30 2005
++++ src/socket.c	Sat Jun 18 14:46:43 2005
+@@ -7,6 +7,7 @@
+ #include "wrapsock.h"
+ #include <netdb.h>
+ #include <sys/ioctl.h>
++#include <arpa/inet.h> 
+ 
+ /* including main header file */
+ #include "mud.h"
+diff -ruN ../nakedmudv2.4/src/storage.c src/storage.c
+--- ../nakedmudv2.4/src/storage.c	Sat Jun  4 23:40:30 2005
++++ src/storage.c	Sat Jun 18 14:46:43 2005
+@@ -48,6 +48,7 @@
+ } STORAGE_DATA;
+ 
+ 
++
+ /* local functions */
+ void delete_storage_set (STORAGE_SET *set);
+ void delete_storage_list(STORAGE_SET_LIST *list);
+diff -ruN ../nakedmudv2.4/src/utils.c src/utils.c
+--- ../nakedmudv2.4/src/utils.c	Sat Jun  4 23:40:30 2005
++++ src/utils.c	Sat Jun 18 14:52:16 2005
+@@ -462,11 +462,10 @@
+ //
+ int next_letter_in(const char *string, char marker) {
+   int i = 0;
+-  for(i = 0; string[i] != '\0'; i++) {
++  for(i = 0; string[i] != '\0'; i++)
+     if(string[i] == marker)
+-      break;
+-  }
+-  return i;
++      return i;
++  return -1; // none found
+ }
+ 
+ 
+@@ -492,6 +491,17 @@
+   return (hvalue < 0 ? hvalue * -1 : hvalue);
+ }
+ 
++bool endswith(const char *string, const char *end) {
++  int slen = strlen(string);
++  int elen = strlen(end);
++  return (slen >= elen && !strcmp(string + slen - elen, end));
++}
++
++bool startswith(const char *string, const char *start) {
++  return !strncmp(string, start, strlen(start));
++}
++
++
+ 
+ void format_string(char **string, int max_width, 
+ 		   unsigned int maxlen, bool indent) {
+@@ -499,7 +509,7 @@
+   bool needs_capital = TRUE;
+   bool needs_indent  = FALSE; // no indent on the first line, unless
+                               // we get the OK from the indent parameter
+-  int format_i = 0, string_i = 0, col = 0;
++  int format_i = 0, string_i = 0, col = 0, next_space = 0;
+ 
+   // put in our indent
+   if(indent) {
+@@ -515,9 +525,11 @@
+ 
+   for(; (*string)[string_i] != '\0'; string_i++) {
+ 
+-    // we have to put a newline in because
+-    // the word won't fit on the line
+-    if(col + next_space_in((*string)+string_i) > max_width-2) {
++    // we have to put a newline in because the word won't fit on the line
++    next_space = next_space_in((*string)+string_i);
++    if(next_space == -1)
++      next_space = strlen((*string)+string_i);
++    if(col + next_space > max_width-2) {
+       formatted[format_i] = '\r'; format_i++;
+       formatted[format_i] = '\n'; format_i++;
+       col = 0;
+@@ -685,6 +697,8 @@
+       keywords = keywords+1;
+     // figure out the length of the current keyword
+     int keyword_len = next_letter_in(keywords, ',');
++    if(keyword_len == -1)
++      keyword_len = strlen(keywords);
+ 
+     // see if we compare to the current keyword
+     if(!abbrev_ok && !strncasecmp(keywords, word, keyword_len) &&
+@@ -1279,6 +1293,17 @@
+ 
+ void *identity_func(void *data) {
+   return data;
++}
++
++bool cmd_matches(const char *pattern, const char *cmd) {
++  int len = next_letter_in(pattern, '*');
++  // we have to match exactly
++  if(len == -1)
++    return !strcasecmp(pattern, cmd);
++  else if(len == 0)
++    return TRUE;
++  else
++    return !strncasecmp(pattern, cmd, len);
+ }
+ 
+ bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2) {
+diff -ruN ../nakedmudv2.4/src/utils.h src/utils.h
+--- ../nakedmudv2.4/src/utils.h	Sat Jun  4 23:40:30 2005
++++ src/utils.h	Sat Jun 18 14:46:43 2005
+@@ -18,9 +18,12 @@
+ #define e                     2.71828182
+ 
+ #define UMIN(a, b)	      ((a) < (b) ? (a) : (b))
++#ifndef MIN
+ #define MIN(a, b)             ((a) < (b) ? (a) : (b))
++#endif
++#ifndef MAX
+ #define MAX(a, b)             ((a) < (b) ? (b) : (a))
+-
++#endif
+ 
+ //
+ // return a random number pulled from a uniform distribution 
+@@ -48,12 +51,12 @@
+ //*****************************************************************************
+ // Utilities for characters
+ //*****************************************************************************
+-#define IS_ADMIN(ch)          ((charGetLevel(ch)) > LEVEL_PLAYER ? TRUE : FALSE)
++#define IS_ADMIN(ch)          (bitIsOneSet(charGetUserGroups(ch), "admin"))
+ 
+ #define HIMHER(ch)            (charGetSex(ch) == SEX_MALE ? "him" : \
+ 			       (charGetSex(ch) == SEX_FEMALE ? "her" : "it"))
+ 
+-#define HISHERS(ch)           (charGetSex(ch) == SEX_MALE ? "his" : \
++#define HISHER(ch)            (charGetSex(ch) == SEX_MALE ? "his" : \
+ 			       (charGetSex(ch) == SEX_FEMALE ? "her" : "its"))
+ 
+ #define HESHE(ch)             (charGetSex(ch) == SEX_MALE ? "he" : \
+@@ -126,6 +129,8 @@
+ int next_space_in         (char *string);
+ int next_letter_in        (const char *string, char marker);
+ int string_hash           (const char *key);
++bool endswith             (const char *string, const char *end);
++bool startswith           (const char *string, const char *start);
+ 
+ 
+ 
+@@ -151,11 +156,20 @@
+ //*****************************************************************************
+ 
+ //
++// Returns whether or not the command matches the pattern. Patterns are just
++// like commands, except they can be terminated with *'s to signify that
++// "anything can follow at this point". Example matches might include:
++//
++//  PATTERN           MATCHES             NON-MATCHES
++//  go*               goto, gossip, go    g
++//  go                go                  g, goss, gossip
++bool cmd_matches(const char *pattern, const char *cmd);
++
++//
+ // returns TRUE if ch1 belongs to more user groups than ch2. By "more", we mean
+ // that ch2's user groups must be a subset of ch1's
+ bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2);
+ 
+-
+ //
+ // a function that returns the argument passed into it
+ void *identity_func(void *data);
+@@ -164,32 +178,6 @@
+ // checks to see if a file or directory exists
+ bool file_exists(const char *fname);
+ bool dir_exists (const char *dname);
+-
+-// iterate across all the elements in a list
+-#define ITERATE_LIST(val, it) \
+-  for(val = listIteratorCurrent(it); val != NULL; val = listIteratorNext(it))
+-
+-// iterate across all the elements in a hashtable
+-#define ITERATE_HASH(key, val, it) \
+-  for(key = hashIteratorCurrentKey(it), val = hashIteratorCurrentVal(it); \
+-      key != NULL; \
+-      hashIteratorNext(it), \
+-      key = hashIteratorCurrentKey(it), val = hashIteratorCurrentVal(it))
+-
+-// iterate across all of the elements in a map
+-#define ITERATE_MAP(key, val, it) \
+-  for(key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it); \
+-      key != NULL; \
+-      mapIteratorNext(it), \
+-      key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it))
+-
+-// iterate across all the elements in a set
+-#define ITERATE_SET(elem, it) \
+-  for(elem = setIteratorCurrent(it); \
+-      elem != NULL; \
+-      setIteratorNext(it), elem = setIteratorCurrent(it))
+-
+-
+ 
+ 
+ //
+diff -ruN ../nakedmudv2.4/src/world.c src/world.c
+--- ../nakedmudv2.4/src/world.c	Sat Jun  4 23:40:30 2005
++++ src/world.c	Sat Jun 18 14:46:43 2005
+@@ -106,26 +106,26 @@
+ }
+ 
+ 
+-ROOM_DATA *worldRemoveRoomVnum(WORLD_DATA *world, room_vnum vnum) {
++ROOM_DATA *worldRemoveRoomVnum(WORLD_DATA *world, int vnum) {
+   propertyTableRemove(world->rooms, vnum);
+   return worldRemoveVnum(world, zoneRemoveRoom, vnum);
+ };
+ 
+ 
+-CHAR_DATA *worldRemoveMobVnum(WORLD_DATA *world, mob_vnum vnum) {
++CHAR_DATA *worldRemoveMobVnum(WORLD_DATA *world, int vnum) {
+   return worldRemoveVnum(world, zoneRemoveMob, vnum);
+ };
+ 
+ 
+-OBJ_DATA *worldRemoveObjVnum(WORLD_DATA *world, obj_vnum vnum) {
++OBJ_DATA *worldRemoveObjVnum(WORLD_DATA *world, int vnum) {
+   return worldRemoveVnum(world, zoneRemoveObj, vnum);
+ };
+ 
+-SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, script_vnum vnum) {
++SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, int vnum) {
+   return worldRemoveVnum(world, zoneRemoveScript, vnum);
+ };
+ 
+-DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, dialog_vnum vnum) {
++DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, int vnum) {
+   return worldRemoveVnum(world, zoneRemoveDialog, vnum);
+ };
+ 
+@@ -150,7 +150,7 @@
+ };
+ 
+ 
+-ZONE_DATA *worldRemoveZoneVnum(WORLD_DATA *world, zone_vnum vnum) {
++ZONE_DATA *worldRemoveZoneVnum(WORLD_DATA *world, int vnum) {
+   // go through and find our zone
+   LIST_ITERATOR *zone_i = newListIterator(world->zones);
+   ZONE_DATA *zone = NULL;
+@@ -260,7 +260,7 @@
+ // Search through all of the zones in this world, and return the one
+ // that has min/max vnums that bound this vnum
+ //
+-ZONE_DATA *worldZoneBounding(WORLD_DATA *world, room_vnum vnum) {
++ZONE_DATA *worldZoneBounding(WORLD_DATA *world, int vnum) {
+   LIST_ITERATOR *zone_i = newListIterator(world->zones);
+   ZONE_DATA *zone = NULL;
+ 
+@@ -276,7 +276,7 @@
+   return world->zones;
+ }
+ 
+-ZONE_DATA  *worldGetZone(WORLD_DATA *world, zone_vnum vnum) {
++ZONE_DATA  *worldGetZone(WORLD_DATA *world, int vnum) {
+   LIST_ITERATOR *zone_i = newListIterator(world->zones);
+   ZONE_DATA *zone = NULL;
+ 
+@@ -312,7 +312,7 @@
+   return data;
+ }
+ 
+-ROOM_DATA  *worldGetRoom(WORLD_DATA *world, room_vnum vnum) {
++ROOM_DATA  *worldGetRoom(WORLD_DATA *world, int vnum) {
+   ROOM_DATA *room = worldGet(world, zoneGetRoom, vnum);
+   // if it exists, we might as well toss it
+   // into the global table for future reference
+@@ -321,19 +321,19 @@
+   return room;
+ };
+ 
+-CHAR_DATA  *worldGetMob(WORLD_DATA *world, mob_vnum vnum) {
++CHAR_DATA  *worldGetMob(WORLD_DATA *world, int vnum) {
+   return worldGet(world, zoneGetMob, vnum);
+ };
+ 
+-OBJ_DATA  *worldGetObj(WORLD_DATA *world, obj_vnum vnum) {
++OBJ_DATA  *worldGetObj(WORLD_DATA *world, int vnum) {
+   return worldGet(world, zoneGetObj, vnum);
+ };
+ 
+-SCRIPT_DATA  *worldGetScript(WORLD_DATA *world, script_vnum vnum) {
++SCRIPT_DATA  *worldGetScript(WORLD_DATA *world, int vnum) {
+   return worldGet(world, zoneGetScript, vnum);
+ };
+ 
+-DIALOG_DATA  *worldGetDialog(WORLD_DATA *world, dialog_vnum vnum) {
++DIALOG_DATA  *worldGetDialog(WORLD_DATA *world, int vnum) {
+   return worldGet(world, zoneGetDialog, vnum);
+ };
+ 
+diff -ruN ../nakedmudv2.4/src/world.h src/world.h
+--- ../nakedmudv2.4/src/world.h	Sat Jun  4 23:40:30 2005
++++ src/world.h	Sat Jun 18 14:46:43 2005
+@@ -26,12 +26,12 @@
+ // Removes the room with the ID from the world, and returns it.
+ // returns NULL if the room does not exist.
+ //
+-ROOM_DATA *worldRemoveRoomVnum(WORLD_DATA *world, room_vnum vnum);
+-CHAR_DATA  *worldRemoveMobVnum (WORLD_DATA *world, mob_vnum  vnum);
+-OBJ_DATA  *worldRemoveObjVnum (WORLD_DATA *world, obj_vnum  vnum);
+-SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, script_vnum vnum);
+-DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, dialog_vnum vnum);
+-ZONE_DATA *worldRemoveZoneVnum(WORLD_DATA *world, zone_vnum vnum);
++ROOM_DATA *worldRemoveRoomVnum(WORLD_DATA *world, int vnum);
++CHAR_DATA  *worldRemoveMobVnum (WORLD_DATA *world, int  vnum);
++OBJ_DATA  *worldRemoveObjVnum (WORLD_DATA *world, int  vnum);
++SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, int vnum);
++DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, int vnum);
++ZONE_DATA *worldRemoveZoneVnum(WORLD_DATA *world, int vnum);
+ 
+ 
+ //
+@@ -70,13 +70,13 @@
+ // set and get functions
+ //
+ //*****************************************************************************
+-ZONE_DATA   *worldZoneBounding(WORLD_DATA *world, room_vnum vnum);
+-ZONE_DATA   *worldGetZone(WORLD_DATA *world, zone_vnum vnum);
+-ROOM_DATA   *worldGetRoom(WORLD_DATA *world, room_vnum vnum);
+-CHAR_DATA    *worldGetMob (WORLD_DATA *world, mob_vnum  vnum);
+-OBJ_DATA    *worldGetObj (WORLD_DATA *world, obj_vnum  vnum);
+-SCRIPT_DATA *worldGetScript(WORLD_DATA *world, script_vnum vnum);
+-DIALOG_DATA *worldGetDialog(WORLD_DATA *world, dialog_vnum vnum);
++ZONE_DATA   *worldZoneBounding(WORLD_DATA *world, int vnum);
++ZONE_DATA   *worldGetZone(WORLD_DATA *world, int vnum);
++ROOM_DATA   *worldGetRoom(WORLD_DATA *world, int vnum);
++CHAR_DATA    *worldGetMob (WORLD_DATA *world, int  vnum);
++OBJ_DATA    *worldGetObj (WORLD_DATA *world, int  vnum);
++SCRIPT_DATA *worldGetScript(WORLD_DATA *world, int vnum);
++DIALOG_DATA *worldGetDialog(WORLD_DATA *world, int vnum);
+ LIST        *worldGetZones(WORLD_DATA *world);
+ 
+ void        worldPutZone(WORLD_DATA *world, ZONE_DATA *zone);
+diff -ruN ../nakedmudv2.4/src/wrapsock.h src/wrapsock.h
+--- ../nakedmudv2.4/src/wrapsock.h	Sat Jun  4 23:40:30 2005
++++ src/wrapsock.h	Sat Jun 18 14:46:43 2005
+@@ -23,7 +23,7 @@
+ /* errno, EINTR */
+ #include <sys/errno.h>
+ /* htons, htonl, inet_pton */
+-#include <arpa/inet.h> 
++//#include <arpa/inet.h> 
+ /* storage size of struct address, INADDR_ANY */
+ #include <netinet/in.h> 
+ /* va_list, va_start, va_end */
+diff -ruN ../nakedmudv2.4/src/zone.c src/zone.c
+--- ../nakedmudv2.4/src/zone.c	Sat Jun  4 23:40:30 2005
++++ src/zone.c	Sat Jun 18 14:46:43 2005
+@@ -37,9 +37,9 @@
+   PROPERTY_TABLE *mob_protos;
+   PROPERTY_TABLE *obj_protos;
+ 
+-  zone_vnum vnum;
+-  room_vnum min;
+-  room_vnum max;
++  int vnum;
++  int min;
++  int max;
+ 
+   int pulse_timer;  // the timer duration
+   int pulse;        // how far down have we gone?
+@@ -48,7 +48,7 @@
+ };
+ 
+ 
+-ZONE_DATA *newZone(zone_vnum vnum, room_vnum min, room_vnum max) {
++ZONE_DATA *newZone(int vnum, int min, int max) {
+   ZONE_DATA *zone = malloc(sizeof(ZONE_DATA));
+   zone->name    = strdup("");
+   zone->desc    = newBuffer(1);
+@@ -333,23 +333,23 @@
+     return propertyTableRemove(table, vnum);
+ }
+ 
+-ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, room_vnum room){ 
++ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, int room){ 
+   return zoneRemove(zone, zone->rooms, "room", room);
+ }
+ 
+-CHAR_DATA *zoneRemoveMob(ZONE_DATA *zone, mob_vnum mob){ 
++CHAR_DATA *zoneRemoveMob(ZONE_DATA *zone, int mob){ 
+   return zoneRemove(zone, zone->mob_protos, "mob", mob);
+ }
+ 
+-OBJ_DATA *zoneRemoveObj(ZONE_DATA *zone, obj_vnum obj){ 
++OBJ_DATA *zoneRemoveObj(ZONE_DATA *zone, int obj){ 
+   return zoneRemove(zone, zone->obj_protos, "obj", obj);
+ }
+ 
+-SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, script_vnum script) { 
++SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, int script) { 
+   return zoneRemove(zone, zone->scripts, "script", script);
+ }
+ 
+-DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, dialog_vnum dialog) { 
++DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, int dialog) { 
+   return zoneRemove(zone, zone->dialogs, "dialog", dialog);
+ }
+ 
+@@ -364,15 +364,15 @@
+   return (!charIsNPC(ch) && is_keyword(zone->editors, charGetName(ch), FALSE));
+ }
+ 
+-zone_vnum zoneGetVnum(ZONE_DATA *zone) { 
++int zoneGetVnum(ZONE_DATA *zone) { 
+   return zone->vnum;
+ }
+ 
+-room_vnum zoneGetMinBound(ZONE_DATA *zone) { 
++int zoneGetMinBound(ZONE_DATA *zone) { 
+   return zone->min;
+ }
+ 
+-room_vnum zoneGetMaxBound(ZONE_DATA *zone) { 
++int zoneGetMaxBound(ZONE_DATA *zone) { 
+   return zone->max;
+ }
+ 
+@@ -380,8 +380,8 @@
+   return hashGet(zone->auxiliary_data, name);
+ }
+ 
+-room_vnum getFreeRoomVnum(ZONE_DATA *zone) {
+-  zone_vnum i;
++int getFreeRoomVnum(ZONE_DATA *zone) {
++  int i;
+   for(i = zone->min; i <= zone->max; i++)
+     if(!zoneGetRoom(zone, i))
+       return i;
+@@ -431,35 +431,35 @@
+     return propertyTableGet(table, vnum);
+ }
+ 
+-ROOM_DATA *zoneGetRoom(ZONE_DATA *zone, room_vnum room) {
++ROOM_DATA *zoneGetRoom(ZONE_DATA *zone, int room) {
+   return zoneGet(zone, zone->rooms, "room", room);
+ }
+ 
+-CHAR_DATA *zoneGetMob(ZONE_DATA *zone, mob_vnum mob) {
++CHAR_DATA *zoneGetMob(ZONE_DATA *zone, int mob) {
+   return zoneGet(zone, zone->mob_protos, "mob", mob);
+ }
+ 
+-OBJ_DATA *zoneGetObj(ZONE_DATA *zone, obj_vnum obj) {
++OBJ_DATA *zoneGetObj(ZONE_DATA *zone, int obj) {
+   return zoneGet(zone, zone->obj_protos, "obj", obj);
+ }
+ 
+-SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, script_vnum script) {
++SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, int script) {
+   return zoneGet(zone, zone->scripts, "script", script);
+ };
+ 
+-DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, dialog_vnum dialog) {
++DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, int dialog) {
+   return zoneGet(zone, zone->dialogs, "dialog", dialog);
+ };
+ 
+-void zoneSetVnum(ZONE_DATA *zone, zone_vnum vnum) { 
++void zoneSetVnum(ZONE_DATA *zone, int vnum) { 
+   zone->vnum = vnum;
+ }
+ 
+-void zoneSetMinBound(ZONE_DATA *zone, room_vnum min) { 
++void zoneSetMinBound(ZONE_DATA *zone, int min) { 
+   zone->min = min;
+ }
+ 
+-void zoneSetMaxBound(ZONE_DATA *zone, room_vnum max) { 
++void zoneSetMaxBound(ZONE_DATA *zone, int max) { 
+   zone->max = max;
+ }
+ 
+diff -ruN ../nakedmudv2.4/src/zone.h src/zone.h
+--- ../nakedmudv2.4/src/zone.h	Sat Jun  4 23:40:30 2005
++++ src/zone.h	Sat Jun 18 14:46:43 2005
+@@ -15,7 +15,7 @@
+ //
+ // Create a new zone, with vnums bounded between (inclusive) min and max
+ //
+-ZONE_DATA *newZone(zone_vnum vnum, room_vnum min, room_vnum max);
++ZONE_DATA *newZone(int vnum, int min, int max);
+ 
+ 
+ //
+@@ -69,11 +69,11 @@
+ void zoneAddDialog(ZONE_DATA *zone, DIALOG_DATA *dialog);
+ 
+ 
+-ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, room_vnum room);
+-CHAR_DATA  *zoneRemoveMob(ZONE_DATA *zone, mob_vnum mob);
+-OBJ_DATA  *zoneRemoveObj(ZONE_DATA *zone, obj_vnum obj);
+-SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, script_vnum script);
+-DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, dialog_vnum script);
++ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, int room);
++CHAR_DATA  *zoneRemoveMob(ZONE_DATA *zone, int mob);
++OBJ_DATA  *zoneRemoveObj(ZONE_DATA *zone, int obj);
++SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, int script);
++DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, int script);
+ 
+ 
+ 
+@@ -82,10 +82,10 @@
+ // get and set functions for zones
+ //
+ //*****************************************************************************
+-zone_vnum zoneGetVnum(ZONE_DATA *zone);
+-room_vnum zoneGetMinBound(ZONE_DATA *zone);
+-room_vnum zoneGetMaxBound(ZONE_DATA *zone);
+-room_vnum getFreeRoomVnum(ZONE_DATA *zone);
++int zoneGetVnum(ZONE_DATA *zone);
++int zoneGetMinBound(ZONE_DATA *zone);
++int zoneGetMaxBound(ZONE_DATA *zone);
++int getFreeRoomVnum(ZONE_DATA *zone);
+ int zoneGetPulseTimer(ZONE_DATA *zone);
+ int zoneGetPulse(ZONE_DATA *zone);
+ WORLD_DATA *zoneGetWorld(ZONE_DATA *zone);
+@@ -94,16 +94,16 @@
+ const char *zoneGetEditors(ZONE_DATA *zone);
+ BUFFER     *zoneGetDescBuffer(ZONE_DATA *zone);
+ bool        canEditZone(ZONE_DATA *zone, CHAR_DATA *ch);
+-ROOM_DATA  *zoneGetRoom(ZONE_DATA *zone, room_vnum room);
+-CHAR_DATA   *zoneGetMob(ZONE_DATA *zone, mob_vnum room);
+-OBJ_DATA   *zoneGetObj(ZONE_DATA *zone, obj_vnum obj);
+-SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, script_vnum script);
+-DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, dialog_vnum dialog);
++ROOM_DATA  *zoneGetRoom(ZONE_DATA *zone, int room);
++CHAR_DATA   *zoneGetMob(ZONE_DATA *zone, int room);
++OBJ_DATA   *zoneGetObj(ZONE_DATA *zone, int obj);
++SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, int script);
++DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, int dialog);
+ void        *zoneGetAuxiliaryData(const ZONE_DATA *zone, char *name);
+ 
+-void zoneSetVnum(ZONE_DATA *zone, zone_vnum vnum);
+-void zoneSetMinBound(ZONE_DATA *zone, room_vnum min);
+-void zoneSetMaxBound(ZONE_DATA *zone, room_vnum max);
++void zoneSetVnum(ZONE_DATA *zone, int vnum);
++void zoneSetMinBound(ZONE_DATA *zone, int min);
++void zoneSetMaxBound(ZONE_DATA *zone, int max);
+ void zoneSetPulseTimer(ZONE_DATA *zone, int timer);
+ void zoneSetPulse(ZONE_DATA *zone, int pulse_left);
+ void zoneSetWorld(ZONE_DATA *zone, WORLD_DATA *world);

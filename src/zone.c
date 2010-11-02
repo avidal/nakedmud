@@ -37,9 +37,9 @@ struct zone_data {
   PROPERTY_TABLE *mob_protos;
   PROPERTY_TABLE *obj_protos;
 
-  zone_vnum vnum;
-  room_vnum min;
-  room_vnum max;
+  int vnum;
+  int min;
+  int max;
 
   int pulse_timer;  // the timer duration
   int pulse;        // how far down have we gone?
@@ -48,7 +48,7 @@ struct zone_data {
 };
 
 
-ZONE_DATA *newZone(zone_vnum vnum, room_vnum min, room_vnum max) {
+ZONE_DATA *newZone(int vnum, int min, int max) {
   ZONE_DATA *zone = malloc(sizeof(ZONE_DATA));
   zone->name    = strdup("");
   zone->desc    = newBuffer(1);
@@ -333,23 +333,23 @@ void *zoneRemove(ZONE_DATA *zone, PROPERTY_TABLE *table,
     return propertyTableRemove(table, vnum);
 }
 
-ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, room_vnum room){ 
+ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, int room){ 
   return zoneRemove(zone, zone->rooms, "room", room);
 }
 
-CHAR_DATA *zoneRemoveMob(ZONE_DATA *zone, mob_vnum mob){ 
+CHAR_DATA *zoneRemoveMob(ZONE_DATA *zone, int mob){ 
   return zoneRemove(zone, zone->mob_protos, "mob", mob);
 }
 
-OBJ_DATA *zoneRemoveObj(ZONE_DATA *zone, obj_vnum obj){ 
+OBJ_DATA *zoneRemoveObj(ZONE_DATA *zone, int obj){ 
   return zoneRemove(zone, zone->obj_protos, "obj", obj);
 }
 
-SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, script_vnum script) { 
+SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, int script) { 
   return zoneRemove(zone, zone->scripts, "script", script);
 }
 
-DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, dialog_vnum dialog) { 
+DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, int dialog) { 
   return zoneRemove(zone, zone->dialogs, "dialog", dialog);
 }
 
@@ -364,15 +364,15 @@ bool canEditZone(ZONE_DATA *zone, CHAR_DATA *ch) {
   return (!charIsNPC(ch) && is_keyword(zone->editors, charGetName(ch), FALSE));
 }
 
-zone_vnum zoneGetVnum(ZONE_DATA *zone) { 
+int zoneGetVnum(ZONE_DATA *zone) { 
   return zone->vnum;
 }
 
-room_vnum zoneGetMinBound(ZONE_DATA *zone) { 
+int zoneGetMinBound(ZONE_DATA *zone) { 
   return zone->min;
 }
 
-room_vnum zoneGetMaxBound(ZONE_DATA *zone) { 
+int zoneGetMaxBound(ZONE_DATA *zone) { 
   return zone->max;
 }
 
@@ -380,8 +380,8 @@ void *zoneGetAuxiliaryData(const ZONE_DATA *zone, char *name) {
   return hashGet(zone->auxiliary_data, name);
 }
 
-room_vnum getFreeRoomVnum(ZONE_DATA *zone) {
-  zone_vnum i;
+int getFreeRoomVnum(ZONE_DATA *zone) {
+  int i;
   for(i = zone->min; i <= zone->max; i++)
     if(!zoneGetRoom(zone, i))
       return i;
@@ -431,35 +431,35 @@ void *zoneGet(ZONE_DATA *zone, PROPERTY_TABLE *table, const char *datatype,
     return propertyTableGet(table, vnum);
 }
 
-ROOM_DATA *zoneGetRoom(ZONE_DATA *zone, room_vnum room) {
+ROOM_DATA *zoneGetRoom(ZONE_DATA *zone, int room) {
   return zoneGet(zone, zone->rooms, "room", room);
 }
 
-CHAR_DATA *zoneGetMob(ZONE_DATA *zone, mob_vnum mob) {
+CHAR_DATA *zoneGetMob(ZONE_DATA *zone, int mob) {
   return zoneGet(zone, zone->mob_protos, "mob", mob);
 }
 
-OBJ_DATA *zoneGetObj(ZONE_DATA *zone, obj_vnum obj) {
+OBJ_DATA *zoneGetObj(ZONE_DATA *zone, int obj) {
   return zoneGet(zone, zone->obj_protos, "obj", obj);
 }
 
-SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, script_vnum script) {
+SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, int script) {
   return zoneGet(zone, zone->scripts, "script", script);
 };
 
-DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, dialog_vnum dialog) {
+DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, int dialog) {
   return zoneGet(zone, zone->dialogs, "dialog", dialog);
 };
 
-void zoneSetVnum(ZONE_DATA *zone, zone_vnum vnum) { 
+void zoneSetVnum(ZONE_DATA *zone, int vnum) { 
   zone->vnum = vnum;
 }
 
-void zoneSetMinBound(ZONE_DATA *zone, room_vnum min) { 
+void zoneSetMinBound(ZONE_DATA *zone, int min) { 
   zone->min = min;
 }
 
-void zoneSetMaxBound(ZONE_DATA *zone, room_vnum max) { 
+void zoneSetMaxBound(ZONE_DATA *zone, int max) { 
   zone->max = max;
 }
 

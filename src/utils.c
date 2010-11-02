@@ -462,11 +462,10 @@ void print_count(char *buf, const char *target, int count) {
 //
 int next_letter_in(const char *string, char marker) {
   int i = 0;
-  for(i = 0; string[i] != '\0'; i++) {
+  for(i = 0; string[i] != '\0'; i++)
     if(string[i] == marker)
-      break;
-  }
-  return i;
+      return i;
+  return -1; // none found
 }
 
 
@@ -492,6 +491,17 @@ int string_hash(const char *key) {
   return (hvalue < 0 ? hvalue * -1 : hvalue);
 }
 
+bool endswith(const char *string, const char *end) {
+  int slen = strlen(string);
+  int elen = strlen(end);
+  return (slen >= elen && !strcmp(string + slen - elen, end));
+}
+
+bool startswith(const char *string, const char *start) {
+  return !strncmp(string, start, strlen(start));
+}
+
+
 
 void format_string(char **string, int max_width, 
 		   unsigned int maxlen, bool indent) {
@@ -499,7 +509,7 @@ void format_string(char **string, int max_width,
   bool needs_capital = TRUE;
   bool needs_indent  = FALSE; // no indent on the first line, unless
                               // we get the OK from the indent parameter
-  int format_i = 0, string_i = 0, col = 0;
+  int format_i = 0, string_i = 0, col = 0, next_space = 0;
 
   // put in our indent
   if(indent) {
@@ -515,9 +525,11 @@ void format_string(char **string, int max_width,
 
   for(; (*string)[string_i] != '\0'; string_i++) {
 
-    // we have to put a newline in because
-    // the word won't fit on the line
-    if(col + next_space_in((*string)+string_i) > max_width-2) {
+    // we have to put a newline in because the word won't fit on the line
+    next_space = next_space_in((*string)+string_i);
+    if(next_space == -1)
+      next_space = strlen((*string)+string_i);
+    if(col + next_space > max_width-2) {
       formatted[format_i] = '\r'; format_i++;
       formatted[format_i] = '\n'; format_i++;
       col = 0;
@@ -685,6 +697,8 @@ bool is_keyword(const char *keywords, const char *word, bool abbrev_ok) {
       keywords = keywords+1;
     // figure out the length of the current keyword
     int keyword_len = next_letter_in(keywords, ',');
+    if(keyword_len == -1)
+      keyword_len = strlen(keywords);
 
     // see if we compare to the current keyword
     if(!abbrev_ok && !strncasecmp(keywords, word, keyword_len) &&
@@ -1279,6 +1293,17 @@ bool has_obj(CHAR_DATA *ch, int vnum) {
 
 void *identity_func(void *data) {
   return data;
+}
+
+bool cmd_matches(const char *pattern, const char *cmd) {
+  int len = next_letter_in(pattern, '*');
+  // we have to match exactly
+  if(len == -1)
+    return !strcasecmp(pattern, cmd);
+  else if(len == 0)
+    return TRUE;
+  else
+    return !strncasecmp(pattern, cmd, len);
 }
 
 bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2) {

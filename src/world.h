@@ -26,12 +26,12 @@ void deleteWorld(WORLD_DATA *world);
 // Removes the room with the ID from the world, and returns it.
 // returns NULL if the room does not exist.
 //
-ROOM_DATA *worldRemoveRoomVnum(WORLD_DATA *world, room_vnum vnum);
-CHAR_DATA  *worldRemoveMobVnum (WORLD_DATA *world, mob_vnum  vnum);
-OBJ_DATA  *worldRemoveObjVnum (WORLD_DATA *world, obj_vnum  vnum);
-SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, script_vnum vnum);
-DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, dialog_vnum vnum);
-ZONE_DATA *worldRemoveZoneVnum(WORLD_DATA *world, zone_vnum vnum);
+ROOM_DATA *worldRemoveRoomVnum(WORLD_DATA *world, int vnum);
+CHAR_DATA  *worldRemoveMobVnum (WORLD_DATA *world, int  vnum);
+OBJ_DATA  *worldRemoveObjVnum (WORLD_DATA *world, int  vnum);
+SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, int vnum);
+DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, int vnum);
+ZONE_DATA *worldRemoveZoneVnum(WORLD_DATA *world, int vnum);
 
 
 //
@@ -70,13 +70,13 @@ void worldForceReset(WORLD_DATA *world);
 // set and get functions
 //
 //*****************************************************************************
-ZONE_DATA   *worldZoneBounding(WORLD_DATA *world, room_vnum vnum);
-ZONE_DATA   *worldGetZone(WORLD_DATA *world, zone_vnum vnum);
-ROOM_DATA   *worldGetRoom(WORLD_DATA *world, room_vnum vnum);
-CHAR_DATA    *worldGetMob (WORLD_DATA *world, mob_vnum  vnum);
-OBJ_DATA    *worldGetObj (WORLD_DATA *world, obj_vnum  vnum);
-SCRIPT_DATA *worldGetScript(WORLD_DATA *world, script_vnum vnum);
-DIALOG_DATA *worldGetDialog(WORLD_DATA *world, dialog_vnum vnum);
+ZONE_DATA   *worldZoneBounding(WORLD_DATA *world, int vnum);
+ZONE_DATA   *worldGetZone(WORLD_DATA *world, int vnum);
+ROOM_DATA   *worldGetRoom(WORLD_DATA *world, int vnum);
+CHAR_DATA    *worldGetMob (WORLD_DATA *world, int  vnum);
+OBJ_DATA    *worldGetObj (WORLD_DATA *world, int  vnum);
+SCRIPT_DATA *worldGetScript(WORLD_DATA *world, int vnum);
+DIALOG_DATA *worldGetDialog(WORLD_DATA *world, int vnum);
 LIST        *worldGetZones(WORLD_DATA *world);
 
 void        worldPutZone(WORLD_DATA *world, ZONE_DATA *zone);

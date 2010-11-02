@@ -17,6 +17,7 @@
 #include "../mud.h"
 #include "../utils.h"
 #include "../character.h"
+#include "../inform.h"
 
 #include "script.h"
 #include "pyroom.h"
@@ -75,8 +76,7 @@ COMMAND(cmd_py_cmd) {
 //   erase_global(key)
 //
 //*****************************************************************************
-static PyObject *
-mud_get_global(PyObject *self, PyObject *args) {
+PyObject *mud_get_global(PyObject *self, PyObject *args) {
   PyObject *key = NULL;
 
   // get the key
@@ -94,8 +94,7 @@ mud_get_global(PyObject *self, PyObject *args) {
   return val;
 }
 
-static PyObject *
-mud_set_global(PyObject *self, PyObject *args) {
+PyObject *mud_set_global(PyObject *self, PyObject *args) {
   PyObject *key = NULL, *val = NULL;
 
   if (!PyArg_ParseTuple(args, "OO", &key, &val)) {
@@ -109,8 +108,7 @@ mud_set_global(PyObject *self, PyObject *args) {
 }
 
 
-static PyObject *
-mud_erase_global(PyObject *self, PyObject *args) {
+PyObject *mud_erase_global(PyObject *self, PyObject *args) {
   PyObject *key = NULL;
 
   if (!PyArg_ParseTuple(args, "O", &key)) {
@@ -130,8 +128,7 @@ mud_erase_global(PyObject *self, PyObject *args) {
 // and maximum position in the form of strings, a level, and boolean values
 // for whether the command can be performed by mobiles, and whether it 
 // interrupts actions.
-static PyObject *
-mud_add_cmd(PyObject *self, PyObject *args) {
+PyObject *mud_add_cmd(PyObject *self, PyObject *args) {
   PyObject *func = NULL;
   char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
        *group = NULL;
@@ -167,8 +164,7 @@ mud_add_cmd(PyObject *self, PyObject *args) {
 
 //
 // format a string to be into a typical description style
-static PyObject *
-mud_format_string(PyObject *self, PyObject *args) {
+PyObject *mud_format_string(PyObject *self, PyObject *args) {
   char *string = NULL;
 
   // parse all of the values
@@ -178,12 +174,120 @@ mud_format_string(PyObject *self, PyObject *args) {
     return NULL;
   }
 
+  // dup the string so we can work with it and not intrude on the PyString data
+  string = strdupsafe(string);
   format_string(&string, 80, MAX_BUFFER, TRUE);
   PyObject *ret = Py_BuildValue("s", string);
   free(string);
   return ret;
 }
 
+//
+// execute message() from inform.h
+PyObject *mud_message(PyObject *self, PyObject *args) {
+  // the python/C representations of the various variables that message() needs
+  PyObject    *pych = NULL;     CHAR_DATA     *ch = NULL;
+  PyObject  *pyvict = NULL;     CHAR_DATA   *vict = NULL;
+  PyObject   *pyobj = NULL;     OBJ_DATA     *obj = NULL;
+  PyObject  *pyvobj = NULL;     OBJ_DATA    *vobj = NULL;
+  char     *pyrange = NULL;     bitvector_t range = 0;
+  char        *mssg = NULL;
+  int    hide_nosee = 0;
+
+  // parse all of the arguments
+  if(!PyArg_ParseTuple(args, "OOOObss", &pych, &pyvict, &pyobj, &pyvobj,
+		       &hide_nosee, &pyrange, &mssg)) {
+    PyErr_Format(PyExc_TypeError,"Invalid arguments supplied to mud.message()");
+    return NULL;
+  }
+
+  // convert the character
+  if(pych != Py_None) {
+    if(!PyChar_Check(pych) || (ch = PyChar_AsChar(pych)) == NULL) {
+      PyErr_Format(PyExc_TypeError, 
+		   "First argument must be an existent character or None!");
+      return NULL;
+    }
+  }
+
+  // convert the victim
+  if(pyvict != Py_None) {
+    if(!PyChar_Check(pyvict) || (vict = PyChar_AsChar(pyvict)) == NULL) {
+      PyErr_Format(PyExc_TypeError, 
+		   "Second argument must be an existent character or None!");
+      return NULL;
+    }
+  }
+
+  // convert the object
+  if(pyobj != Py_None) {
+    if(!PyObj_Check(pyobj) || (obj = PyObj_AsObj(pyobj)) == NULL) {
+      PyErr_Format(PyExc_TypeError, 
+		   "Third argument must be an existent object or None!");
+      return NULL;
+    }
+  }
+
+  // convert the target object
+  if(pyvobj != Py_None) {
+    if(!PyObj_Check(pyvobj) || (vobj = PyObj_AsObj(pyvobj)) == NULL) {
+      PyErr_Format(PyExc_TypeError, 
+		   "Fourth argument must be an existent object or None!");
+      return NULL;
+    }
+  }
+
+  // check all of our keywords: char, vict, room
+  if(is_keyword(pyrange, "to_char", FALSE))
+    SET_BIT(range, TO_CHAR);
+  if(is_keyword(pyrange, "to_vict", FALSE))
+    SET_BIT(range, TO_VICT);
+  if(is_keyword(pyrange, "to_room", FALSE))
+    SET_BIT(range, TO_ROOM);
+
+  // finally, send out the message
+  message(ch, vict, obj, vobj, hide_nosee, range, mssg);
+  return Py_BuildValue("i", 1);
+}
+
+
+//
+// extracts an mob or object from the game
+PyObject *mud_extract(PyObject *self, PyObject *args) {
+  PyObject *thing = NULL;
+
+  // parse the value
+  if (!PyArg_ParseTuple(args, "O", &thing)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "extract must be provided with an object or mob to extract!.");
+    return NULL;
+  }
+
+  // check its type
+  if(PyChar_Check(thing)) {
+    CHAR_DATA *ch = PyChar_AsChar(thing);
+    if(ch != NULL)
+      extract_mobile(ch);
+    else {
+      PyErr_Format(PyExc_StandardError,
+		   "Tried to extract nonexistent character!");
+      return NULL;
+    }
+  }
+  else if(PyObj_Check(thing)) {
+    OBJ_DATA *obj = PyObj_AsObj(thing);
+    if(obj != NULL)
+      extract_obj(obj);
+    else {
+      PyErr_Format(PyExc_StandardError,
+		   "Tried to extract nonexistent object!");
+      return NULL;
+    }
+  }
+  
+  // success
+  return Py_BuildValue("i", 1);
+}
 
 
 //*****************************************************************************
@@ -191,7 +295,7 @@ mud_format_string(PyObject *self, PyObject *args) {
 // MUD module
 //
 //*****************************************************************************
-static PyMethodDef mud_module_methods[] = {
+PyMethodDef mud_module_methods[] = {
     {"get_global",  mud_get_global, METH_VARARGS,
      "Get the value of a global variable."},
     {"set_global",  mud_set_global, METH_VARARGS,
@@ -200,8 +304,14 @@ static PyMethodDef mud_module_methods[] = {
      "Erase the value of a global variable."},
     {"add_cmd", mud_add_cmd, METH_VARARGS,
      "Add a new command to the game."},
+    {"message", mud_message, METH_VARARGS,
+     "plugs into the message() function from inform.h" },
     {"format_string", mud_format_string, METH_VARARGS,
      "format a string to be 80 chars wide and indented. Like a desc."},
+    {"extract", mud_extract, METH_VARARGS,
+    "extracts an object or character from the game. This method is dangerous, "
+    "sicne the object may still be needed in whichever function called the "
+    "script that activated this method" },
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 

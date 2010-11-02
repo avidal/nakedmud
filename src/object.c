@@ -27,7 +27,7 @@ int next_obj_uid = 1000000;
 
 
 struct object_data {
-  obj_vnum vnum;                 // our number for builders
+  int vnum;                 // our number for builders
   int      uid;                  // our unique identifier
   double   weight;               // how much do we weigh, minus contents
   
@@ -196,7 +196,7 @@ LIST *objGetUsers(OBJ_DATA *obj) {
   return obj->users;
 }
 
-obj_vnum objGetVnum(OBJ_DATA *obj) {
+int objGetVnum(OBJ_DATA *obj) {
   return obj->vnum;
 }
 
@@ -283,7 +283,7 @@ void *objGetAuxiliaryData(const OBJ_DATA *obj, const char *name) {
   return hashGet(obj->auxiliary_data, name);
 }
 
-void objSetVnum(OBJ_DATA *obj, obj_vnum vnum) {
+void objSetVnum(OBJ_DATA *obj, int vnum) {
   obj->vnum = vnum;
 }
 

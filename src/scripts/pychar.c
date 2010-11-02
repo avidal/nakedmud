@@ -14,10 +14,13 @@
 #include "../world.h"
 #include "../room.h"
 #include "../character.h"
+#include "../body.h"
 #include "../object.h"
 #include "../races.h"
 #include "../handler.h"
 #include "../utils.h"
+#include "../action.h"
+#include "../socket.h"
 
 #include "pyplugs.h"
 #include "script.h"
@@ -25,6 +28,7 @@
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
+#include "pyauxiliary.h"
 
 
 
@@ -166,6 +170,24 @@ PyObject *PyChar_getisnpc(PyChar *self, void *closure) {
 PyObject *PyChar_getispc(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("i", !charIsNPC(ch));
+  else           return NULL;
+}
+
+PyObject *PyChar_gethisher(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) return Py_BuildValue("s", HISHER(ch));
+  else           return NULL;
+}
+
+PyObject *PyChar_gethimher(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) return Py_BuildValue("s", HIMHER(ch));
+  else           return NULL;
+}
+
+PyObject *PyChar_getheshe(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) return Py_BuildValue("s", HESHE(ch));
   else           return NULL;
 }
 
@@ -546,6 +568,49 @@ PyObject *PyChar_act(PyChar *self, PyObject *value) {
   }
 }
 
+//
+// Returns TRUE if the character has the given variable set
+PyObject *PyChar_hasvar(PyChar *self, PyObject *arg) {
+  char *var = NULL;
+  if (!PyArg_ParseTuple(arg, "s", &var)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Character variables must have string names.");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL)
+    return Py_BuildValue("b", charHasVar(ch, var));
+
+  PyErr_Format(PyExc_TypeError, 
+	       "Tried to get a variable value for nonexistant character, %d",
+	       self->uid);
+  return NULL;
+}
+
+
+//
+// Delete the variable set on the character with the specified name
+PyObject *PyChar_deletevar(PyChar *self, PyObject *arg) {
+  char *var = NULL;
+  if (!PyArg_ParseTuple(arg, "s", &var)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Character variables must have string names.");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) {
+    charDeleteVar(ch, var);
+    return Py_BuildValue("i", 1);
+  }
+
+  PyErr_Format(PyExc_TypeError, 
+	       "Tried to get a variable value for nonexistant character, %d",
+	       self->uid);
+  return NULL;
+}
+
 
 //
 // Get the value of a variable stored on the character
@@ -615,6 +680,79 @@ PyObject *PyChar_setvar(PyChar *self, PyObject *args) {
 }
 
 
+//
+// equips a character with an item
+PyObject *PyChar_equip(PyChar *self, PyObject *args) {  
+  OBJ_DATA  *obj = NULL;
+  CHAR_DATA  *ch = NULL;
+  PyObject *pobj = NULL;
+  char      *pos = NULL;
+
+  // incase the equip fails, keep item in the original place.. here's the vars
+  CHAR_DATA *old_carrier = NULL;
+  CHAR_DATA  *old_wearer = NULL;
+  const char    *old_pos = NULL;
+  ROOM_DATA    *old_room = NULL;
+  OBJ_DATA     *old_cont = NULL;
+
+  if (!PyArg_ParseTuple(args, "O|s", &pobj, &pos)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Character equip must be supplied with an item to equip!");
+    return NULL;
+  }
+
+  if(!PyObj_Check(pobj)) {
+    PyErr_Format(PyExc_TypeError,
+		 "Only objects may be equipped to characters!");
+    return NULL;
+  }
+
+  ch = PyChar_AsChar((PyObject *)self);
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to equip nonexistant character!");
+    return NULL;
+  }
+
+  obj = PyObj_AsObj(pobj);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to equip character with existant object!");
+    return NULL;
+  }
+
+  // remove the object from whatever it's in/on currently
+  if((old_room = objGetRoom(obj)) != NULL)
+    obj_from_room(obj);
+  if((old_cont = objGetContainer(obj)) != NULL)
+    obj_from_obj(obj);
+  if((old_carrier = objGetCarrier(obj)) != NULL)
+    obj_from_char(obj);
+  if((old_wearer = objGetWearer(obj)) != NULL) {
+    old_pos = bodyEquippedWhere(charGetBody(old_wearer), obj);
+    try_unequip(old_wearer, obj);
+  }
+
+  // try equipping the object. If we fail, put it back wherever it came from
+  if(!objIsType(obj, "worn") || !try_equip(ch, obj, pos)) {
+    if(old_room != NULL)
+      obj_to_room(obj, old_room);
+    else if(old_cont != NULL)
+      obj_to_obj(obj, old_cont);
+    else if(old_carrier != NULL)
+      obj_to_char(obj, old_carrier);
+    else if(old_wearer != NULL)
+      try_equip(ch, obj, old_pos);
+    PyErr_Format(PyExc_StandardError,
+		 "Character is already equipped in all possible positions!");
+    return NULL;
+  }
+  // success
+  else 
+    return Py_BuildValue("i", 1);
+}
+
+
 PyObject *PyChar_attach(PyChar *self, PyObject *args) {  
   long vnum = NOTHING;
 
@@ -633,7 +771,7 @@ PyObject *PyChar_attach(PyChar *self, PyObject *args) {
     return Py_BuildValue("i", 1);
   }
   else {
-    PyErr_Format(PyExc_TypeError, 
+    PyErr_Format(PyExc_StandardError, 
 		 "Tried to attach script to nonexistant char, %d, or script %d "
 		 "does not exit.", self->uid, (int)vnum);
     return NULL;
@@ -659,11 +797,161 @@ PyObject *PyChar_detach(PyChar *self, PyObject *args) {
     return Py_BuildValue("i", 1);
   }
   else {
-    PyErr_Format(PyExc_TypeError, 
+    PyErr_Format(PyExc_StandardError, 
 		 "Tried to detach script from nonexistant char, %d, or script "
 		 "%d does not exit.", self->uid, (int)vnum);
     return NULL;
   }
+}
+
+
+//
+// handles the completion of an action queued up by Python
+void PyAction_on_complete(CHAR_DATA *ch, PyObject *tuple, bitvector_t where,
+			  const char *arg) {
+  PyObject *pychar = NULL; // the python representation of our ch
+  PyObject  *cfunc = NULL; // the function called on completion
+  PyObject  *ifunc = NULL; // the function called on interruption
+  PyObject   *data = NULL; // the data we need to send back
+
+  // only run the action of our arguments parse properly
+  if(PyArg_ParseTuple(tuple, "OOOO", &pychar, &data, &cfunc, &ifunc)) {
+    if(cfunc != Py_None) {
+      PyObject *ret = PyObject_CallFunction(cfunc, "OOs", pychar, data, arg);
+      Py_XDECREF(ret);
+    }
+  }
+  
+  Py_DECREF(tuple);
+}
+
+
+//
+// handles the interruption of an action queued up by Python
+void PyAction_on_interrupt(CHAR_DATA *ch, PyObject *tuple, bitvector_t where,
+			   const char *arg) {
+  PyObject *pychar = NULL; // the python representation of our ch
+  PyObject  *cfunc = NULL; // the function called on completion
+  PyObject  *ifunc = NULL; // the function called on interruption
+  PyObject   *data = NULL; // the data we need to send back
+
+  // only run the action of our arguments parse properly
+  if(PyArg_ParseTuple(tuple, "OOOO", &pychar, &data, &cfunc, &ifunc)) {
+    if(ifunc != Py_None) {
+      PyObject *ret = PyObject_CallFunction(ifunc, "OOs", pychar, data, arg);
+      Py_XDECREF(ret);
+    }
+  }
+  
+  Py_DECREF(tuple);
+}
+
+
+//
+// start a new action (and interrupt old ones)
+PyObject *PyChar_start_action(PyChar *self, PyObject *args) {  
+  CHAR_DATA          *ch = NULL;    // our normal character representation
+  PyObject  *on_complete = Py_None; // func called when action is completed
+  PyObject *on_interrupt = Py_None; // func called when action is interrupted
+  PyObject         *data = Py_None; // the function's data value
+  double           delay = 0;       // the delay of the action (seconds)
+  char              *arg = NULL;    // the action's string argument
+
+  // parse all of our values
+  if(!PyArg_ParseTuple(args, "dO|OOs", &delay,  &on_complete, &on_interrupt,
+		      &data, &arg)) {
+    PyErr_Format(PyExc_TypeError,
+		 "startAction supplied with invalid arguments!");
+    return NULL;
+  }
+
+  // make sure we exist
+  if((ch = PyChar_AsChar((PyObject *)self)) == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to start action for nonexistant character!");
+    return NULL;
+  }
+
+  // now, queue up the action
+  start_action(ch, (int)(delay SECONDS), 1, 
+	       PyAction_on_complete, PyAction_on_interrupt, 
+	       Py_BuildValue("OOOO", self, data, on_complete, on_interrupt),
+	       arg);
+
+  // success!
+  return Py_BuildValue("i", 1);
+}
+
+
+//
+// check to see if a character currently has an action in progress
+PyObject *PyChar_is_acting(PyChar *self, PyObject *args) {  
+  // make sure we exist
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+
+  // make sure the character exists
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to query action status for a nonexistant character.");
+    return NULL;
+  }
+
+  // return our value
+  return Py_BuildValue("i", is_acting(ch, 1));
+}
+
+
+//
+// interrupt any actions the character is currently performing
+PyObject *PyChar_interrupt_action(PyChar *self, PyObject *args) {  
+  // make sure we exist
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+
+  // make sure the character exists
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to interrupt actions for a nonexistant character.");
+    return NULL;
+  }
+
+  interrupt_action(ch, 1);
+  return Py_BuildValue("i", 1);
+}
+
+
+//
+// returns the specified piece of auxiliary data from the character
+// if it is a piece of python auxiliary data.
+PyObject *PyChar_get_auxiliary(PyChar *self, PyObject *args) {
+  char *keyword = NULL;
+  if(!PyArg_ParseTuple(args, "s", &keyword)) {
+    PyErr_Format(PyExc_TypeError,
+		 "getAuxiliary() must be supplied with the name that the "
+		 "auxiliary data was installed under!");
+    return NULL;
+  }
+
+  // make sure we exist
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to get auxiliary data for a nonexistant character.");
+    return NULL;
+  }
+
+  // make sure the auxiliary data exists
+  if(!pyAuxiliaryDataExists(keyword)) {
+    PyErr_Format(PyExc_StandardError,
+		 "No auxiliary data named '%s' exists!", keyword);
+    return NULL;
+  }
+
+  PyObject *data = charGetAuxiliaryData(ch, keyword);
+  if(data == NULL) {
+    printf("Data is NULL for %s!!\r\n", keyword);
+    data = Py_None;
+  }
+  return Py_BuildValue("O", data);
 }
 
 
@@ -719,7 +1007,7 @@ PyTypeObject PyChar_Type = {
 // methods in the char module
 //*****************************************************************************
 PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
-  int mob_vnum    = NOBODY, room_vnum = NOWHERE;
+  int mob_vnum    = NOBODY, to_vnum = NOWHERE;
   PyObject *to    = NULL;
 
   ROOM_DATA *room  = NULL;
@@ -734,9 +1022,9 @@ PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
 
   // see what we're trying to load to
   if(PyInt_Check(to))
-    room_vnum = (int)PyInt_AsLong(to);
+    to_vnum = (int)PyInt_AsLong(to);
   else if(PyRoom_Check(to))
-    room_vnum = (int)PyRoom_AsVnum(to);
+    to_vnum = (int)PyRoom_AsVnum(to);
   else if(PyObj_Check(to))
     on = propertyTableGet(obj_table, PyObj_AsUid(to));
   else {
@@ -758,7 +1046,7 @@ PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
   if(on)
     room = objGetRoom(on);
   else
-    room = worldGetRoom(gameworld, room_vnum);
+    room = worldGetRoom(gameworld, to_vnum);
 
   if(room == NULL) {
     PyErr_Format(PyExc_TypeError, 
@@ -867,9 +1155,23 @@ PyObject *PyChar_all_chars(PyObject *self) {
   return Py_BuildValue("O", list);
 }
 
+PyObject *PyChar_all_sockets(PyObject *self) {
+  PyObject        *list = PyList_New(0);
+  LIST_ITERATOR *sock_i = newListIterator(socket_list);
+  SOCKET_DATA     *sock = NULL;
+  ITERATE_LIST(sock, sock_i) {
+    // only add sockets with attached characters who are in game
+    if(socketGetChar(sock) && charGetRoom(socketGetChar(sock)))
+      PyList_Append(list, newPyChar(socketGetChar(sock)));
+  } deleteListIterator(sock_i);
+  return Py_BuildValue("O", list);
+}
+
 PyMethodDef char_module_methods[] = {
-  { "all_chars", (PyCFunction)PyChar_all_chars, METH_NOARGS,
+  { "char_list", (PyCFunction)PyChar_all_chars, METH_NOARGS,
     "Return a python list containing an entry for every character in game." },
+  { "socket_list", (PyCFunction)PyChar_all_sockets, METH_NOARGS,
+    "Returns a list of all characters with attached sockets." },
   { "load_mob", PyChar_load_mob, METH_VARARGS,
     "load a mobile with the specified vnum to a room." },
   { "count_mobs", PyChar_count_mobs, METH_VARARGS,
@@ -952,6 +1254,15 @@ PyMODINIT_FUNC init_PyChar(void) {
 		      "Returns 1 if the char is an NPC, and 0 otherwise.");
   PyChar_addGetSetter("is_pc", PyChar_getispc, NULL,
 		      "Returns 1 if the char is a PC, and 0 otherwise.");
+  PyChar_addGetSetter("hisher", PyChar_gethisher, NULL,
+		      "Returns 'his' if the char is male, 'her' if female, and "
+		      "'its' for neuters");
+  PyChar_addGetSetter("himher", PyChar_gethisher, NULL,
+		      "Returns 'him' if the char is male, 'her' if female, and "
+		      "'it' for neuters");
+  PyChar_addGetSetter("heshe", PyChar_gethisher, NULL,
+		      "Returns 'he' if the char is male, 'she' if female, and "
+		      "'it' for neuters");
 
   // add in all of our methods for the Char class
   PyChar_addMethod("attach", PyChar_attach, METH_VARARGS,
@@ -960,7 +1271,7 @@ PyMODINIT_FUNC init_PyChar(void) {
 		   "detach an old script from the character.");
   PyChar_addMethod("send", PyChar_send, METH_VARARGS,
 		   "send a message to the character.");
-  PyChar_addMethod("sendarond", PyChar_sendaround, METH_VARARGS,
+  PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
 		   "send a message to everyone around the character.");
   PyChar_addMethod("act", PyChar_act, METH_VARARGS,
 		   "make the character perform an action.");
@@ -968,6 +1279,22 @@ PyMODINIT_FUNC init_PyChar(void) {
 		   "get the value of a special variable the character has.");
   PyChar_addMethod("setvar", PyChar_setvar, METH_VARARGS,
 		   "set the value of a special variable the character has.");
+  PyChar_addMethod("hasvar", PyChar_hasvar, METH_VARARGS,
+		   "return whether or not the character has a given variable.");
+  PyChar_addMethod("deletevar", PyChar_deletevar, METH_VARARGS,
+		   "delete a variable from the character's variable table.");
+  PyChar_addMethod("equip", PyChar_equip, METH_VARARGS,
+		   "equips a character with the given item. Removes the item "
+		   "from whatever it is currently in/on.");
+  PyChar_addMethod("isActing", PyChar_is_acting, METH_VARARGS,
+		   "Returns True if the character is currently taking an "
+		   "action, and False otherwise.");
+  PyChar_addMethod("startAction", PyChar_start_action, METH_VARARGS,
+		   "Begins the character starting a new action");
+  PyChar_addMethod("interrupt", PyChar_interrupt_action, METH_VARARGS,
+		   "Interrupts the character's current action.");
+  PyChar_addMethod("getAuxiliary", PyChar_get_auxiliary, METH_VARARGS,
+		   "get's the specified piece of aux data from the char");
 
   // add in all the getsetters and methods
   makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);
@@ -987,8 +1314,9 @@ PyMODINIT_FUNC init_PyChar(void) {
     return;
 
   // add the Char class to the module
+  PyTypeObject *type = &PyChar_Type;
   Py_INCREF(&PyChar_Type);
-  PyModule_AddObject(m, "Char", (PyObject *)&PyChar_Type);
+  PyModule_AddObject(m, "Char", (PyObject *)type);
 }
 
 

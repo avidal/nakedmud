@@ -726,12 +726,12 @@ void send_message(CHAR_DATA *to,
 	break;
       case 's':
 	if(!ch) break;
-	sprintf(buf+j, (can_see_char(to, ch) ? HISHERS(ch) :SOMEONE"'s"));
+	sprintf(buf+j, (can_see_char(to, ch) ? HISHER(ch) :SOMEONE"'s"));
 	while(buf[j] != '\0') j++;
 	break;
       case 'S':
 	if(!vict) break;
-	sprintf(buf+j, (can_see_char(to, vict) ? HISHERS(vict) :SOMEONE"'s"));
+	sprintf(buf+j, (can_see_char(to, vict) ? HISHER(vict) :SOMEONE"'s"));
 	while(buf[j] != '\0') j++;
 	break;
       case 'e':

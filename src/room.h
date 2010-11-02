@@ -105,8 +105,8 @@ void       roomRemoveObj      (ROOM_DATA *room, const OBJ_DATA *obj);
 void       roomAddChar        (ROOM_DATA *room, CHAR_DATA *ch);
 void       roomAddObj         (ROOM_DATA *room, OBJ_DATA *obj);
 
-void       roomDigExit        (ROOM_DATA *room, int dir, room_vnum to);
-void       roomDigExitSpecial (ROOM_DATA *room, const char *dir, room_vnum to);
+void       roomDigExit        (ROOM_DATA *room, int dir, int to);
+void       roomDigExitSpecial (ROOM_DATA *room, const char *dir, int to);
 
 //*****************************************************************************
 //
@@ -114,7 +114,7 @@ void       roomDigExitSpecial (ROOM_DATA *room, const char *dir, room_vnum to);
 //
 //*****************************************************************************
 
-room_vnum   roomGetVnum        (const ROOM_DATA *room);
+int   roomGetVnum        (const ROOM_DATA *room);
 const char *roomGetName        (const ROOM_DATA *room);
 const char *roomGetDesc        (const ROOM_DATA *room);
 int         roomGetTerrain     (const ROOM_DATA *room);
@@ -135,7 +135,7 @@ void        roomRemoveReset    (ROOM_DATA *room, RESET_DATA *reset);
 void        roomAddReset       (ROOM_DATA *room, RESET_DATA *reset);
 
 void        roomSetEdescs      (ROOM_DATA *room, EDESC_SET *edescs);
-void        roomSetVnum        (ROOM_DATA *room, room_vnum vnum);
+void        roomSetVnum        (ROOM_DATA *room, int vnum);
 void        roomSetName        (ROOM_DATA *room, const char *name);
 void        roomSetDesc        (ROOM_DATA *room, const char *desc);
 void        roomSetTerrain     (ROOM_DATA *room, int terrain_type);

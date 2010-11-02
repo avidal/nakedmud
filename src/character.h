@@ -84,7 +84,7 @@ BUFFER      *charGetDescBuffer( CHAR_DATA *ch);
 LIST        *charGetInventory ( CHAR_DATA *ch);
 BODY_DATA   *charGetBody      ( CHAR_DATA *ch);
 const char  *charGetRace      ( CHAR_DATA *ch);
-room_vnum    charGetLoadroom  ( CHAR_DATA *ch);
+int    charGetLoadroom  ( CHAR_DATA *ch);
 OBJ_DATA    *charGetFurniture ( CHAR_DATA *ch);
 int          charGetPos       ( CHAR_DATA *ch);
 int          charGetUID       ( const CHAR_DATA *ch);
@@ -104,7 +104,7 @@ void         charSetMultiName ( CHAR_DATA *ch, const char *multi_name);
 void         charSetBody      ( CHAR_DATA *ch, BODY_DATA *body);
 void         charSetRace      ( CHAR_DATA *ch, const char *race);
 void         charSetUID       ( CHAR_DATA *ch, int uid);
-void         charSetLoadroom  ( CHAR_DATA *ch, room_vnum loadroom);
+void         charSetLoadroom  ( CHAR_DATA *ch, int loadroom);
 void         charSetFurniture ( CHAR_DATA *ch, OBJ_DATA *furniture);
 void         charSetPos       ( CHAR_DATA *ch, int pos);
 
@@ -113,12 +113,12 @@ void         charSetPos       ( CHAR_DATA *ch, int pos);
 //*****************************************************************************
 // mob-specific functions
 //*****************************************************************************
-mob_vnum     charGetVnum       (CHAR_DATA *ch);
-dialog_vnum  charGetDialog     (CHAR_DATA *ch);
+int     charGetVnum       (CHAR_DATA *ch);
+int  charGetDialog     (CHAR_DATA *ch);
 const char  *charGetKeywords   (CHAR_DATA *ch);
 
-void         charSetVnum       (CHAR_DATA *ch, mob_vnum vnum);
-void         charSetDialog     (CHAR_DATA *ch, dialog_vnum vnum);
+void         charSetVnum       (CHAR_DATA *ch, int vnum);
+void         charSetDialog     (CHAR_DATA *ch, int vnum);
 void         charSetKeywords   (CHAR_DATA *ch, const char *keywords);
 
 

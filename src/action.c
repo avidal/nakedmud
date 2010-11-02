@@ -65,8 +65,12 @@ void dsay_interrupt(CHAR_DATA *ch, void *data, bitvector_t where, char *arg) {
 }
 
 COMMAND(cmd_dsay) {
-  send_to_char(ch, "You start a delayed say.\r\n");
-  start_action(ch, 3 SECOND, 1, do_dsay, dsay_interrupt, NULL, arg);
+  if(!*arg)
+    send_to_char(ch, "What did you want to delay-say?\r\n");
+  else {
+    send_to_char(ch, "You start a delayed say.\r\n");
+    start_action(ch, 3 SECOND, 1, do_dsay, dsay_interrupt, NULL, arg);
+  }
 }
 
 

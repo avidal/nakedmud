@@ -65,13 +65,6 @@ typedef struct shop_data                  SHOP_DATA;
 typedef struct body_data                  BODY_DATA;
 typedef struct reset_data                 RESET_DATA;
 
-typedef int                               shop_vnum;
-typedef int                               room_vnum;
-typedef int                               zone_vnum;
-typedef int                               mob_vnum;
-typedef int                               obj_vnum;
-typedef int                               script_vnum;
-typedef int                               dialog_vnum;
 typedef long                              bitvector_t;
 
 // define simple types

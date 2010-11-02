@@ -37,6 +37,8 @@ COMMAND(cmd_rdelete);
 COMMAND(cmd_mdelete);
 COMMAND(cmd_odelete);
 COMMAND(cmd_ddelete);
+COMMAND(cmd_detach);
+COMMAND(cmd_attach);
 
 
 /* cmd_manip.c */

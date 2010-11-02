@@ -28,12 +28,14 @@
 #include "pyobj.h"
 #include "pymud.h"
 #include "pyplugs.h"
+#include "pyevent.h"
+#include "pystorage.h"
+#include "pyauxiliary.h"
 
 // online editor stuff
 #include "../editor/editor.h"
 #include "script_editor.h"
 #include "../olc2/olc.h"
-
 
 
 //*****************************************************************************
@@ -175,7 +177,7 @@ void charSetScripts(CHAR_DATA *ch, SCRIPT_SET *scripts) {
 // functions 'n such for the script object
 //*****************************************************************************
 struct script_data {
-  script_vnum vnum;
+  int vnum;
   int         type;
   char       *name;
   char       *args;
@@ -263,7 +265,7 @@ void         scriptCopyTo(SCRIPT_DATA *from, SCRIPT_DATA *to) {
   to->num_arg = from->num_arg;
 }
 
-script_vnum scriptGetVnum(SCRIPT_DATA *script) {
+int scriptGetVnum(SCRIPT_DATA *script) {
   return script->vnum;
 }
 
@@ -291,7 +293,7 @@ BUFFER *scriptGetCodeBuffer(SCRIPT_DATA *script) {
   return script->code;
 }
 
-void scriptSetVnum(SCRIPT_DATA *script, script_vnum vnum) {
+void scriptSetVnum(SCRIPT_DATA *script, int vnum) {
   script->vnum = vnum;
 }
 
@@ -373,6 +375,9 @@ PyObject *newScriptDict() {
   mudmod = PyImport_ImportModule("obj");
   PyDict_Update(dict, PyModule_GetDict(mudmod));
   Py_DECREF(mudmod);
+  mudmod = PyImport_ImportModule("event");
+  PyDict_Update(dict, PyModule_GetDict(mudmod));
+  Py_DECREF(mudmod);
 
   return dict;
 }
@@ -409,6 +414,9 @@ void init_scripts() {
   Py_Initialize();
 
   // initialize all of our modules written in C
+  init_PyAuxiliary();
+  init_PyEvent();
+  init_PyStorage();
   init_PyChar();
   init_PyRoom();
   init_PyObj();
@@ -509,10 +517,13 @@ void format_script(char **script, int max_len) {
 // statements we need to highlight
 const char *control_table[] = {
   "import",
+  "except",
   "while",
   "from",
   "elif",
   "else",
+  "pass",
+  "try",
   "def",
   "for",
   "if",
@@ -618,7 +629,7 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
 	  *line_num_info = '\0';
 
 	line[line_i] = '\0';
-	send_to_socket(sock, "%s{g%s\r\n", line_num_info, line);
+	send_to_socket(sock, "%s{g%s{n\r\n", line_num_info, line);
 	*line = '\0';
 	line_i = 0;
 	line_num++;
@@ -642,13 +653,13 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
   line[line_i] = '\0';
   // send the last line
   if(*line)
-    send_to_socket(sock, "{c%2d]{g  %s\r\n", line_num, line);
+    send_to_socket(sock, "{c%2d]{g  %s{n\r\n", line_num, line);
   // there was nothing on the first line
   else if(line_num == 1)
     send_to_socket(sock, "The buffer is empty.\r\n");
 
   // and kill any color that is leaking
-  send_to_socket(sock, "{n");
+  //  send_to_socket(sock, "{n");
 
   if(ptr[strlen(ptr)-1] != '\n')
     send_to_socket(sock, "Buffer does not end in newline!\r\n");
@@ -786,8 +797,9 @@ int try_scripts(int script_type,
       break;
 
     case SCRIPT_TYPE_COMMAND:
-      // if the keyword isn't on our list, continue
-      if(!is_keyword(scriptGetArgs(script), cmd, FALSE))
+      // if the keyword doesn't match our command, continue
+      //      if(!is_keyword(scriptGetArgs(script), cmd, FALSE))
+      if(!cmd_matches(scriptGetArgs(script), cmd))
 	continue;
       // if the numeric argument of the script is 1,
       // we need to switch our retval to 1 and return

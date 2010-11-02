@@ -106,26 +106,26 @@ void *worldRemoveVnum(WORLD_DATA *world, void *remover, int vnum) {
 }
 
 
-ROOM_DATA *worldRemoveRoomVnum(WORLD_DATA *world, room_vnum vnum) {
+ROOM_DATA *worldRemoveRoomVnum(WORLD_DATA *world, int vnum) {
   propertyTableRemove(world->rooms, vnum);
   return worldRemoveVnum(world, zoneRemoveRoom, vnum);
 };
 
 
-CHAR_DATA *worldRemoveMobVnum(WORLD_DATA *world, mob_vnum vnum) {
+CHAR_DATA *worldRemoveMobVnum(WORLD_DATA *world, int vnum) {
   return worldRemoveVnum(world, zoneRemoveMob, vnum);
 };
 
 
-OBJ_DATA *worldRemoveObjVnum(WORLD_DATA *world, obj_vnum vnum) {
+OBJ_DATA *worldRemoveObjVnum(WORLD_DATA *world, int vnum) {
   return worldRemoveVnum(world, zoneRemoveObj, vnum);
 };
 
-SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, script_vnum vnum) {
+SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, int vnum) {
   return worldRemoveVnum(world, zoneRemoveScript, vnum);
 };
 
-DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, dialog_vnum vnum) {
+DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, int vnum) {
   return worldRemoveVnum(world, zoneRemoveDialog, vnum);
 };
 
@@ -150,7 +150,7 @@ bool worldRemoveDialog(WORLD_DATA *world, DIALOG_DATA *dialog) {
 };
 
 
-ZONE_DATA *worldRemoveZoneVnum(WORLD_DATA *world, zone_vnum vnum) {
+ZONE_DATA *worldRemoveZoneVnum(WORLD_DATA *world, int vnum) {
   // go through and find our zone
   LIST_ITERATOR *zone_i = newListIterator(world->zones);
   ZONE_DATA *zone = NULL;
@@ -260,7 +260,7 @@ void worldForceReset(WORLD_DATA *world) {
 // Search through all of the zones in this world, and return the one
 // that has min/max vnums that bound this vnum
 //
-ZONE_DATA *worldZoneBounding(WORLD_DATA *world, room_vnum vnum) {
+ZONE_DATA *worldZoneBounding(WORLD_DATA *world, int vnum) {
   LIST_ITERATOR *zone_i = newListIterator(world->zones);
   ZONE_DATA *zone = NULL;
 
@@ -276,7 +276,7 @@ LIST *worldGetZones(WORLD_DATA *world) {
   return world->zones;
 }
 
-ZONE_DATA  *worldGetZone(WORLD_DATA *world, zone_vnum vnum) {
+ZONE_DATA  *worldGetZone(WORLD_DATA *world, int vnum) {
   LIST_ITERATOR *zone_i = newListIterator(world->zones);
   ZONE_DATA *zone = NULL;
 
@@ -312,7 +312,7 @@ void *worldGet(WORLD_DATA *world, void *getter, int vnum) {
   return data;
 }
 
-ROOM_DATA  *worldGetRoom(WORLD_DATA *world, room_vnum vnum) {
+ROOM_DATA  *worldGetRoom(WORLD_DATA *world, int vnum) {
   ROOM_DATA *room = worldGet(world, zoneGetRoom, vnum);
   // if it exists, we might as well toss it
   // into the global table for future reference
@@ -321,19 +321,19 @@ ROOM_DATA  *worldGetRoom(WORLD_DATA *world, room_vnum vnum) {
   return room;
 };
 
-CHAR_DATA  *worldGetMob(WORLD_DATA *world, mob_vnum vnum) {
+CHAR_DATA  *worldGetMob(WORLD_DATA *world, int vnum) {
   return worldGet(world, zoneGetMob, vnum);
 };
 
-OBJ_DATA  *worldGetObj(WORLD_DATA *world, obj_vnum vnum) {
+OBJ_DATA  *worldGetObj(WORLD_DATA *world, int vnum) {
   return worldGet(world, zoneGetObj, vnum);
 };
 
-SCRIPT_DATA  *worldGetScript(WORLD_DATA *world, script_vnum vnum) {
+SCRIPT_DATA  *worldGetScript(WORLD_DATA *world, int vnum) {
   return worldGet(world, zoneGetScript, vnum);
 };
 
-DIALOG_DATA  *worldGetDialog(WORLD_DATA *world, dialog_vnum vnum) {
+DIALOG_DATA  *worldGetDialog(WORLD_DATA *world, int vnum) {
   return worldGet(world, zoneGetDialog, vnum);
 };
 

@@ -186,6 +186,32 @@ PyObject *PyObj_getchars(PyObj *self, PyObject *args) {
   return Py_BuildValue("O", list);
 }
 
+PyObject *PyObj_getcarrier(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj == NULL)
+    return NULL;
+  if(objGetCarrier(obj) == NULL)
+    return Py_None;
+  return Py_BuildValue("O", newPyChar(objGetCarrier(obj)));
+}
+
+PyObject *PyObj_getroom(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj == NULL)
+    return NULL;
+  if(objGetRoom(obj) == NULL)
+    return Py_None;
+  return Py_BuildValue("O", newPyRoom(objGetRoom(obj)));
+}
+
+PyObject *PyObj_getcontainer(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj == NULL)
+    return NULL;
+  if(objGetContainer(obj) == NULL)
+    return Py_None;
+  return Py_BuildValue("O", newPyObj(objGetContainer(obj)));
+}
 
 //
 // Standard check to make sure the object exists when
@@ -329,7 +355,7 @@ int PyObj_setmdesc(PyObj *self, PyObject *value, void *closure) {
 int PyObj_setweight(PyObj *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete object's weight");
-    return 0;
+    return -1;
   }
 
   if (!PyFloat_Check(value)) {
@@ -341,6 +367,111 @@ int PyObj_setweight(PyObj *self, PyObject *value, void *closure) {
   OBJ_DATA *obj;
   PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
   objSetWeightRaw(obj, PyFloat_AsDouble(value));
+  return 0;
+}
+
+int PyObj_setcarrier(PyObj *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete object's carrier");
+    return -1;
+  }
+
+  if (!PyChar_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Carrier must be a character!");
+    return -1;
+  }
+
+  OBJ_DATA *obj;
+  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+  CHAR_DATA *carrier = PyChar_AsChar(value);
+  // remove us from whatever we're currently in
+  if(objGetRoom(obj))
+    obj_from_room(obj);
+  if(objGetCarrier(obj))
+    obj_from_char(obj);
+  if(objGetContainer(obj))
+    obj_from_obj(obj);
+  if(objGetWearer(obj)) {
+    // weird... we couldn't unequip the item from the current wearer
+    if(!try_unequip(objGetWearer(obj), obj)) {
+      PyErr_Format(PyExc_StandardError, "Could not unequip previous wearer.");
+      return -1;
+    }
+  }
+
+  // give the obj to the character
+  obj_to_char(obj, carrier);
+  return 0;
+}
+
+int PyObj_setroom(PyObj *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete object's room");
+    return -1;
+  }
+
+  if (!PyRoom_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Room must be a room!");
+    return -1;
+  }
+
+  OBJ_DATA *obj;
+  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+  ROOM_DATA *room = PyRoom_AsRoom(value);
+  // remove us from whatever we're currently in
+  if(objGetRoom(obj))
+    obj_from_room(obj);
+  if(objGetCarrier(obj))
+    obj_from_char(obj);
+  if(objGetContainer(obj))
+    obj_from_obj(obj);
+  if(objGetWearer(obj)) {
+    // weird... we couldn't unequip the item from the current wearer
+    if(!try_unequip(objGetWearer(obj), obj)) {
+      PyErr_Format(PyExc_StandardError, "Could not unequip wearer.");
+      return -1;
+    }
+  }
+
+  // give the obj to the character
+  obj_to_room(obj, room);
+  return 0;
+}
+
+int PyObj_setcontainer(PyObj *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete object's container");
+    return -1;
+  }
+
+  if (!PyObj_Check(value)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Container must be an object!");
+    return -1;
+  }
+
+  OBJ_DATA *obj, *cont;
+  PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+  PYOBJ_CHECK_OBJ_EXISTS(((PyObj *)value)->uid, cont);
+  // remove us from whatever we're currently in
+  if(objGetRoom(obj))
+    obj_from_room(obj);
+  if(objGetCarrier(obj))
+    obj_from_char(obj);
+  if(objGetContainer(obj))
+    obj_from_obj(obj);
+  if(objGetWearer(obj)) {
+    // weird... we couldn't unequip the item from the current wearer
+    if(!try_unequip(objGetWearer(obj), obj)) {
+      PyErr_Format(PyExc_StandardError, "Could not unequip wearer.");
+      return -1;
+    }
+  }
+
+  // give the obj to the character
+  obj_to_obj(obj, cont);
   return 0;
 }
 
@@ -367,7 +498,7 @@ PyObject *PyObj_attach(PyObj *self, PyObject *args) {
     return Py_BuildValue("i", 1);
   }
   else {
-    PyErr_Format(PyExc_TypeError, 
+    PyErr_Format(PyExc_StandardError, 
 		 "Tried to attach script to nonexistant obj, %d, or script %d "
 		 "does not exit.", self->uid, (int)vnum);
     return NULL;
@@ -393,7 +524,7 @@ PyObject *PyObj_detach(PyObj *self, PyObject *args) {
     return Py_BuildValue("i", 1);
   }
   else {
-    PyErr_Format(PyExc_TypeError, 
+    PyErr_Format(PyExc_StandardError, 
 		 "Tried to detach script from nonexistant obj, %d, or script "
 		 "%d does not exit.", self->uid, (int)vnum);
     return NULL;
@@ -453,7 +584,7 @@ PyTypeObject PyObj_Type = {
 // the obj module
 //*****************************************************************************
 PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
-  int obj_vnum = NOBODY;
+  int vnum     = NOBODY;
   PyObject *in = NULL;
 
   ROOM_DATA *room = NULL; // are we loading to a room?
@@ -461,14 +592,14 @@ PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
   CHAR_DATA *ch   = NULL; // are we loading to a character?
   char *equip_to  = NULL; // are we trying to equip the character?
 
-  if (!PyArg_ParseTuple(args, "iO|s", &obj_vnum, &in, &equip_to)) {
+  if (!PyArg_ParseTuple(args, "iO|s", &vnum, &in, &equip_to)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Load obj failed - it needs a vnum and destination.");
     return NULL;
   }
 
   // check the obj
-  OBJ_DATA *obj_proto = worldGetObj(gameworld, obj_vnum);
+  OBJ_DATA *obj_proto = worldGetObj(gameworld, vnum);
   if(obj_proto == NULL) {
     PyErr_Format(PyExc_TypeError, 
                     "Load obj failed: object number does not exist.");
@@ -720,6 +851,15 @@ init_PyObj(void) {
 		       "the virtual number for the object.");
     PyObj_addGetSetter("bits", PyObj_getbits, PyObj_setbits,
 		       "the object's basic bitvector.");
+    PyObj_addGetSetter("carrier", PyObj_getcarrier, PyObj_setcarrier,
+		       "the person carrying the object");
+    PyObj_addGetSetter("room", PyObj_getroom, PyObj_setroom,
+		       "The room this object is in. "
+		       "None if on a character or in another object");
+    PyObj_addGetSetter("container", PyObj_getcontainer, PyObj_setcontainer,
+		       "The container this object is in. "
+		       "None if on a character or in a room");
+
 
     // methods
     PyObj_addMethod("attach", PyObj_attach, METH_VARARGS,
@@ -744,8 +884,9 @@ init_PyObj(void) {
       return;
 
     // add the obj class to the obj module
+    PyTypeObject *type = &PyObj_Type;
     Py_INCREF(&PyObj_Type);
-    PyModule_AddObject(m, "Obj", (PyObject *)&PyObj_Type);
+    PyModule_AddObject(m, "Obj", (PyObject *)type);
 }
 
 

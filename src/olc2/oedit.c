@@ -168,7 +168,7 @@ COMMAND(cmd_oedit) {
   // we're editing an object by vnum... edit the prototype
   else {
     ZONE_DATA *zone = NULL;
-    obj_vnum   vnum = atoi(arg);
+    int   vnum = atoi(arg);
 
     // make sure there is a corresponding zone ...
     if((zone = worldZoneBounding(gameworld, vnum)) == NULL)

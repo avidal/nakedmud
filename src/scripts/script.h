@@ -101,6 +101,7 @@
 //     me   = ourself
 //     ch   = the character entering the room
 //     room = the room we are in (if applicable) or ourself
+//     cmd  = the direction that ch left his old room from
 
 //*****************************************************************************
 // SCRIPT_TYPE_EXIT
@@ -145,7 +146,7 @@
 //   Numeric Arguments:
 //     None
 //   Works with:
-//     mobiles (gods)
+//     mobiles (game staff)
 //   Parameters:
 //     me   = the person running the script
 //     arg  = the argument supplied to scrun
@@ -174,7 +175,7 @@ SCRIPT_DATA *scriptRead (STORAGE_SET *set);
 SCRIPT_DATA *scriptCopy(SCRIPT_DATA *script);
 void         scriptCopyTo(SCRIPT_DATA *from, SCRIPT_DATA *to);
 
-script_vnum scriptGetVnum(SCRIPT_DATA *script);
+int scriptGetVnum(SCRIPT_DATA *script);
 int         scriptGetType(SCRIPT_DATA *script);
 int         scriptGetNumArg(SCRIPT_DATA *script);
 const char *scriptGetArgs(SCRIPT_DATA *script);
@@ -182,7 +183,7 @@ const char *scriptGetName(SCRIPT_DATA *script);
 const char *scriptGetCode(SCRIPT_DATA *script);
 BUFFER     *scriptGetCodeBuffer(SCRIPT_DATA *script);
 
-void scriptSetVnum(SCRIPT_DATA *script, script_vnum vnum);
+void scriptSetVnum(SCRIPT_DATA *script, int vnum);
 void scriptSetType(SCRIPT_DATA *script, int type);
 void scriptSetNumArg(SCRIPT_DATA *script, int num_arg);
 void scriptSetArgs(SCRIPT_DATA *script, const char *args);

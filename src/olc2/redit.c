@@ -645,7 +645,7 @@ bool redit_parser(SOCKET_DATA *sock, ROOM_DATA *room, int choice,
 COMMAND(cmd_redit) {
   ZONE_DATA *zone;
   ROOM_DATA *room;
-  room_vnum vnum;
+  int vnum;
 
   // if no argument is supplied, default to the current room
   if(!arg || !*arg)

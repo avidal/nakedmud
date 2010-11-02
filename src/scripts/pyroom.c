@@ -40,7 +40,7 @@ LIST *pyroom_methods = NULL;
 
 typedef struct {
   PyObject_HEAD
-  room_vnum vnum;
+  int vnum;
 } PyRoom;
 
 
@@ -481,7 +481,7 @@ PyObject *PyRoom_attach(PyRoom *self, PyObject *args) {
     return Py_BuildValue("i", 1);
   }
   else {
-    PyErr_Format(PyExc_TypeError, 
+    PyErr_Format(PyExc_StandardError, 
 		 "Tried to attach script to nonexistant room, %d, or script %d "
 		 "does not exit.", self->vnum, (int)vnum);
     return NULL;
@@ -507,7 +507,7 @@ PyObject *PyRoom_detach(PyRoom *self, PyObject *args) {
     return Py_BuildValue("i", 1);
   }
   else {
-    PyErr_Format(PyExc_TypeError, 
+    PyErr_Format(PyExc_StandardError, 
 		 "Tried to detach script from nonexistant room, %d, or script "
 		 "%d does not exit.", self->vnum, (int)vnum);
     return NULL;
@@ -653,7 +653,8 @@ init_PyRoom(void) {
       return;
 
     // add the Room class to the room module
-    PyModule_AddObject(module, "Room", (PyObject *)&PyRoom_Type);
+    PyTypeObject *type = &PyRoom_Type;
+    PyModule_AddObject(module, "Room", (PyObject *)type);
     Py_INCREF(&PyRoom_Type);
 }
 

@@ -90,7 +90,7 @@ int poscmp(int pos1, int pos2) {
 
 struct char_data {
   // data for PCs only
-  room_vnum              loadroom;
+  int              loadroom;
 
   // shared data for PCs and NPCs
   int                    uid;
@@ -112,12 +112,12 @@ struct char_data {
   BITVECTOR            * user_groups;
 
   // data for NPCs only
-  dialog_vnum            dialog;
+  int            dialog;
   char                 * rdesc;
   char                 * multi_name;
   char                 * multi_rdesc;
   char                 * keywords;
-  mob_vnum               vnum;  
+  int               vnum;  
 };
 
 
@@ -249,7 +249,7 @@ int          charGetUID   ( const CHAR_DATA *ch) {
   return ch->uid;
 }
 
-room_vnum    charGetLoadroom (CHAR_DATA *ch) {
+int    charGetLoadroom (CHAR_DATA *ch) {
   return ch->loadroom;
 }
 
@@ -316,7 +316,7 @@ void         charResetBody(CHAR_DATA *ch) {
   charSetBody(ch, raceCreateBody(ch->race));
 }
 
-void charSetLoadroom(CHAR_DATA *ch, room_vnum loadroom) {
+void charSetLoadroom(CHAR_DATA *ch, int loadroom) {
   ch->loadroom = loadroom;
 }
 
@@ -472,19 +472,19 @@ void charSetKeywords(CHAR_DATA *ch, const char *keywords) {
   ch->keywords = strdup(keywords ? keywords : "");
 }
 
-void charSetVnum(CHAR_DATA *ch, mob_vnum vnum) {
+void charSetVnum(CHAR_DATA *ch, int vnum) {
   ch->vnum = vnum;
 }
 
-void charSetDialog(CHAR_DATA *ch, dialog_vnum vnum) {
+void charSetDialog(CHAR_DATA *ch, int vnum) {
   ch->dialog = vnum;
 }
 
-mob_vnum     charGetVnum       ( CHAR_DATA *ch) {
+int     charGetVnum       ( CHAR_DATA *ch) {
   return ch->vnum;
 }
 
-dialog_vnum  charGetDialog     ( CHAR_DATA *ch) {
+int  charGetDialog     ( CHAR_DATA *ch) {
   return ch->dialog;
 }
 

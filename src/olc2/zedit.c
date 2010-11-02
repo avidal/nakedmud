@@ -83,8 +83,8 @@ bool zedit_parser(SOCKET_DATA *sock, ZONE_DATA *zone, int choice,
 COMMAND(cmd_zedit) {
   // we want to create a new zone?
   if(!strncasecmp(arg, "new ", 4)) {
-    zone_vnum vnum = 0;
-    room_vnum min = 0, max = 0;
+    int vnum = 0;
+    int min = 0, max = 0;
 
     // scan for the parameters
     sscanf(arg+4, "%d %d %d", &vnum, &min, &max);
@@ -114,7 +114,7 @@ COMMAND(cmd_zedit) {
   // we want to edit a preexisting zone
   else {
     ZONE_DATA *zone = NULL;
-    zone_vnum vnum   = (!*arg ? 
+    int vnum   = (!*arg ? 
 			zoneGetVnum(worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch)))) : atoi(arg));
  
     // make sure there is a corresponding zone ...

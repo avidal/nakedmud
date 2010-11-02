@@ -179,7 +179,7 @@ COMMAND(cmd_medit) {
   // we're editing a mobile by vnum... edit the prototype
   else {
     ZONE_DATA *zone = NULL;
-    mob_vnum vnum   = atoi(arg);
+    int vnum   = atoi(arg);
 
     // make sure there is a corresponding zone ...
     if((zone = worldZoneBounding(gameworld, vnum)) == NULL)

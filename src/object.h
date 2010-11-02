@@ -34,7 +34,7 @@ void         objRemoveChar  (OBJ_DATA *obj, CHAR_DATA *ch);
 // set and get functions
 //
 //*****************************************************************************
-obj_vnum     objGetVnum      (OBJ_DATA *obj);
+int     objGetVnum      (OBJ_DATA *obj);
 const char  *objGetName      (OBJ_DATA *obj);
 const char  *objGetKeywords  (OBJ_DATA *obj);
 const char  *objGetRdesc     (OBJ_DATA *obj);
@@ -56,7 +56,7 @@ double       objGetWeightRaw (OBJ_DATA *obj);
 void        *objGetAuxiliaryData(const OBJ_DATA *obj, const char *name);
 BITVECTOR   *objGetBits      (OBJ_DATA *obj);
 
-void         objSetVnum      (OBJ_DATA *obj, obj_vnum vnum);
+void         objSetVnum      (OBJ_DATA *obj, int vnum);
 void         objSetName      (OBJ_DATA *obj, const char *name);
 void         objSetKeywords  (OBJ_DATA *obj, const char *keywords);
 void         objSetRdesc     (OBJ_DATA *obj, const char *rdesc);

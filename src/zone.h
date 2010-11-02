@@ -15,7 +15,7 @@
 //
 // Create a new zone, with vnums bounded between (inclusive) min and max
 //
-ZONE_DATA *newZone(zone_vnum vnum, room_vnum min, room_vnum max);
+ZONE_DATA *newZone(int vnum, int min, int max);
 
 
 //
@@ -69,11 +69,11 @@ void zoneAddScript(ZONE_DATA *zone, SCRIPT_DATA *script);
 void zoneAddDialog(ZONE_DATA *zone, DIALOG_DATA *dialog);
 
 
-ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, room_vnum room);
-CHAR_DATA  *zoneRemoveMob(ZONE_DATA *zone, mob_vnum mob);
-OBJ_DATA  *zoneRemoveObj(ZONE_DATA *zone, obj_vnum obj);
-SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, script_vnum script);
-DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, dialog_vnum script);
+ROOM_DATA *zoneRemoveRoom(ZONE_DATA *zone, int room);
+CHAR_DATA  *zoneRemoveMob(ZONE_DATA *zone, int mob);
+OBJ_DATA  *zoneRemoveObj(ZONE_DATA *zone, int obj);
+SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, int script);
+DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, int script);
 
 
 
@@ -82,10 +82,10 @@ DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, dialog_vnum script);
 // get and set functions for zones
 //
 //*****************************************************************************
-zone_vnum zoneGetVnum(ZONE_DATA *zone);
-room_vnum zoneGetMinBound(ZONE_DATA *zone);
-room_vnum zoneGetMaxBound(ZONE_DATA *zone);
-room_vnum getFreeRoomVnum(ZONE_DATA *zone);
+int zoneGetVnum(ZONE_DATA *zone);
+int zoneGetMinBound(ZONE_DATA *zone);
+int zoneGetMaxBound(ZONE_DATA *zone);
+int getFreeRoomVnum(ZONE_DATA *zone);
 int zoneGetPulseTimer(ZONE_DATA *zone);
 int zoneGetPulse(ZONE_DATA *zone);
 WORLD_DATA *zoneGetWorld(ZONE_DATA *zone);
@@ -94,16 +94,16 @@ const char *zoneGetDesc(ZONE_DATA *zone);
 const char *zoneGetEditors(ZONE_DATA *zone);
 BUFFER     *zoneGetDescBuffer(ZONE_DATA *zone);
 bool        canEditZone(ZONE_DATA *zone, CHAR_DATA *ch);
-ROOM_DATA  *zoneGetRoom(ZONE_DATA *zone, room_vnum room);
-CHAR_DATA   *zoneGetMob(ZONE_DATA *zone, mob_vnum room);
-OBJ_DATA   *zoneGetObj(ZONE_DATA *zone, obj_vnum obj);
-SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, script_vnum script);
-DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, dialog_vnum dialog);
+ROOM_DATA  *zoneGetRoom(ZONE_DATA *zone, int room);
+CHAR_DATA   *zoneGetMob(ZONE_DATA *zone, int room);
+OBJ_DATA   *zoneGetObj(ZONE_DATA *zone, int obj);
+SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, int script);
+DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, int dialog);
 void        *zoneGetAuxiliaryData(const ZONE_DATA *zone, char *name);
 
-void zoneSetVnum(ZONE_DATA *zone, zone_vnum vnum);
-void zoneSetMinBound(ZONE_DATA *zone, room_vnum min);
-void zoneSetMaxBound(ZONE_DATA *zone, room_vnum max);
+void zoneSetVnum(ZONE_DATA *zone, int vnum);
+void zoneSetMinBound(ZONE_DATA *zone, int min);
+void zoneSetMaxBound(ZONE_DATA *zone, int max);
 void zoneSetPulseTimer(ZONE_DATA *zone, int timer);
 void zoneSetPulse(ZONE_DATA *zone, int pulse_left);
 void zoneSetWorld(ZONE_DATA *zone, WORLD_DATA *world);

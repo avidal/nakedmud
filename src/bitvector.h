@@ -108,7 +108,7 @@ int bitvectorSize(BITVECTOR *v);
 //
 // return a list of the possible bits that this vector can have set. The list
 // must be deleted after use, as well as all the contents. 
-// try: listDeleteWith(list, free)
+// try: deleteListWith(list, free)
 LIST *bitvectorListBits(BITVECTOR *v);
 
 #endif // BITVECTOR_H

@@ -129,6 +129,9 @@ int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, const char *option){
     case SCRIPT_TYPE_RUNNABLE:
       text_to_buffer(sock, "Enter user groups allowed to run this script: ");
       return SCEDIT_ARGS;
+    case SCRIPT_TYPE_COMMAND:
+      text_to_buffer(sock, "Enter command that triggers this script. * denotes wildcard: ");
+      return SCEDIT_ARGS;
     default:
       send_to_socket(sock, 
 		     "This script type does not use string arguments.\r\n"
@@ -222,7 +225,7 @@ bool scedit_parser (SOCKET_DATA *sock, SCRIPT_DATA *script, int choice,
 COMMAND(cmd_scedit) {
   ZONE_DATA *zone;
   SCRIPT_DATA *script;
-  script_vnum vnum;
+  int vnum;
 
   // we need a vnum
   if(!arg || !*arg)

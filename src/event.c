@@ -42,28 +42,23 @@ struct event_data {
 // a small test for delayed events ... proof of concept
 //
 //******************************************************************************
-struct devent_data {
-  CHAR_DATA *speaker;
-};
-
-void devent_on_complete(CHAR_DATA *owner, struct devent_data *data, char *arg) {
-  communicate(data->speaker, arg, COMM_GLOBAL);
-  free(data);
+void devent_on_complete(CHAR_DATA *owner, void *data, char *arg) {
+  communicate(owner, arg, COMM_GLOBAL);
 }
 
-bool check_devent_involvement(void *thing, struct devent_data *data) {
-  if(thing == data->speaker)
-    return TRUE;
-  return FALSE;
+bool check_devent_involvement(void *thing, void *data) {
+  return (thing == data);
 }
 
 COMMAND(cmd_devent) {
-  struct devent_data *data = malloc(sizeof(struct devent_data));
-  data->speaker = ch;
-  start_event(ch,
-	      5 SECONDS,
-	      devent_on_complete, check_devent_involvement, 
-	      data, arg);
+  if(!*arg)
+    send_to_char(ch, "What did you want to delay-chat?\r\n");
+  else {
+    start_event(ch,
+		5 SECONDS,
+		devent_on_complete, check_devent_involvement, 
+		ch, arg);
+  }
 }
 
 

@@ -27,11 +27,11 @@ struct exit_data {
   bitvector_t status;      // closable, closed, locked, etc...
 
   int closable;            // is the exit closable?
-  obj_vnum key;            // what is the vnum of the key?
+  int key;            // what is the vnum of the key?
   int hide_lev;            // how hidden is this exit?
   int pick_lev;            // how hard is it to pick this exit?
 
-  room_vnum to;            // where do we exit to?
+  int to;            // where do we exit to?
 };
 
 
@@ -149,11 +149,11 @@ int         exitGetPickLev(const EXIT_DATA *exit) {
   return exit->pick_lev;
 };
 
-obj_vnum    exitGetKey(const EXIT_DATA *exit) {
+int    exitGetKey(const EXIT_DATA *exit) {
   return exit->key;
 };
 
-room_vnum   exitGetTo(const EXIT_DATA *exit) {
+int   exitGetTo(const EXIT_DATA *exit) {
   return exit->to;
 };
 
@@ -195,7 +195,7 @@ void        exitSetLocked(EXIT_DATA *exit, bool locked) {
   else          REMOVE_BIT(exit->status, EX_LOCKED);
 };
 
-void        exitSetKey(EXIT_DATA *exit, obj_vnum key) {
+void        exitSetKey(EXIT_DATA *exit, int key) {
   exit->key = key;
 };
 
@@ -207,7 +207,7 @@ void        exitSetPickLev(EXIT_DATA *exit, int pick_lev) {
   exit->pick_lev = pick_lev;
 };
 
-void        exitSetTo(EXIT_DATA *exit, room_vnum room) {
+void        exitSetTo(EXIT_DATA *exit, int room) {
   exit->to = room;
 };
 

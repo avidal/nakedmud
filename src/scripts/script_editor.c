@@ -70,9 +70,11 @@ int socketGetScriptEditorIndent(SOCKET_DATA *sock) {
 // of spaces before the addition, and increment/decrement our indent as needed
 void scriptEditorAppend(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   // if we're playing with else/elif/case, take down the input a notch
-  if(!strncmp(arg, "else:", 5) ||
-     !strncmp(arg, "elif ", 5) ||
-     !strncmp(arg, "case ", 5))
+  if(!strncmp(arg, "except:", 7) ||
+     !strncmp(arg, "except ", 7) ||
+     !strncmp(arg, "else:",   5) ||
+     !strncmp(arg, "elif ",   5) ||
+     !strncmp(arg, "case ",   5))
     scriptEditorUndent(sock, NULL, NULL);
 
   // add in our indents if neccessary
@@ -126,7 +128,7 @@ void scriptEditorInsert(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   if(!isdigit(*tmp) || !bufferInsert(buf, arg, line))
     text_to_buffer(sock, "Insertion failed.\r\n");
   else {
-    text_to_buffer(sock, "Line inserted");
+    text_to_buffer(sock, "Line inserted.\r\n");
     bufferReplace(buf, "\r", "", TRUE);    
   }
 }

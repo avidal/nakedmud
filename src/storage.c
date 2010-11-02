@@ -48,6 +48,7 @@ typedef struct storage_data {
 } STORAGE_DATA;
 
 
+
 /* local functions */
 void delete_storage_set (STORAGE_SET *set);
 void delete_storage_list(STORAGE_SET_LIST *list);

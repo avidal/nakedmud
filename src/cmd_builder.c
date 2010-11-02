@@ -37,7 +37,7 @@
 // Try to dig a special exit in a specific direction. Unlike cmd_dig,
 // specdig does not link the room we're digging to, back to us, since
 // we can't really figure out what the opposite direction is
-void try_specdig(CHAR_DATA *ch, const char *dir, room_vnum to) {
+void try_specdig(CHAR_DATA *ch, const char *dir, int to) {
   if(roomGetExitSpecial(charGetRoom(ch), dir))
     send_to_char(ch, "You must fill in the %s exit before you dig a new exit.\r\n", dir);
   else if(!worldGetRoom(gameworld, to))
@@ -329,6 +329,82 @@ COMMAND(cmd_buildwalk) {
   bitToggle(charGetPrfs(ch), "buildwalk");
   send_to_char(ch, "Buildwalk %s.\r\n",
 	       (bitIsOneSet(charGetPrfs(ch), "buildwalk") ? "on":"off"));
+}
+
+
+//
+// attach a new script to the given instanced object/mobile/room
+COMMAND(cmd_attach) {
+  char vbuf[SMALL_BUFFER];
+  arg = one_arg(arg, vbuf);
+  int vnum = atoi(vbuf);
+
+  // check to make sure our vnum is OK
+  if(!isdigit(*vbuf) || vnum == 0)
+    send_to_char(ch, "Invalid script vnum!\r\n");
+  else if(!worldGetScript(gameworld, vnum))
+    send_to_char(ch, "No script exists with that vnum.\r\n");
+  // we're trying to edit the room, not a char or mobile
+  if(!strcasecmp(arg, "room")) {
+    scriptSetAdd(roomGetScripts(charGetRoom(ch)), vnum);
+    send_to_char(ch, "Script number %d attached to the room.\r\n", vnum);
+  }
+  else {
+    int tgt_type = FOUND_NONE;
+    void    *tgt = generic_find(ch, arg, FIND_TYPE_CHAR | FIND_TYPE_OBJ,
+				FIND_SCOPE_IMMEDIATE, FALSE, &tgt_type);
+
+    // make sure the target exists
+    if(tgt == NULL || tgt_type == FOUND_NONE)
+      send_to_char(ch, "Target not found.\r\n");
+    else if(tgt_type == FOUND_CHAR) {
+      send_to_char(ch, "Script number %d attached to %s.\r\n", vnum,
+		   charGetName(tgt));
+      scriptSetAdd(charGetScripts(tgt), vnum);
+    }
+    else {
+      send_to_char(ch, "Script number %d attached to %s.\r\n", vnum,
+		   objGetName(tgt));
+      scriptSetAdd(objGetScripts(tgt), vnum);
+    }
+  }  
+}
+
+
+//
+// attach a new script to the given instanced object/mobile/room
+COMMAND(cmd_detach) {
+  char vbuf[SMALL_BUFFER];
+  arg = one_arg(arg, vbuf);
+  int vnum = atoi(vbuf);
+
+  // check to make sure our vnum is OK
+  if(!isdigit(*vbuf) || vnum == 0)
+    send_to_char(ch, "Invalid script vnum!\r\n");
+  // we're trying to edit the room, not a char or mobile
+  if(!strcasecmp(arg, "room")) {
+    scriptSetRemove(roomGetScripts(charGetRoom(ch)), vnum);
+    send_to_char(ch, "Script number %d detached from the room.\r\n", vnum);
+  }
+  else {
+    int tgt_type = FOUND_NONE;
+    void    *tgt = generic_find(ch, arg, FIND_TYPE_CHAR | FIND_TYPE_OBJ,
+				FIND_SCOPE_IMMEDIATE, FALSE, &tgt_type);
+
+    // make sure the target exists
+    if(tgt == NULL || tgt_type == FOUND_NONE)
+      send_to_char(ch, "Target not found.\r\n");
+    else if(tgt_type == FOUND_CHAR) {
+      send_to_char(ch, "Script number %d detached to %s.\r\n", vnum,
+		   charGetName(tgt));
+      scriptSetRemove(charGetScripts(tgt), vnum);
+    }
+    else {
+      send_to_char(ch, "Script number %d detached to %s.\r\n", vnum,
+		   objGetName(tgt));
+      scriptSetRemove(objGetScripts(tgt), vnum);
+    }
+  }  
 }
 
 

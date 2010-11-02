@@ -148,6 +148,15 @@ void listSortWith(LIST *L, void *func);
 LIST *listCopyWith(LIST *L, void *func);
 
 
+
+//*****************************************************************************
+// list iterator function prototypes
+//*****************************************************************************
+
+// iterate across all the elements in a list
+#define ITERATE_LIST(val, it) \
+  for(val = listIteratorCurrent(it); val != NULL; val = listIteratorNext(it))
+
 //
 // Create an iterator to go over the list
 //

@@ -40,6 +40,19 @@ void hashExpand(HASHTABLE *table, int size);
 // must be deleted after use. Try: deleteListWith(list, free)
 LIST *hashCollect(HASHTABLE *table);
 
+
+
+//*****************************************************************************
+// prototypes for the hashtable iterator
+//*****************************************************************************
+
+// iterate across all the elements in a hashtable
+#define ITERATE_HASH(key, val, it) \
+  for(key = hashIteratorCurrentKey(it), val = hashIteratorCurrentVal(it); \
+      key != NULL; \
+      hashIteratorNext(it), \
+      key = hashIteratorCurrentKey(it), val = hashIteratorCurrentVal(it))
+
 HASH_ITERATOR *newHashIterator     (HASHTABLE *table);
 void        deleteHashIterator     (HASH_ITERATOR *I);
 

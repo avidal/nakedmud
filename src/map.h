@@ -31,6 +31,18 @@ void *mapRemove (MAP *map, const void *key);
 int   mapIn     (MAP *map, const void *key);
 int   mapSize   (MAP *map);
 
+
+//*****************************************************************************
+// map iterator function prototypes
+//*****************************************************************************
+
+// iterate across all of the elements in a map
+#define ITERATE_MAP(key, val, it) \
+  for(key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it); \
+      key != NULL; \
+      mapIteratorNext(it), \
+      key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it))
+
 MAP_ITERATOR *newMapIterator(MAP *map);
 void          deleteMapIterator(MAP_ITERATOR *I);
 

@@ -51,8 +51,8 @@ BUFFER        *dialogGetGreetBuffer(DIALOG_DATA *dialog);
 const char    *dialogGetGreet    (DIALOG_DATA *dialog);
 void           dialogSetGreet    (DIALOG_DATA *dialog, const char *greet);
 
-void           dialogSetVnum     (DIALOG_DATA *dialog, dialog_vnum vnum);
-dialog_vnum    dialogGetVnum     (DIALOG_DATA *dialog);
+void           dialogSetVnum     (DIALOG_DATA *dialog, int vnum);
+int    dialogGetVnum     (DIALOG_DATA *dialog);
 
 void           dialogSetName     (DIALOG_DATA *dialog, const char *name);
 const char    *dialogGetName     (DIALOG_DATA *dialog);

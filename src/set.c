@@ -10,6 +10,9 @@
 #include "list.h"
 #include "set.h"
 
+// how big of a size do our set start out at?
+#define DEFAULT_SET_SIZE        5
+
 struct set_data {
   int    num_buckets;
   int    size;
@@ -17,9 +20,9 @@ struct set_data {
 };
 
 struct set_iterator {
-  int                curr_bucket; // the bucket number we're currently on
-  struct set_data           *set; // the set we're iterating over
-  LIST_ITERATOR *bucket_i;        // the iterator for our current bucket
+  int         curr_bucket; // the bucket number we're currently on
+  struct set_data    *set; // the set we're iterating over
+  LIST_ITERATOR *bucket_i; // the iterator for our current bucket
 };
 
 
@@ -28,33 +31,54 @@ struct set_iterator {
 // local functions
 //*****************************************************************************
 
-
 //
 // Find the bucket the set element belongs to
 int set_elem_bucket(void *elem, int num_buckets) {
   // simple for now: just take the modulo
-  return ((int)elem) % num_buckets;
+  return ((int)elem < 0 ? -1 * (int)elem : (int)elem) % num_buckets;
 };
+
+
+//
+// expand a set to the new number of buckets
+void setExpand(SET *set, int size) {
+  // collect all of the key:value pairs
+  LIST *entries = setCollect(set);
+  void *entry = NULL;
+  int i;
+
+  // delete all of the current buckets
+  for(i = 0; i < set->num_buckets; i++) {
+    if(set->buckets[i] == NULL) continue;
+    deleteList(set->buckets[i]);
+  }
+  free(set->buckets);
+
+  // now, make new buckets and set them to NULL
+  set->buckets = calloc(size, sizeof(LIST *));
+  set->num_buckets = size;
+
+  // now, we put all of our entries back into the new buckets
+  while((entry = listPop(entries)) != NULL) {
+    int bucket = set_elem_bucket(entry, set->num_buckets);
+    if(set->buckets[bucket] == NULL) set->buckets[bucket] = newList();
+    listPut(set->buckets[bucket], entry);
+  }
+  deleteList(entries);
+}
 
 
 
 //*****************************************************************************
 // implementation of set.h
 //*****************************************************************************
-SET *newSet(int num_buckets) {
-  int i;
-
-  SET *set = malloc(sizeof(SET));
-  set->buckets = malloc(sizeof(LIST *) * num_buckets);
-  set->size    = 0;
-
-  // all NULL until they actually get a content
-  for(i = 0; i < num_buckets; i++)
-    set->buckets[i] = NULL;
-  set->num_buckets = num_buckets;
-
+SET *newSet(void) {
+  SET *set         = calloc(1, sizeof(SET));
+  set->buckets     = calloc(DEFAULT_SET_SIZE, sizeof(LIST *));
+  set->num_buckets = DEFAULT_SET_SIZE;
+  set->size        = 0;
   return set;
-};
+}
 
 void deleteSet(SET *set) {
   int i;
@@ -67,7 +91,19 @@ void deleteSet(SET *set) {
   free(set);
 };
 
+int setSize(SET *set) {
+  return set->size;
+}
+
 void setPut(SET *set, void *elem) {
+  // only one copy per set
+  if(setIn(set, elem))
+    return;
+
+  // first, see if we'll need to expand the table
+  if((set->size * 80)/100 > set->num_buckets)
+    setExpand(set, (set->num_buckets * 150)/100);
+
   // find out what bucket we belong to
   int hash_bucket = set_elem_bucket(elem, set->num_buckets);
 
@@ -76,7 +112,8 @@ void setPut(SET *set, void *elem) {
     set->buckets[hash_bucket] = newList();
   // listPut ensures only one copy is in the list
   listPut(set->buckets[hash_bucket], elem);
-};
+  set->size++;
+}
 
 void setRemove(SET *set, void *elem) {
   // find out what bucket we belong to
@@ -84,8 +121,9 @@ void setRemove(SET *set, void *elem) {
 
   // see if the bucket exists
   if(set->buckets[hash_bucket] != NULL)
-    listRemove(set->buckets[hash_bucket], elem);
-};
+    if(listRemove(set->buckets[hash_bucket], elem))
+      set->size--;
+}
 
 int setIn(SET *set, void *elem) {
   // find out what bucket we belong to
@@ -95,7 +133,77 @@ int setIn(SET *set, void *elem) {
     return listIn(set->buckets[hash_bucket], elem);
   else
     return 0;
-};
+}
+
+LIST *setCollect(SET *set) {
+  LIST *list = newList();
+  int i;
+
+  for(i = 0; i < set->num_buckets; i++) {
+    if(set->buckets[i] == NULL) continue;
+    LIST_ITERATOR *list_i = newListIterator(set->buckets[i]);
+    void            *elem = NULL;
+    for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
+      listPut(list, elem);
+    deleteListIterator(list_i);
+  }
+  return list;
+}
+
+SET  *setCopy(SET *set) {
+  SET *newset = newSet();
+  setExpand(newset, set->num_buckets);
+  SET_ITERATOR *set_i = newSetIterator(set);
+  void          *elem = NULL;
+  ITERATE_SET(elem, set_i) {
+    setPut(newset, elem);
+  } deleteSetIterator(set_i);
+  return newset;
+}
+
+SET  *setUnion(SET *set1, SET *set2) {
+  SET *newset   = NULL;
+  SET *copyfrom = NULL; 
+  if(set1->size > set2->size) {
+    copyfrom = set2;
+    newset   = setCopy(set1);
+  }
+  else {
+    copyfrom = set1;
+    newset   = setCopy(set2);
+  }
+
+  // copy all of the remaining elements
+  SET_ITERATOR *set_i = newSetIterator(copyfrom);
+  void          *elem = NULL;
+  ITERATE_SET(elem, set_i) {
+    setPut(newset, elem);
+  } deleteSetIterator(set_i);
+
+  return newset;
+}
+
+SET  *setIntersection(SET *set1, SET *set2) {
+  SET *intersection = NULL;
+  SET *compagainst  = NULL;
+  if(set1->size > set2->size) {
+    intersection = setCopy(set2);
+    compagainst  = set1;
+  }
+  else {
+    intersection = setCopy(set1);
+    compagainst  = set2;
+  }
+
+  // remove everything not in the intersection
+  SET_ITERATOR *set_i = newSetIterator(intersection);
+  void          *elem = NULL;
+  ITERATE_SET(elem, set_i) {
+    if(!setIn(compagainst, elem))
+      setRemove(intersection, elem);
+  } deleteSetIterator(set_i);
+  return intersection;
+}
 
 
 

@@ -18,9 +18,12 @@
 #define e                     2.71828182
 
 #define UMIN(a, b)	      ((a) < (b) ? (a) : (b))
+#ifndef MIN
 #define MIN(a, b)             ((a) < (b) ? (a) : (b))
+#endif
+#ifndef MAX
 #define MAX(a, b)             ((a) < (b) ? (b) : (a))
-
+#endif
 
 //
 // return a random number pulled from a uniform distribution 
@@ -48,12 +51,12 @@ const char *numth(int num);
 //*****************************************************************************
 // Utilities for characters
 //*****************************************************************************
-#define IS_ADMIN(ch)          ((charGetLevel(ch)) > LEVEL_PLAYER ? TRUE : FALSE)
+#define IS_ADMIN(ch)          (bitIsOneSet(charGetUserGroups(ch), "admin"))
 
 #define HIMHER(ch)            (charGetSex(ch) == SEX_MALE ? "him" : \
 			       (charGetSex(ch) == SEX_FEMALE ? "her" : "it"))
 
-#define HISHERS(ch)           (charGetSex(ch) == SEX_MALE ? "his" : \
+#define HISHER(ch)            (charGetSex(ch) == SEX_MALE ? "his" : \
 			       (charGetSex(ch) == SEX_FEMALE ? "her" : "its"))
 
 #define HESHE(ch)             (charGetSex(ch) == SEX_MALE ? "he" : \
@@ -126,6 +129,8 @@ void center_string        (char *buf, const char *string, int linelen,
 int next_space_in         (char *string);
 int next_letter_in        (const char *string, char marker);
 int string_hash           (const char *key);
+bool endswith             (const char *string, const char *end);
+bool startswith           (const char *string, const char *start);
 
 
 
@@ -151,10 +156,19 @@ CHAR_DATA  *check_reconnect( const char *player );
 //*****************************************************************************
 
 //
+// Returns whether or not the command matches the pattern. Patterns are just
+// like commands, except they can be terminated with *'s to signify that
+// "anything can follow at this point". Example matches might include:
+//
+//  PATTERN           MATCHES             NON-MATCHES
+//  go*               goto, gossip, go    g
+//  go                go                  g, goss, gossip
+bool cmd_matches(const char *pattern, const char *cmd);
+
+//
 // returns TRUE if ch1 belongs to more user groups than ch2. By "more", we mean
 // that ch2's user groups must be a subset of ch1's
 bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2);
-
 
 //
 // a function that returns the argument passed into it
@@ -164,32 +178,6 @@ void *identity_func(void *data);
 // checks to see if a file or directory exists
 bool file_exists(const char *fname);
 bool dir_exists (const char *dname);
-
-// iterate across all the elements in a list
-#define ITERATE_LIST(val, it) \
-  for(val = listIteratorCurrent(it); val != NULL; val = listIteratorNext(it))
-
-// iterate across all the elements in a hashtable
-#define ITERATE_HASH(key, val, it) \
-  for(key = hashIteratorCurrentKey(it), val = hashIteratorCurrentVal(it); \
-      key != NULL; \
-      hashIteratorNext(it), \
-      key = hashIteratorCurrentKey(it), val = hashIteratorCurrentVal(it))
-
-// iterate across all of the elements in a map
-#define ITERATE_MAP(key, val, it) \
-  for(key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it); \
-      key != NULL; \
-      mapIteratorNext(it), \
-      key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it))
-
-// iterate across all the elements in a set
-#define ITERATE_SET(elem, it) \
-  for(elem = setIteratorCurrent(it); \
-      elem != NULL; \
-      setIteratorNext(it), elem = setIteratorCurrent(it))
-
-
 
 
 //
