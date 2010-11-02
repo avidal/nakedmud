@@ -18,7 +18,7 @@ PyMODINIT_FUNC init_PyRoom(void);
 PyObject      *newPyRoom(ROOM_DATA *room);
 
 ROOM_DATA *PyRoom_AsRoom(PyObject *room);
-int        PyRoom_AsVnum(PyObject *room);
+int        PyRoom_AsUid(PyObject *room);
 
 //
 // checks to see if the PyObject is a PyRoom

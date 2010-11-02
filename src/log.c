@@ -98,7 +98,7 @@ void init_logs() {
     storage_close(set);
   }
 
-  add_cmd("log", NULL, cmd_log, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("log", NULL, cmd_log, POS_UNCONCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
 }
 
@@ -108,7 +108,7 @@ void log_keywords(const char *file, const char *keywords) {
   char *keys = hashRemove(logkeys, file);
   if(keys) free(keys);
 
-  keys = strdup(keywords ? keywords : "");
+  keys = strdupsafe(keywords);
   trim(keys);
 
   // put the new keywords in

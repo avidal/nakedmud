@@ -70,20 +70,20 @@ typedef struct command_data {
   void (* func)(SOCKET_DATA *sock, char *arg, BUFFER *buf);
   char *desc;    // the one-line helpfile description
   bool reserved; // is this command protected from being written over?
-} CMD_DATA;
+} ECMD_DATA;
 
-CMD_DATA *
+ECMD_DATA *
 newEditorCommand(const char *desc, 
 		 void func(SOCKET_DATA *sock, char *arg, BUFFER *buf),
 		 bool reserved) {
-  CMD_DATA *cmd = malloc(sizeof(CMD_DATA));
+  ECMD_DATA *cmd = malloc(sizeof(ECMD_DATA));
   cmd->desc     = strdup(desc ? desc : "");
   cmd->func     = func;
   cmd->reserved = reserved;
   return cmd;
 }
 
-void deleteEditorCommand(CMD_DATA *cmd) {
+void deleteEditorCommand(ECMD_DATA *cmd) {
   if(cmd->desc) free(cmd->desc);
   free(cmd);
 }
@@ -143,7 +143,7 @@ void editorInputHandler(SOCKET_DATA *sock, char *arg) {
     arg = one_arg(arg, buf);
 
     // pull up the command
-    CMD_DATA *cmd = hashGet(data->editor->cmds, buf+1);
+    ECMD_DATA *cmd = hashGet(data->editor->cmds, buf+1);
     if(cmd == NULL)
       text_to_buffer(sock, "Invalid command.\r\n");
     else
@@ -176,7 +176,7 @@ void editorAbort(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
 
 void editorDisplayHelp(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
   const char *key = NULL;
-  CMD_DATA   *val = NULL;
+  ECMD_DATA   *val = NULL;
   HASH_ITERATOR *hash_i = newHashIterator(socketGetEditor(sock)->cmds);
 
   // print out all of the commands and their descriptions
@@ -216,16 +216,12 @@ void editorInsertLine(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
 }
 
 void editorListDialogBuffer(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
-  if(!*bufferString(buf))
-    text_to_buffer(sock, "Buffer contains not contents.\r\n");
-  else
+  if(*bufferString(buf))
     send_to_socket(sock, "%s\r\n", bufferString(buf));
 }
 
 void editorListBuffer(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
-  if(!*bufferString(buf))
-    text_to_buffer(sock, "Buffer contains not contents.\r\n");
-  else
+  if(*bufferString(buf))
     text_to_buffer(sock, bufferString(buf));
 }
 
@@ -271,7 +267,7 @@ void editorClear(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
 }
 
 void editorFormatBuffer(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
-  bufferFormat(buf, 80, 3);
+  bufferFormat(buf, SCREEN_WIDTH, PARA_INDENT);
   text_to_buffer(sock, "Buffer formatted.\r\n");
 }
 
@@ -355,7 +351,7 @@ void editorSetAppend(EDITOR *editor,
 
 void editorAddCommand(EDITOR *editor, const char *cmd, const char *desc, 
 		      void func(SOCKET_DATA *sock, char *arg, BUFFER *buf)) {
-  CMD_DATA *old_cmd = hashGet(editor->cmds, cmd);
+  ECMD_DATA *old_cmd = hashGet(editor->cmds, cmd);
   // make sure we're not trying to replace a reserved command
   if(!old_cmd || !old_cmd->reserved) {
     hashPut(editor->cmds, cmd, newEditorCommand(desc, func, FALSE));
@@ -364,7 +360,7 @@ void editorAddCommand(EDITOR *editor, const char *cmd, const char *desc,
 }
 
 void editorRemoveCommand(EDITOR *editor, const char *cmd) {
-  CMD_DATA *old_cmd = hashGet(editor->cmds, cmd);
+  ECMD_DATA *old_cmd = hashGet(editor->cmds, cmd);
   // make sure the command isn't reserved
   if(old_cmd && !old_cmd->reserved) {
     hashRemove(editor->cmds, cmd);
@@ -382,7 +378,7 @@ void socketStartEditor(SOCKET_DATA *sock, EDITOR *editor, BUFFER *buf) {
   editorDefaultHeader(sock);
   
   // if we have a "list" command, execute it. Otherwise, cat the buf
-  CMD_DATA *list = NULL;
+  ECMD_DATA *list = NULL;
   if((list = hashGet(editor->cmds, "l")) != NULL)
     list->func(sock, "", buf);
   else

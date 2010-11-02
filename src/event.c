@@ -18,6 +18,7 @@
 #include "mud.h"
 #include "utils.h"
 #include "character.h"
+#include "hooks.h"
 #include "event.h"
 
 typedef struct event_data EVENT_DATA;
@@ -80,7 +81,7 @@ EVENT_DATA *newEvent(void *owner,
   event->delay             = delay;
   event->tot_time          = delay;
   event->data              = data;
-  event->arg               = strdup(arg ? arg :"");
+  event->arg               = strdupsafe(arg);
   event->requeue           = requeue;
   return event;
 }
@@ -95,25 +96,28 @@ void run_event(EVENT_DATA *event) {
     event->on_complete(event->owner, event->data, event->arg);
 }
 
+// the hook for interrupting events when something is removed from game
+void interrupt_events_hook(void *thing, void *none1, void *none2) {
+  interrupt_events_involving(thing);
+}
 
 
 
 //*****************************************************************************
-//
 // event list handling
-//
 //*****************************************************************************
 void init_events() {
   events = newList();
 
   // add our proof of concept command
-  add_cmd("devent", NULL, cmd_devent, 0, POS_SLEEPING, POS_FLYING,
+  add_cmd("devent", NULL, cmd_devent, POS_SLEEPING, POS_FLYING,
 	  "admin", TRUE, FALSE);
 
   // make sure all events involving the object/char are cancelled when
   // either is extracted from the game
-  add_extract_obj_func((void (*)(OBJ_DATA *)) interrupt_events_involving);
-  add_extract_mob_func((void (*)(CHAR_DATA *))interrupt_events_involving);
+  hookAdd("obj_from_game",  interrupt_events_hook);
+  hookAdd("char_from_game", interrupt_events_hook);
+  hookAdd("room_from_game", interrupt_events_hook);
 }
 
 void interrupt_event(EVENT_DATA *event) {

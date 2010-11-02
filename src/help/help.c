@@ -46,10 +46,10 @@ typedef struct help_data {
 HELP_DATA *newHelp(const char *editor, const char *timestamp,
 		   const char *keywords, const char *info) {
   HELP_DATA *data = malloc(sizeof(HELP_DATA));
-  data->keywords  = strdup(keywords  ? keywords  : "");
-  data->editor    = strdup(editor    ? editor    : "");
-  data->info      = strdup(info      ? info      : "");
-  data->timestamp = strdup(timestamp ? timestamp : "");
+  data->keywords  = strdupsafe(keywords);
+  data->editor    = strdupsafe(editor);
+  data->info      = strdupsafe(info);
+  data->timestamp = strdupsafe(timestamp);
   data->backups   = newList();
   return data;
 }
@@ -95,7 +95,7 @@ typedef struct help_entry {
 
 HELP_ENTRY *newHelpEntry(const char *keyword, HELP_DATA *data) {
   HELP_ENTRY *entry = malloc(sizeof(HELP_ENTRY));
-  entry->keyword = strdup(keyword ? keyword : NULL);
+  entry->keyword = strdupsafe(keyword);
   entry->help    = data;
   return entry;
 }
@@ -386,15 +386,15 @@ void init_help() {
     help_table[i] = newList();
 
   // add all of our commands
-  add_cmd("help", NULL, cmd_help, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("help", NULL, cmd_help, POS_UNCONCIOUS, POS_FLYING,
 	  "player", FALSE, FALSE);
-  add_cmd("hlink", NULL, cmd_hlink, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("hlink", NULL, cmd_hlink, POS_UNCONCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
-  add_cmd("hunlink", NULL, cmd_hunlink, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("hunlink", NULL, cmd_hunlink, POS_UNCONCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
-  add_cmd("hupdate", NULL, cmd_hupdate, 0, POS_SITTING, POS_FLYING,
+  add_cmd("hupdate", NULL, cmd_hupdate, POS_SITTING, POS_FLYING,
 	  "builder", FALSE, TRUE);
-  add_cmd("hedit", NULL, cmd_hedit, 0, POS_SITTING, POS_FLYING,
+  add_cmd("hedit", NULL, cmd_hedit, POS_SITTING, POS_FLYING,
 	  "builder", FALSE, TRUE);
 
   // read in all of our helps
@@ -489,8 +489,8 @@ void update_help(const char *editor, const char *keyword, const char *info) {
     if(data->timestamp) free(data->timestamp);
     if(data->info)      free(data->info);
     
-    data->editor      = strdup(editor ? editor : "");
-    data->info        = strdup(info   ? info   : "");
+    data->editor      = strdupsafe(editor);
+    data->info        = strdupsafe(info);
     data->timestamp   = strdup(get_time());
 
     listPut(data->backups, help_old);

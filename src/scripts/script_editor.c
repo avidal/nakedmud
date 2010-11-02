@@ -14,7 +14,7 @@
 
 #include "../editor/editor.h"
 #include "script_editor.h"
-#include "script.h"
+#include "scripts.h"
 
 
 

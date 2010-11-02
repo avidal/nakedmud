@@ -1,7 +1,7 @@
 ###############################################################################
 # makefile for nakedmud
 #
-# many thanks go out to Tyche for suggesting I read "Recursive Make Considered
+# Thanks go out to Tyche for bringing my attention to "Recursive Make Considered
 # Harmful" by Peter Miller. Many of the make conventions used in this makefile
 # were taken from Miller's article. The reference is:
 # 
@@ -48,10 +48,11 @@ SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c movement.c \
 	   log.c auxiliary.c account_handler.c char_gen.c \
 	   \
 	   world.c character.c room.c exit.c extra_descs.c object.c body.c \
-	   zone.c dialog.c room_reset.c account.c \
+	   zone.c room_reset.c account.c \
 	   \
 	   list.c property_table.c hashtable.c map.c storage.c set.c \
-	   buffer.c bitvector.c numbers.c
+	   buffer.c bitvector.c numbers.c prototype.c hooks.c parse.c \
+	   near_map.c command.c
 
 
 # include the description for each module. These will add to SRC

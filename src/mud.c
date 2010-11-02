@@ -31,6 +31,12 @@ STORAGE_SET *settings = NULL;
 //*****************************************************************************
 void init_mud_settings() {
   settings = storage_read(MUD_DATA);
+
+  // make sure we have initial values for some stuff
+  if(!*mudsettingGetString("start_room"))
+    mudsettingSetString("start_room", DFLT_START_ROOM);
+  if(mudsettingGetInt("pulses_per_second") == 0)
+    mudsettingSetInt("pulses_per_second", DFLT_PULSES_PER_SECOND);
 }
 
 void mudsettingSetString(const char *key, const char *val) {

@@ -19,7 +19,7 @@
 //*****************************************************************************
 // mandatory modules
 //*****************************************************************************
-#include "scripts/script.h"
+#include "scripts/scripts.h"
 
 
 
@@ -34,422 +34,319 @@
 #endif
 
 
-// our command table list
-LIST   **cmd_table = NULL;
 
-typedef struct cmd_data {
-  char *cmd_name;
-  char *sort_by;
-  CMD_PTR(cmd_funct);
-  int   subcmd;
-  int   min_pos;
-  int   max_pos;
-  char *user_group;
-  bool  mob_ok;     // can NPCs use this command?
-  bool  interrupts; // does it interrupt actions?
-} CMD_DATA;
+//*****************************************************************************
+// local variables and functions
+//*****************************************************************************
+NEAR_MAP *cmd_table = NULL;
 
 
 void init_commands() {
-  cmd_table = malloc(sizeof(LIST *) * 26); // 1 for each letter
-  int i;
-  for(i = 0; i < 26; i++)
-    cmd_table[i] = newList();
+  cmd_table = newNearMap();
 
   //***************************************************************************
   // This is for core functions ONLY! If you have a module that adds new
   // functions to the MUD, they should be added in the init_xxx() function
   // associated with your module.
   //***************************************************************************
-  add_cmd("north", "n", cmd_move,     DIR_NORTH,    POS_STANDING, POS_FLYING,
+  add_cmd("north", "n", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("east",  "e", cmd_move,     DIR_EAST,     POS_STANDING, POS_FLYING,
+  add_cmd("east",  "e", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("south", "s", cmd_move,     DIR_SOUTH,    POS_STANDING, POS_FLYING,
+  add_cmd("south", "s", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("west",  "w", cmd_move,     DIR_WEST,     POS_STANDING, POS_FLYING,
+  add_cmd("west",  "w", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("up",    "u", cmd_move,     DIR_UP,       POS_STANDING, POS_FLYING,
+  add_cmd("up",    "u", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("down",  "d", cmd_move,     DIR_DOWN,     POS_STANDING, POS_FLYING,
+  add_cmd("down",  "d", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("northeast", "na", cmd_move,DIR_NORTHEAST,POS_STANDING, POS_FLYING,
+  add_cmd("northeast", "na", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("southeast", "sa",  cmd_move,DIR_SOUTHEAST,POS_STANDING, POS_FLYING,
+  add_cmd("southeast", "sa",  cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("southwest", "sb", cmd_move,DIR_SOUTHWEST,POS_STANDING, POS_FLYING,
+  add_cmd("southwest", "sb", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("northwest", "nb", cmd_move,DIR_NORTHWEST,POS_STANDING, POS_FLYING,
+  add_cmd("northwest", "nb", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("ne",        "ne", cmd_move,DIR_NORTHEAST,POS_STANDING, POS_FLYING,
+  add_cmd("ne",        "ne", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("se",        "se", cmd_move,DIR_SOUTHEAST,POS_STANDING, POS_FLYING,
+  add_cmd("se",        "se", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("sw",        "sw", cmd_move,DIR_SOUTHWEST,POS_STANDING, POS_FLYING,
+  add_cmd("sw",        "sw", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("nw",        "nw", cmd_move,DIR_NORTHWEST,POS_STANDING, POS_FLYING,
+  add_cmd("nw",        "nw", cmd_move, POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
 
   // A
-  add_cmd("approach",   NULL, cmd_greet,    0, POS_STANDING, POS_FLYING,
+  add_cmd("approach",   NULL, cmd_greet,    POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("ask",        NULL, cmd_ask,      0, POS_SITTING,  POS_FLYING,
+  add_cmd("ask",        NULL, cmd_ask,      POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("at",         NULL, cmd_at,       0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("at",         NULL, cmd_at,       POS_UNCONCIOUS, POS_FLYING,
 	  "builder", TRUE, FALSE);
-  add_cmd("attach",     NULL, cmd_attach,   0, POS_UNCONCIOUS, POS_FLYING,
-	  "scripter", FALSE, FALSE);
 
   // B
-  add_cmd("back",       NULL, cmd_back,     0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("back",       NULL, cmd_back,     POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("buildwalk",  NULL, cmd_buildwalk, 0, POS_UNCONCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
 
   // C
-  add_cmd("chat",       NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("chat",       NULL, cmd_chat,     POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("clear",      NULL, cmd_clear,    0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("clear",      NULL, cmd_clear,    POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("close",      NULL, cmd_close,    0, POS_STANDING, POS_FLYING,
+  add_cmd("close",      NULL, cmd_close,    POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("commands",   NULL, cmd_commands, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("commands",   NULL, cmd_commands, POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("compress",   NULL, cmd_compress, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("compress",   NULL, cmd_compress, POS_UNCONCIOUS, POS_FLYING,
 	  "player", FALSE, FALSE);
-  add_cmd("copyover",   NULL, cmd_copyover, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("copyover",   NULL, cmd_copyover, POS_UNCONCIOUS, POS_FLYING,
 	  "admin",  FALSE, TRUE);
 
   // D
-  add_cmd("delay",      NULL, cmd_delay,    0, POS_SLEEPING, POS_FLYING,
+  add_cmd("delay",      NULL, cmd_delay,    POS_SLEEPING, POS_FLYING,
 	  "player", TRUE,  FALSE);
-  add_cmd("dig",        NULL, cmd_dig,      0, POS_STANDING, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("dlist",      NULL, cmd_dlist,    0, POS_UNCONCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("ddelete",    NULL, cmd_ddelete,  0, POS_UNCONCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("drop",       NULL, cmd_drop,     0, POS_SITTING,  POS_FLYING,
+  add_cmd("drop",       NULL, cmd_drop,     POS_SITTING,  POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("detach",     NULL, cmd_detach,   0, POS_UNCONCIOUS, POS_FLYING,
-	  "scripter", FALSE, FALSE);
 
   // E
-  add_cmd("emote",      NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,
+  add_cmd("emote",      NULL, cmd_emote,    POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd(":",          NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,
+  add_cmd(":",          NULL, cmd_emote,    POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("equipment",  NULL, cmd_equipment,0, POS_SITTING,  POS_FLYING,
+  add_cmd("equipment",  NULL, cmd_equipment,POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
 
   // F
-  add_cmd("fill",       NULL, cmd_fill,     0, POS_STANDING, POS_FLYING,
-	  "builder", FALSE, TRUE );
-  add_cmd("force",      NULL, cmd_force,    0, POS_STANDING, POS_FLYING,
+  add_cmd("force",      NULL, cmd_force,    POS_STANDING, POS_FLYING,
 	  "admin",   FALSE, FALSE);
 
   // G
-  add_cmd("gemote",     NULL, cmd_gemote,   0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("gemote",     NULL, cmd_gemote,   POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("give",       NULL, cmd_give,     0, POS_SITTING,  POS_FLYING,
+  add_cmd("give",       NULL, cmd_give,     POS_SITTING,  POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("gossip",     NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("gossip",     NULL, cmd_chat,     POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("\"",         NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("\"",         NULL, cmd_chat,     POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("greet",      NULL, cmd_greet,    0, POS_STANDING, POS_FLYING,
+  add_cmd("greet",      NULL, cmd_greet,    POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("get",        NULL, cmd_get,      0, POS_SITTING,  POS_FLYING,
+  add_cmd("get",        NULL, cmd_get,      POS_SITTING,  POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("goto",       NULL, cmd_goto,     0, POS_STANDING, POS_FLYING,
+  add_cmd("goto",       NULL, cmd_goto,     POS_STANDING, POS_FLYING,
 	  "builder", FALSE, TRUE );
-  add_cmd("groupcmds",  NULL, cmd_groupcmds,0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("groupcmds",  NULL, cmd_groupcmds,POS_UNCONCIOUS, POS_FLYING,
 	  "player", FALSE, FALSE);
 
   // I
-  add_cmd("inventory",  NULL, cmd_inventory,0, POS_SITTING,  POS_FLYING,
+  add_cmd("inventory",  NULL, cmd_inventory,POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
 
   // L
-  add_cmd("look",       "l",  cmd_look,     0, POS_SITTING,  POS_FLYING,
+  add_cmd("look",       "l",  cmd_look,     POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("lock",       NULL,  cmd_lock,    0, POS_STANDING,  POS_FLYING,
+  add_cmd("lock",       NULL,  cmd_lock,    POS_STANDING,  POS_FLYING,
 	  "player", TRUE, TRUE);
-  add_cmd("land",       NULL, cmd_stand,    0, POS_FLYING,   POS_FLYING,
+  add_cmd("land",       NULL, cmd_stand,    POS_FLYING,   POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("load",       NULL, cmd_load,     0, POS_SITTING,  POS_FLYING,
+  add_cmd("load",       NULL, cmd_load,     POS_SITTING,  POS_FLYING,
 	  "builder", FALSE, FALSE);
-  add_cmd("linkdead",   NULL, cmd_linkdead, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("linkdead",   NULL, cmd_linkdead, POS_UNCONCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
-  add_cmd("lockdown",   NULL, cmd_lockdown, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("lockdown",   NULL, cmd_lockdown, POS_UNCONCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
 
   // M
-  add_cmd("mlist",      NULL, cmd_mlist,    0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("mlist",      NULL, cmd_mlist,    POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
-  add_cmd("mdelete",    NULL, cmd_mdelete,  0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("mdelete",    NULL, cmd_mdelete,  POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
-  add_cmd("more",       NULL, cmd_more,     0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("mrename",    NULL, cmd_mrename,  POS_UNCONCIOUS, POS_FLYING,
+	  "builder", FALSE, FALSE);
+  add_cmd("more",       NULL, cmd_more,     POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("motd",       NULL, cmd_motd,     0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("motd",       NULL, cmd_motd,     POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
 
   // O
-  add_cmd("olist",      NULL, cmd_olist,    0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("olist",      NULL, cmd_olist,    POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
-  add_cmd("odelete",    NULL, cmd_odelete,  0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("odelete",    NULL, cmd_odelete,  POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
-  add_cmd("open",       NULL, cmd_open,     0, POS_STANDING, POS_FLYING,
+  add_cmd("orename",    NULL, cmd_orename,  POS_UNCONCIOUS, POS_FLYING,
+	  "builder", FALSE, FALSE);
+  add_cmd("open",       NULL, cmd_open,     POS_STANDING, POS_FLYING,
 	  "player", TRUE, TRUE );
 
   // P
-  add_cmd("put",        "p", cmd_put,       0, POS_SITTING,  POS_FLYING,
+  add_cmd("put",        "p", cmd_put,       POS_SITTING,  POS_FLYING,
 	  "player", TRUE,  TRUE );
-  add_cmd("page",       NULL, cmd_page,     0, POS_SITTING,  POS_FLYING,
+  add_cmd("page",       NULL, cmd_page,     POS_SITTING,  POS_FLYING,
 	  "builder", TRUE, FALSE);
-  add_cmd("purge",      NULL, cmd_purge,    0, POS_SITTING,  POS_FLYING,
+  add_cmd("purge",      NULL, cmd_purge,    POS_SITTING,  POS_FLYING,
 	  "builder", FALSE, FALSE);
+  add_cmd("pulserate",  NULL, cmd_pulserate,POS_UNCONCIOUS, POS_FLYING,
+	  "admin", FALSE, FALSE);
   
   // Q
-  add_cmd("quit",       NULL, cmd_quit,     0, POS_SLEEPING, POS_FLYING,
+  add_cmd("quit",       NULL, cmd_quit,     POS_SLEEPING, POS_FLYING,
 	  "player", FALSE, TRUE );
 
   // R
-  add_cmd("remove",     NULL, cmd_remove,   0, POS_SITTING, POS_FLYING,
+  add_cmd("rreload",    NULL, cmd_rreload,  POS_UNCONCIOUS, POS_FLYING,
+	  "builder", FALSE, FALSE);
+  add_cmd("remove",     NULL, cmd_remove,   POS_SITTING, POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("rlist",      NULL, cmd_rlist,    0, POS_UNCONCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("rdelete",    NULL, cmd_rdelete,  0, POS_UNCONCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("repeat",     NULL, cmd_repeat,   0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("repeat",     NULL, cmd_repeat,   POS_UNCONCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
+  add_cmd("rlist",      NULL, cmd_rlist,    POS_UNCONCIOUS, POS_FLYING,
+	  "builder", FALSE, FALSE);
+  add_cmd("rdelete",    NULL, cmd_rdelete,  POS_UNCONCIOUS, POS_FLYING,
+	  "builder", FALSE, FALSE);
+  add_cmd("rrename",    NULL, cmd_rrename,  POS_UNCONCIOUS, POS_FLYING,
+	  "builder", FALSE, FALSE);
 
   // S
-  add_cmd("say",        NULL, cmd_say,      0, POS_SITTING,  POS_FLYING,
+  add_cmd("say",        NULL, cmd_say,      POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("'",          NULL, cmd_say,      0, POS_SITTING,  POS_FLYING,
+  add_cmd("'",          NULL, cmd_say,      POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("save",       NULL, cmd_save,     0, POS_SLEEPING, POS_FLYING,
+  add_cmd("save",       NULL, cmd_save,     POS_SLEEPING, POS_FLYING,
 	  "player", FALSE, FALSE);
-  add_cmd("shutdown",   NULL, cmd_shutdown, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("shutdown",   NULL, cmd_shutdown, POS_UNCONCIOUS, POS_FLYING,
 	  "admin", FALSE, TRUE );
-  add_cmd("sit",        NULL, cmd_sit,      0, POS_SITTING,  POS_FLYING,
+  add_cmd("sit",        NULL, cmd_sit,      POS_SITTING,  POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("sleep",      NULL, cmd_sleep,    0, POS_SITTING,  POS_STANDING,
+  add_cmd("sleep",      NULL, cmd_sleep,    POS_SITTING,  POS_STANDING,
 	  "player", TRUE, FALSE);
-  add_cmd("stand",      NULL, cmd_stand,    0, POS_SITTING,  POS_STANDING,
+  add_cmd("stand",      NULL, cmd_stand,    POS_SITTING,  POS_STANDING,
 	  "player", TRUE, TRUE );
-  add_cmd("stop",       NULL, cmd_stop,     0, POS_SITTING, POS_FLYING,
+  add_cmd("stop",       NULL, cmd_stop,     POS_SITTING, POS_FLYING,
 	  "player", TRUE, FALSE);
-  // really, we -should- put this in the scripts module, but there are some
-  // very nice functions in builder.c that cmd_sclist uses to print scripts,
-  // which wouldn't be accessable from outside of builder.c
-  add_cmd("sclist",     NULL, cmd_sclist,   0, POS_UNCONCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("scdelete",    NULL, cmd_scdelete, 0, POS_UNCONCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
 
   // T
-  add_cmd("take",       NULL, cmd_get,      0, POS_SITTING,  POS_FLYING,
+  add_cmd("take",       NULL, cmd_get,      POS_SITTING,  POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("tell",       NULL, cmd_tell,     0, POS_SLEEPING, POS_FLYING,
+  add_cmd("tell",       NULL, cmd_tell,     POS_SLEEPING, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("transfer",   NULL, cmd_transfer, 0, POS_STANDING, POS_FLYING,
+  add_cmd("transfer",   NULL, cmd_transfer, POS_STANDING, POS_FLYING,
 	  "builder", FALSE, TRUE);
 
   // U
-  add_cmd("unlock",       NULL,  cmd_unlock,    0, POS_STANDING,  POS_FLYING,
+  add_cmd("unlock",       NULL,  cmd_unlock,    POS_STANDING,  POS_FLYING,
 	  "player", TRUE, TRUE);
 
   // W
-  add_cmd("wake",       NULL, cmd_wake,     0, POS_SLEEPING,  POS_SLEEPING,
+  add_cmd("wake",       NULL, cmd_wake,     POS_SLEEPING,  POS_SLEEPING,
 	  "player", TRUE, TRUE );
-  add_cmd("wear",       NULL, cmd_wear,     0, POS_SITTING,  POS_FLYING,
+  add_cmd("wear",       NULL, cmd_wear,     POS_SITTING,  POS_FLYING,
 	  "player", TRUE, TRUE );
-  add_cmd("who",        NULL, cmd_who,      0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("who",        NULL, cmd_who,      POS_UNCONCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("worn",       NULL, cmd_equipment,0, POS_SITTING,  POS_FLYING,
+  add_cmd("worn",       NULL, cmd_equipment,POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
 
   // Z
-  add_cmd("zlist",      NULL, cmd_zlist,    0, POS_SITTING,  POS_FLYING,
+  add_cmd("zlist",      NULL, cmd_zlist,    POS_SITTING,  POS_FLYING,
 	  "builder", FALSE, TRUE);
-  add_cmd("zreset",     NULL, cmd_zreset,   0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("zreset",     NULL, cmd_zreset,   POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
 }
 
 
-int cmdbucket(const char *cmd) {
-  if(!isalpha(*cmd))
-    return 0;
-  return (tolower(*cmd) - 'a');
-}
-
-// compare two command by their sort_by variable
-int cmdsortbycmp(const CMD_DATA *cmd1, const CMD_DATA *cmd2) {
-  return strcasecmp(cmd1->sort_by, cmd2->sort_by);
-}
-
-// compare two commands
-int cmdcmp(const CMD_DATA *cmd1, const CMD_DATA *cmd2) {
-  return strcasecmp(cmd1->cmd_name, cmd2->cmd_name);
-}
-
-// check if the cmd matches the command's cmd_name up to the length of cmd
-int is_cmd_abbrev(const char *cmd, const CMD_DATA *entry) {
-  return strncasecmp(cmd, entry->cmd_name, strlen(cmd));
-}
-
-// check if the string matches the command's cmd_name
-int is_cmd(const char *cmd, const CMD_DATA *entry) {
-  return strcasecmp(cmd, entry->cmd_name);
-}
-
-// find a command
-CMD_DATA *find_cmd(const char *cmd, bool abbrev_ok) {
-  if(abbrev_ok)
-    return listGetWith(cmd_table[cmdbucket(cmd)], cmd, is_cmd_abbrev);
-  else
-    return listGetWith(cmd_table[cmdbucket(cmd)], cmd, is_cmd);
-}
-
-//
-// return TRUE if the command already exists.
-//
 bool cmd_exists(const char *cmd) {
-  return (find_cmd(cmd, FALSE) != NULL);
+  return nearMapKeyExists(cmd_table, cmd);
 }
 
-//
-// remove (and delete) a command
-//
 void remove_cmd(const char *cmd) {
-  CMD_DATA *removed = listRemoveWith(cmd_table[cmdbucket(cmd)], cmd, is_cmd);
-  if(removed) {
-    if(removed->cmd_name)   free(removed->cmd_name);
-    if(removed->sort_by)    free(removed->sort_by);
-    if(removed->user_group) free(removed->user_group);
-    free(removed);
-  }
+  CMD_DATA *old_cmd = nearMapRemove(cmd_table, cmd);
+  if(old_cmd) deleteCmd(old_cmd);
 }
 
-void add_cmd(const char *cmd, const char *sort_by,
-	     void *func, int subcmd, int min_pos, int max_pos,
-	     const char *user_group, bool mob_ok, bool interrupts) {
+void add_cmd(const char *cmd, const char *sort_by, COMMAND(func),
+	     int min_pos, int max_pos, const char *user_group, 
+	     bool mob_ok, bool interrupts) {
   // if we've already got a command named this, remove it
   remove_cmd(cmd);
 
-  // make our new command data
-  CMD_DATA *new_cmd = malloc(sizeof(CMD_DATA));
-  new_cmd->cmd_name   = strdup(cmd);
-  new_cmd->sort_by    = strdup(sort_by ? sort_by : cmd);
-  new_cmd->cmd_funct  = func;
-  new_cmd->subcmd     = subcmd;
-  new_cmd->min_pos    = min_pos;
-  new_cmd->max_pos    = max_pos;
-  new_cmd->user_group = strdup(user_group);
-  new_cmd->mob_ok     = mob_ok;
-  new_cmd->interrupts = interrupts;
+  // add in the new command
+  nearMapPut(cmd_table, cmd, sort_by, 
+	     newCmd(cmd, func, min_pos, max_pos, 
+		    user_group, mob_ok, interrupts));
+}
 
-  // and add it in
-  listPutWith(cmd_table[cmdbucket(cmd)], new_cmd, cmdsortbycmp);
+
+void add_py_cmd(const char *cmd, const char *sort_by, void *pyfunc,
+	     int min_pos, int max_pos, const char *user_group, 
+	     bool mob_ok, bool interrupts) {
+  // if we've already got a command named this, remove it
+  remove_cmd(cmd);
+
+  // add in the new command
+  nearMapPut(cmd_table, cmd, sort_by, 
+	     newPyCmd(cmd, pyfunc, min_pos, max_pos, 
+		    user_group, mob_ok, interrupts));
 }
 
 
 // show the character all of the commands in the specified group(s).
 void show_commands(CHAR_DATA *ch, const char *user_groups) {
-  BUFFER *buf = newBuffer(MAX_BUFFER);
-  int i, col = 0;
+  BUFFER           *buf = newBuffer(MAX_BUFFER);
+  NEAR_ITERATOR *near_i = newNearIterator(cmd_table);
+  const char    *abbrev = NULL;
+  CMD_DATA         *cmd = NULL;
+  int               col = 0;
 
   // go over all of our buckets
-  for(i = 0; i < 26; i++) {
-    LIST_ITERATOR *buck_i = newListIterator(cmd_table[i]);
-    CMD_DATA *cmd = NULL;
-
-    ITERATE_LIST(cmd, buck_i) {
-      if(!is_keyword(user_groups, cmd->user_group, FALSE))
-	continue;
-      bprintf(buf, "%-13.13s", cmd->cmd_name);
+  ITERATE_NEARMAP(abbrev, cmd, near_i) {
+    if(is_keyword(user_groups, cmdGetUserGroup(cmd), FALSE)) {
+      bprintf(buf, "%-13.13s", cmdGetName(cmd));
       if (!(++col % 6))
 	bufferCat(buf, "\r\n");
     }
-    deleteListIterator(buck_i);
-  }
+  } deleteNearIterator(near_i);
 
+  // tag on our last newline if neccessary, and show commands
   if (col % 6) bprintf(buf, "\r\n");
   text_to_char(ch, bufferString(buf));
   deleteBuffer(buf);
 }
 
 
-
-//
-// make sure the character is in a position where
-// this can be performed
-// 
-bool min_pos_ok(CHAR_DATA *ch, int minpos) {
-  if(poscmp(charGetPos(ch), minpos) >= 0)
-    return TRUE;
-  else {
-    switch(charGetPos(ch)) {
-    case POS_UNCONCIOUS:
-      send_to_char(ch, "You cannot do that while unconcious!\r\n");
-      break;
-    case POS_SLEEPING:
-      send_to_char(ch, "Not while sleeping, you won't!\r\n");
-      break;
-    case POS_SITTING:
-      send_to_char(ch, "You cannot do that while sitting!\r\n");
-      break;
-    case POS_STANDING:
-      // flying is the highest position... we can deduce this message
-      send_to_char(ch, "You must be flying to try that.\r\n");
-      break;
-    case POS_FLYING:
-      send_to_char(ch, "That is not possible in any position you can think of.\r\n");
-      break;
-    default:
-      send_to_char(ch, "Your position is all wrong!\r\n");
-      log_string("Character, %s, has invalid position, %d.",
-		 charGetName(ch), charGetPos(ch));
-      break;
+// tries to pull a usable command from the near-table and use it. Returns
+// TRUE if a usable command was found (even if it failed) and false otherwise.
+bool try_use_cmd_table(CHAR_DATA *ch, NEAR_MAP *table, const char *command, 
+		       char *arg, bool abbrev_ok) {
+  if(abbrev_ok == FALSE) {
+    CMD_DATA *cmd = nearMapGet(table, command, FALSE);
+    if(cmd == NULL || !is_keyword(bitvectorGetBits(charGetUserGroups(ch)),
+				  cmdGetUserGroup(cmd), FALSE))
+      return FALSE;
+    else {
+      charTryCmd(ch, cmd, arg); 
+      return TRUE;
     }
-    return FALSE;
   }
-}
-
-
-//
-// make sure the character is in a position where
-// this can be performed
-// 
-bool max_pos_ok(CHAR_DATA *ch, int minpos) {
-  if(poscmp(charGetPos(ch), minpos) <= 0)
-    return TRUE;
   else {
-    switch(charGetPos(ch)) {
-    case POS_UNCONCIOUS:
-      send_to_char(ch, "You're still too alive to try that!\r\n");
-      break;
-    case POS_SLEEPING:
-      send_to_char(ch, "Not while sleeping, you won't!\r\n");
-      break;
-    case POS_SITTING:
-      send_to_char(ch, "You cannot do that while sitting!\r\n");
-      break;
-    case POS_STANDING:
-      send_to_char(ch, "You cannot do that while standing.\r\n");
-      break;
-    case POS_FLYING:
-      send_to_char(ch, "You must land first.\r\n");
-      break;
-    default:
-      send_to_char(ch, "Your position is all wrong!\r\n");
-      log_string("Character, %s, has invalid position, %d.",
-		 charGetName(ch), charGetPos(ch));
-      break;
+    // try to look up the possible commands
+    LIST *cmd_list = nearMapGetAllMatches(table, command);
+    bool cmd_found = FALSE;
+    if(cmd_list != NULL) {
+      LIST_ITERATOR *cmd_i = newListIterator(cmd_list);
+      CMD_DATA        *cmd = NULL;
+      ITERATE_LIST(cmd, cmd_i) {
+	if(is_keyword(bitvectorGetBits(charGetUserGroups(ch)), 
+		      cmdGetUserGroup(cmd), FALSE)) {
+	  charTryCmd(ch, cmd, arg); 
+	  cmd_found = TRUE;
+	  break;
+	}
+      } deleteListIterator(cmd_i);
+      deleteList(cmd_list);
     }
-    return FALSE;
+    return cmd_found;
   }
 }
 
@@ -458,13 +355,12 @@ void handle_cmd_input(SOCKET_DATA *dsock, char *arg) {
   CHAR_DATA *ch;
   if ((ch = socketGetChar(dsock)) == NULL)
     return;
-  do_cmd(ch, arg, TRUE, TRUE);
+  do_cmd(ch, arg, TRUE);
 }
 
 
-void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
+void do_cmd(CHAR_DATA *ch, char *arg, bool aliases_ok)  {
   char command[MAX_BUFFER];
-  bool found_cmd = FALSE;
 
   // make sure we've got a command to try
   if(!arg || !*arg)
@@ -485,7 +381,7 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
   }
 
 #ifdef MODULE_ALIAS
-  if(aliases_ok && try_alias(ch, command, arg, scripts_ok))
+  if(aliases_ok && try_alias(ch, command, arg))
     return;
 #endif
 
@@ -495,55 +391,8 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
     return;
 #endif
 
-  // if we've got a command script, and we're not supposed
-  // to follow through with our normal command, return out
-  if(scripts_ok && try_command_script(ch, command, arg))
-    return;
-
-  // check to see if we have a special exit. These over-ride normal commands
-  if(roomGetExitSpecial(charGetRoom(ch), command)) {
-    if(min_pos_ok(ch, POS_STANDING)) {
-#ifdef MODULE_FACULTY
-      interrupt_action(ch, FACULTY_ALL);
-#else
-      interrupt_action(ch, 1);
-#endif
-      try_move(ch, DIR_NONE, command);
-    }
-    // don't follow through with normal commands... we had a special exit
-    return;
-  }
-
-  // get the groups we belong to for seeing if we can use the command
-  const char *user_groups = bitvectorGetBits(charGetUserGroups(ch));
-
-  // iterate over the commands that would be in our 
-  // bucket and find the one that we are trying to use
-  LIST_ITERATOR *cmd_i = newListIterator(cmd_table[cmdbucket(command)]);
-  CMD_DATA *cmd = NULL;
-  ITERATE_LIST(cmd, cmd_i) {
-    // no group means anyone can do it
-    if(!is_keyword(user_groups, cmd->user_group, FALSE))
-      continue;
-
-    if (is_prefix(command, cmd->cmd_name)) {
-      found_cmd = TRUE;
-      if(min_pos_ok(ch, cmd->min_pos) && max_pos_ok(ch,cmd->max_pos) &&
-	 (!charIsNPC(ch) || cmd->mob_ok)) {
-	if(cmd->interrupts) {
-#ifdef MODULE_FACULTY
-	  interrupt_action(ch, FACULTY_ALL);
-#else
-	  interrupt_action(ch, 1);
-#endif
-	}
-	(cmd->cmd_funct)(ch, cmd->cmd_name, cmd->subcmd, arg);
-      }
-      break;
-    }
-  }
-  deleteListIterator(cmd_i);
-
-  if (!found_cmd)
-    text_to_char(ch, "No such command.\n\r");
+  // first try room commands then world commands
+  if(!try_use_cmd_table(ch,roomGetCmdTable(charGetRoom(ch)),command,arg,FALSE))
+    if(!try_use_cmd_table(ch, cmd_table, command, arg, TRUE))
+      text_to_char(ch, "No such command.\r\n");
 }

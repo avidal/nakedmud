@@ -44,7 +44,10 @@ int hash(const char *key) {
 
   for (; *key; key++) {
     base *= BASE;
-    hvalue += tolower(*key) * base;
+    if(!isalpha(*key))
+      hvalue += *key * base;
+    else
+      hvalue += tolower(*key) * base;
   }
 
   return (hvalue < 0 ? hvalue * -1 : hvalue);
@@ -125,12 +128,8 @@ HASHTABLE *newHashtable(void) {
 void  deleteHashtable(HASHTABLE *table) {
   int i;
   for(i = 0; i < table->num_buckets; i++) {
-    if(table->buckets[i]) {
-      HASH_ENTRY *entry = NULL;
-      while((entry=listPop(table->buckets[i])) !=NULL)
-	deleteHashtableEntry(entry);
-      deleteList(table->buckets[i]);
-    }
+    if(table->buckets[i])
+      deleteListWith(table->buckets[i], deleteHashtableEntry);
   }
 
   free(table->buckets);

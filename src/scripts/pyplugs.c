@@ -86,7 +86,7 @@ COMMAND(cmd_pyload) {
   if(!*arg)
     send_to_char(ch, "Which module or package would you like to load?\r\n");
   else {
-    static char fname[SMALL_BUFFER];
+    char fname[SMALL_BUFFER];
     sprintf(fname, "%s/%s.py", PYMOD_LIB, arg);
     // make sure the file exists
     if(!file_exists(fname))
@@ -105,8 +105,8 @@ COMMAND(cmd_pyload) {
 // about any other feature of the mud can be.
 void init_py_modules() {
   // build a list of all the files in this directory
-  static char mname[SMALL_BUFFER]; // module name
-  static char fname[SMALL_BUFFER]; // the name of the file
+  char mname[SMALL_BUFFER]; // module name
+  char fname[SMALL_BUFFER]; // the name of the file
   DIR *dir = opendir(PYMOD_LIB);
   struct dirent *entry;
 
@@ -165,7 +165,7 @@ void init_py_modules() {
 //*****************************************************************************
 void init_pyplugs(void) {
   init_py_modules();
-  add_cmd("pyload", NULL, cmd_pyload, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("pyload", NULL, cmd_pyload, POS_UNCONCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
 }
 

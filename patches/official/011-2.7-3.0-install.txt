@@ -1,0 +1,23 @@
+--- PATCH INSTRUCTIONS FROM v2.7 TO v3.0
+
+Before you do anything else, BACK UP YOUR MUD, AND ITS CONTENTS!! From the src 
+directory, type make backup. This will back up your src/ and lib/ directories 
+to a .tgz archive in the backup/ directory.
+
+Once you have done this, You can take one of two approaches: run the patch file
+to update to v3.0, or download a copy of v3.0 and install any modules you have
+already written. If you have not made many changes to the NakedMud core, it is
+suggested you take the second approach. It will save you much trouble of having
+to hand-patch .rej files. The patch from v2.7 to v3.0 is 26k lines. That is the
+same size as all other patches that have been released, combined together! If
+you take the first approach, you can run the patch file like this:
+  patch -p0 < nakedmudv2.7-to-nakedmudv3.0.patch
+
+Once you have patched up the source code, you will have to make some alterations
+to your world directory. Specifically, you'll have to completely replace it!
+The way things are stored was completely changed. And unfortunately, the new
+way is not compatible with the old way. replace your lib/world directory with
+the world directory supplied in this patch. A utility for converting old-format
+zones to new-format zones will be available soon. Account and player files do
+not have to be altered. I apologize profusely for any inconveniences this may
+cause.

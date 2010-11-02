@@ -32,16 +32,21 @@
 HASHTABLE *item_olc_table = NULL;
 
 typedef struct item_olc_data {
-  void    (* menu)(SOCKET_DATA *sock, void *data);
-  int  (* chooser)(SOCKET_DATA *sock, void *data, const char *option);
-  bool  (* parser)(SOCKET_DATA *sock, void *data, int choice, const char *arg);
+  void       (* menu)(SOCKET_DATA *sock, void *data);
+  int     (* chooser)(SOCKET_DATA *sock, void *data, const char *option);
+  bool     (* parser)(SOCKET_DATA *sock, void *data,int choice,const char *arg);
+  void (* from_proto)(void *data, BUFFER *buf);
+  void   (* to_proto)(void *data, BUFFER *buf);
 } ITEM_OLC_DATA;
 
-ITEM_OLC_DATA *newItemOLC(void *menu, void *chooser, void *parser) {
+ITEM_OLC_DATA *newItemOLC(void *menu, void *chooser, void *parser, 
+			  void *from_proto, void *to_proto) {
   ITEM_OLC_DATA *data = malloc(sizeof(ITEM_OLC_DATA));
-  data->menu    = menu;
-  data->chooser = chooser;
-  data->parser  = parser;
+  data->menu       = menu;
+  data->chooser    = chooser;
+  data->parser     = parser;
+  data->from_proto = from_proto;
+  data->to_proto   = to_proto;
   return data;
 }
 
@@ -68,7 +73,7 @@ void iedit_show_types(SOCKET_DATA *sock, OBJ_DATA *obj) {
   char *type = NULL;
   int col = 0;
 
-  text_to_buffer(sock, "{wEditable item types:\r\n");
+  text_to_buffer(sock, "{wEditable item types:{g\r\n");
   ITERATE_LIST(type, list_i) {
     send_to_socket(sock, "  %s%-14s%s", (objIsType(obj, type) ? "{y" : "{g"),
 		   type, ((col != 0 && col % 4 == 0) ? "\r\n": "   "));
@@ -80,12 +85,13 @@ void iedit_show_types(SOCKET_DATA *sock, OBJ_DATA *obj) {
   if(col % 4 != 0) text_to_buffer(sock, "\r\n");
 }
 
-void item_add_olc(const char *type, void *menu, void *chooser, void *parser) {
+void item_add_olc(const char *type, void *menu, void *chooser, void *parser,
+		  void *from_proto, void *to_proto) {
   ITEM_OLC_DATA *data = NULL;
   // check to see if we already have functions for this item type installed
   if( (data = hashRemove(item_olc_table, type)) != NULL)
     deleteItemOLC(data);
-  data = newItemOLC(menu, chooser, parser);
+  data = newItemOLC(menu, chooser, parser, from_proto, to_proto);
   hashPut(item_olc_table, type, data);
 }
 
@@ -128,6 +134,22 @@ bool iedit_parser(SOCKET_DATA *sock, OBJ_DATA *obj,int choice, const char *arg){
     return TRUE;
   default: return FALSE;
   }
+}
+
+void (* item_from_proto_func(const char *type))(void *data, BUFFER *buf) {
+  ITEM_OLC_DATA *funcs = hashGet(item_olc_table, type);
+  if(funcs == NULL)
+    return NULL;
+  else
+    return funcs->from_proto;
+}
+
+void (* item_to_proto_func(const char *type))(void *data, BUFFER *buf) {
+  ITEM_OLC_DATA *funcs = hashGet(item_olc_table, type);
+  if(funcs == NULL)
+    return NULL;
+  else
+    return funcs->to_proto;
 }
 
 

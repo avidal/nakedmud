@@ -10,15 +10,20 @@
 //
 //*****************************************************************************
 
-
-
-
-// these should be called whenever a new mob/char/obj is
-// added to to the game, or leaves (deleted or quits)
+// when something needs to be removed from the game, it should NOT be deleted.
+// If it has an extraction function, it should be extracted. If it does not,
+// then its from_game function should be called, AND THEN it should be deleted.
+// When something needs to be put into the game, its to_game function should be
+// called AND THEN it should be added to the game (e.g. loading a character and
+// putting him into a room... call char_to_game first);
 void      char_to_game      (CHAR_DATA *ch);
 void      char_from_game    (CHAR_DATA *ch);
 void      obj_to_game       (OBJ_DATA  *obj);
 void      obj_from_game     (OBJ_DATA  *obj);
+void      room_to_game      (ROOM_DATA *room);
+void      room_from_game    (ROOM_DATA *room);
+void      exit_to_game      (EXIT_DATA *exit);
+void      exit_from_game    (EXIT_DATA *exit);
 
 
 // all of these things require that the character(s) and object(s) have
@@ -56,8 +61,9 @@ void      unequip_all       (CHAR_DATA *ch);
 #define FOUND_CHAR                   2
 #define FOUND_OBJ                    3
 #define FOUND_EDESC                  4
-#define FOUND_IN_OBJ                 5 // useful for portals and containers
-#define FOUND_LIST                   6 // returns a list of things ... may
+#define FOUND_ROOM                   5
+#define FOUND_IN_OBJ                 6 // useful for portals and containers
+#define FOUND_LIST                   7 // returns a list of things ... may
                                        // occur when looking for all.XXX
                                        // will only be returned if there is only
                                        // FIND_TYPE to look for. The list must 
@@ -68,10 +74,11 @@ void      unequip_all       (CHAR_DATA *ch);
 #define FIND_TYPE_EXIT         (1 << 2)
 #define FIND_TYPE_EDESC        (1 << 3)
 #define FIND_TYPE_IN_OBJ       (1 << 4)
+#define FIND_TYPE_ROOM         (1 << 5)
 
-#define FIND_TYPE_ALL          (FIND_TYPE_CHAR | FIND_TYPE_OBJ | \
-				FIND_TYPE_EXIT | FIND_TYPE_EDESC | \
-				FIND_TYPE_IN_OBJ)
+#define FIND_TYPE_ALL          (FIND_TYPE_CHAR  | FIND_TYPE_OBJ  | \
+				FIND_TYPE_ROOM  | FIND_TYPE_EXIT | \
+				FIND_TYPE_EDESC | FIND_TYPE_IN_OBJ)
 
 
 #define FIND_SCOPE_ROOM        (1 << 10)
@@ -96,13 +103,15 @@ void      unequip_all       (CHAR_DATA *ch);
 // if all_ok is true, then it is possible to return a list of things
 // (all of one type) if someone uses something like all.woman
 //
-void *generic_find(CHAR_DATA *looker, char *arg,
+void *generic_find(CHAR_DATA *looker, const char *arg,
 		   bitvector_t find_types, 
 		   bitvector_t find_scope, 
 		   bool all_ok, int *found_type);
 
 void *find_specific(CHAR_DATA *looker,
-		    char *at, char *on, char *in,
+		    const char *at, 
+		    const char *on, 
+		    const char *in,
 		    bitvector_t find_types,
 		    bitvector_t find_scope,
 		    bool all_ok, int *found_type);

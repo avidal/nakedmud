@@ -16,11 +16,9 @@
 
 
 //*****************************************************************************
-//
 // a set of edescs
-//
 //*****************************************************************************
-EDESC_SET  *newEdescSet         ();
+EDESC_SET  *newEdescSet         (void);
 void        deleteEdescSet      (EDESC_SET *set);
 void        edescSetCopyTo      (EDESC_SET *from, EDESC_SET *to);
 EDESC_SET  *edescSetCopy        (EDESC_SET *set);
@@ -30,16 +28,15 @@ EDESC_DATA *edescSetGetNum      (EDESC_SET *set, int num);
 EDESC_DATA *edescSetRemove      (EDESC_SET *set, const char *keyword);
 EDESC_DATA *edescSetRemoveNum   (EDESC_SET *set, int num);
 void        removeEdesc         (EDESC_SET *set, EDESC_DATA *edesc);
-int         edescGetSetSize  (EDESC_SET *set);
+int         edescGetSetSize     (EDESC_SET *set);
 LIST       *edescSetGetList     (EDESC_SET *set);
-char       *tagEdescs           (EDESC_SET *set, const char *string,
+void        edescTagDesc        (BUFFER *buf, EDESC_SET *set,  
 				 const char *start_tag, const char *end_tag);
 
 
+
 //*****************************************************************************
-//
 // a single edesc
-//
 //*****************************************************************************
 
 //
@@ -73,7 +70,7 @@ void edescCopyTo(EDESC_DATA *from, EDESC_DATA *to);
 //
 // Get a list of the keywords
 //
-const char *edescSetGetKeywords(EDESC_DATA *edesc);
+const char *edescGetKeywords(EDESC_DATA *edesc);
 
 //
 // return a pointer to the description

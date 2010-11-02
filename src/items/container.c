@@ -7,16 +7,25 @@
 // interacting with container types.
 //
 //*****************************************************************************
-
 #include "../mud.h"
 #include "../storage.h"
 #include "../object.h"
 #include "../world.h"
 #include "../socket.h"
+#include "../utils.h"
 #include "../olc2/olc.h"
 
 #include "items.h"
 #include "iedit.h"
+#include "container.h"
+
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../scripts/scripts.h"
+#include "../scripts/pyobj.h"
 
 
 
@@ -25,7 +34,7 @@
 //*****************************************************************************
 typedef struct container_data {
   double capacity;
-  int    key;
+  char  *key;
   int    pick_diff;
   bool   closable;
   bool   closed;
@@ -35,7 +44,7 @@ typedef struct container_data {
 CONTAINER_DATA *newContainerData() {
   CONTAINER_DATA *data = malloc(sizeof(CONTAINER_DATA));
   data->capacity  = 0;
-  data->key       = NOTHING;
+  data->key       = strdup("");
   data->pick_diff = 0;
   data->closed    = FALSE;
   data->locked    = FALSE;
@@ -43,11 +52,13 @@ CONTAINER_DATA *newContainerData() {
 }
 
 void deleteContainerData(CONTAINER_DATA *data) {
+  if(data->key) free(data->key);
   free(data);
 }
 
 void containerDataCopyTo(CONTAINER_DATA *from, CONTAINER_DATA *to) {
   *to = *from;
+  to->key = strdupsafe(from->key);
 }
 
 CONTAINER_DATA *containerDataCopy(CONTAINER_DATA *data) {
@@ -59,7 +70,7 @@ CONTAINER_DATA *containerDataCopy(CONTAINER_DATA *data) {
 STORAGE_SET *containerDataStore(CONTAINER_DATA *data) {
   STORAGE_SET *set = new_storage_set();
   store_double(set, "capacity", data->capacity);
-  store_int   (set, "key",      data->key);
+  store_string(set, "key",      data->key);
   store_int   (set, "pick_diff",data->pick_diff);
   store_int   (set, "closable", data->closable);
   store_int   (set, "closed",   data->closed);
@@ -69,8 +80,8 @@ STORAGE_SET *containerDataStore(CONTAINER_DATA *data) {
 
 CONTAINER_DATA *containerDataRead(STORAGE_SET *set) {
   CONTAINER_DATA *data = newContainerData();
+  data->key      = strdupsafe(read_string(set, "key"));
   data->capacity = read_double(set, "capacity");
-  data->key      = read_int   (set, "key");
   data->pick_diff= read_int   (set, "pick_diff");
   data->closable = read_int   (set, "closable");
   data->closed   = read_int   (set, "closed");
@@ -108,7 +119,7 @@ bool containerIsLocked   (OBJ_DATA *obj) {
   return data->locked;
 }
 
-int  containerGetKey     (OBJ_DATA *obj) {
+const char *containerGetKey(OBJ_DATA *obj) {
   CONTAINER_DATA *data = objGetTypeData(obj, "container");
   return data->key;
 }
@@ -133,9 +144,10 @@ void containerSetLocked  (OBJ_DATA *obj, bool locked) {
   data->locked = locked;
 }
 
-void containerSetKey     (OBJ_DATA *obj, int  vnum) {
+void containerSetKey(OBJ_DATA *obj, const char *key) {
   CONTAINER_DATA *data = objGetTypeData(obj, "container");
-  data->key = vnum;
+  if(data->key) free(data->key);
+  data->key = strdup(key);
 }
 
 void containerSetPickDiff(OBJ_DATA *obj, int  diff) {
@@ -156,13 +168,11 @@ void containerSetPickDiff(OBJ_DATA *obj, int  diff) {
 void iedit_container_menu   (SOCKET_DATA *sock, CONTAINER_DATA *data) {
   send_to_socket(sock, 
 		 "{g1) Capacity : {c%1.2lf\r\n"
-		 "{g2) Key      : {c%d (%s)\r\n"
+		 "{g2) Key      : {c%s\r\n"
 		 "{g3) Closable : {c%s\r\n"
 		 "{g4) Pick diff: {c%d\r\n",
 		 data->capacity,
-		 data->key, 
-		 (worldGetObj(gameworld, data->key) ? 
-		  objGetName(worldGetObj(gameworld, data->key)) : "nothing"),
+		 data->key,
 		 (data->closable ? "yes" : "no"),
 		 data->pick_diff);
 }
@@ -174,7 +184,7 @@ int  iedit_container_chooser(SOCKET_DATA *sock, CONTAINER_DATA *data,
     text_to_buffer(sock, "Enter a new weight capacity for the container: ");
     return IEDIT_CONTAINER_CAPACITY;
   case '2':
-    text_to_buffer(sock, "Enter akey vnum for the container (-1 for none): ");
+    text_to_buffer(sock, "Enter akey vnum for the container: ");
     return IEDIT_CONTAINER_KEY;
   case '3':
     data->closable = (data->closable + 1) % 2;
@@ -197,15 +207,8 @@ bool iedit_container_parser (SOCKET_DATA *sock, CONTAINER_DATA *data, int choice
     return TRUE;
   }
   case IEDIT_CONTAINER_KEY: {
-    int key = atoi(arg);
-    // ugh... ugly logic. Clean this up one day?
-    //   Make sure what we're getting is a positive number or make sure it is
-    //   the NOTHING number (-1). Also make sure that, if it's not NOTHING, it
-    //   corresponds to a vnum of an object already created.
-    if((key != NOTHING && !worldGetObj(gameworld, key)) ||
-       (key != NOTHING && !isdigit(*arg)))
-      return FALSE;
-    data->key = key;
+    if(data->key) free(data->key);
+    data->key = strdupsafe(arg);
     return TRUE;
   }
   case IEDIT_CONTAINER_PICK_DIFF: {
@@ -217,6 +220,276 @@ bool iedit_container_parser (SOCKET_DATA *sock, CONTAINER_DATA *data, int choice
   }
   default: return FALSE;
   }
+}
+
+
+
+//*****************************************************************************
+// pyobj getters and setters
+//*****************************************************************************
+PyObject *PyObj_getcontainercapacity(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL)
+    return NULL;
+  else if(objIsType(obj, "container"))
+    return Py_BuildValue("d", containerGetCapacity(obj));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only get capacity for container.");
+    return NULL;
+  }
+}
+
+int PyObj_setcontainercapacity(PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to set capacity for nonexistent "
+		 "container, %d", PyObj_AsUid(self));
+    return -1;
+  }
+  else if(!objIsType(obj, "container")) {
+    PyErr_Format(PyExc_TypeError, "Tried to set capacity for non-container, %s",
+		 objGetClass(obj));
+    return -1;
+  }
+
+  if(!PyFloat_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "container capacity must be a double.");
+    return -1;
+  }
+
+  containerSetCapacity(obj, PyFloat_AsDouble(value));
+  return 0;
+}
+
+PyObject *PyObj_getcontainerkey(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL)
+    return NULL;
+  else if(objIsType(obj, "container"))
+    return Py_BuildValue("s", containerGetKey(obj));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only get keys for containers.");
+    return NULL;
+  }
+}
+
+int PyObj_setcontainerkey(PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA   *obj = PyObj_AsObj(self);
+  const char *key = NULL;
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to set key for nonexistent "
+		 "container, %d", PyObj_AsUid(self));
+    return -1;
+  }
+  else if(!objIsType(obj, "container")) {
+    PyErr_Format(PyExc_TypeError, "Tried to set key for non-container, %s",
+		 objGetClass(obj));
+    return -1;
+  }
+
+  if(PyString_Check(value))
+    key =get_fullkey(PyString_AsString(value),get_key_locale(objGetClass(obj)));
+  else if(PyObj_Check(value)) {
+    OBJ_DATA *key_obj = PyObj_AsObj(value);
+    if(key_obj != NULL)
+      key = objGetClass(key_obj);
+    else {
+      PyErr_Format(PyExc_TypeError, "Tried to set key for %s as nonexistaent "
+		   "obj, %d", objGetClass(obj), PyObj_AsUid(value));
+      return -1;
+    }
+  }
+
+  // make sure we have a key
+  if(key == NULL) {
+    PyErr_Format(PyExc_TypeError, "Container keys must be strings or objects.");
+    return -1;
+  }
+
+  containerSetKey(obj, key);
+  return 0;
+}
+
+PyObject *PyObj_getcontainerclosable(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) return NULL;
+  else if(objIsType(obj, "container"))
+    return Py_BuildValue("i", containerIsClosable(obj));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only check if containers are closable.");
+    return NULL;
+  }
+}
+
+PyObject *PyObj_getcontainerclosed  (PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) return NULL;
+  else if(objIsType(obj, "container"))
+    return Py_BuildValue("i", containerIsClosed(obj));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only check if containers are closed.");
+    return NULL;
+  }
+}
+
+PyObject *PyObj_getcontainerlocked  (PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) return NULL;
+  else if(objIsType(obj, "container"))
+    return Py_BuildValue("i", containerIsLocked(obj));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only check if containers are locked.");
+    return NULL;
+  }
+}
+
+PyObject *PyObj_getcontainerpickdiff(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) return NULL;
+  else if(objIsType(obj, "container"))
+    return Py_BuildValue("i", containerGetPicKDiff(obj));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only check pick diffs on containers.");
+    return NULL;
+  }
+}
+
+int PyObj_setcontainerpickdiff(PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to change pickdiff on nonexistent "
+		 "container, %d", PyObj_AsUid(self));
+    return -1;
+  }
+  else if(!objIsType(obj, "container")) {
+    PyErr_Format(PyExc_TypeError, "Tried to set pick for non-container, %s",
+		 objGetClass(obj));
+    return -1;
+  }
+
+  if(!PyInt_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "container pickdiff must be an integer.");
+    return -1;
+  }
+
+  containerSetPickDiff(obj, PyInt_AsLong(value));
+  return 0;
+}
+
+int PyObj_setcontainerclosable(PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to change closable on nonexistent "
+		 "container, %d", PyObj_AsUid(self));
+    return -1;
+  }
+  else if(!objIsType(obj, "container")) {
+    PyErr_Format(PyExc_TypeError, "Tried to set closable for non-container, %s",
+		 objGetClass(obj));
+    return -1;
+  }
+
+  if(!PyInt_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "container closability must be a boolean.");
+    return -1;
+  }
+
+  containerSetClosable(obj, PyInt_AsLong(value));
+  if(PyInt_AsLong(value) == 0) {
+    containerSetLocked(obj, FALSE);
+    containerSetClosed(obj, FALSE);
+  }
+  return 0;
+}
+
+int PyObj_setcontainerclosed  (PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to change closed on nonexistent "
+		 "container, %d", PyObj_AsUid(self));
+    return -1;
+  }
+  else if(!objIsType(obj, "container")) {
+    PyErr_Format(PyExc_TypeError, "Tried to set closed for non-container, %s",
+		 objGetClass(obj));
+    return -1;
+  }
+
+  if(!PyInt_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "container close status must be a boolean.");
+    return -1;
+  }
+
+  containerSetClosed(obj, PyInt_AsLong(value));
+  if(PyInt_AsLong(value) == 0)
+    containerSetLocked(obj, FALSE);
+  else
+    containerSetClosable(obj, TRUE);
+  return 0;
+}
+
+int PyObj_setcontainerlocked  (PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to change locked on nonexistent "
+		 "container, %d", PyObj_AsUid(self));
+    return -1;
+  }
+  else if(!objIsType(obj, "container")) {
+    PyErr_Format(PyExc_TypeError, "Tried to set locked for non-container, %s",
+		 objGetClass(obj));
+    return -1;
+  }
+
+  if(!PyInt_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "container lock status must be a boolean.");
+    return -1;
+  }
+
+  containerSetLocked(obj, PyInt_AsLong(value));
+  if(PyInt_AsLong(value) != 0) {
+    containerSetClosable(obj, TRUE);
+    containerSetClosed(obj, TRUE);
+  }
+  return 0;
+}
+
+void container_from_proto(CONTAINER_DATA *data, BUFFER *buf) {
+  char line[MAX_BUFFER];
+  const char *code = bufferString(buf);
+  do {
+    code = strcpyto(line, code, '\n');
+    char *lptr = line;
+    if(!strncasecmp(lptr, "me.container_capacity", 21)) {
+      while(*lptr && !isdigit(*lptr)) lptr++;
+      data->capacity = atoi(lptr);
+    }
+    else if(!strncasecmp(lptr, "me.container_key", 16)) {
+      while(*lptr && *lptr != '\"') lptr++;
+      lptr++; // skip leading "
+      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
+      if(data->key) free(data->key);
+      data->key = strdupsafe(lptr);
+    }
+    else if(!strncasecmp(lptr, "me.container_pick_diff", 22)) {
+      while(*lptr && !isdigit(*lptr)) lptr++;
+      data->pick_diff = atoi(lptr);
+    }
+    else if(!strcasecmp(lptr, "me.container_is_closable = True"))
+      data->closable = TRUE;
+    else; // ignore line
+  } while(*code != '\0');
+}
+
+void container_to_proto(CONTAINER_DATA *data, BUFFER *buf) {
+  if(data->capacity > 0)
+    bprintf(buf, "me.container_capacity    = %1.3lf\n", data->capacity);
+  if(*data->key)
+    bprintf(buf, "me.container_key         = \"%s\"\n", data->key);
+  if(data->pick_diff > 0)
+    bprintf(buf, "me.container_pick_diff   = %d\n", data->pick_diff);
+  if(data->closable == TRUE)
+    bprintf(buf, "me.container_is_closable = True\n");
 }
 
 
@@ -235,5 +508,23 @@ void init_container(void) {
 
   // set up the container OLC too
   item_add_olc("container", iedit_container_menu, iedit_container_chooser, 
-  	       iedit_container_parser);
+  	       iedit_container_parser, container_from_proto,container_to_proto);
+  PyObj_addGetSetter("container_capacity",
+		     PyObj_getcontainercapacity, PyObj_setcontainercapacity,
+		     "Sets the maximum amount of weight the container holds.");
+  PyObj_addGetSetter("container_key", 
+		     PyObj_getcontainerkey, PyObj_setcontainerkey,
+		     "The key that opens the container.");
+  PyObj_addGetSetter("container_pick_diff",
+		     PyObj_getcontainerpickdiff, PyObj_setcontainerpickdiff,
+		     "The picking difficulty of the container,");
+  PyObj_addGetSetter("container_is_closable", 
+		     PyObj_getcontainerclosable, PyObj_setcontainerclosable,
+		     "true or false if the container can be closed.");
+  PyObj_addGetSetter("container_is_closed", 
+		     PyObj_getcontainerclosed, PyObj_setcontainerclosed,
+		      "true or false if the container is closed.");
+  PyObj_addGetSetter("container_is_locked", 
+		     PyObj_getcontainerlocked, PyObj_setcontainerlocked,
+		      "true or false if the container is locked.");
 }

@@ -18,28 +18,24 @@ COMMAND(cmd_repeat);
 COMMAND(cmd_at);
 COMMAND(cmd_lockdown);
 COMMAND(cmd_force);
+COMMAND(cmd_pulserate);
 
 
 /* cmd_builder.c */
-COMMAND(cmd_dig);
-COMMAND(cmd_fill);
 COMMAND(cmd_load);
 COMMAND(cmd_purge);
 COMMAND(cmd_zreset);
-COMMAND(cmd_buildwalk);
-COMMAND(cmd_sclist);
 COMMAND(cmd_rlist);
 COMMAND(cmd_mlist);
 COMMAND(cmd_olist);
-COMMAND(cmd_dlist);
 COMMAND(cmd_zlist);
-COMMAND(cmd_scdelete);
 COMMAND(cmd_rdelete);
 COMMAND(cmd_mdelete);
 COMMAND(cmd_odelete);
-COMMAND(cmd_ddelete);
-COMMAND(cmd_detach);
-COMMAND(cmd_attach);
+COMMAND(cmd_mrename);
+COMMAND(cmd_rrename);
+COMMAND(cmd_orename);
+COMMAND(cmd_rreload);
 
 
 /* cmd_manip.c */
@@ -73,9 +69,6 @@ COMMAND(cmd_quit);
 COMMAND(cmd_save);
 COMMAND(cmd_commands);
 COMMAND(cmd_compress);
-COMMAND(cmd_more);
-COMMAND(cmd_back);
-COMMAND(cmd_stop);
 COMMAND(cmd_motd);
 
 
@@ -85,16 +78,9 @@ COMMAND(cmd_look);
 COMMAND(cmd_inventory);
 COMMAND(cmd_equipment);
 COMMAND(cmd_groupcmds);
-
-
-/* olc.c */
-COMMAND(cmd_redit);
-COMMAND(cmd_medit);
-COMMAND(cmd_oedit);
-COMMAND(cmd_zedit);
-COMMAND(cmd_wedit);
-COMMAND(cmd_scedit);
-COMMAND(cmd_dedit);
+COMMAND(cmd_more);
+COMMAND(cmd_back);
+COMMAND(cmd_stop);
 
 
 /* movement.c */
@@ -104,6 +90,5 @@ COMMAND(cmd_stand);
 COMMAND(cmd_wake);
 COMMAND(cmd_sleep);
 COMMAND(cmd_enter);
-
 
 #endif // __COMMAND_H

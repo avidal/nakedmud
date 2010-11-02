@@ -45,17 +45,15 @@ void         charCopyTo       (CHAR_DATA *from, CHAR_DATA *to);
 
 bool         charIsNPC        (CHAR_DATA *ch);
 bool         charIsName       (CHAR_DATA *ch, const char *name);
+bool         charIsInstance   (CHAR_DATA *ch, const char *prototype);
 void         putCharInventory (CHAR_DATA *ch, OBJ_DATA *obj);
 void         charResetBody    (CHAR_DATA *ch);
 
 
 
-
 //*****************************************************************************
-// utility functions
+// output functions
 //*****************************************************************************
-
-/* buffers the output        */
 void  text_to_char          (CHAR_DATA *dMob, const char *txt );
 void  send_to_char          (CHAR_DATA *ch, const char *format, ...) 
 __attribute__ ((format (printf, 2, 3)));
@@ -71,54 +69,55 @@ __attribute__ ((format (printf, 2, 3)));
 //*****************************************************************************
 // set and get functions
 //*****************************************************************************
-SOCKET_DATA *charGetSocket    ( CHAR_DATA *ch);
-ROOM_DATA   *charGetRoom      ( CHAR_DATA *ch);
-const char  *charGetName      ( CHAR_DATA *ch);
-const char  *charGetDesc      ( CHAR_DATA *ch);
-const char  *charGetRdesc     ( CHAR_DATA *ch);
-const char  *charGetMultiRdesc( CHAR_DATA *ch);
-const char  *charGetMultiName ( CHAR_DATA *ch);
-int          charGetSex       ( CHAR_DATA *ch);
+SOCKET_DATA *charGetSocket    (CHAR_DATA *ch);
+ROOM_DATA   *charGetRoom      (CHAR_DATA *ch);
+ROOM_DATA   *charGetLastRoom  (CHAR_DATA *ch);
+const char  *charGetClass     (CHAR_DATA *ch);
+const char  *charGetPrototypes(CHAR_DATA *ch);
+const char  *charGetName      (CHAR_DATA *ch);
+const char  *charGetDesc      (CHAR_DATA *ch);
+const char  *charGetRdesc     (CHAR_DATA *ch);
+const char  *charGetMultiRdesc(CHAR_DATA *ch);
+const char  *charGetMultiName (CHAR_DATA *ch);
+int          charGetSex       (CHAR_DATA *ch);
 // for editing with the text editor
-BUFFER      *charGetDescBuffer( CHAR_DATA *ch);
-LIST        *charGetInventory ( CHAR_DATA *ch);
-BODY_DATA   *charGetBody      ( CHAR_DATA *ch);
-const char  *charGetRace      ( CHAR_DATA *ch);
-int    charGetLoadroom  ( CHAR_DATA *ch);
-OBJ_DATA    *charGetFurniture ( CHAR_DATA *ch);
-int          charGetPos       ( CHAR_DATA *ch);
-int          charGetUID       ( const CHAR_DATA *ch);
+BUFFER      *charGetDescBuffer(CHAR_DATA *ch);
+LIST        *charGetInventory (CHAR_DATA *ch);
+BODY_DATA   *charGetBody      (CHAR_DATA *ch);
+const char  *charGetRace      (CHAR_DATA *ch);
+const char  *charGetLoadroom  (CHAR_DATA *ch);
+OBJ_DATA    *charGetFurniture (CHAR_DATA *ch);
+int          charGetPos       (CHAR_DATA *ch);
+int          charGetUID       (const CHAR_DATA *ch);
 void        *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name);
-BITVECTOR   *charGetPrfs      ( CHAR_DATA *ch);
-BITVECTOR   *charGetUserGroups( CHAR_DATA *ch);
+BITVECTOR   *charGetPrfs      (CHAR_DATA *ch);
+BITVECTOR   *charGetUserGroups(CHAR_DATA *ch);
 
-
-void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket);
-void         charSetRoom      ( CHAR_DATA *ch, ROOM_DATA *room);
-void         charSetName      ( CHAR_DATA *ch, const char *name);
-void         charSetSex       ( CHAR_DATA *ch, int sex);
-void         charSetDesc      ( CHAR_DATA *ch, const char *desc);
-void         charSetRdesc     ( CHAR_DATA *ch, const char *rdesc);
-void         charSetMultiRdesc( CHAR_DATA *ch, const char *multi_rdesc);
-void         charSetMultiName ( CHAR_DATA *ch, const char *multi_name);
-void         charSetBody      ( CHAR_DATA *ch, BODY_DATA *body);
-void         charSetRace      ( CHAR_DATA *ch, const char *race);
-void         charSetUID       ( CHAR_DATA *ch, int uid);
-void         charSetLoadroom  ( CHAR_DATA *ch, int loadroom);
-void         charSetFurniture ( CHAR_DATA *ch, OBJ_DATA *furniture);
-void         charSetPos       ( CHAR_DATA *ch, int pos);
+void         charSetClass     (CHAR_DATA *ch, const char *prototype);
+void         charAddPrototype (CHAR_DATA *ch, const char *prototype);
+void         charSetPrototypes(CHAR_DATA *ch, const char *prototypes);
+void         charSetSocket    (CHAR_DATA *ch, SOCKET_DATA *socket);
+void         charSetRoom      (CHAR_DATA *ch, ROOM_DATA *room);
+void         charSetLastRoom  (CHAR_DATA *ch, ROOM_DATA *room);
+void         charSetName      (CHAR_DATA *ch, const char *name);
+void         charSetSex       (CHAR_DATA *ch, int sex);
+void         charSetDesc      (CHAR_DATA *ch, const char *desc);
+void         charSetRdesc     (CHAR_DATA *ch, const char *rdesc);
+void         charSetMultiRdesc(CHAR_DATA *ch, const char *multi_rdesc);
+void         charSetMultiName (CHAR_DATA *ch, const char *multi_name);
+void         charSetBody      (CHAR_DATA *ch, BODY_DATA *body);
+void         charSetRace      (CHAR_DATA *ch, const char *race);
+void         charSetUID       (CHAR_DATA *ch, int uid);
+void         charSetLoadroom  (CHAR_DATA *ch, const char *key);
+void         charSetFurniture (CHAR_DATA *ch, OBJ_DATA *furniture);
+void         charSetPos       (CHAR_DATA *ch, int pos);
 
 
 
 //*****************************************************************************
 // mob-specific functions
 //*****************************************************************************
-int     charGetVnum       (CHAR_DATA *ch);
-int  charGetDialog     (CHAR_DATA *ch);
 const char  *charGetKeywords   (CHAR_DATA *ch);
-
-void         charSetVnum       (CHAR_DATA *ch, int vnum);
-void         charSetDialog     (CHAR_DATA *ch, int vnum);
 void         charSetKeywords   (CHAR_DATA *ch, const char *keywords);
 
 
@@ -144,7 +143,6 @@ int  sexGetNum(const char *sex);
 #define POS_UNCONCIOUS            0
 #define POS_SLEEPING              1
 #define POS_SITTING               2
-//#define POS_UNBALANCED            3 <-- position or status affect?
 #define POS_STANDING              3
 #define POS_FLYING                4
 #define NUM_POSITIONS             5

@@ -23,6 +23,7 @@ STORAGE_SET *objStore       (OBJ_DATA *obj);
 void         objCopyTo      (OBJ_DATA *from, OBJ_DATA *to);
 OBJ_DATA    *objCopy        (OBJ_DATA *obj);
 
+bool         objIsInstance  (OBJ_DATA *obj, const char *prototype);
 bool         objIsName      (OBJ_DATA *obj, const char *name);
 void         objAddChar     (OBJ_DATA *obj, CHAR_DATA *ch);
 void         objRemoveChar  (OBJ_DATA *obj, CHAR_DATA *ch);
@@ -30,11 +31,10 @@ void         objRemoveChar  (OBJ_DATA *obj, CHAR_DATA *ch);
 
 
 //*****************************************************************************
-//
 // set and get functions
-//
 //*****************************************************************************
-int     objGetVnum      (OBJ_DATA *obj);
+const char  *objGetClass     (OBJ_DATA *obj);
+const char  *objGetPrototypes(OBJ_DATA *obj);
 const char  *objGetName      (OBJ_DATA *obj);
 const char  *objGetKeywords  (OBJ_DATA *obj);
 const char  *objGetRdesc     (OBJ_DATA *obj);
@@ -43,6 +43,7 @@ const char  *objGetMultiName (OBJ_DATA *obj);
 const char  *objGetMultiRdesc(OBJ_DATA *obj);
 EDESC_SET   *objGetEdescs    (OBJ_DATA *obj);
 const char  *objGetEdesc     (OBJ_DATA *obj, const char *keyword);
+const char  *objGetInstances (OBJ_DATA *obj);
 BUFFER      *objGetDescBuffer(OBJ_DATA *obj);
 CHAR_DATA   *objGetCarrier   (OBJ_DATA *obj);
 CHAR_DATA   *objGetWearer    (OBJ_DATA *obj);
@@ -56,7 +57,9 @@ double       objGetWeightRaw (OBJ_DATA *obj);
 void        *objGetAuxiliaryData(const OBJ_DATA *obj, const char *name);
 BITVECTOR   *objGetBits      (OBJ_DATA *obj);
 
-void         objSetVnum      (OBJ_DATA *obj, int vnum);
+void         objSetClass     (OBJ_DATA *obj, const char *type);
+void         objSetPrototypes(OBJ_DATA *obj, const char *type);
+void         objAddPrototype (OBJ_DATA *obj, const char *type);
 void         objSetName      (OBJ_DATA *obj, const char *name);
 void         objSetKeywords  (OBJ_DATA *obj, const char *keywords);
 void         objSetRdesc     (OBJ_DATA *obj, const char *rdesc);

@@ -20,7 +20,7 @@
 #include "../inform.h"
 #include "../handler.h"
 
-#include "script.h"
+#include "scripts.h"
 #include "pyroom.h"
 #include "pychar.h"
 #include "pyobj.h"
@@ -33,35 +33,6 @@
 //*****************************************************************************
 // global variables we have set.
 PyObject  *globals = NULL;
-
-// Python commands that have been added to the game
-HASHTABLE *py_cmds = NULL;
-
-
-//
-// This is the glue between python commands and normal mud commands; checks for
-// the command entry in py_cmds, and calls the appropriate function
-COMMAND(cmd_py_cmd) {
-  PyObject *func = hashGet(py_cmds, cmd);
-  if(func == NULL)
-    log_string("ERROR: Tried python command, %s, but it does not exist!\r\n", 
-	       cmd);
-  else {
-    PyObject *arglist = Py_BuildValue("Osis", newPyChar(ch), cmd, subcmd, arg);
-    PyObject *retval  = PyEval_CallObject(func, arglist);
-    // check for an error:
-    if(retval == NULL) {
-      char *tb = getPythonTraceback();
-      if(tb != NULL) {
-	log_string("Error running python command, %s:\r\n%s\r\n", cmd, tb);
-	free(tb);
-      }
-    }
-    Py_XDECREF(retval);
-    Py_XDECREF(arglist);
-  }
-}
-
 
 
 
@@ -125,20 +96,18 @@ PyObject *mud_erase_global(PyObject *self, PyObject *args) {
 
 //
 // add a new command to the mud, via a python script or module. Takes in a
-// command name, a sort_by command, the function, a subcmd int value, a minimum
-// and maximum position in the form of strings, a level, and boolean values
-// for whether the command can be performed by mobiles, and whether it 
-// interrupts actions.
+// command name, a sort_by command, the function, a minimum and maximum 
+// position in the form of strings, a level, and boolean values for whether the
+// command can be performed by mobiles, and whether it interrupts actions.
 PyObject *mud_add_cmd(PyObject *self, PyObject *args) {
   PyObject *func = NULL;
   char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
        *group = NULL;
-  int  subcmd = 0;
   bool mob_ok = FALSE, interrupts = FALSE;
   int min_pos_num, max_pos_num;
 
   // parse all of the values
-  if (!PyArg_ParseTuple(args, "szOisssbb", &name, &sort_by, &func, &subcmd,
+  if (!PyArg_ParseTuple(args, "szOsssbb", &name, &sort_by, &func,
   			&min_pos, &max_pos, &group, &mob_ok, &interrupts)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Could not add new command. Improper arguments supplied");
@@ -154,11 +123,9 @@ PyObject *mud_add_cmd(PyObject *self, PyObject *args) {
     return NULL;
   }
 
-  // map our python function to its command name 
-  Py_INCREF(func);
-  hashPut(py_cmds, name, func);
-  add_cmd(name, sort_by, cmd_py_cmd, subcmd, min_pos_num, max_pos_num,
-	  group, mob_ok, interrupts);
+  // add the command to the game
+  add_py_cmd(name, sort_by, func, min_pos_num, max_pos_num,
+	     group, mob_ok, interrupts);
   return Py_None;
 }
 
@@ -176,10 +143,11 @@ PyObject *mud_format_string(PyObject *self, PyObject *args) {
   }
 
   // dup the string so we can work with it and not intrude on the PyString data
-  string = strdupsafe(string);
-  format_string(&string, 80, MAX_BUFFER, TRUE);
-  PyObject *ret = Py_BuildValue("s", string);
-  free(string);
+  BUFFER *buf = newBuffer(MAX_BUFFER);
+  bufferCat(buf, string);
+  bufferFormat(buf, SCREEN_WIDTH, PARA_INDENT);
+  PyObject *ret = Py_BuildValue("s", bufferString(buf));
+  deleteBuffer(buf);
   return ret;
 }
 
@@ -373,11 +341,31 @@ PyObject *mud_extract(PyObject *self, PyObject *args) {
   return Py_BuildValue("i", 1);
 }
 
+//
+// functional form of if/then/else
+PyObject *mud_ite(PyObject *self, PyObject *args) {
+  PyObject *condition = NULL;
+  PyObject  *true_act = NULL;
+  PyObject *false_act = Py_None;
+
+  if (!PyArg_ParseTuple(args, "OO|O", &condition, &true_act, &false_act)) {
+    PyErr_Format(PyExc_TypeError, "ite must be specified 2 and an optional 3rd "
+		 "arg");
+    return NULL;
+  }
+
+  // check to see if our condition is true
+  if( (PyInt_Check(condition)    && PyInt_AsLong(condition) != 0) ||
+      (PyString_Check(condition) && strlen(PyString_AsString(condition)) > 0))
+    return true_act;
+  else
+    return false_act;
+}
+
+
 
 //*****************************************************************************
-//
 // MUD module
-//
 //*****************************************************************************
 PyMethodDef mud_module_methods[] = {
     {"get_global",  mud_get_global, METH_VARARGS,
@@ -398,6 +386,10 @@ PyMethodDef mud_module_methods[] = {
     "extracts an object or character from the game. This method is dangerous, "
     "since the object may still be needed in whichever function called the "
     "script that activated this method" },
+    {"ite", mud_ite, METH_VARARGS,
+     "A functional form of an if-then-else statement. Takes 2 arguments "
+     "(condition, if action) and an optional third (else action). If no else "
+     "action is specified and the condition is false, None is returned." },
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -411,6 +403,4 @@ init_PyMud(void) {
 
   m = Py_InitModule3("mud", mud_module_methods,
 		     "The mud module, for all MUD misc mud utils.");
-
-  py_cmds = newHashtable();
 }

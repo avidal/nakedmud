@@ -46,20 +46,18 @@ STORAGE_SET *exitStore(EXIT_DATA *exit);
 
 
 //*****************************************************************************
-//
 // is, get and set functions
-//
 //*****************************************************************************
-
 bool        exitIsName         (const EXIT_DATA *exit, const char *name);
 bool        exitIsClosable     (const EXIT_DATA *exit);
 bool        exitIsClosed       (const EXIT_DATA *exit);
 bool        exitIsLocked       (const EXIT_DATA *exit);
 
+int         exitGetUID         (const EXIT_DATA *exit);
 int         exitGetHidden      (const EXIT_DATA *exit);
 int         exitGetPickLev     (const EXIT_DATA *exit);
-int         exitGetKey         (const EXIT_DATA *exit);
-int         exitGetTo          (const EXIT_DATA *exit);
+const char *exitGetKey         (const EXIT_DATA *exit);
+const char *exitGetTo          (const EXIT_DATA *exit);
 const char *exitGetName        (const EXIT_DATA *exit);
 const char *exitGetKeywords    (const EXIT_DATA *exit);
 const char *exitGetOpposite    (const EXIT_DATA *exit);
@@ -71,10 +69,10 @@ BUFFER     *exitGetDescBuffer  (const EXIT_DATA *exit);
 void        exitSetClosable    (EXIT_DATA *exit, bool closable);
 void        exitSetClosed      (EXIT_DATA *exit, bool closed);
 void        exitSetLocked      (EXIT_DATA *exit, bool locked);
-void        exitSetKey         (EXIT_DATA *exit, int key);
 void        exitSetHidden      (EXIT_DATA *exit, int hide_lev);
 void        exitSetPickLev     (EXIT_DATA *exit, int pick_lev);
-void        exitSetTo          (EXIT_DATA *exit, int room);
+void        exitSetKey         (EXIT_DATA *exit, const char *key);
+void        exitSetTo          (EXIT_DATA *exit, const char *key);
 void        exitSetName        (EXIT_DATA *exit, const char *name);
 void        exitSetOpposite    (EXIT_DATA *exit, const char *opposite);
 void        exitSetKeywords    (EXIT_DATA *exit, const char *keywords);

@@ -123,12 +123,7 @@ EDESC_DATA *edescSetRemoveNum (EDESC_SET *set, int num) {
 }
 
 void        deleteEdescSet      (EDESC_SET *set) {
-  EDESC_DATA *entry;
-
-  while( (entry = listPop(set->edescs)) != NULL)
-    deleteEdesc(entry);
-
-  deleteList(set->edescs);
+  deleteListWith(set->edescs, deleteEdesc);
   free(set);
 }
 
@@ -140,36 +135,27 @@ LIST       *edescSetGetList        (EDESC_SET *set) {
   return set->edescs;
 }
 
-
-char       *tagEdescs           (EDESC_SET *set, const char *string,
-				 const char *start_tag, const char *end_tag) {
+void edescTagDesc(BUFFER *buf, EDESC_SET *set, 
+		  const char *start_tag, const char *end_tag) {
   LIST_ITERATOR *list_i = newListIterator(set->edescs);
   EDESC_DATA    *edesc  = NULL;
-  char          *newstring = strdup(string);
 
   // go through, and apply colors for each extra desc we have
   ITERATE_LIST(edesc, list_i) {
-    char *oldstring = newstring;
-    newstring = tag_keywords(edesc->keywords, oldstring, start_tag, end_tag);
-    free(oldstring);
-  }
-  deleteListIterator(list_i);
-
-  return newstring;
+    buf_tag_keywords(buf, edesc->keywords, start_tag, end_tag);
+  } deleteListIterator(list_i);
 }
 
 
 
 //*****************************************************************************
-//
 // a single edesc
-//
 //*****************************************************************************
 EDESC_DATA *newEdesc(const char *keywords, const char *desc) {
   EDESC_DATA *edesc = malloc(sizeof(struct edesc_data));
 
   edesc->set      = NULL;
-  edesc->keywords = strdup((keywords ? keywords : ""));
+  edesc->keywords = strdupsafe(keywords);
   edesc->desc     = newBuffer(1);
   bufferCat(edesc->desc, (desc ? desc : ""));
 
@@ -190,10 +176,10 @@ void edescCopyTo(EDESC_DATA *from, EDESC_DATA *to) {
   // copy over the new desc
   bufferCopyTo(from->desc, to->desc);
   if(to->keywords) free(to->keywords);
-  to->keywords = strdup(from->keywords ? from->keywords : "");
+  to->keywords = strdupsafe(from->keywords);
 }
 
-const char *edescSetGetKeywords(EDESC_DATA *edesc) {
+const char *edescGetKeywords(EDESC_DATA *edesc) {
   return edesc->keywords;
 }
 
@@ -207,7 +193,7 @@ BUFFER *edescGetDescBuffer(EDESC_DATA *edesc) {
 
 void edescSetKeywords(EDESC_DATA *edesc, const char *keywords) {
   if(edesc->keywords) free(edesc->keywords);
-  edesc->keywords   = strdup((keywords ? keywords :""));
+  edesc->keywords   = strdupsafe(keywords);
 }
 
 void edescSetDesc(EDESC_DATA *edesc, const char *description) {

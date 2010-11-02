@@ -12,8 +12,8 @@
 #
 # STEP 1: Locating Python
 #   Figure out where your python directory is. If you do not know how to do
-#   this, you can do a "find" from your shell:
-#     find / -name "Python.h" -print
+#   this, you can do a "locate" for one of the Python headers:
+#     > locate Python.h
 #
 #   wait for the path to Python.h to show up. You'll have to doctor it a bit;
 #   from the path, you will want to figure out the top directory for python, and
@@ -88,10 +88,7 @@
 #   -lutil and -ldl . This, of course, will vary from OS to OS. Add all of the
 #   libraries you need to the end of LIBS, where you put the libraries from
 #   STEP 2. Try Recompiling. If things still aren't working for you, proceed
-#   to STEP 6. If things ARE working, I would really appreciate an email
-#   describing what your module.mk ended up looking like, and what operating
-#   system you use. Help save the next NakedMud user from going through all of
-#   the arduous work you just did!
+#   to STEP 6.
 #
 #
 # STEP 6: On your own
@@ -100,12 +97,21 @@
 #   someone a bit more experienced will be able to help out.
 #
 ################################################################################
+SRC  += scripts/scripts.c       \
+	scripts/pychar.c        \
+	scripts/pyobj.c         \
+	scripts/pymud.c         \
+	scripts/pyroom.c        \
+	scripts/pyexit.c        \
+	scripts/script_editor.c \
+	scripts/pyplugs.c       \
+	scripts/pyevent.c       \
+	scripts/pystorage.c     \
+	scripts/pyauxiliary.c   \
+	scripts/triggers.c      \
+	scripts/trigedit.c      \
+	scripts/trighooks.c
 
-# Object files we generate
-SRC      += scripts/script_set.c scripts/script.c scripts/pychar.c \
-	    scripts/pyobj.c scripts/pymud.c scripts/pyroom.c \
-	    scripts/script_editor.c scripts/script_edit.c scripts/pyplugs.c \
-	    scripts/pyevent.c scripts/pystorage.c scripts/pyauxiliary.c
 
 # the top level directory of python.
 PYTHONTOP = /usr/local/include

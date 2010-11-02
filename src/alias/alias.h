@@ -22,7 +22,7 @@ void init_aliases();
 //
 // tries to treat the command as an alias. If we succeed, return true. In this
 // case, the function calling this one should terminate
-bool try_alias(CHAR_DATA *ch, char *command, char *arg, bool scripts_ok);
+bool try_alias(CHAR_DATA *ch, char *command, char *arg);
 
 //
 // for use by socket.c to see if we need to do anything special w/ aliases

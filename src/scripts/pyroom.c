@@ -12,18 +12,21 @@
 #include <structmember.h>
 
 #include "../mud.h"
+#include "../utils.h"
 #include "../world.h"
 #include "../room.h"
 #include "../exit.h"
+#include "../extra_descs.h"
 #include "../character.h"
 #include "../handler.h"
-#include "../utils.h"
+#include "../prototype.h"
+#include "../commands.h"
 
 #include "pyplugs.h"
-#include "script_set.h"
-#include "script.h"
+#include "scripts.h"
 #include "pychar.h"
 #include "pyobj.h"
+#include "pyexit.h"
 #include "pyroom.h"
 
 
@@ -40,7 +43,7 @@ LIST *pyroom_methods = NULL;
 
 typedef struct {
   PyObject_HEAD
-  int vnum;
+  int uid;
 } PyRoom;
 
 
@@ -55,36 +58,35 @@ void PyRoom_dealloc(PyRoom *self) {
 PyObject *PyRoom_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
     PyRoom *self;
     self = (PyRoom *)type->tp_alloc(type, 0);
-    self->vnum = NOWHERE;
+    self->uid = NOWHERE;
     return (PyObject *)self;
 }
 
 int PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
-  char *kwlist[] = {"vnum", NULL};
-  int vnum = NOWHERE;
+  char *kwlist[] = {"uid", NULL};
+  int        uid = NOTHING;
 
   // get the vnum
-  if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwlist, &vnum)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Rooms may only be created using a vnum");
+  if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwlist, &uid)) {
+    PyErr_Format(PyExc_TypeError, "Rooms may only be created using a uid");
     return -1;
   }
 
   // make sure a room with the vnum exists
-  if(!worldGetRoom(gameworld, vnum)) {
+  if(!propertyTableGet(room_table, uid)) {
     PyErr_Format(PyExc_TypeError, 
-		 "Room with vnum, %d, does not exist", vnum);
+		 "Room with uid, %d, does not exist", uid);
     return -1;
   }
 
-  self->vnum = vnum;
+  self->uid = uid;
   return 0;
 }
 
 int PyRoom_compare(PyRoom *room1, PyRoom *room2) {
-  if(room1->vnum == room2->vnum)
+  if(room1->uid == room2->uid)
     return 0;
-  else if(room1->vnum < room2->vnum)
+  else if(room1->uid < room2->uid)
     return -1;
   else
     return 1;
@@ -95,16 +97,28 @@ int PyRoom_compare(PyRoom *room1, PyRoom *room2) {
 //*****************************************************************************
 // getters and setters for the Room class
 //*****************************************************************************
-PyObject *PyRoom_getvnum(PyRoom *self, void *closure) {
+PyObject *PyRoom_getclass(PyRoom *self, void *closure) {
   ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
-  if(room != NULL) return Py_BuildValue("i", roomGetVnum(room));
+  if(room != NULL) return Py_BuildValue("s", roomGetClass(room));
   else             return NULL;
+}
+
+PyObject *PyRoom_getuid(PyRoom *self, void *closure) {
+  return Py_BuildValue("i", self->uid);
 }
 
 PyObject *PyRoom_getname(PyRoom *self, void *closure) {
   ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
   if(room != NULL)  return Py_BuildValue("s", roomGetName(room));
   else              return NULL;
+}
+
+PyObject *PyRoom_getterrain(PyRoom *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL)  
+    return Py_BuildValue("s", terrainGetName(roomGetTerrain(room)));
+  else
+    return NULL;
 }
 
 PyObject *PyRoom_getdesc(PyRoom *self, void *closure) {
@@ -116,27 +130,17 @@ PyObject *PyRoom_getdesc(PyRoom *self, void *closure) {
 PyObject *PyRoom_getexnames(PyRoom *self, void *closure) {
   ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
   if(room == NULL)  return NULL;
-  
-  PyObject  *list = PyList_New(0);
-  EXIT_DATA *exit = NULL;
-  int           i = 0;
-  // normal exits
-  for(i = 0; i < NUM_DIRS; i++) {
-    if((exit = roomGetExit(room, i)) == NULL)
-      continue;
-    PyList_Append(list, Py_BuildValue("s", dirGetName(i)));
-  }
 
-  // special exits
-  int num_spec_exits = 0;
-  const char **names = roomGetExitNames(room, &num_spec_exits);
-  for(i = 0; i < num_spec_exits; i++)
-    PyList_Append(list, Py_BuildValue("s", names[i]));
-  if(names) free(names);
-
+  PyObject      *list = PyList_New(0);
+  LIST       *ex_list = roomGetExitNames(room);
+  LIST_ITERATOR *ex_i = newListIterator(ex_list);
+  char           *dir = NULL;
+  ITERATE_LIST(dir, ex_i) {
+    PyList_Append(list, Py_BuildValue("s", dir));
+  } deleteListIterator(ex_i);
+  deleteListWith(ex_list, free);
   return list;
 }
-
 
 PyObject *PyRoom_getchars(PyRoom *self, PyObject *args) {
   ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
@@ -176,12 +180,12 @@ PyObject *PyRoom_getobjs(PyRoom *self, PyObject *args) {
 //
 // Standard check to make sure the room exists when trying to set a value for 
 // it. If successful, assign the room to rm. Otherwise, return -1 (error)
-#define PYROOM_CHECK_ROOM_EXISTS(vnum, room)                                   \
-  room = worldGetRoom(gameworld, vnum);					       \
-  if(room == NULL) {                                                           \
-    PyErr_Format(PyExc_TypeError,                                              \
-		    "Tried to modify nonexistent room, %d", vnum);             \
-    return -1;                                                                 \
+#define PYROOM_CHECK_ROOM_EXISTS(uid, room)			  	\
+  room = propertyTableGet(room_table, uid);				\
+  if(room == NULL) {							\
+    PyErr_Format(PyExc_TypeError,					\
+		 "Tried to modify nonexistent room, %d", uid);		\
+    return -1;                                                          \
   }                                                                            
 
 int PyRoom_setname(PyRoom *self, PyObject *value, void *closure) {
@@ -197,7 +201,7 @@ int PyRoom_setname(PyRoom *self, PyObject *value, void *closure) {
   }
 
   ROOM_DATA *room;
-  PYROOM_CHECK_ROOM_EXISTS(self->vnum, room);
+  PYROOM_CHECK_ROOM_EXISTS(self->uid, room);
   roomSetName(room, PyString_AsString(value));
   return 0;
 }
@@ -215,12 +219,34 @@ int PyRoom_setdesc(PyRoom *self, PyObject *value, void *closure) {
   }
 
   ROOM_DATA *room;
-  PYROOM_CHECK_ROOM_EXISTS(self->vnum, room);
+  PYROOM_CHECK_ROOM_EXISTS(self->uid, room);
   roomSetDesc(room, PyString_AsString(value));
   return 0;
 }
 
+int PyRoom_setterrain(PyRoom *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete room's terrain");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "Room terrain type must be a string");
+    return -1;
+  }
+  
+  if(terrainGetNum(PyString_AsString(value)) == TERRAIN_NONE) {
+    PyErr_Format(PyExc_TypeError, "Invalid terrain type, %s", 
+		 PyString_AsString(value));
+    return -1;
+  }
 
+
+  ROOM_DATA *room;
+  PYROOM_CHECK_ROOM_EXISTS(self->uid, room);
+  roomSetTerrain(room, terrainGetNum(PyString_AsString(value)));
+  return 0;
+}
 
 
 
@@ -246,270 +272,292 @@ PyObject *PyRoom_send(PyRoom *self, PyObject *value) {
   else {
     PyErr_Format(PyExc_TypeError, 
                     "Tried to send message to nonexistant room, %d.", 
-		    self->vnum);
+		    self->uid);
     return NULL;
   }
 }
 
 
 //
-// close a door in the specified direction
-PyObject *PyRoom_close(PyRoom *self, PyObject *value) {
+// create a new extra description for the room
+PyObject *PyRoom_edesc(PyRoom *self, PyObject *value) {
+  char *keywords = NULL;
+  char     *desc = NULL;
+
+  if (!PyArg_ParseTuple(value, "ss", &keywords, &desc)) {
+    PyErr_Format(PyExc_TypeError, "Extra descs must be strings.");
+    return NULL;
+  }
+
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL) {
+    EDESC_DATA *edesc = newEdesc(keywords, desc);
+    edescSetPut(roomGetEdescs(room), edesc);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError,
+		 "Tried to set edesc for nonexistent room, %d.", self->uid);
+    return NULL;
+  }
+}
+
+
+//
+// Get an exit in the room by its direction name
+PyObject *PyRoom_get_exit(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
-  EXIT_DATA *exit = NULL;
-  char *dirname = NULL;
-  int dir = DIR_NONE;
+  char       *dir = NULL;
 
-  if (!PyArg_ParseTuple(value, "s", &dirname)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Doornames provided to PyRoom_close must be directions.");
+  if (!PyArg_ParseTuple(value, "s", &dir)) {
+    PyErr_Format(PyExc_TypeError, "Direction of exit not supplied.");
     return NULL;
   }
 
-  room = PyRoom_AsRoom((PyObject *)self);
-  if(room == NULL) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to close door in non-existant room, %d.", 
-		 self->vnum);
+  if((room = PyRoom_AsRoom((PyObject *)self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Tried to get exit of nonexistent room, %d.", 
+		 self->uid);
     return NULL;
   }
 
-  // see if it's a normal exit
-  dir = dirGetNum(dirname);
+  // get the exit
+  const char *cdir = dir;
+  if(dirGetAbbrevNum(dir) != DIR_NONE)
+    cdir = dirGetName(dirGetAbbrevNum(dir));
 
-  if(dir != DIR_NONE)
-    exit = roomGetExit(room, dir);
+  EXIT_DATA *exit = roomGetExit(room, cdir);
+  if(exit != NULL)
+    return Py_BuildValue("O", newPyExit(exit));
   else
-    exit = roomGetExitSpecial(room, dirname);
+    return Py_None;
+}
 
-  // make sure the exit exists
-  if(exit == NULL) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to close non-existant exit, %s, in room %d.",
-		 dirname, self->vnum);
+
+//
+// Fills an exit in the given direction
+PyObject *PyRoom_fill(PyRoom *self, PyObject *value) {
+  ROOM_DATA *room = NULL;
+  char       *dir = NULL;
+
+  if (!PyArg_ParseTuple(value, "s", &dir)) {
+    PyErr_Format(PyExc_TypeError, "Direction not supplied to fill.");
     return NULL;
   }
 
-  // make sure the exit can be closed in the first place
-  if(!exitIsClosable(exit)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to close exit, %s, in room %d that is not closable.",
-		 dirname, self->vnum);
+  if((room = PyRoom_AsRoom((PyObject *)self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Tried to fill in non-existant room, %d.", 
+		 self->uid);
     return NULL;
   }
 
-  exitSetClosed(exit, TRUE);
+  // remove the exit
+  EXIT_DATA *exit = roomRemoveExit(room, dir);
+  if(exit != NULL) {
+    exit_from_game(exit);
+    deleteExit(exit);
+
+    // is it a special exit? If so, we may need to remove the command as well
+    if(dirGetNum(dir) == DIR_NONE) {
+      CMD_DATA *cmd = nearMapRemove(roomGetCmdTable(room), dir);
+      if(cmd != NULL)
+	deleteCmd(cmd);
+    }
+  }
+
   return Py_BuildValue("i", 1);
 }
 
 
 //
-// lock a door in the specified direction
-PyObject *PyRoom_lock(PyRoom *self, PyObject *value) {
-  ROOM_DATA *room = NULL;
-  EXIT_DATA *exit = NULL;
-  char *dirname = NULL;
-  int dir = DIR_NONE;
+// Links a room to another room, in the specified direction
+PyObject *PyRoom_dig(PyRoom *self, PyObject *value) {
+  ROOM_DATA   *room = NULL;
+  PyObject *py_dest = NULL;
+  char         *dir = NULL;
+  const char  *cdir = NULL;
+  const char  *dest = NULL;
 
-  if (!PyArg_ParseTuple(value, "s", &dirname)) {
+  if (!PyArg_ParseTuple(value, "sO", &dir, &py_dest)) {
     PyErr_Format(PyExc_TypeError, 
-                    "Doornames provided to PyRoom_lock must be directions.");
+		 "When digging, a direction and destination are needed.");
     return NULL;
   }
 
-  room = PyRoom_AsRoom((PyObject *)self);
-  if(room == NULL) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to lock door in non-existant room, %d.", 
-		 self->vnum);
+  if((room = PyRoom_AsRoom((PyObject *)self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Tried to dig in non-existant room, %d.", 
+		 self->uid);
     return NULL;
   }
 
-  // see if it's a normal exit
-  dir = dirGetNum(dirname);
+  // make sure we have a valid destination
+  if(PyString_Check(py_dest))
+    dest = get_fullkey(PyString_AsString(py_dest), get_script_locale());
+  else if(PyRoom_Check(py_dest)) {
+    ROOM_DATA *to_room = PyRoom_AsRoom(py_dest);
+    if(to_room != NULL)
+      dest = roomGetClass(to_room);
+    else {
+      PyErr_Format(PyExc_StandardError, 
+		   "Tried to dig from %s to invalid room, %d",
+		   roomGetClass(room), PyRoom_AsUid(py_dest));
+      return NULL;
+    }
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, "Invalid destination type in room, %s.",
+		 roomGetClass(room));
+    return NULL;
+  }
 
-  if(dir != DIR_NONE)
-    exit = roomGetExit(room, dir);
+  // are we using a special direction name?
+  int dir_num        = dirGetNum(dir);
+  int dir_abbrev_num = dirGetAbbrevNum(dir);
+  if(dir_abbrev_num != DIR_NONE)
+    cdir = dirGetName(dir_abbrev_num);
   else
-    exit = roomGetExitSpecial(room, dirname);
+    cdir = dir;
 
-  // make sure the exit exists
-  if(exit == NULL) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to lock non-existant exit, %s, in room %d.",
-		 dirname, self->vnum);
-    return NULL;
+  // do we already have an exit?
+  EXIT_DATA *exit = roomGetExit(room, cdir);
+  if(exit != NULL) {
+    exitSetTo(exit, dest);
+  }
+  else {
+    exit = newExit();
+    exit_to_game(exit);
+    exitSetTo(exit, dest);
+    roomSetExit(room, cdir, exit);
+
+    // if we're digging a special exit, add a cmd for it to the room cmd table
+    if(dir_num == DIR_NONE && dir_abbrev_num == DIR_NONE)
+      nearMapPut(roomGetCmdTable(room), cdir, NULL,
+		 newCmd(cdir, cmd_move, POS_STANDING, POS_FLYING, 
+			"player", TRUE, TRUE));
   }
 
-  // make sure the exit can be closed in the first place
-  if(!exitIsClosable(exit)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to lock exit, %s, in room %d that is not closable.",
-		 dirname, self->vnum);
-    return NULL;
-  }
-  if(exitGetKey(exit) == NOTHING) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to lock exit, %s, in room %d that is not lockable.",
-		 dirname, self->vnum);
-    return NULL;
-  }
-
-  exitSetClosed(exit, TRUE);
-  exitSetLocked(exit, TRUE);
-  return Py_BuildValue("i", 1);
-}
-
-
-//
-// lock a door in the specified direction
-PyObject *PyRoom_unlock(PyRoom *self, PyObject *value) {
-  ROOM_DATA *room = NULL;
-  EXIT_DATA *exit = NULL;
-  char *dirname = NULL;
-  int dir = DIR_NONE;
-
-  if (!PyArg_ParseTuple(value, "s", &dirname)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Doornames provided to PyRoom_unlock must be directions.");
-    return NULL;
-  }
-
-  room = PyRoom_AsRoom((PyObject *)self);
-  if(room == NULL) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to unlock door in non-existant room, %d.", 
-		 self->vnum);
-    return NULL;
-  }
-
-  // see if it's a normal exit
-  dir = dirGetNum(dirname);
-
-  if(dir != DIR_NONE)
-    exit = roomGetExit(room, dir);
-  else
-    exit = roomGetExitSpecial(room, dirname);
-
-  // make sure the exit exists
-  if(exit == NULL) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to unlock non-existant exit, %s, in room %d.",
-		 dirname, self->vnum);
-    return NULL;
-  }
-
-  // make sure the exit can be closed in the first place
-  if(!exitIsClosable(exit)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to unlock exit, %s, in room %d that is not closable.",
-		 dirname, self->vnum);
-    return NULL;
-  }
-  if(exitGetKey(exit) == NOTHING) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to unlock exit, %s, in room %d that is not lockable.",
-		 dirname, self->vnum);
-    return NULL;
-  }
-
-  exitSetLocked(exit, FALSE);
-  return Py_BuildValue("i", 1);
-}
-
-
-//
-// close a door in the specified direction
-PyObject *PyRoom_open(PyRoom *self, PyObject *value) {
-  ROOM_DATA *room = NULL;
-  EXIT_DATA *exit = NULL;
-  char *dirname = NULL;
-  int dir = DIR_NONE;
-
-  if (!PyArg_ParseTuple(value, "s", &dirname)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Doornames provided to PyRoom_open must be directions.");
-    return NULL;
-  }
-
-  room = PyRoom_AsRoom((PyObject *)self);
-  if(room == NULL) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to open door in non-existant room, %d.", 
-		 self->vnum);
-    return NULL;
-  }
-
-
-  // see if it's a normal exit
-  dir = dirGetNum(dirname);
-
-  if(dir != DIR_NONE)
-    exit = roomGetExit(room, dir);
-  else
-    exit = roomGetExitSpecial(room, dirname);
-
-  // make sure the exit exists
-  if(exit == NULL) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Tried to open non-existant exit, %s, in room %d.",
-		 dirname, self->vnum);
-    return NULL;
-  }
-
-  exitSetClosed(exit, FALSE);
-  exitSetLocked(exit, FALSE);
-  return Py_BuildValue("i", 1);
+  return Py_BuildValue("O", newPyExit(exit));
 }
 
 
 PyObject *PyRoom_attach(PyRoom *self, PyObject *args) {  
-  long vnum = NOTHING;
+  char *key = NULL;
 
   // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+  if (!PyArg_ParseTuple(args, "s", &key)) {
     PyErr_Format(PyExc_TypeError, 
-		 "To attach a script, the vnum must be supplied.");
+		 "To attach a script, the key must be supplied.");
     return NULL;
   }
 
-  // pull out the character and do the attaching
-  ROOM_DATA     *room = PyRoom_AsRoom((PyObject *)self);
-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
-  if(room != NULL && script != NULL) {
-    scriptSetAdd(roomGetScripts(room), vnum);
+  // pull out the room and do the attaching
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to attach script to nonexistant room, %d.", self->uid);
+    return NULL;
+  }
+
+  TRIGGER_DATA *trig =
+    worldGetType(gameworld, "trigger", 
+		 get_fullkey_relative(key, get_script_locale()));
+  if(trig != NULL) {
+    triggerListAdd(roomGetTriggers(room), triggerGetKey(trig));
     return Py_BuildValue("i", 1);
   }
   else {
     PyErr_Format(PyExc_StandardError, 
-		 "Tried to attach script to nonexistant room, %d, or script %d "
-		 "does not exit.", self->vnum, (int)vnum);
+		 "Tried to attach nonexistant script, %s, to room %s.",
+		 key, roomGetClass(room));
     return NULL;
   }
 }
 
 
 PyObject *PyRoom_detach(PyRoom *self, PyObject *args) {  
-  long vnum = NOTHING;
+  char *key = NULL;
 
   // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+  if (!PyArg_ParseTuple(args, "s", &key)) {
     PyErr_Format(PyExc_TypeError, 
-		 "To detach a script, the vnum must be suppplied.");
+		 "To detach a script, the key must be suppplied.");
     return NULL;
   }
 
-  // pull out the character and do the attaching
-  ROOM_DATA     *room = PyRoom_AsRoom((PyObject *)self);
-  SCRIPT_DATA *script = worldGetScript(gameworld, (int)vnum);
-  if(room != NULL && script != NULL) {
-    scriptSetRemove(roomGetScripts(room), vnum);
+  // pull out the room and do the attaching
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL) {
+    const char *fkey = get_fullkey_relative(key, get_script_locale());
+    triggerListRemove(roomGetTriggers(room), fkey);
     return Py_BuildValue("i", 1);
   }
   else {
     PyErr_Format(PyExc_StandardError, 
-		 "Tried to detach script from nonexistant room, %d, or script "
-		 "%d does not exit.", self->vnum, (int)vnum);
+		 "Tried to detach script from nonexistant room, %d.",self->uid);
+    return NULL;
+  }
+}
+
+
+//
+// adds a new command to the room
+PyObject *PyRoom_add_cmd(PyRoom *self, PyObject *args) {
+  PyObject *func = NULL;
+  char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
+       *group = NULL;
+  bool mob_ok = FALSE, interrupts = FALSE;
+  int min_pos_num, max_pos_num;
+
+  // parse all of the values
+  if (!PyArg_ParseTuple(args, "szOsssbb", &name, &sort_by, &func,
+  			&min_pos, &max_pos, &group, &mob_ok, &interrupts)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Could not add new room command. Improper arguments supplied");
+    return NULL;
+  }
+
+  // make sure the room exists
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to add command to nonexistent room, %d", self->uid);
+    return NULL;
+  }
+
+  // get our positions
+  min_pos_num = posGetNum(min_pos);
+  max_pos_num = posGetNum(max_pos);
+  if(min_pos_num == POS_NONE || max_pos_num == POS_NONE) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Could not add new room command. Invalid position names.");
+    return NULL;
+  }
+
+  // add the command to the game
+  nearMapPut(roomGetCmdTable(room), name, sort_by,
+	     newPyCmd(name, func, POS_STANDING, POS_FLYING,
+		      group, TRUE, TRUE));
+  return Py_None;
+}
+
+//
+// returns whether or not the character is an instance of the prototype
+PyObject *PyRoom_isinstance(PyRoom *self, PyObject *args) {  
+  char *type = NULL;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "s", &type)) {
+    PyErr_Format(PyExc_TypeError, "isinstance only accepts strings.");
+    return NULL;
+  }
+
+  // pull out the object and check the type
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL)
+    return Py_BuildValue("i", 
+        roomIsInstance(room, get_fullkey_relative(type, get_script_locale())));
+  else {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to check instances of nonexistent room, %d.",self->uid);
     return NULL;
   }
 }
@@ -608,8 +656,8 @@ init_PyRoom(void) {
 			"the room's name");
     PyRoom_addGetSetter("desc",    PyRoom_getdesc,     PyRoom_setdesc, 
 			"the room's desc");
-    PyRoom_addGetSetter("vnum",    PyRoom_getvnum,     NULL, 
-			"The room's vnum");
+    PyRoom_addGetSetter("class",   PyRoom_getclass,    NULL, 
+			"The room's class");
     PyRoom_addGetSetter("chars",   PyRoom_getchars,    NULL, 
 			"chars in the room");
     PyRoom_addGetSetter("objs",  PyRoom_getobjs,       NULL, 
@@ -618,22 +666,30 @@ init_PyRoom(void) {
 			"objects in the room");
     PyRoom_addGetSetter("exnames", PyRoom_getexnames,  NULL, 
 			"the room's exits");
+    PyRoom_addGetSetter("uid",     PyRoom_getuid,      NULL,
+			"the room's uid");
+    PyRoom_addGetSetter("terrain", PyRoom_getterrain,  PyRoom_setterrain,
+			"the room's terrain type");
 
     // add all of the basic methods
     PyRoom_addMethod("attach", PyRoom_attach, METH_VARARGS,
 		     "attach a new script to the room.");
     PyRoom_addMethod("detach", PyRoom_detach, METH_VARARGS,
 		     "detach a script from the room, by vnum.");
-    PyRoom_addMethod("close", PyRoom_close, METH_VARARGS,
-		     "close a door in the specified direction.");
-    PyRoom_addMethod("open", PyRoom_open, METH_VARARGS,
-		     "open a door in the specified direction. Also unlocks.");
-    PyRoom_addMethod("lock", PyRoom_lock, METH_VARARGS,
-		     "lock a door in the specified direction. Also closes.");
-    PyRoom_addMethod("unlock", PyRoom_unlock, METH_VARARGS,
-		     "unlocks a door in the specified direction.");
+    PyRoom_addMethod("dig", PyRoom_dig, METH_VARARGS,
+		     "digs in direction to the target room. Returns exit.");
+    PyRoom_addMethod("fill", PyRoom_fill, METH_VARARGS,
+		     "fills in direction for the room.");
+    PyRoom_addMethod("exit", PyRoom_get_exit, METH_VARARGS,
+		     "gets an exit in the room with the given direction name.");
     PyRoom_addMethod("send", PyRoom_send, METH_VARARGS,
 		     "send a message to everyone in the room.");
+    PyRoom_addMethod("edesc", PyRoom_edesc, METH_VARARGS,
+		     "adds an extra description to the room.");
+    PyRoom_addMethod("add_cmd", PyRoom_add_cmd, METH_VARARGS,
+		     "adds a command to the room.");
+    PyRoom_addMethod("isinstance", PyRoom_isinstance, METH_VARARGS,
+		     "returns whether or not the room inherits from the proto");
 
     // add in all the getsetters and methods
     makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);
@@ -658,13 +714,12 @@ init_PyRoom(void) {
     Py_INCREF(&PyRoom_Type);
 }
 
-
-int PyRoom_AsVnum(PyObject *room) {
-  return ((PyRoom *)room)->vnum;
+int PyRoom_AsUid(PyObject *room) {
+  return ((PyRoom *)room)->uid;
 }
 
 ROOM_DATA *PyRoom_AsRoom(PyObject *room) {
-  return worldGetRoom(gameworld, PyRoom_AsVnum(room));
+  return propertyTableGet(room_table, PyRoom_AsUid(room));
 }
 
 int PyRoom_Check(PyObject *value) {
@@ -674,6 +729,6 @@ int PyRoom_Check(PyObject *value) {
 PyObject *
 newPyRoom(ROOM_DATA *room) {
   PyRoom *py_room = (PyRoom *)PyRoom_new(&PyRoom_Type, NULL, NULL);
-  py_room->vnum = roomGetVnum(room);
+  py_room->uid = roomGetUID(room);
   return (PyObject *)py_room;
 }

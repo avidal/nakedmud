@@ -8,22 +8,24 @@
 //
 //*****************************************************************************
 #include "mud.h"
-#include "handler.h"
+#include "utils.h"
+#include "world.h"
 #include "room.h"
 #include "exit.h"
 #include "extra_descs.h"
 #include "character.h"
 #include "object.h"
-#include "utils.h"
 #include "body.h"
 #include "inform.h"
+#include "hooks.h"
+#include "handler.h"
+#include "commands.h"
 
 
 
 //*****************************************************************************
 // mandatory modules
 //*****************************************************************************
-#include "scripts/script.h"
 #include "items/items.h"
 #include "items/container.h"
 #include "items/worn.h"
@@ -33,6 +35,178 @@
 //*****************************************************************************
 // obj/char from/to functions
 //*****************************************************************************
+void exit_to_game(EXIT_DATA *exit) {
+  propertyTablePut(exit_table, exit);
+}
+
+void obj_to_game(OBJ_DATA *obj) {
+  listPut(object_list, obj);
+  propertyTablePut(obj_table, obj);
+
+  // execute all of our to_game hooks
+  hookRun("obj_to_game", obj, NULL, NULL);
+
+  // also add all contents
+  if(listSize(objGetContents(obj)) > 0) {
+    LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
+    OBJ_DATA *cont = NULL;
+    ITERATE_LIST(cont, cont_i)
+      obj_to_game(cont);
+    deleteListIterator(cont_i);
+  }
+}
+
+void room_to_game(ROOM_DATA *room) {
+  listPut(room_list, room);
+  propertyTablePut(room_table, room);
+
+  // execute all of our to_game hooks
+  hookRun("room_to_game", room, NULL, NULL);
+
+  // add contents
+  if(listSize(roomGetContents(room)) > 0) {
+    LIST_ITERATOR *cont_i = newListIterator(roomGetContents(room));
+    OBJ_DATA        *cont = NULL;
+    ITERATE_LIST(cont, cont_i)
+      obj_to_game(cont);
+    deleteListIterator(cont_i);
+  }
+
+  // add its people
+  if(listSize(roomGetCharacters(room)) > 0) {
+    LIST_ITERATOR *ch_i = newListIterator(roomGetCharacters(room));
+    CHAR_DATA       *ch = NULL;
+    ITERATE_LIST(ch, ch_i)
+      char_to_game(ch);
+    deleteListIterator(ch_i);
+  }
+
+  // add its exits, and their room table commands as neccessary
+  LIST       *ex_list = roomGetExitNames(room);
+  LIST_ITERATOR *ex_i = newListIterator(ex_list);
+  char           *dir = NULL;
+  ITERATE_LIST(dir, ex_i) {
+    exit_to_game(roomGetExit(room, dir));
+    if(dirGetNum(dir) == DIR_NONE)
+      nearMapPut(roomGetCmdTable(room), dir, NULL,
+		 newCmd(dir, cmd_move, POS_STANDING, POS_FLYING,
+			"player", TRUE, TRUE));
+  } deleteListIterator(ex_i);
+  deleteListWith(ex_list, free);
+}
+
+void char_to_game(CHAR_DATA *ch) {
+  listPut(mobile_list, ch);
+  propertyTablePut(mob_table, ch);
+
+  // execute all of our to_game hooks
+  hookRun("char_to_game", ch, NULL, NULL);
+
+  // also add inventory
+  if(listSize(charGetInventory(ch)) > 0) {
+    LIST_ITERATOR *inv_i = newListIterator(charGetInventory(ch));
+    OBJ_DATA *obj = NULL;
+    ITERATE_LIST(obj, inv_i)
+      obj_to_game(obj);
+    deleteListIterator(inv_i);
+  }
+
+  // and equipped items
+  LIST *eq = bodyGetAllEq(charGetBody(ch));
+  if(listSize(eq) > 0) {
+    LIST_ITERATOR *eq_i = newListIterator(eq);
+    OBJ_DATA *obj = NULL;
+    ITERATE_LIST(obj, eq_i)
+      obj_to_game(obj);
+    deleteListIterator(eq_i);
+  }
+  deleteList(eq);
+}
+
+void exit_from_game(EXIT_DATA *exit) {
+  propertyTableRemove(exit_table, exitGetUID(exit));
+}
+
+void obj_from_game(OBJ_DATA *obj) {
+  listRemove(object_list, obj);
+  propertyTableRemove(obj_table, objGetUID(obj));
+
+  // go through all of our fromgame hooks
+  hookRun("obj_from_game", obj, NULL, NULL);
+
+  // also remove everything that is contained within the object
+  if(listSize(objGetContents(obj)) > 0) {
+    LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
+    OBJ_DATA *cont = NULL;
+    ITERATE_LIST(cont, cont_i)
+      obj_from_game(cont);
+    deleteListIterator(cont_i);
+  }
+}
+
+void room_from_game(ROOM_DATA *room) {
+  listRemove(room_list, room);
+  propertyTableRemove(room_table, roomGetUID(room));
+
+  // go through all of our fromgame hooks
+  hookRun("room_from_game", room, NULL, NULL);
+
+  // also remove all the objects contained within the room
+  if(listSize(roomGetContents(room)) > 0) {
+    LIST_ITERATOR *cont_i = newListIterator(roomGetContents(room));
+    OBJ_DATA        *cont = NULL;
+    ITERATE_LIST(cont, cont_i)
+      obj_from_game(cont);
+    deleteListIterator(cont_i);
+  }
+
+  // and now all of the characters
+  if(listSize(roomGetCharacters(room)) > 0) {
+    LIST_ITERATOR *ch_i = newListIterator(roomGetCharacters(room));
+    CHAR_DATA       *ch = NULL;
+    ITERATE_LIST(ch, ch_i)
+      char_from_game(ch);
+    deleteListIterator(ch_i);
+  }
+
+  // remove its exits
+  LIST       *ex_list = roomGetExitNames(room);
+  LIST_ITERATOR *ex_i = newListIterator(ex_list);
+  char           *dir = NULL;
+  ITERATE_LIST(dir, ex_i)
+    exit_from_game(roomGetExit(room, dir));
+  deleteListIterator(ex_i);
+  deleteListWith(ex_list, free);
+}
+
+void char_from_game(CHAR_DATA *ch) {
+  listRemove(mobile_list, ch);
+  propertyTableRemove(mob_table, charGetUID(ch));
+
+  // go through all of our fromgame hooks
+  hookRun("char_from_game", ch, NULL, NULL);
+
+  // also remove inventory
+  if(listSize(charGetInventory(ch)) > 0) {
+    LIST_ITERATOR *inv_i = newListIterator(charGetInventory(ch));
+    OBJ_DATA *obj = NULL;
+    ITERATE_LIST(obj, inv_i)
+      obj_from_game(obj);
+    deleteListIterator(inv_i);
+  }
+
+  // and equipped items
+  LIST *eq = bodyGetAllEq(charGetBody(ch));
+  if(listSize(eq) > 0) {
+    LIST_ITERATOR *eq_i = newListIterator(eq);
+    OBJ_DATA *obj = NULL;
+    ITERATE_LIST(obj, eq_i)
+      obj_from_game(obj);
+    deleteListIterator(eq_i);
+  }
+  deleteList(eq);
+}
+
 void obj_from_char(OBJ_DATA *obj) {
   if(objGetCarrier(obj)) {
     listRemove(charGetInventory(objGetCarrier(obj)), obj);
@@ -69,88 +243,11 @@ void obj_to_room(OBJ_DATA *obj, ROOM_DATA *room) {
   objSetRoom(obj, room);
 }
 
-void obj_to_game(OBJ_DATA *obj) {
-  listPut(object_list, obj);
-  propertyTablePut(obj_table, obj);
-
-  // also add all contents
-  if(listSize(objGetContents(obj)) > 0) {
-    LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
-    OBJ_DATA *cont = NULL;
-    ITERATE_LIST(cont, cont_i)
-      obj_to_game(cont);
-    deleteListIterator(cont_i);
-  }
-}
-
-void obj_from_game(OBJ_DATA *obj) {
-  listRemove(object_list, obj);
-  propertyTableRemove(obj_table, objGetUID(obj));
-
-  // also remove everything that is contained within the object
-  if(listSize(objGetContents(obj)) > 0) {
-    LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
-    OBJ_DATA *cont = NULL;
-    ITERATE_LIST(cont, cont_i)
-      obj_from_game(cont);
-    deleteListIterator(cont_i);
-  }
-}
-
-void char_to_game(CHAR_DATA *ch) {
-  listPut(mobile_list, ch);
-  propertyTablePut(mob_table, ch);
-
-  // also add inventory
-  if(listSize(charGetInventory(ch)) > 0) {
-    LIST_ITERATOR *inv_i = newListIterator(charGetInventory(ch));
-    OBJ_DATA *obj = NULL;
-    ITERATE_LIST(obj, inv_i)
-      obj_to_game(obj);
-    deleteListIterator(inv_i);
-  }
-
-  // and equipped items
-  LIST *eq = bodyGetAllEq(charGetBody(ch));
-  if(listSize(eq) > 0) {
-    LIST_ITERATOR *eq_i = newListIterator(eq);
-    OBJ_DATA *obj = NULL;
-    ITERATE_LIST(obj, eq_i)
-      obj_to_game(obj);
-    deleteListIterator(eq_i);
-  }
-  deleteList(eq);
-}
-
-void char_from_game(CHAR_DATA *ch) {
-  listRemove(mobile_list, ch);
-  propertyTableRemove(mob_table, charGetUID(ch));
-
-  // also remove inventory
-  if(listSize(charGetInventory(ch)) > 0) {
-    LIST_ITERATOR *inv_i = newListIterator(charGetInventory(ch));
-    OBJ_DATA *obj = NULL;
-    ITERATE_LIST(obj, inv_i)
-      obj_from_game(obj);
-    deleteListIterator(inv_i);
-  }
-
-  // and equipped items
-  LIST *eq = bodyGetAllEq(charGetBody(ch));
-  if(listSize(eq) > 0) {
-    LIST_ITERATOR *eq_i = newListIterator(eq);
-    OBJ_DATA *obj = NULL;
-    ITERATE_LIST(obj, eq_i)
-      obj_from_game(obj);
-    deleteListIterator(eq_i);
-  }
-  deleteList(eq);
-}
-
 void char_from_room(CHAR_DATA *ch) {
+  charSetLastRoom(ch, charGetRoom(ch));
   roomRemoveChar(charGetRoom(ch), ch);
   charSetRoom(ch, NULL);
-};
+}
 
 void char_to_room(CHAR_DATA *ch, ROOM_DATA *room) {
   if(charGetRoom(ch))
@@ -158,7 +255,7 @@ void char_to_room(CHAR_DATA *ch, ROOM_DATA *room) {
 
   roomAddChar(room, ch);
   charSetRoom(ch, room);
-};
+}
 
 void char_from_furniture(CHAR_DATA *ch) {
   objRemoveChar(charGetFurniture(ch), ch);
@@ -176,9 +273,7 @@ void char_to_furniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
 
 
 //*****************************************************************************
-//
 // do_get/give/drop/etc...
-//
 //*****************************************************************************
 void do_get(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
   if(bitIsOneSet(objGetBits(obj), "notake"))
@@ -197,6 +292,7 @@ void do_get(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
 	    "$n gets $o.");
     obj_from_room(obj);
     obj_to_char(obj, ch);
+    hookRun("get", ch, obj, NULL);
   }
 }
 
@@ -231,15 +327,8 @@ void do_give(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
   obj_from_char(obj);
   obj_to_char(obj, recv);
 
-  // object give
-  try_scripts(SCRIPT_TYPE_GIVE,
-	      obj, SCRIPTOR_OBJ,
-	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
-  
-  // char receive
-  try_scripts(SCRIPT_TYPE_GIVE,
-	      recv, SCRIPTOR_CHAR,
-	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
+  // run all of our give/receive hooks
+  hookRun("give", ch, recv, obj);
 }
 
 
@@ -250,13 +339,8 @@ void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
   obj_from_char(obj);
   obj_to_room(obj, charGetRoom(ch));
 
-  // check for triggers
-  try_scripts(SCRIPT_TYPE_DROP,
-	      charGetRoom(ch), SCRIPTOR_ROOM,
-	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
-  try_scripts(SCRIPT_TYPE_DROP,
-	      obj, SCRIPTOR_OBJ,
-	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
+  // run all of our drop hooks
+  hookRun("drop", ch, obj, NULL);
 }
 
 
@@ -287,11 +371,8 @@ void do_remove(CHAR_DATA *ch, OBJ_DATA *obj) {
 
 
 //*****************************************************************************
-//
 // functions related to equipping and unequipping items
-//
 //*****************************************************************************
-
 bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *poslist) {
   if(!objIsType(obj, "worn"))
     return FALSE;
@@ -358,20 +439,15 @@ bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *poslist) {
   if(wanted) free(wanted);
   if(success) {
     objSetWearer(obj, ch);
-    //****************************
-    // set all of the item affects
-    //****************************
+    hookRun("wear", ch, obj, NULL);
   }
   return success;
 }
 
-
 bool try_unequip(CHAR_DATA *ch, OBJ_DATA *obj) {
   if(bodyUnequip(charGetBody(ch), obj)) {
     objSetWearer(obj, NULL);
-    //*******************************
-    // remove all of the item affects
-    //*******************************
+    hookRun("remove", ch, obj, NULL);
     return TRUE;
   }
   return FALSE;
@@ -381,16 +457,15 @@ bool try_unequip(CHAR_DATA *ch, OBJ_DATA *obj) {
 // unequip everything the character is wearing, and put it to his or her inv
 //
 void unequip_all(CHAR_DATA *ch) {
-  LIST *eq = bodyUnequipAll(charGetBody(ch));
+  LIST      *eq = bodyGetAllEq(charGetBody(ch));
   OBJ_DATA *obj = NULL;
   while( (obj = listPop(eq)) != NULL) {
-    objSetWearer(obj, NULL);
-    //*******************************
-    // remove all of the item affects
-    //*******************************
-    obj_to_char(obj, ch);
-  }
-  deleteList(eq);
+    if(bodyUnequip(charGetBody(ch), obj)) {
+      objSetWearer(obj, NULL);
+      hookRun("remove", ch, obj, NULL);
+      obj_to_char(obj, ch);
+    }
+  } deleteList(eq);
 }
 
 
@@ -468,7 +543,7 @@ char *in_arg(char *arg) {
 //
 void *find_on_char(CHAR_DATA *looker,
 		   CHAR_DATA *on,
-		   int at_count, char *at,
+		   int at_count, const char *at,
 		   bitvector_t find_types,
 		   bitvector_t find_scope,
 		   int *found_type) {
@@ -477,12 +552,12 @@ void *find_on_char(CHAR_DATA *looker,
   // see if it's equipment
   if(IS_SET(find_types, FIND_TYPE_OBJ)) {
     LIST *equipment = bodyGetAllEq(charGetBody(on));
-    count += count_objs(looker, equipment, at, NOTHING,
+    count += count_objs(looker, equipment, at, NULL,
 			(IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_OBJ;
-      OBJ_DATA *obj = find_obj(looker, equipment, at_count, at, NOTHING, 
+      OBJ_DATA *obj = find_obj(looker, equipment, at_count, at, NULL, 
 			       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       deleteList(equipment);
       return obj;
@@ -507,7 +582,7 @@ void *find_on_char(CHAR_DATA *looker,
 //
 void *find_on_obj(CHAR_DATA *looker,
 		  OBJ_DATA  *on,
-		  int at_count, char *at,
+		  int at_count, const char *at,
 		  bitvector_t find_types,
 		  bitvector_t find_scope,
 		  int *found_type) {
@@ -515,12 +590,12 @@ void *find_on_obj(CHAR_DATA *looker,
 
   // see if it's a character
   if(IS_SET(find_types, FIND_TYPE_CHAR)) {
-    count = count_chars(looker, objGetUsers(on), at, NOBODY,
+    count = count_chars(looker, objGetUsers(on), at, NULL,
 			(IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_CHAR;
-      return find_char(looker, objGetUsers(on), at_count, at, NOBODY,
+      return find_char(looker, objGetUsers(on), at_count, at, NULL,
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
@@ -550,8 +625,8 @@ void *find_on_obj(CHAR_DATA *looker,
 //
 void *find_in_obj(CHAR_DATA *looker,
 		  OBJ_DATA *in,
-		  int at_count, char *at,
-		  int on_count, char *on,
+		  int at_count, const char *at,
+		  int on_count, const char *on,
 		  bitvector_t find_types,
 		  bitvector_t find_scope,
 		  int *found_type) {		  
@@ -560,7 +635,7 @@ void *find_in_obj(CHAR_DATA *looker,
 
   // see if we're looking on anything
   if(on && *on && on_count > 0) {
-    OBJ_DATA *on_obj = find_obj(looker, objGetContents(in),on_count,on, NOTHING,
+    OBJ_DATA *on_obj = find_obj(looker, objGetContents(in), on_count, on, NULL,
 				(IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(!on_obj)
       return NULL;
@@ -569,12 +644,12 @@ void *find_in_obj(CHAR_DATA *looker,
 			 find_types, find_scope, found_type);
   }
   else {
-    int count = count_objs(looker, objGetContents(in), at, NOTHING,
+    int count = count_objs(looker, objGetContents(in), at, NULL,
 			    (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_OBJ;
-      return find_obj(looker, objGetContents(in), at_count, at, NOTHING,
+      return find_obj(looker, objGetContents(in), at_count, at, NULL,
 		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
@@ -596,7 +671,7 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
     
     // get everything from our inventory
     if(IS_SET(find_scope, FIND_SCOPE_INV)) {
-      LIST *inv_objs = find_all_objs(looker,charGetInventory(looker),at,NOTHING,
+      LIST *inv_objs = find_all_objs(looker,charGetInventory(looker), at, NULL,
 				     (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       OBJ_DATA *obj = NULL;
       while( (obj = listPop(inv_objs)) != NULL)
@@ -609,7 +684,7 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
     if(IS_SET(find_scope, FIND_SCOPE_ROOM)) {
       LIST *room_objs = find_all_objs(looker, 
 				      roomGetContents(charGetRoom(looker)),
-				      at, NOTHING,
+				      at, NULL,
 				     (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       OBJ_DATA *obj = NULL;
       while( (obj = listPop(room_objs)) != NULL)
@@ -624,7 +699,7 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
       // delete the list after we search through it again for everything
       // that we can see.
       LIST *equipment = bodyGetAllEq(charGetBody(looker));
-      LIST *eq_objs = find_all_objs(looker, equipment, at, NOTHING,
+      LIST *eq_objs = find_all_objs(looker, equipment, at, NULL,
 				    (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       deleteList(equipment);
       OBJ_DATA *obj = NULL;
@@ -637,7 +712,7 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
     // get everything in the world
     if(IS_SET(find_scope, FIND_SCOPE_WORLD)) {
       LIST *wld_objs = find_all_objs(looker,
-				     object_list, at, NOTHING, 
+				     object_list, at, NULL, 
 				     (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       OBJ_DATA *obj = NULL;
       while( (obj = listPop(wld_objs)) != NULL)
@@ -668,7 +743,7 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
     if(IS_SET(find_scope, FIND_SCOPE_ROOM)) {
       LIST *room_chars =find_all_chars(looker, 
 				       roomGetCharacters(charGetRoom(looker)),
-				       at, NOTHING,
+				       at, NULL,
 				       (IS_SET(find_scope,FIND_SCOPE_VISIBLE)));
       CHAR_DATA *ch = NULL;
       while( (ch = listPop(room_chars)) != NULL)
@@ -681,7 +756,7 @@ LIST *find_all(CHAR_DATA *looker, const char *at, bitvector_t find_types,
     if(IS_SET(find_scope, FIND_SCOPE_WORLD)) {
       LIST *wld_chars = find_all_chars(looker, 
 				       mobile_list,
-				       at, NOTHING,
+				       at, NULL,
 				       (IS_SET(find_scope,FIND_SCOPE_VISIBLE)));
       CHAR_DATA *ch = NULL;
       while( (ch = listPop(wld_chars)) != NULL)
@@ -721,7 +796,6 @@ void *find_one(CHAR_DATA *looker,
   // find what we're looking AT
   int count = 0;
 
-
   /************************************************************/
   /*                   PERSONAL SEARCHES                      */
   /************************************************************/
@@ -739,12 +813,12 @@ void *find_one(CHAR_DATA *looker,
   // seach our inventory
   if(IS_SET(find_scope, FIND_SCOPE_INV) && 
      IS_SET(find_types, FIND_TYPE_OBJ)) {
-    count = count_objs(looker, charGetInventory(looker), at, NOTHING, 
+    count = count_objs(looker, charGetInventory(looker), at, NULL, 
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_OBJ;
-      return find_obj(looker, charGetInventory(looker), at_count, at, NOTHING,
+      return find_obj(looker, charGetInventory(looker), at_count, at, NULL,
 		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
@@ -755,12 +829,12 @@ void *find_one(CHAR_DATA *looker,
   if(IS_SET(find_scope, FIND_SCOPE_WORN) &&
      IS_SET(find_types, FIND_TYPE_OBJ)) {
     LIST *equipment = bodyGetAllEq(charGetBody(looker));
-    count = count_objs(looker, equipment, at, NOTHING, 
+    count = count_objs(looker, equipment, at, NULL, 
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_OBJ;
-      OBJ_DATA *obj = find_obj(looker, equipment, at_count, at, NOTHING, 
+      OBJ_DATA *obj = find_obj(looker, equipment, at_count, at, NULL, 
 			       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       deleteList(equipment);
       return obj;
@@ -775,16 +849,25 @@ void *find_one(CHAR_DATA *looker,
   /************************************************************/
   /*                      LOCAL SEARCHES                      */
   /************************************************************/
+  // is it our current room?
+  if(IS_SET(find_scope, FIND_SCOPE_ROOM | FIND_SCOPE_WORLD) &&
+     IS_SET(find_types, FIND_TYPE_ROOM)  &&
+     at_count == 1 && !strcasecmp(at, "room")) {
+    if(found_type)
+      *found_type = FOUND_ROOM;
+    return charGetRoom(looker);
+  }
+
   // search objects in the room
   if(IS_SET(find_scope, FIND_SCOPE_ROOM) && 
      IS_SET(find_types, FIND_TYPE_OBJ)) {
-    count = count_objs(looker, roomGetContents(charGetRoom(looker)), at, 
-		       NOTHING, (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+    count = count_objs(looker, roomGetContents(charGetRoom(looker)), at, NULL,
+		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_OBJ;
       return find_obj(looker, roomGetContents(charGetRoom(looker)), at_count,
-		      at, NOTHING, (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+		      at, NULL, (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
       at_count -= count;
@@ -794,111 +877,61 @@ void *find_one(CHAR_DATA *looker,
   if(IS_SET(find_scope, FIND_SCOPE_ROOM) &&
      IS_SET(find_types, FIND_TYPE_CHAR)) {
     count = count_chars(looker, roomGetCharacters(charGetRoom(looker)), at,
-		       NOBODY, (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
+		       NULL, (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_CHAR;
       return find_char(looker, roomGetCharacters(charGetRoom(looker)), 
-		       at_count, at, NOBODY,
+		       at_count, at, NULL,
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
 	at_count -= count;
   }
 
-
-  //*****************************************
-  // The exit stuff in the next two if
-  // blocks is kinda bulky. We should really
-  // either cut it down to size, or throw
-  // it in its own subfunction.
-  //*****************************************
-
-  // search exits in the room
+  // search for exits in the room
   if(IS_SET(find_scope, FIND_SCOPE_ROOM) &&
      IS_SET(find_types, FIND_TYPE_EXIT)) {
-    EXIT_DATA *exit = NULL;
+    EXIT_DATA *exit = roomGetExit(charGetRoom(looker), at);
 
-    if(dirGetNum(at) != DIR_NONE) 
-	exit = roomGetExit(charGetRoom(looker), dirGetNum(at));
-    else if(dirGetAbbrevNum(at) != DIR_NONE)
-	exit = roomGetExit(charGetRoom(looker), dirGetAbbrevNum(at));
-    else
-	exit = roomGetExitSpecial(charGetRoom(looker), at);
+    // no exit... are we using an abbreviation?
+    if(exit == NULL && (dirGetAbbrevNum(at) != DIR_NONE))
+      exit = roomGetExit(charGetRoom(looker), dirGetName(dirGetAbbrevNum(at)));
+
     // we found one
-    if(exit && 
-	 (!IS_SET(find_scope, FIND_SCOPE_VISIBLE) || 
-	  can_see_exit(looker, exit))) {
-	at_count--;
-	if(at_count == 0) {
-	  if(found_type)
-	    *found_type = FOUND_EXIT;
-	  return exit;
-	}
-    }
-  }
-
-  // search doors in the room -> exit keywords
-  if(IS_SET(find_scope, FIND_SCOPE_ROOM) &&
-     IS_SET(find_types, FIND_TYPE_EXIT)) {
-    EXIT_DATA *exit = NULL;
-    int ex_i = 0;
-
-    // traditional exits first
-    for(ex_i = 0; ex_i < NUM_DIRS; ex_i++) {
-      exit = roomGetExit(charGetRoom(looker), ex_i);
-      if(!exit)
-	continue;
-      if(!exitIsName(exit, at))
-	continue;
-
-      if((!IS_SET(find_scope, FIND_SCOPE_VISIBLE) || 
-	  can_see_exit(looker, exit))) {
-	at_count--;
-	if(at_count == 0) {
-	  if(found_type)
-	    *found_type = FOUND_EXIT;
-	  return exit;
-	}
+    if(exit && (!IS_SET(find_scope, FIND_SCOPE_VISIBLE) || 
+		can_see_exit(looker, exit))) {
+      at_count--;
+      if(at_count == 0) {
+	if(found_type)
+	  *found_type = FOUND_EXIT;
+	return exit;
       }
     }
 
-    // now special exits
-    int num_exits = 0;
-    const char **ex_names = roomGetExitNames(charGetRoom(looker), &num_exits);
-    for(ex_i = 0; ex_i < num_exits; ex_i++) {
-      exit = roomGetExitSpecial(charGetRoom(looker), ex_names[ex_i]);
-      if(!exit)
-	continue;
-      if(!exitIsName(exit, at))
-	continue;
+    LIST       *ex_list = roomGetExitNames(charGetRoom(looker));
+    LIST_ITERATOR *ex_i = newListIterator(ex_list);
+    char           *dir = NULL;
 
-      if((!IS_SET(find_scope, FIND_SCOPE_VISIBLE) || 
-	  can_see_exit(looker, exit))) {
-	at_count--;
-	if(at_count == 0) {
-	  if(found_type)
-	    *found_type = FOUND_EXIT;
-	  // don't return it yet... we need to clean up our mess
-	  break;
+    ITERATE_LIST(dir, ex_i) {
+      exit = roomGetExit(charGetRoom(looker), dir);
+      if(exitIsName(exit, at)) {
+	if(!IS_SET(find_scope,FIND_SCOPE_VISIBLE) || can_see_exit(looker,exit)){
+	  at_count--;
+	  if(at_count == 0) {
+	    if(found_type)
+	      *found_type = FOUND_EXIT;
+	    break;
+	  }
 	}
       }
-    }
+    } deleteListIterator(ex_i);
+    deleteListWith(ex_list, free);
 
-    // if we iterated to the end, null the exit we 
-    // were last at so we don't choose to return it
-    if(ex_i == num_exits)
-      exit = NULL;
-
-    // clean up our mess
-    free(ex_names);
-
-    // we got one
-    if(exit)
+    // we found one
+    if(*found_type != FOUND_NONE)
       return exit;
   }
-
-
 
   // search extra descriptions in the room
   if(IS_SET(find_scope, FIND_SCOPE_ROOM) &&
@@ -913,19 +946,33 @@ void *find_one(CHAR_DATA *looker,
 	at_count--;
   }
 
-
   /************************************************************/
   /*                     GLOBAL SEARCHES                      */
   /************************************************************/
+  // search rooms in the world
+  if(IS_SET(find_scope, FIND_SCOPE_WORLD) &&
+     IS_SET(find_types, FIND_TYPE_ROOM)   &&
+     at_count == 1) {
+    ROOM_DATA *room = worldGetRoom(gameworld, 
+	                get_fullkey_relative(at, 
+			  get_key_locale(roomGetClass(charGetRoom(looker)))));
+
+    if(room != NULL) {
+      if(found_type)
+	*found_type = FOUND_ROOM;
+      return room;
+    }
+  }
+
   // search objects in the world
   if(IS_SET(find_scope, FIND_SCOPE_WORLD) &&
      IS_SET(find_types, FIND_TYPE_OBJ)) {
-    count = count_objs(looker, object_list, at, NOTHING, 
+    count = count_objs(looker, object_list, at, NULL, 
 			 (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_OBJ;
-      return find_obj(looker, object_list, at_count, at, NOTHING, 
+      return find_obj(looker, object_list, at_count, at, NULL, 
 		      (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
@@ -935,12 +982,12 @@ void *find_one(CHAR_DATA *looker,
   // search characters in the world
   if(IS_SET(find_scope, FIND_SCOPE_WORLD) &&
      IS_SET(find_types, FIND_TYPE_CHAR)) {
-    count = count_chars(looker, mobile_list, at, NOBODY, 
+    count = count_chars(looker, mobile_list, at, NULL, 
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_CHAR;
-      return find_char(looker, mobile_list, at_count, at, NOBODY,
+      return find_char(looker, mobile_list, at_count, at, NULL,
 		       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
     }
     else
@@ -954,20 +1001,24 @@ void *find_one(CHAR_DATA *looker,
 }
 
 
-void *generic_find(CHAR_DATA *looker, char *arg,
+void *generic_find(CHAR_DATA *looker, const char *arg,
 		   bitvector_t find_types, 
 		   bitvector_t find_scope, 
 		   bool all_ok, int *found_type) {
-  strip_word(arg, "the");
+  // make a working buffer...
+  char working_arg[SMALL_BUFFER];
+  strcpy(working_arg, arg);
 
-  char *at = at_arg(arg);
-  char *in = in_arg(arg);
-  char *on = on_arg(arg);
+  strip_word(working_arg, "the");
 
-  strip_word(arg, "at");
-  strip_word(arg, "in");
-  strip_word(arg, "on");
-  trim(arg);
+  char *at = at_arg(working_arg);
+  char *in = in_arg(working_arg);
+  char *on = on_arg(working_arg);
+
+  strip_word(working_arg, "at");
+  strip_word(working_arg, "in");
+  strip_word(working_arg, "on");
+  trim(working_arg);
 
   // if we don't have an "at", and there's a word we haven't pulled,
   // pull the first word before a space
@@ -976,10 +1027,10 @@ void *generic_find(CHAR_DATA *looker, char *arg,
      // number of words that exist and the number
      // of words we've pulled. If it's > 0, we 
      // haven't pulled a word
-     (count_letters(arg, ' ', strlen(arg)) + 1 - 
+     (count_letters(working_arg, ' ', strlen(working_arg)) + 1 - 
       (in != NULL) - (on != NULL)) == 1) {
-    at = strtok(arg, " ");
-    at = strdup(at ? at : "");
+    at = strtok(working_arg, " ");
+    at = strdupsafe(at);
   }
 
   // make sure at, in, and on are never NULL
@@ -1008,7 +1059,9 @@ void *generic_find(CHAR_DATA *looker, char *arg,
 // In is the thing we're looking for it in (e.g. "in hole" "in bag")
 //
 void *find_specific(CHAR_DATA *looker,
-		    char *at, char *on, char *in,
+		    const char *full_at, 
+		    const char *full_on, 
+		    const char *full_in,
 		    bitvector_t find_types,
 		    bitvector_t find_scope,
 		    bool all_ok, int *found_type) {
@@ -1017,10 +1070,15 @@ void *find_specific(CHAR_DATA *looker,
   int on_count = 1;
   int in_count = 1;
 
+  // the buffers for storing at, in, on separate from their counts
+  char at[SMALL_BUFFER] = "";
+  char in[SMALL_BUFFER] = "";
+  char on[SMALL_BUFFER] = "";
+
   // separate the names from their numbers
-  get_count(at, at, &at_count);
-  get_count(in, in, &in_count);
-  get_count(on, on, &on_count);
+  get_count(full_at, at, &at_count);
+  get_count(full_in, in, &in_count);
+  get_count(full_on, on, &on_count);
 
   if(found_type)
     *found_type = FOUND_NONE;
@@ -1033,7 +1091,7 @@ void *find_specific(CHAR_DATA *looker,
   else if(!*at || at_count == 0) {
     // we're trying to find what the contents of an item are?
     // e.g. "look in portal", "look in bag"
-    if(in && *in && in_count >= 1 &&
+    if(*in && in_count >= 1 &&
        IS_SET(find_types, FIND_TYPE_IN_OBJ)) {
       void *tgt = NULL;
       int next_found_type = FOUND_NONE; // for finding in/on stuff
@@ -1076,7 +1134,7 @@ void *find_specific(CHAR_DATA *looker,
     /*                   START LOOK IN                  */
     /****************************************************/
     // check out what we're looking in
-    if(in && *in && in_count > 0) {
+    if(*in && in_count > 0) {
       int next_found_type = FOUND_NONE; // for finding in/on stuff
       char new_at[strlen(in) + 20]; // +20 for digits
       print_count(new_at, in, in_count);
@@ -1103,7 +1161,7 @@ void *find_specific(CHAR_DATA *looker,
     /*                   START LOOK ON                  */
     /****************************************************/
     // find out what we're looking on
-    else if(on && *on && on_count > 0) {
+    else if(*on && on_count > 0) {
       int next_found_type = FOUND_NONE;
       char new_at[strlen(on) + 20]; // +20 for digits
       print_count(new_at, on, on_count);

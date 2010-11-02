@@ -20,6 +20,7 @@
 #include "../storage.h"
 
 #include "items.h"
+#include "iedit.h"
 
 
 
@@ -198,7 +199,7 @@ void init_items(void) {
 				       itemDataRead));
 
   // initialize item olc
-  extern void init_item_olc(void); init_item_olc();
+  init_item_olc();
 
   // now, initialize our basic items types
   extern void init_container(); init_container();

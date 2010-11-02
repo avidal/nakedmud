@@ -19,18 +19,13 @@
 #include "socket.h"
 #include "account.h"
 #include "character.h"
+#include "room.h"
 #include "world.h"
 #include "save.h"
 #include "races.h"
 #include "handler.h"
 #include "inform.h"
-
-
-
-//*****************************************************************************
-// mandatory modules
-//*****************************************************************************
-#include "scripts/script.h"
+#include "hooks.h"
 
 
 
@@ -77,11 +72,18 @@ void char_ask_name(SOCKET_DATA *sock, char *arg) {
     text_to_buffer(sock, 
 		   "Sorry, that was an illegal name. Please pick another.\r\n"
 		   "What is your name? ");
+
   // a character with this name already exists
-  else if(char_exists(arg))
+  else if(player_exists(arg))
     text_to_buffer(sock,
 		   "A character with this name already exists.\r\n"
 		   "What is your name? ");
+
+  // someone's already creating a character with this name
+  else if(player_creating(arg))
+    text_to_buffer(sock, "Someone is already creating a player with that name."
+		   "\r\nTry again: ");
+
   // we're OK to make this new character
   else {
     ch = newChar();
@@ -160,14 +162,14 @@ void char_ask_race(SOCKET_DATA *sock, char *arg) {
     // pop the input handler for char creation and add the one for
     // playing the game
     socketReplaceInputHandler(sock, handle_cmd_input, show_prompt);
-    text_to_buffer(sock, motd);
+    text_to_buffer(sock, bufferString(motd));
     
     // we should do some checks here to make sure the start room exists
     char_to_room(socketGetChar(sock), worldGetRoom(gameworld, START_ROOM));
     look_at_room(socketGetChar(sock), charGetRoom(socketGetChar(sock)));
     
-    // and save him 
-    save_player(socketGetChar(sock));
+    // and register him as a valid player
+    register_player(socketGetChar(sock));
     
     //************************************************************
     //******                 VERY IMPORTANT                 ******
@@ -176,8 +178,9 @@ void char_ask_race(SOCKET_DATA *sock, char *arg) {
     accountPutChar(socketGetAccount(sock), charGetName(socketGetChar(sock)));
     save_account(socketGetAccount(sock));
 
-    // check enterance scripts
-    try_enterance_script(socketGetChar(sock), charGetRoom(socketGetChar(sock)), NULL);
+    // run entrance hooks
+    ROOM_DATA      *room = charGetRoom(socketGetChar(sock));
+    hookRun("enter", socketGetChar(sock), room, NULL);
   }
 }
 

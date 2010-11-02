@@ -7,160 +7,119 @@
 //*****************************************************************************
 
 #include "mud.h"
+#include "utils.h"
 #include "character.h"
 #include "world.h"
 #include "zone.h"
 #include "room.h"
 #include "exit.h"
-#include "movement.h"
 #include "handler.h"
 #include "inform.h"
-#include "utils.h"
 #include "object.h"
+#include "movement.h"
+#include "hooks.h"
 
 
 
 //*****************************************************************************
 // mandatory modules
 //*****************************************************************************
-#include "scripts/script.h"
 #include "items/items.h"
 #include "items/furniture.h"
 
 
 
-ROOM_DATA *try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
-  ROOM_DATA *to   = NULL;
+//*****************************************************************************
+// implementation of movement.h
+//*****************************************************************************
+EXIT_DATA *try_move_mssg(CHAR_DATA *ch, const char *dir) {
+  ROOM_DATA *old_room = charGetRoom(ch);
+  EXIT_DATA     *exit = try_move(ch, dir);
+  
+  // did we successfully move?
+  if(exit != NULL) {
+    ROOM_DATA *new_room = charGetRoom(ch);
+    int          dirnum = dirGetNum(dir);
+    // are we using an abbreviated direction name?
+    if(dirnum == DIR_NONE && !roomGetExit(old_room, dir))
+      dirnum = dirGetAbbrevNum(dir);
 
-  if(exitIsClosed(exit))
-    send_to_char(ch, "You must open %s first.\r\n", exitGetName(exit));
-  else if(exitGetTo(exit) == NOWHERE || 
-	  (to = worldGetRoom(gameworld, exitGetTo(exit))) == NULL)
-    send_to_char(ch, "It doesn't look like %s leads anywhere!", 
-		 exitGetName(exit));
-  else {
+    // now, we have to temporarily go back to the old room so we can do
+    // leave messages. Then we come back to the new room and do enter messages
+    char_from_room(ch);
+    char_to_room(ch, old_room);
     if(*exitGetSpecLeave(exit))
       message(ch, NULL, NULL, NULL, TRUE, TO_ROOM, exitGetSpecLeave(exit));
-    else if(dir != DIR_NONE)
-      send_around_char(ch, TRUE, "%s leaves %s.\r\n",
-		       charGetName(ch), dirGetName(dir));
-    else
+    else if(dirnum == DIR_NONE)
       send_around_char(ch, TRUE, "%s leaves.\r\n", charGetName(ch));
+    else
+      send_around_char(ch, TRUE, "%s leaves %s.\r\n", charGetName(ch), 
+		       dirGetName(dirnum));
+    char_from_room(ch);
+    char_to_room(ch, new_room);
+    
+    // do we have a special enter message? If so, use them
+    if(*exitGetSpecEnter(exit))
+      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, exitGetSpecEnter(exit));
+    else if(dirnum == DIR_NONE)
+      send_around_char(ch, TRUE, "%s has arrived.\r\n", charGetName(ch));
+    else
+      send_around_char(ch, TRUE, "%s arrives from the %s.\r\n",
+		       charGetName(ch), dirGetName(dirGetOpposite(dirnum)));
+  }
+  return exit;
+}
+
+EXIT_DATA *try_move(CHAR_DATA *ch, const char *dir) {
+  EXIT_DATA *exit = roomGetExit(charGetRoom(ch), dir);
+  ROOM_DATA   *to = NULL;
+
+  // are we using an abbreviated direction name?
+  if(exit == NULL && dirGetAbbrevNum(dir) != DIR_NONE) {
+    dir  = dirGetName(dirGetAbbrevNum(dir));
+    exit = roomGetExit(charGetRoom(ch), dir);
+  }
+
+  // did we find an exit?
+  if(exit == NULL || !can_see_exit(ch, exit))
+    send_to_char(ch, "{gAlas, there is no exit in that direction.\r\n");
+  else if(exitIsClosed(exit))
+    send_to_char(ch, "You will have to open %s first.\r\n",
+		 (*exitGetName(exit) ? exitGetName(exit) : "it"));
+  else if((to = worldGetRoom(gameworld, exitGetTo(exit))) == NULL)
+    send_to_char(ch, "It doesn't look like %s leads anywhere!", 
+		 (*exitGetName(exit) ? exitGetName(exit) : "it"));
+  else {
+    ROOM_DATA  *old_room = charGetRoom(ch);
+
+    // try all of our exit hooks
+    hookRun("exit", ch, old_room, exit);
 
     char_from_room(ch);
     char_to_room(ch, to);
+    look_at_room(ch, charGetRoom(ch));
 
-    if(*exitGetSpecEnter(exit))
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM, exitGetSpecEnter(exit));
-    else if(dir != DIR_NONE)
-      send_around_char(ch, TRUE, "%s arrives from the %s.\r\n",
-		       charGetName(ch), dirGetName(dirGetOpposite(dir)));
-    else
-      send_around_char(ch, TRUE, "%s has arrived.\r\n", charGetName(ch));
+    // now try all of our entrance hooks
+    hookRun("enter", ch, to, NULL);
 
-    return to;
+    return exit;
   }
+
+  // our exit failed
   return NULL;
 }
-
-
-bool try_buildwalk(CHAR_DATA *ch, int dir) {
-  ZONE_DATA *zone = worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch)));
-  
-  if(!canEditZone(zone, ch))
-    send_to_char(ch, "You are not authorized to edit this zone.\r\n");
-  else if(roomGetExit(charGetRoom(ch), dir))
-    send_to_char(ch, "You try to buildwalk %s, but a room already exists in that direction!\r\n", dirGetName(dir));
-  else if(!zone) {
-    send_to_char(ch, "The room you are in is not attached to a zone!\r\n");
-    log_string("ERROR: %s tried to buildwalk %s, but room %d was not in a zone!", charGetName(ch), dirGetName(dir), roomGetVnum(charGetRoom(ch)));
-  }
-  else {
-    int vnum = getFreeRoomVnum(zone);
-    if(vnum == NOWHERE)
-      send_to_char(ch, 
-		   "Zone #%d has no free rooms left. "
-		   "Buildwalk could not be performed.\r\n", zoneGetVnum(zone));
-    else {
-      char desc[MAX_BUFFER];
-      ROOM_DATA *new_room = newRoom();
-      roomSetVnum(new_room, vnum);
-      roomSetTerrain(new_room, roomGetTerrain(charGetRoom(ch)));
-
-      roomSetName(new_room, "A New Buildwalk Room");
-      sprintf(desc, "This room was created by %s.\r\n", charGetName(ch));
-      roomSetDesc(new_room, desc);
-
-      zoneAddRoom(zone, new_room);
-      roomDigExit(charGetRoom(ch), dir, vnum);
-      roomDigExit(new_room, dirGetOpposite(dir), 
-		  roomGetVnum(charGetRoom(ch)));
-
-      worldSaveRoom(gameworld, new_room);
-      worldSaveRoom(gameworld, charGetRoom(ch));
-
-      try_move(ch, dir, NULL);
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-
-bool try_move(CHAR_DATA *ch, int dir, const char *specdir) {
-  EXIT_DATA *exit = NULL;
-  if(dir != DIR_NONE)      
-    exit = roomGetExit(charGetRoom(ch), dir);
-  else if(specdir != NULL) 
-    exit = roomGetExitSpecial(charGetRoom(ch), specdir);
-
-  if(exit == NULL || !can_see_exit(ch, exit)) {
-    // see if we can buildwalk a new room
-    if(bitIsOneSet(charGetPrfs(ch), "buildwalk"))
-      return try_buildwalk(ch, dir);
-    else
-      send_to_char(ch, "{gAlas, there is no exit in that direction.\r\n");
-    return FALSE;
-  }
-
-  else {
-    ROOM_DATA *old_room = charGetRoom(ch);
-    ROOM_DATA *new_room = try_exit(ch, exit, dir);
-    if(new_room) {
-      // move ourself back for a second so we can do the exit script...
-      char_to_room(ch, old_room);
-      try_exit_script(ch, old_room, 
-		      (dir != DIR_NONE ? dirGetName(dir) : specdir));
-      char_to_room(ch, new_room);
-
-      try_enterance_script(ch, charGetRoom(ch),
-			   (dir != DIR_NONE ? dirGetName(dir) : specdir));
-      look_at_room(ch, new_room);
-    }
-    return (new_room != NULL);
-  }
-}
-
 
 //
 // cmd_move is the basic entry into all of the movement utilities. See
 // try_move() in movement.h
-//
 COMMAND(cmd_move) {
-  if(subcmd == DIR_NONE) {
-    send_to_char(ch, "In which direction did you wish to move?\r\n");
-    return;
-  };
-
-  try_move(ch, subcmd, NULL);
+  try_move_mssg(ch, cmd);
 }
 
 
 
 //*****************************************************************************
-//
 // Functions and commands for changing position (sleeping, standing, etc)
-//
 //*****************************************************************************
 bool try_change_pos(CHAR_DATA *ch, int pos) {
   if(charGetPos(ch) == pos) {

@@ -8,8 +8,8 @@
 //
 //*****************************************************************************
 #include "mud.h"
-#include "body.h"
 #include "utils.h"
+#include "body.h"
 
 
 struct bodypart_data {

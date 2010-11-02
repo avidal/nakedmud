@@ -284,11 +284,11 @@ void *listGet(LIST *L, int num) {
 }
 
 void *listHead(LIST *L) {
-  return L->head;
+  return listGet(L, 0);
 }
 
 void *listTail(LIST *L) {
-  return L->tail;
+  return listGet(L, L->size-1);
 }
 
 int isListEmpty(LIST *L) {

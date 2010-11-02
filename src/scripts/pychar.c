@@ -21,10 +21,10 @@
 #include "../utils.h"
 #include "../action.h"
 #include "../socket.h"
+#include "../prototype.h"
 
 #include "pyplugs.h"
-#include "script.h"
-#include "script_set.h"
+#include "scripts.h"
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
@@ -113,6 +113,12 @@ PyObject *PyChar_getname(PyChar *self, void *closure) {
   else           return NULL;
 }
 
+PyObject *PyChar_getkeywords(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) return Py_BuildValue("s", charGetKeywords(ch));
+  else           return NULL;
+}
+
 PyObject *PyChar_getmname(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("s", charGetMultiName(ch));
@@ -161,6 +167,18 @@ PyObject *PyChar_getroom(PyChar *self, void *closure) {
   else           return NULL;
 }
 
+PyObject *PyChar_getlastroom(PyChar *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch == NULL)
+    return NULL;
+  else if(charGetLastRoom(ch) != NULL)
+    return Py_BuildValue("O", newPyRoom(charGetLastRoom(ch)));
+  else {
+    Py_INCREF(Py_None);
+    return Py_None;
+  }
+}
+
 PyObject *PyChar_getisnpc(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch != NULL) return Py_BuildValue("i", charIsNPC(ch));
@@ -206,9 +224,9 @@ PyObject *PyChar_getuid(PyChar *self, void *closure) {
 }
 
 
-PyObject *PyChar_getvnum(PyChar *self, void *closure) {
+PyObject *PyChar_getprototypes(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
-  if(ch != NULL) return Py_BuildValue("i", charGetVnum(ch));
+  if(ch != NULL) return Py_BuildValue("s", charGetPrototypes(ch));
   else           return NULL;
 }
 
@@ -249,14 +267,30 @@ int PyChar_setname(PyChar *self, PyObject *value, void *closure) {
   }
   
   if (!PyString_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Character names must be strings");
+    PyErr_Format(PyExc_TypeError, "Character names must be strings");
     return -1;
   }
 
   CHAR_DATA *ch;
   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
   charSetName(ch, PyString_AsString(value));
+  return 0;
+}
+
+int PyChar_setkeywords(PyChar *self, PyObject *value, void *closure) {
+  if (value == NULL) {
+    PyErr_Format(PyExc_TypeError, "Cannot delete character's keywords");
+    return -1;
+  }
+  
+  if (!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "Character keywords must be strings");
+    return -1;
+  }
+
+  CHAR_DATA *ch;
+  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+  charSetKeywords(ch, PyString_AsString(value));
   return 0;
 }
 
@@ -267,8 +301,7 @@ int PyChar_setmname(PyChar *self, PyObject *value, void *closure) {
   }
   
   if (!PyString_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Character multi-names must be strings");
+    PyErr_Format(PyExc_TypeError, "Character multi-names must be strings");
     return -1;
   }
 
@@ -285,8 +318,7 @@ int PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
   }
   
   if (!PyString_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Character descriptions must be strings");
+    PyErr_Format(PyExc_TypeError, "Character descriptions must be strings");
     return -1;
   }
 
@@ -303,8 +335,7 @@ int PyChar_setrdesc(PyChar *self, PyObject *value, void *closure) {
   }
   
   if (!PyString_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Character rdescs must be strings");
+    PyErr_Format(PyExc_TypeError, "Character rdescs must be strings");
     return -1;
   }
 
@@ -321,8 +352,7 @@ int PyChar_setmdesc(PyChar *self, PyObject *value, void *closure) {
   }
   
   if (!PyString_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Character multi-rdescs must be strings");
+    PyErr_Format(PyExc_TypeError, "Character multi-rdescs must be strings");
     return -1;
   }
 
@@ -339,8 +369,7 @@ int PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
   }
   
   if (!PyString_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Character races must be strings");
+    PyErr_Format(PyExc_TypeError, "Character races must be strings");
     return -1;
   }
 
@@ -454,24 +483,22 @@ int PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
     return -1;
   }
 
-  int vnum = NOWHERE;
+  ROOM_DATA *room = NULL;
 
   if(PyRoom_Check(value))
-    vnum = PyRoom_AsVnum(value);
-  else if(PyInt_Check(value))
-    vnum = (int)PyInt_AsLong(value); // hmmm... is this safe?
+    room = PyRoom_AsRoom(value);
+  else if(PyString_Check(value))
+    room = worldGetRoom(gameworld, PyString_AsString(value));
   else {
     PyErr_Format(PyExc_TypeError, 
-		 "Character's room must be integer an integer value or a "
+		 "Character's room must be a string value or a "
 		 "room object.");
     return -1;
   }
 
-  ROOM_DATA *room = worldGetRoom(gameworld, vnum);
   if(room == NULL) {
     PyErr_Format(PyExc_TypeError, 
-		 "Attempting to move character to nonexistant room, %d.",
-		 vnum);
+		 "Attempting to move character to nonexistent room.");
     return -1;
   }
 
@@ -571,17 +598,15 @@ PyObject *PyChar_sendaround(PyChar *self, PyObject *value) {
 //
 // make the character perform an action
 PyObject *PyChar_act(PyChar *self, PyObject *value) {
-  int scripts_ok     = TRUE;
   char *act          = NULL;
-  if (!PyArg_ParseTuple(value, "s|i", &act, &scripts_ok)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Characters actions must be strings.");
+  if (!PyArg_ParseTuple(value, "s", &act)) {
+    PyErr_Format(PyExc_TypeError, "Characters actions must be strings.");
     return NULL;
   }
 
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
   if(ch) {
-    do_cmd(ch, act, scripts_ok, FALSE);
+    do_cmd(ch, act, FALSE);
     return Py_BuildValue("i", 1);
   }
   else {
@@ -591,6 +616,48 @@ PyObject *PyChar_act(PyChar *self, PyObject *value) {
     return NULL;
   }
 }
+
+
+//
+// returns whether or not the character can see something
+PyObject *PyChar_cansee(PyChar *self, PyObject *arg) {
+  PyObject *py_tgt = NULL;
+
+  if(!PyArg_ParseTuple(arg, "O", &py_tgt)) {
+    PyErr_Format(PyExc_TypeError, "Must supply obj or mob for cansee");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);  
+  if(ch == NULL) {
+    PyErr_Format(PyExc_TypeError, "Nonexistent character, %d, tried cansee",
+		 self->uid);
+    return NULL;
+  }
+  else {
+    OBJ_DATA    *obj = NULL;
+    CHAR_DATA  *pers = NULL;
+
+    if(PyChar_Check(py_tgt))
+      pers = PyChar_AsChar(py_tgt);
+    else if(PyObj_Check(py_tgt))
+      obj  = PyObj_AsObj(py_tgt);
+    else {
+      PyErr_Format(PyExc_TypeError, "Must supply obj or mob to cansee");
+      return NULL;
+    }
+
+    if(obj != NULL)
+      return Py_BuildValue("b", can_see_obj(ch, obj));
+    else if(pers != NULL)
+      return Py_BuildValue("b", can_see_char(ch, pers));
+    else {
+      PyErr_Format(PyExc_StandardError, "Target of cansee did not exist!");
+      return NULL;
+    }
+  }
+}
+
 
 //
 // Returns TRUE if the character has the given variable set
@@ -778,52 +845,59 @@ PyObject *PyChar_equip(PyChar *self, PyObject *args) {
 
 
 PyObject *PyChar_attach(PyChar *self, PyObject *args) {  
-  long vnum = NOTHING;
+  char *key = NULL;
 
   // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+  if (!PyArg_ParseTuple(args, "s", &key)) {
     PyErr_Format(PyExc_TypeError, 
-		 "To attach a script, the vnum must be suppplied.");
+		 "To attach a trigger, the trigger key must be suppplied.");
     return NULL;
   }
 
   // pull out the character and do the attaching
-  CHAR_DATA       *ch = PyChar_AsChar((PyObject *)self);
-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
-  if(ch != NULL && script != NULL) {
-    scriptSetAdd(charGetScripts(ch), vnum);
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to attach trigger to nonexistant char, %d.", self->uid);
+    return NULL;
+  }
+
+  TRIGGER_DATA *trig = 
+    worldGetType(gameworld, "trigger", 
+		 get_fullkey_relative(key, get_script_locale()));
+  if(trig != NULL) {
+    triggerListAdd(charGetTriggers(ch), triggerGetKey(trig));
     return Py_BuildValue("i", 1);
   }
   else {
     PyErr_Format(PyExc_StandardError, 
-		 "Tried to attach script to nonexistant char, %d, or script %d "
-		 "does not exit.", self->uid, (int)vnum);
+		 "Tried to attach nonexistant trigger, %s, to character %s.",
+		 key, charGetClass(ch));
     return NULL;
   }
 }
 
 
 PyObject *PyChar_detach(PyChar *self, PyObject *args) {  
-  long vnum = NOTHING;
+  char *key = NULL;
 
   // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+  if (!PyArg_ParseTuple(args, "s", &key)) {
     PyErr_Format(PyExc_TypeError, 
-		 "To detach a script, the vnum must be suppplied.");
+		 "To detach a trigger, the key must be supplied.");
     return NULL;
   }
 
   // pull out the character and do the attaching
-  CHAR_DATA       *ch = PyChar_AsChar((PyObject *)self);
-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
-  if(ch != NULL && script != NULL) {
-    scriptSetRemove(charGetScripts(ch), vnum);
+  CHAR_DATA    *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL) {
+    const char *fkey = get_fullkey_relative(key, get_script_locale());
+    triggerListRemove(charGetTriggers(ch), fkey);
     return Py_BuildValue("i", 1);
   }
   else {
     PyErr_Format(PyExc_StandardError, 
-		 "Tried to detach script from nonexistant char, %d, or script "
-		 "%d does not exit.", self->uid, (int)vnum);
+		"Tried to detach trigger from nonexistant char, %d.",self->uid);
     return NULL;
   }
 }
@@ -979,6 +1053,30 @@ PyObject *PyChar_get_auxiliary(PyChar *self, PyObject *args) {
 }
 
 
+//
+// returns whether or not the character is an instance of the prototype
+PyObject *PyChar_isinstance(PyChar *self, PyObject *args) {  
+  char *type = NULL;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "s", &type)) {
+    PyErr_Format(PyExc_TypeError, "isinstance only accepts strings.");
+    return NULL;
+  }
+
+  // pull out the object and check the type
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL)
+    return Py_BuildValue("i", 
+        charIsInstance(ch, get_fullkey_relative(type, get_script_locale())));
+  else {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to check instances of nonexistent char, %d.", self->uid);
+    return NULL;
+  }
+}
+
+
 
 //*****************************************************************************
 // comparators, getattr, setattr, and all that other class stuff
@@ -1031,24 +1129,23 @@ PyTypeObject PyChar_Type = {
 // methods in the char module
 //*****************************************************************************
 PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
-  int mob_vnum    = NOBODY, to_vnum = NOWHERE;
-  PyObject *to    = NULL;
-
-  ROOM_DATA *room  = NULL;
-  OBJ_DATA  *on    = NULL;
-  char  *posname   = NULL;
+  char      *mob_key = NULL;
+  PyObject       *to = NULL;
+  ROOM_DATA    *room = NULL;
+  OBJ_DATA       *on = NULL;
+  char      *posname = NULL;
   
-  if (!PyArg_ParseTuple(args, "iO|s", &mob_vnum, &to, &posname)) {
+  if (!PyArg_ParseTuple(args, "sO|s", &mob_key, &to, &posname)) {
     PyErr_Format(PyExc_TypeError, 
-		 "Load char failed - it needs vnum and destination.");
+		 "Load char failed - it needs prototype and destination.");
     return NULL;
   }
 
   // see what we're trying to load to
-  if(PyInt_Check(to))
-    to_vnum = (int)PyInt_AsLong(to);
+  if(PyString_Check(to))
+    room = worldGetRoom(gameworld, PyString_AsString(to));
   else if(PyRoom_Check(to))
-    to_vnum = (int)PyRoom_AsVnum(to);
+    room = PyRoom_AsRoom(to);
   else if(PyObj_Check(to))
     on = propertyTableGet(obj_table, PyObj_AsUid(to));
   else {
@@ -1057,31 +1154,35 @@ PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
     return NULL;
   }
 
-  // check the mob
-  CHAR_DATA *mob_proto = worldGetMob(gameworld, mob_vnum);
-  if(mob_proto == NULL) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Load char failed: mobile number does not exist.");
+  // see if we're loading onto something
+  if(on != NULL)
+    room = objGetRoom(on);
+
+  if(room == NULL) {
+    PyErr_Format(PyExc_TypeError, "Load char failed: room does not exist, or "
+		 "furniture is not. in a room.");
     return NULL;
   }
 
-
-  // see if we're loading onto something
-  if(on)
-    room = objGetRoom(on);
-  else
-    room = worldGetRoom(gameworld, to_vnum);
-
-  if(room == NULL) {
+  // check the mob
+  PROTO_DATA *mob_proto = 
+    worldGetType(gameworld, "mproto", 
+		 get_fullkey_relative(mob_key, get_script_locale()));
+  if(mob_proto == NULL) {
     PyErr_Format(PyExc_TypeError, 
-		 "Load char failed: room does not exist, or furniture is not. "
-		 "in a room.");
+		 "Load char failed: no mproto for %s exists", 
+		 get_fullkey_relative(mob_key, get_script_locale()));
     return NULL;
   }
 
   // copy the mob, and put it into the game
-  CHAR_DATA *mob = charCopy(mob_proto);
-  char_to_game(mob);
+  CHAR_DATA *mob = protoMobRun(mob_proto);
+  if(mob == NULL) {
+    PyErr_Format(PyExc_TypeError,
+		 "Load char failed: proto script terminated with an error.");
+    return NULL;
+  }
+
   char_to_room(mob, room);
 
   // now check if we need to put the char onto some furniture
@@ -1106,11 +1207,6 @@ PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
     charSetPos(mob, pos);
   }
 
-  // check for initialization scripts
-  try_scripts(SCRIPT_TYPE_INIT,
-	      mob, SCRIPTOR_CHAR,
-	      mob, NULL, room, NULL, NULL, 0);
-
   // create a python object for the new char, and return it
   PyChar *py_mob = (PyChar *)newPyChar(mob);
   return Py_BuildValue("O", py_mob);
@@ -1118,41 +1214,32 @@ PyObject *PyChar_load_mob(PyObject *self, PyObject *args) {
 
 
 PyObject *PyChar_count_mobs(PyObject *self, PyObject *args) {
-  LIST *list = NULL;
-  PyObject *tgt;
-  PyObject *in = NULL;
-  ROOM_DATA *room = NULL;
-  OBJ_DATA  *furniture = NULL;
-  int vnum = NOBODY;
-  char *name = NULL;
+  LIST            *list = NULL;
+  char             *tgt = NULL;
+  PyObject          *in = NULL;
+  ROOM_DATA       *room = NULL;
+  OBJ_DATA   *furniture = NULL;
+  const char *prototype = NULL;
 
-  if (!PyArg_ParseTuple(args, "O|O", &tgt, &in)) {
+  if (!PyArg_ParseTuple(args, "s|O", &tgt, &in)) {
     PyErr_Format(PyExc_TypeError, 
                     "count_mobs failed. No arguments supplied.");
     return NULL;
   }
 
-  // see if we're looking by name or vnum
-  if(PyInt_Check(tgt))
-    vnum = PyInt_AsLong(tgt);
-  else if(PyString_Check(tgt))
-    name = PyString_AsString(tgt);
-  else {
-    PyErr_Format(PyExc_TypeError, 
-                    "count_mobs failed. Invalid target type supplied.");
-    return NULL;
-  }
+  // figure out the full key of our prototype
+  prototype = get_fullkey_relative(tgt, get_script_locale());
 
   // if we didn't supply something to look in, assume it means the world
   if(in == NULL)
-    return Py_BuildValue("i", count_chars(NULL, mobile_list,name, vnum, FALSE));
-
+    return Py_BuildValue("i", count_chars(NULL, mobile_list, NULL, prototype, 
+					  FALSE));
 
   // see what we're looking in
-  if(PyInt_Check(in))
-    room = worldGetRoom(gameworld, PyInt_AsLong(in));
+  if(PyString_Check(in))
+    room = worldGetRoom(gameworld, PyString_AsString(in));
   else if(PyRoom_Check(in))
-    room = worldGetRoom(gameworld, PyRoom_AsVnum(in));
+    room = PyRoom_AsRoom(in);
   else if(PyObj_Check(in))
     furniture = propertyTableGet(obj_table, PyObj_AsUid(in));
 
@@ -1166,7 +1253,7 @@ PyObject *PyChar_count_mobs(PyObject *self, PyObject *args) {
     return NULL;
   }
   
-  return Py_BuildValue("i", count_chars(NULL, list, name, vnum, FALSE));
+  return Py_BuildValue("i", count_chars(NULL, list, NULL, prototype, FALSE));
 }
 
 PyObject *PyChar_all_chars(PyObject *self) {
@@ -1197,10 +1284,10 @@ PyMethodDef char_module_methods[] = {
   { "socket_list", (PyCFunction)PyChar_all_sockets, METH_NOARGS,
     "Returns a list of all characters with attached sockets." },
   { "load_mob", PyChar_load_mob, METH_VARARGS,
-    "load a mobile with the specified vnum to a room." },
+    "load a mobile with the specified prototype to a room." },
   { "count_mobs", PyChar_count_mobs, METH_VARARGS,
     "count how many occurances of a mobile there are in the specified scope. "
-    "vnum or name can be used. Vnum -1 counts PCs" },
+    "prototype or name can be used." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -1256,7 +1343,11 @@ PyMODINIT_FUNC init_PyChar(void) {
 		      "handle the character's room description");
   PyChar_addGetSetter("mdesc", PyChar_getmdesc, PyChar_setmdesc,
 		      "handle the character's multi room description");
+  PyChar_addGetSetter("keywords", PyChar_getkeywords, PyChar_setkeywords,
+		      "comma-separated list of the character's keywords.");
   PyChar_addGetSetter("sex", PyChar_getsex, PyChar_setsex,
+		      "handle the character's gender");
+  PyChar_addGetSetter("gender", PyChar_getsex, PyChar_setsex,
 		      "handle the character's gender");
   PyChar_addGetSetter("race", PyChar_getrace, PyChar_setrace,
 		      "handle the character's race");
@@ -1266,14 +1357,16 @@ PyMODINIT_FUNC init_PyChar(void) {
 		      "handle the character's position");
   PyChar_addGetSetter("room", PyChar_getroom, PyChar_setroom,
 		      "handle the character's room");
+  PyChar_addGetSetter("last_room", PyChar_getlastroom, NULL,
+		      "the last room the character was in");
   PyChar_addGetSetter("on", PyChar_geton, PyChar_seton,
    "The furniture the character is sitting on/at. If the character is not "
    "on furniture, None is returned. To remove a character from furniture, "
   "then use None");
   PyChar_addGetSetter("uid", PyChar_getuid, NULL,
 		      "the character's unique identification number");
-  PyChar_addGetSetter("vnum", PyChar_getvnum, NULL,
-		      "The virtual number for NPCs. Returns -1 for PCs");
+  PyChar_addGetSetter("prototypes", PyChar_getprototypes, NULL,
+		      "The prototypes for a mobile");
   PyChar_addGetSetter("is_npc", PyChar_getisnpc, NULL,
 		      "Returns 1 if the char is an NPC, and 0 otherwise.");
   PyChar_addGetSetter("is_pc", PyChar_getispc, NULL,
@@ -1295,8 +1388,6 @@ PyMODINIT_FUNC init_PyChar(void) {
 		   "detach an old script from the character.");
   PyChar_addMethod("send", PyChar_send, METH_VARARGS,
 		   "send a message to the character.");
-  PyChar_addMethod("page", PyChar_page, METH_VARARGS,
-		   "page a bunch of text to the character.");
   PyChar_addMethod("sendaround", PyChar_sendaround, METH_VARARGS,
 		   "send a message to everyone around the character.");
   PyChar_addMethod("act", PyChar_act, METH_VARARGS,
@@ -1321,6 +1412,12 @@ PyMODINIT_FUNC init_PyChar(void) {
 		   "Interrupts the character's current action.");
   PyChar_addMethod("getAuxiliary", PyChar_get_auxiliary, METH_VARARGS,
 		   "get's the specified piece of aux data from the char");
+  PyChar_addMethod("cansee", PyChar_cansee, METH_VARARGS,
+		   "returns whether or not a char can see an obj or mob.");
+  PyChar_addMethod("page", PyChar_page, METH_VARARGS,
+		   "page a bunch of text to the character.");
+  PyChar_addMethod("isinstance", PyChar_isinstance, METH_VARARGS,
+		   "returns whether or not the char inherits from the proto");
 
   // add in all the getsetters and methods
   makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);

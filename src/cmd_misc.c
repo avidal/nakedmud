@@ -6,18 +6,17 @@
 //
 //*****************************************************************************
 #include "mud.h"
+#include "utils.h"
 #include "character.h"
 #include "socket.h"
-#include "utils.h"
 #include "save.h"
 #include "event.h"
 #include "action.h"
-#include "handler.h"
+
 
 
 //
 // stop performing the character's current action
-//
 COMMAND(cmd_stop) {
 #ifdef MODULE_FACULTY
   if(!is_acting(ch, FACULTY_ALL))
@@ -35,7 +34,6 @@ COMMAND(cmd_stop) {
 
 //
 // clear the screen
-//
 COMMAND(cmd_clear) {
   send_to_char(ch, "\033[H\033[J");
 }
@@ -43,15 +41,9 @@ COMMAND(cmd_clear) {
 
 //
 // quit the game
-//
-COMMAND(cmd_quit)
-{
-  char buf[MAX_BUFFER];
-
-  /* log the attempt */
-  sprintf(buf, "%s has left the game.", charGetName(ch));
-  log_string(buf);
-
+COMMAND(cmd_quit) {
+  // log the attempt
+  log_string("%s has left the game.", charGetName(ch));
   save_player(ch);
 
   // 
@@ -70,9 +62,7 @@ COMMAND(cmd_quit)
 
 //
 // save the character
-//
-COMMAND(cmd_save)
-{
+COMMAND(cmd_save) {
   save_player(ch);
   text_to_char(ch, "Saved.\r\n");
 }
@@ -80,37 +70,26 @@ COMMAND(cmd_save)
 
 //
 // the function for executing a delayed command
-//
 void event_delayed_cmd(CHAR_DATA *ch, void *data, char *cmd) {
-  do_cmd(ch, cmd, TRUE, TRUE);
+  do_cmd(ch, cmd, TRUE);
 }
 
 
 //
 // Perform a command, but delay its execution by a couple seconds
-//
 COMMAND(cmd_delay) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "What did you want to delay, and by how long?\r\n");
-    return;
-  }
+  int       secs = 0;
+  char *to_delay = NULL;
 
-  // how long should we delay, in seconds?
-  char time[SMALL_BUFFER];
-  arg = one_arg(arg, time);
-
-  // no command to delay
-  if(!*arg) {
-    send_to_char(ch, "What command did you want to delay?\r\n");
+  if(!parse_args(ch, TRUE, cmd, arg, "int string", &secs, &to_delay))
     return;
-  }
-  if(atoi(time) < 1) {
+
+  if(secs < 1)
     send_to_char(ch, "You can only delay commands for positive amounts of time.\r\n");
-    return;
+  else {
+    send_to_char(ch, "You delay '%s' for %d seconds.\r\n", to_delay, secs);
+    start_event(ch, secs SECONDS, event_delayed_cmd, NULL, NULL, to_delay);
   }
-
-  send_to_char(ch, "You delay '%s' for %d seconds.\r\n", arg, atoi(time));
-  start_event(ch, atoi(time) SECONDS, event_delayed_cmd, NULL, NULL, arg);
 }
 
 //
@@ -119,5 +98,5 @@ COMMAND(cmd_motd) {
   // only bother sending it if we have a socket. And then page it, incase
   // the motd is especially long.
   if(charGetSocket(ch))
-    page_string(charGetSocket(ch), motd);
+    page_string(charGetSocket(ch), bufferString(motd));
 }

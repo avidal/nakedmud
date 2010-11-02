@@ -41,7 +41,7 @@ typedef struct char_var {
 
 CHAR_VAR *newCharVarString(const char *str) {
   CHAR_VAR *data = malloc(sizeof(CHAR_VAR));
-  data->str_val  = strdup(str ? str : "");
+  data->str_val  = strdupsafe(str);
   data->type     = CHAR_VAR_STRING;
   return data;
 }

@@ -8,16 +8,43 @@
 //*****************************************************************************
 
 #include "mud.h"
+#include "utils.h"
 #include "socket.h"
 #include "character.h"
 #include "account.h"
 #include "world.h"
-#include "utils.h"
 #include "handler.h"
 #include "body.h"
 #include "object.h"
 #include "room.h"
 #include "storage.h"
+#include "save.h"
+
+
+
+//*****************************************************************************
+// local data structures and variables
+//*****************************************************************************
+
+// tables of accounts and players currently referenced
+HASHTABLE *account_table = NULL;
+HASHTABLE *player_table  = NULL;
+
+typedef struct {
+  int refcnt;
+  void *data;
+} SAVE_REF_DATA;
+
+SAVE_REF_DATA *newSaveRefData(void *data) {
+  SAVE_REF_DATA *ref_data = malloc(sizeof(SAVE_REF_DATA));
+  ref_data->refcnt = 1;
+  ref_data->data   = data;
+  return ref_data;
+}
+
+void deleteSaveRefData(SAVE_REF_DATA *ref_data) {
+  free(ref_data);
+}
 
 
 
@@ -62,17 +89,8 @@ const char *get_save_filename(const char *name, int filetype) {
   return buf;
 }
 
-bool char_exists(const char *name) {
-  // there's two ways a character can exists. Either someone is already making
-  // a character with that name, or there is a character with that name in
-  // storage. We'll check both of these.
-  const char *fname = get_save_filename(name, FILETYPE_PFILE);
-  FILE *fl = fopen(fname, "r");
-  if(fl != NULL) {
-    fclose(fl);
-    return TRUE;
-  }
-
+bool player_creating(const char *name) {
+  // a player is being created if it's attached to a socket and does not exist
   bool char_found       = FALSE;
   LIST_ITERATOR *sock_i = newListIterator(socket_list);
   SOCKET_DATA     *sock = NULL;
@@ -84,7 +102,48 @@ bool char_exists(const char *name) {
       break;
     }
   } deleteListIterator(sock_i);
-  return char_found;
+
+  return (char_found && !player_exists(name));
+}
+
+bool account_creating(const char *name) {
+  // a player is being created if it's attached to a socket and does not exist
+  bool       acct_found = FALSE;
+  LIST_ITERATOR *sock_i = newListIterator(socket_list);
+  SOCKET_DATA     *sock = NULL;
+  ITERATE_LIST(sock, sock_i) {
+    ACCOUNT_DATA *acct = socketGetAccount(sock);
+    if(acct == NULL) continue;
+    if(!strcasecmp(accountGetName(acct), name)) {
+      acct_found = TRUE;
+      break;
+    }
+  } deleteListIterator(sock_i);
+
+  return (acct_found && !account_exists(name));
+}
+
+bool player_exists(const char *name) {
+  // there's two ways a character can exists. Either someone is already making
+  // a character with that name, or there is a character with that name in
+  // storage. We'll check both of these.
+  const char *fname = get_save_filename(name, FILETYPE_PFILE);
+  FILE *fl = fopen(fname, "r");
+  if(fl != NULL) {
+    fclose(fl);
+    return TRUE;
+  }
+  return FALSE;
+}
+
+bool account_exists(const char *name) {
+  const char *fname = get_save_filename(name, FILETYPE_ACCOUNT);
+  FILE *fl = fopen(fname, "r");
+  if(fl != NULL) {
+    fclose(fl);
+    return TRUE;
+  }
+  return FALSE;
 }
 
 void save_pfile(CHAR_DATA *ch) {
@@ -92,7 +151,6 @@ void save_pfile(CHAR_DATA *ch) {
   storage_write(set, get_save_filename(charGetName(ch), FILETYPE_PFILE));
   storage_close(set);
 }
-
 
 void load_ofile(CHAR_DATA *ch) {
   STORAGE_SET *set = storage_read(get_save_filename(charGetName(ch), 
@@ -143,31 +201,129 @@ void save_objfile(CHAR_DATA *ch) {
   storage_close(set);
 }
 
+CHAR_DATA *load_player(const char *player) {
+  STORAGE_SET *set = storage_read(get_save_filename(player, FILETYPE_PFILE));
+  if(set == NULL)
+    return NULL;
+  else {
+    CHAR_DATA   *ch  = charRead(set);
+    storage_close(set);
+    load_ofile(ch);
+    return ch;
+  }
+}
+
+ACCOUNT_DATA *load_account(const char *account) {
+  STORAGE_SET   *set = storage_read(get_save_filename(account,
+						      FILETYPE_ACCOUNT));
+  if(set == NULL)
+    return NULL;
+  else {
+    ACCOUNT_DATA *acct = accountRead(set);
+    storage_close(set);
+    return acct;
+  }
+}
 
 
 //*****************************************************************************
 // implementation of save.h
 //*****************************************************************************
-CHAR_DATA *load_player(const char *player) {
-  STORAGE_SET *set = storage_read(get_save_filename(player, FILETYPE_PFILE));
-  CHAR_DATA   *ch  = charRead(set);
-  storage_close(set);
-  load_ofile(ch);
-  return ch;
+void init_save(void) {
+  account_table = newHashtable();
+  player_table  = newHashtable();
 }
 
-void save_player(CHAR_DATA *ch) {
-  if (!ch) return;
-
-  // make sure we have a UID for the character before we start saving
-  if(charGetUID(ch) == NOBODY) {
-    log_string("ERROR: %s has invalid UID (%d)", charGetName(ch), NOBODY);
-    send_to_char(ch, "You have an invalid ID. Please inform a god.\r\n");
-    return;
+ACCOUNT_DATA *get_account(const char *account) {
+  SAVE_REF_DATA *ref_data = hashGet(account_table, account);
+  // account is not loaded in memory... try loading it
+  if(ref_data == NULL) {
+    ACCOUNT_DATA *acct = load_account(account);
+    // it doesn't exist. Return NULL
+    if(acct == NULL)
+      return NULL;
+    else {
+      hashPut(account_table, account, newSaveRefData(acct));
+      return acct;
+    }
   }
+  // up our reference count and return
+  else {
+    ref_data->refcnt++;
+    return ref_data->data;
+  }
+}
 
-  save_objfile(ch);    // save the player's objects
-  save_pfile(ch);      // saves the actual player data
+CHAR_DATA *get_player(const char *player) {
+  SAVE_REF_DATA *ref_data = hashGet(player_table, player);
+  // player is not loaded in memory... try loading it
+  if(ref_data == NULL) {
+    CHAR_DATA *ch = load_player(player);
+    // it doesn't exist. Return NULL
+    if(ch == NULL)
+      return NULL;
+    else {
+      hashPut(player_table, player, newSaveRefData(ch));
+      return ch;
+    }
+  }
+  // up our reference count and return
+  else {
+    ref_data->refcnt++;
+    return ref_data->data;
+  }
+}
+
+void unreference_account(ACCOUNT_DATA *account) {
+  SAVE_REF_DATA *ref_data = hashGet(account_table, accountGetName(account));
+  if(ref_data == NULL)
+    log_string("ERROR: Tried unreferencing account '%s' with no references!",
+	       accountGetName(account));
+  else {
+    ref_data->refcnt--;
+    // are we at 0 references?
+    if(ref_data->refcnt == 0) {
+      hashRemove(account_table, accountGetName(account));
+      deleteAccount(account);
+      deleteSaveRefData(ref_data);
+    }
+  }
+}
+
+void unreference_player(CHAR_DATA *ch) {
+  SAVE_REF_DATA *ref_data = hashGet(player_table, charGetName(ch));
+  if(ref_data == NULL)
+    log_string("ERROR: Tried unreferencing player '%s' with no references!",
+	       charGetName(ch));
+  else {
+    ref_data->refcnt--;
+    // are we at 0 references?
+    if(ref_data->refcnt == 0) {
+      hashRemove(player_table, charGetName(ch));
+      deleteChar(ch);
+      deleteSaveRefData(ref_data);
+    }
+  }
+}
+
+void register_account(ACCOUNT_DATA *account) {
+  if(account_exists(accountGetName(account)))
+    log_string("ERROR: Tried to register already-registered account, '%s'",
+	       accountGetName(account));
+  else {
+    save_account(account);
+    hashPut(account_table, accountGetName(account), newSaveRefData(account));
+  }
+}
+
+void register_player(CHAR_DATA *ch) {
+  if(player_exists(charGetName(ch)))
+    log_string("ERROR: Tried to register already-registered player, '%s'",
+	       charGetName(ch));
+  else {
+    save_player(ch);
+    hashPut(player_table, charGetName(ch), newSaveRefData(ch));
+  }
 }
 
 void save_account(ACCOUNT_DATA *account) {
@@ -178,13 +334,20 @@ void save_account(ACCOUNT_DATA *account) {
   storage_close(set);
 }
 
-ACCOUNT_DATA *load_account(const char *account) {
-  STORAGE_SET   *set = storage_read(get_save_filename(account,
-						      FILETYPE_ACCOUNT));
-  if(set == NULL)
-    return NULL;
+void save_player(CHAR_DATA *ch) {
+  if (ch == NULL) return;
 
-  ACCOUNT_DATA *acct = accountRead(set);
-  storage_close(set);
-  return acct;
+  // make sure we have a UID for the character before we start saving
+  if(charGetUID(ch) == NOBODY) {
+    log_string("ERROR: %s has invalid UID (%d)", charGetName(ch), NOBODY);
+    send_to_char(ch, "You have an invalid ID. Please inform a god.\r\n");
+    return;
+  }
+
+  // make sure we'll load back into the same room we were saved in
+  charSetLoadroom(ch, (charGetRoom(ch) ? roomGetClass(charGetRoom(ch)) :
+		       START_ROOM));
+
+  save_objfile(ch);    // save the player's objects
+  save_pfile(ch);      // saves the actual player data
 }

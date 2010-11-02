@@ -5,7 +5,7 @@
 // event.h
 //
 // this is the interface for the event handler. Events are temporally
-// delayed events. Events and actions (see action.h) may seem similar. They
+// delayed functions. Events and actions (see action.h) may seem similar. They
 // do, however, share some distinct differences. Whereas actions can only
 // be attached to characters, and only one action can be attached to a 
 // character at a time, events can be attached to anything, and anything can

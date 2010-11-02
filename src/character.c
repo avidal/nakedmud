@@ -15,10 +15,8 @@
 #include "utils.h"
 #include "body.h"
 #include "races.h"
-#include "handler.h"
 #include "auxiliary.h"
 #include "storage.h"
-#include "room.h"
 #include "character.h"
 
 
@@ -90,16 +88,19 @@ int poscmp(int pos1, int pos2) {
 
 struct char_data {
   // data for PCs only
-  int              loadroom;
+  char                 * loadroom;
 
   // shared data for PCs and NPCs
   int                    uid;
 
   BODY_DATA            * body;
   char                 * race;
+  char                 * prototypes;
+  char                 * class;
 
   SOCKET_DATA          * socket;
   ROOM_DATA            * room;
+  ROOM_DATA            * last_room;
   OBJ_DATA             * furniture;
   BUFFER               * desc;
   char                 * name;
@@ -112,24 +113,23 @@ struct char_data {
   BITVECTOR            * user_groups;
 
   // data for NPCs only
-  int            dialog;
   char                 * rdesc;
   char                 * multi_name;
   char                 * multi_rdesc;
   char                 * keywords;
-  int               vnum;  
 };
 
 
 CHAR_DATA *newChar() {
   CHAR_DATA *ch   = calloc(1, sizeof(CHAR_DATA));
 
-  ch->loadroom      = NOWHERE;
+  ch->loadroom      = strdup("");
   ch->uid           = NOBODY;
 
-  ch->race          = strdup(raceDefault());//RACE_HUMAN;
+  ch->race          = strdup(raceDefault());
   ch->body          = raceCreateBody(ch->race);
   ch->room          = NULL;
+  ch->last_room     = NULL;
   ch->furniture     = NULL;
   ch->socket        = NULL;
   ch->desc          = newBuffer(1);
@@ -138,12 +138,12 @@ CHAR_DATA *newChar() {
   ch->position      = POS_STANDING;
   ch->inventory     = newList();
 
+  ch->class         = strdup("");
+  ch->prototypes    = strdup("");
   ch->rdesc         = strdup("");
   ch->keywords      = strdup("");
   ch->multi_rdesc   = strdup("");
   ch->multi_name    = strdup("");
-  ch->dialog        = NOTHING;
-  ch->vnum          = NOBODY;
   ch->prfs          = bitvectorInstanceOf("char_prfs");
   ch->user_groups   = bitvectorInstanceOf("user_groups");
   bitSet(ch->user_groups, DFLT_USER_GROUP);
@@ -156,23 +156,25 @@ CHAR_DATA *newChar() {
 
 
 //*****************************************************************************
-//
 // utility functions
-//
 //*****************************************************************************
 void charSetRdesc(CHAR_DATA *ch, const char *rdesc) {
   if(ch->rdesc) free(ch->rdesc);
-  ch->rdesc =   strdup(rdesc ? rdesc : "");
+  ch->rdesc =   strdupsafe(rdesc);
 }
 
 void charSetMultiRdesc(CHAR_DATA *ch, const char *multi_rdesc) {
   if(ch->multi_rdesc) free(ch->multi_rdesc);
-  ch->multi_rdesc =   strdup(multi_rdesc ? multi_rdesc : "");
+  ch->multi_rdesc =   strdupsafe(multi_rdesc);
 }
 
 void charSetMultiName(CHAR_DATA *ch, const char *multi_name) {
   if(ch->multi_name) free(ch->multi_name);
-  ch->multi_name =   strdup(multi_name ? multi_name : "");
+  ch->multi_name =   strdupsafe(multi_name);
+}
+
+bool charIsInstance(CHAR_DATA *ch, const char *prototype) {
+  return is_keyword(ch->prototypes, prototype, FALSE);
 }
 
 bool charIsNPC( CHAR_DATA *ch) {
@@ -188,25 +190,35 @@ bool charIsName( CHAR_DATA *ch, const char *name) {
 
 
 //*****************************************************************************
-//
 // set and get functions
-//
 //*****************************************************************************
 LIST        *charGetInventory ( CHAR_DATA *ch) {
   return ch->inventory;
-};
+}
 
 SOCKET_DATA *charGetSocket    ( CHAR_DATA *ch) {
   return ch->socket;
-};
+}
 
 ROOM_DATA   *charGetRoom      ( CHAR_DATA *ch) {
   return ch->room;
-};
+}
+
+ROOM_DATA *charGetLastRoom(CHAR_DATA *ch) {
+  return ch->last_room;
+}
+
+const char *charGetClass(CHAR_DATA *ch) {
+  return ch->class;
+}
+
+const char  *charGetPrototypes( CHAR_DATA *ch) {
+  return ch->prototypes;
+}
 
 const char  *charGetName      ( CHAR_DATA *ch) {
   return ch->name;
-};
+}
 
 const char  *charGetDesc      ( CHAR_DATA *ch) {
   return bufferString(ch->desc);
@@ -230,12 +242,11 @@ const char  *charGetMultiName( CHAR_DATA *ch) {
 
 int         charGetSex        ( CHAR_DATA *ch) {
   return ch->sex;
-};
-
+}
 
 int         charGetPos        ( CHAR_DATA *ch) {
   return ch->position;
-};
+}
 
 BODY_DATA   *charGetBody      ( CHAR_DATA *ch) {
   return ch->body;
@@ -249,7 +260,7 @@ int          charGetUID   ( const CHAR_DATA *ch) {
   return ch->uid;
 }
 
-int    charGetLoadroom (CHAR_DATA *ch) {
+const char *charGetLoadroom (CHAR_DATA *ch) {
   return ch->loadroom;
 }
 
@@ -271,41 +282,57 @@ BITVECTOR *charGetUserGroups(CHAR_DATA *ch) {
 
 void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket) {
   ch->socket = socket;
-};
+}
 
 void         charSetRoom      ( CHAR_DATA *ch, ROOM_DATA *room) {
   ch->room   = room;
-};
+}
+
+void charSetLastRoom(CHAR_DATA *ch, ROOM_DATA *room) {
+  ch->last_room = room;
+}
+
+void charSetClass(CHAR_DATA *ch, const char *prototype) {
+  if(ch->class) free(ch->class);
+  ch->class = strdupsafe(prototype);
+}
+
+void charSetPrototypes(CHAR_DATA *ch, const char *prototypes) {
+  if(ch->prototypes) free(ch->prototypes);
+  ch->prototypes = strdupsafe(prototypes);
+}
+
+void charAddPrototype(CHAR_DATA *ch, const char *prototype) {
+  add_keyword(&ch->prototypes, prototype);
+}
 
 void         charSetName      ( CHAR_DATA *ch, const char *name) {
   if(ch->name) free(ch->name);
-  ch->name = strdup(name ? name : "");
-};
+  ch->name = strdupsafe(name);
+}
 
 void         charSetSex       ( CHAR_DATA *ch, int sex) {
   ch->sex = sex;
-};
+}
 
 void         charSetPos       ( CHAR_DATA *ch, int pos) {
   ch->position = pos;
-};
+}
 
 void         charSetDesc      ( CHAR_DATA *ch, const char *desc) {
   bufferClear(ch->desc);
   bufferCat(ch->desc, (desc ? desc : ""));
-};
+}
 
 void         charSetBody      ( CHAR_DATA *ch, BODY_DATA *body) {
-  if(ch->body) {
-    unequip_all(ch);
+  if(ch->body)
     deleteBody(ch->body);
-  }
   ch->body = body;
 }
 
 void         charSetRace  (CHAR_DATA *ch, const char *race) {
   if(ch->race) free(ch->race);
-  ch->race = strdup(race);
+  ch->race = strdupsafe(race);
 }
 
 void         charSetUID(CHAR_DATA *ch, int uid) {
@@ -316,8 +343,9 @@ void         charResetBody(CHAR_DATA *ch) {
   charSetBody(ch, raceCreateBody(ch->race));
 }
 
-void charSetLoadroom(CHAR_DATA *ch, int loadroom) {
-  ch->loadroom = loadroom;
+void charSetLoadroom(CHAR_DATA *ch, const char *loadroom) {
+  if(ch->loadroom) free(ch->loadroom);
+  ch->loadroom = strdupsafe(loadroom);
 }
 
 void charSetFurniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
@@ -345,12 +373,16 @@ void deleteChar( CHAR_DATA *mob) {
   // it's also assumed we've extracted our inventory
   deleteList(mob->inventory);
 
+  if(mob->class)       free(mob->class);
+  if(mob->prototypes)  free(mob->prototypes);
   if(mob->name)        free(mob->name);
   if(mob->desc)        deleteBuffer(mob->desc);
   if(mob->rdesc)       free(mob->rdesc);
   if(mob->multi_rdesc) free(mob->multi_rdesc);
   if(mob->multi_name)  free(mob->multi_name);
   if(mob->keywords)    free(mob->keywords);
+  if(mob->loadroom)    free(mob->loadroom);
+  if(mob->race)        free(mob->race);
   if(mob->prfs)        deleteBitvector(mob->prfs);
   if(mob->user_groups) deleteBitvector(mob->user_groups);
   deleteAuxiliaryData(mob->auxiliary_data);
@@ -362,7 +394,8 @@ void deleteChar( CHAR_DATA *mob) {
 CHAR_DATA *charRead(STORAGE_SET *set) {
   CHAR_DATA *mob = newMobile();
 
-  charSetVnum(mob,         read_int   (set, "vnum"));
+  charSetClass(mob,        read_string(set, "class"));
+  charSetPrototypes(mob,   read_string(set, "prototypes"));
   charSetName(mob,         read_string(set, "name"));
   charSetKeywords(mob,     read_string(set, "keywords"));
   charSetRdesc(mob,        read_string(set, "rdesc"));
@@ -373,30 +406,24 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
   charSetRace(mob,         read_string(set, "race"));
   bitSet(mob->prfs,        read_string(set, "prfs"));
   bitSet(mob->user_groups, read_string(set, "user_groups"));
+  charSetLoadroom(mob,     read_string(set, "loadroom"));
+  charSetPos(mob,          read_int   (set, "position"));
 
   // make sure we always have the default group assigned
   if(!*bitvectorGetBits(mob->user_groups))
     bitSet(mob->user_groups, DFLT_USER_GROUP);
 
   // read in PC data if it exists
-  if(storage_contains(set, "uid")) {
+  if(storage_contains(set, "uid"))
     charSetUID(mob,        read_int   (set, "uid"));
-    charSetLoadroom(mob,   read_int   (set, "loadroom"));
-    charSetPos(mob,        read_int   (set, "position"));
-  }
-  // and NPC data
-  else
-    charSetDialog(mob,        read_int   (set, "dialog"));
 
   deleteAuxiliaryData(mob->auxiliary_data);
   mob->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
 					  AUXILIARY_TYPE_CHAR);
 
   // make sure our race is OK
-  if(!isRace(mob->race)) {
-    free(mob->race);
-    mob->race = strdup(raceDefault());
-  }
+  if(!isRace(charGetRace(mob)))
+    charSetRace(mob, raceDefault());
 
   // reset our body to the default for our race
   charResetBody(mob);
@@ -407,7 +434,8 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
 
 STORAGE_SET *charStore(CHAR_DATA *mob) {
   STORAGE_SET *set = new_storage_set();
-  store_int   (set, "vnum",       mob->vnum);
+  store_string(set, "class",      mob->class);
+  store_string(set, "prototypes", mob->prototypes);
   store_string(set, "name",       mob->name);
   store_string(set, "keywords",   mob->keywords);
   store_string(set, "rdesc",      mob->rdesc);
@@ -423,12 +451,8 @@ STORAGE_SET *charStore(CHAR_DATA *mob) {
   if(!charIsNPC(mob)) {
     store_int   (set, "position",   mob->position);
     store_int   (set, "uid",        mob->uid);
-    store_int   (set, "loadroom",   (mob->room ? 
-				     roomGetVnum(mob->room) : mob->loadroom));
+    store_string(set, "loadroom",   mob->loadroom);
   }
-  // NPC-only data
-  else
-    store_int   (set, "dialog",     mob->dialog);
 
   store_set(set,"auxiliary", auxiliaryDataStore(mob->auxiliary_data));
   return set;
@@ -436,10 +460,9 @@ STORAGE_SET *charStore(CHAR_DATA *mob) {
 
 
 void charCopyTo( CHAR_DATA *from, CHAR_DATA *to) {
-  charSetVnum    (to, charGetVnum(from));
-  charSetKeywords(to, charGetKeywords(from));
-  charSetDialog  (to, charGetDialog(from));
-
+  charSetKeywords   (to, charGetKeywords(from));
+  charSetClass      (to, charGetClass(from));
+  charSetPrototypes (to, charGetPrototypes(from));
   charSetName       (to, charGetName(from));
   charSetDesc       (to, charGetDesc(from));
   charSetRdesc      (to, charGetRdesc(from));
@@ -463,30 +486,13 @@ CHAR_DATA *charCopy( CHAR_DATA *mob) {
 }
 
 
+
 //*****************************************************************************
-//
 // mob set and get functions
-//
 //*****************************************************************************
 void charSetKeywords(CHAR_DATA *ch, const char *keywords) {
   if(ch->keywords) free(ch->keywords);
-  ch->keywords = strdup(keywords ? keywords : "");
-}
-
-void charSetVnum(CHAR_DATA *ch, int vnum) {
-  ch->vnum = vnum;
-}
-
-void charSetDialog(CHAR_DATA *ch, int vnum) {
-  ch->dialog = vnum;
-}
-
-int     charGetVnum       ( CHAR_DATA *ch) {
-  return ch->vnum;
-}
-
-int  charGetDialog     ( CHAR_DATA *ch) {
-  return ch->dialog;
+  ch->keywords = strdupsafe(keywords);
 }
 
 const char  *charGetKeywords   ( CHAR_DATA *ch) {

@@ -9,8 +9,8 @@
 //*****************************************************************************
 
 #include "mud.h"
-#include "body.h"
 #include "utils.h"
+#include "body.h"
 
 #include "races.h"
 
@@ -38,8 +38,8 @@ typedef struct race_data {
 RACE_DATA *newRace(const char *name, const char *abbrev, BODY_DATA *body,
 		   bool pc_ok) {
   RACE_DATA *data = malloc(sizeof(RACE_DATA));
-  data->name   = strdup(name ? name : "");
-  data->abbrev = strdup(abbrev ? abbrev : "");
+  data->name   = strdupsafe(name);
+  data->abbrev = strdupsafe(abbrev);
   data->body   = body;
   data->pc_ok  = pc_ok;
   return data;

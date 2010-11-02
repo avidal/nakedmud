@@ -11,21 +11,28 @@
 #include <structmember.h>
 
 #include "../mud.h"
+#include "../utils.h"
 #include "../world.h"
 #include "../room.h"
 #include "../character.h"
 #include "../object.h"
 #include "../races.h"
 #include "../handler.h"
-#include "../utils.h"
+#include "../extra_descs.h"
+#include "../prototype.h"
 
 #include "pyplugs.h"
-#include "script.h"
-#include "script_set.h"
+#include "scripts.h"
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
 
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../items/items.h"
 
 
 
@@ -142,9 +149,9 @@ PyObject *PyObj_getuid(PyObj *self, void *closure) {
   return Py_BuildValue("i", self->uid);
 }
 
-PyObject *PyObj_getvnum(PyObj *self, void *closure) {
+PyObject *PyObj_getprototypes(PyObj *self, void *closure) {
   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
-  if(obj != NULL) return Py_BuildValue("i", objGetVnum(obj));
+  if(obj != NULL) return Py_BuildValue("s", objGetPrototypes(obj));
   else           return NULL;
 }
 
@@ -353,20 +360,24 @@ int PyObj_setmdesc(PyObj *self, PyObject *value, void *closure) {
 }
 
 int PyObj_setweight(PyObj *self, PyObject *value, void *closure) {
+  double weight = 0;
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete object's weight");
     return -1;
   }
 
-  if (!PyFloat_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Object weight must be a double");
+  if(PyFloat_Check(value))
+    weight = PyFloat_AsDouble(value);
+  else if(PyInt_Check(value))
+    weight = PyInt_AsLong(value);
+  else {
+    PyErr_Format(PyExc_TypeError, "Object weight must be a numeric value.");
     return -1;
   }
 
   OBJ_DATA *obj;
   PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
-  objSetWeightRaw(obj, PyFloat_AsDouble(value));
+  objSetWeightRaw(obj, weight);
   return 0;
 }
 
@@ -481,52 +492,145 @@ int PyObj_setcontainer(PyObj *self, PyObject *value, void *closure) {
 // methods for the obj class
 //*****************************************************************************
 PyObject *PyObj_attach(PyObj *self, PyObject *args) {  
-  long vnum = NOTHING;
+  char *key = NULL;
 
   // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+  if (!PyArg_ParseTuple(args, "s", &key)) {
     PyErr_Format(PyExc_TypeError, 
-		 "To attach a script, the vnum must be suppplied.");
+		 "To attach a trigger, the key must be suppplied.");
     return NULL;
   }
 
   // pull out the character and do the attaching
-  OBJ_DATA       *obj = PyObj_AsObj((PyObject *)self);
-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
-  if(obj != NULL && script != NULL) {
-    scriptSetAdd(objGetScripts(obj), vnum);
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to attach trigger to nonexistant obj, %d.", self->uid);
+    return NULL;
+  }
+
+  TRIGGER_DATA *trig =
+    worldGetType(gameworld, "trigger", 
+		 get_fullkey_relative(key, get_script_locale()));
+  if(trig != NULL) {
+    triggerListAdd(objGetTriggers(obj), triggerGetKey(trig));
     return Py_BuildValue("i", 1);
   }
   else {
     PyErr_Format(PyExc_StandardError, 
-		 "Tried to attach script to nonexistant obj, %d, or script %d "
-		 "does not exit.", self->uid, (int)vnum);
+		 "Tried to attach nonexistant script, %s, to object %s.",
+		 key, objGetClass(obj));
     return NULL;
   }
 }
 
-
 PyObject *PyObj_detach(PyObj *self, PyObject *args) {  
-  long vnum = NOTHING;
+  char *key = NULL;
 
   // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+  if (!PyArg_ParseTuple(args, "s", &key)) {
     PyErr_Format(PyExc_TypeError, 
-		 "To detach a script, the vnum must be suppplied.");
+		 "To detach a trigger, its key must be suppplied.");
     return NULL;
   }
 
   // pull out the character and do the attaching
-  OBJ_DATA       *obj = PyObj_AsObj((PyObject *)self);
-  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
-  if(obj != NULL && script != NULL) {
-    scriptSetRemove(objGetScripts(obj), vnum);
+  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) {
+    const char *fkey = get_fullkey_relative(key, get_script_locale());
+    triggerListRemove(objGetTriggers(obj), fkey);
     return Py_BuildValue("i", 1);
   }
   else {
     PyErr_Format(PyExc_StandardError, 
-		 "Tried to detach script from nonexistant obj, %d, or script "
-		 "%d does not exit.", self->uid, (int)vnum);
+		 "Tried to detach script from nonexistant obj, %d.", self->uid);
+    return NULL;
+  }
+}
+
+PyObject *PyObj_isinstance(PyObj *self, PyObject *args) {  
+  char *type = NULL;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "s", &type)) {
+    PyErr_Format(PyExc_TypeError, "isinstance only accepts strings.");
+    return NULL;
+  }
+
+  // pull out the object and check the type
+  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL)
+    return Py_BuildValue("i", 
+        objIsInstance(obj, get_fullkey_relative(type, get_script_locale())));
+  else {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to check instances of nonexistent object, %d.", self->uid);
+    return NULL;
+  }
+}
+
+PyObject *PyObj_istype(PyObj *self, PyObject *args) {  
+  char *type = NULL;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "s", &type)) {
+    PyErr_Format(PyExc_TypeError, "istype only accepts strings.");
+    return NULL;
+  }
+
+  // pull out the object and check the type
+  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL)
+    return Py_BuildValue("i", objIsType(obj, type));
+  else {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to check type of nonexistent object, %d.", self->uid);
+    return NULL;
+  }
+}
+
+PyObject *PyObj_settype(PyObj *self, PyObject *args) {  
+  char *type = NULL;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "s", &type)) {
+    PyErr_Format(PyExc_TypeError, "settype only accepts strings.");
+    return NULL;
+  }
+
+  // pull out the object and check the type
+  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) {
+    objSetType(obj, type);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to set type of nonexistent object, %d.", self->uid);
+    return NULL;
+  }
+}
+
+//
+// create a new extra description for the object
+PyObject *PyObj_edesc(PyObj *self, PyObject *value) {
+  char *keywords = NULL;
+  char     *desc = NULL;
+
+  if (!PyArg_ParseTuple(value, "ss", &keywords, &desc)) {
+    PyErr_Format(PyExc_TypeError, "Extra descs must be strings.");
+    return NULL;
+  }
+
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL) {
+    EDESC_DATA *edesc = newEdesc(keywords, desc);
+    edescSetPut(objGetEdescs(obj), edesc);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError,
+		 "Tried to set edesc for nonexistent obj, %d.", self->uid);
     return NULL;
   }
 }
@@ -584,76 +688,67 @@ PyTypeObject PyObj_Type = {
 // the obj module
 //*****************************************************************************
 PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
-  int vnum     = NOBODY;
-  PyObject *in = NULL;
+  char          *key = NULL;
+  PyObject       *in = NULL;
+  ROOM_DATA    *room = NULL; // are we loading to a room?
+  OBJ_DATA     *cont = NULL; // are we loading to a container?
+  CHAR_DATA      *ch = NULL; // are we loading to a character?
+  char     *equip_to = NULL; // are we trying to equip the character?
 
-  ROOM_DATA *room = NULL; // are we loading to a room?
-  OBJ_DATA  *cont = NULL; // are we loading to a container?
-  CHAR_DATA *ch   = NULL; // are we loading to a character?
-  char *equip_to  = NULL; // are we trying to equip the character?
-
-  if (!PyArg_ParseTuple(args, "iO|s", &vnum, &in, &equip_to)) {
+  if (!PyArg_ParseTuple(args, "sO|s", &key, &in, &equip_to)) {
     PyErr_Format(PyExc_TypeError, 
-		 "Load obj failed - it needs a vnum and destination.");
+		 "Load obj failed - it needs a key and destination.");
+    return NULL;
+  }
+
+  // figure out what we're trying to load this thing into
+  if(PyString_Check(in))
+    room = worldGetRoom(gameworld, PyString_AsString(in));
+  else if(PyRoom_Check(in))
+    room = PyRoom_AsRoom(in);
+  else if(PyObj_Check(in))
+    cont = propertyTableGet(obj_table, PyObj_AsUid(in));
+  else if(PyChar_Check(in))
+      ch = propertyTableGet(mob_table, PyChar_AsUid(in));
+
+  // make sure a destination exists
+  if(room == NULL && cont == NULL && ch == NULL) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Load obj failed: destination does not exist.");
     return NULL;
   }
 
   // check the obj
-  OBJ_DATA *obj_proto = worldGetObj(gameworld, vnum);
+  PROTO_DATA *obj_proto = 
+    worldGetType(gameworld, "oproto", 
+		 get_fullkey_relative(key, get_script_locale()));
   if(obj_proto == NULL) {
     PyErr_Format(PyExc_TypeError, 
-                    "Load obj failed: object number does not exist.");
+		 "Load obj failed: oproto %s does not exist.", 
+		 get_fullkey_relative(key, get_script_locale()));
     return NULL;
   }
 
   // copy the object
-  OBJ_DATA *obj = objCopy(obj_proto);
-
-
-  // figure out what we're trying to load this thing into
-  if(PyInt_Check(in))
-    room = worldGetRoom(gameworld, (int)PyInt_AsLong(in));
-  else if(PyRoom_Check(in))
-    room = worldGetRoom(gameworld, PyRoom_AsVnum(in));
-  else if(PyObj_Check(in))
-    cont = propertyTableGet(obj_table, PyObj_AsUid(in));
-  else if(PyChar_Check(in))
-    ch   = propertyTableGet(mob_table, PyChar_AsUid(in));
-
-
-  // figure out where we're trying to load the object to
-  if(room != NULL) {
-    obj_to_game(obj);
-    obj_to_room(obj, room);
-  }
-  else if(cont != NULL) {
-    obj_to_game(obj);
-    obj_to_obj(obj, cont);
-  }
-  else if(ch != NULL) {
-    // see if we're trying to equip the object
-    if(equip_to) {
-      obj_to_game(obj);
-      if(!try_equip(ch, obj, equip_to))
-	obj_to_char(obj, ch);
-    }
-    else {
-      obj_to_game(obj);
-      obj_to_char(obj, ch);
-    }
-  }
-
-  // We couldn't figure out the destination!
-  else {
-    PyErr_Format(PyExc_TypeError, 
-                    "Load obj failed: destination does not exist.");
+  OBJ_DATA *obj = protoObjRun(obj_proto);
+  if(obj == NULL) {
+    //    PyErr_Format(PyExc_TypeError,
+    //		 "Load obj failed: proto script terminated with an error.");
     return NULL;
   }
 
-  // check for initialization scripts
-  try_scripts(SCRIPT_TYPE_INIT,
-	      obj, SCRIPTOR_OBJ,
-	      ch, cont, room, NULL, NULL, 0);
+  // figure out where we're trying to load the object to
+  if(room != NULL)
+    obj_to_room(obj, room);
+  else if(cont != NULL)
+    obj_to_obj(obj, cont);
+  else if(ch != NULL) {
+    // see if we're trying to equip the object
+    if(equip_to && !try_equip(ch, obj, equip_to))
+      obj_to_char(obj, ch);
+    else
+      obj_to_char(obj, ch);
+  }
 
   // create a python object for the new obj, and return it
   PyObj *py_obj = (PyObj *)newPyObj(obj);
@@ -662,41 +757,32 @@ PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
 
 
 PyObject *PyObj_count_objs(PyObject *self, PyObject *args) {
-  LIST *list      = NULL;
-  PyObject *tgt;
-  PyObject *in    = NULL;
-  ROOM_DATA *room = NULL;
-  OBJ_DATA  *cont = NULL;
-  CHAR_DATA *ch   = NULL;
-  int vnum = NOTHING;
-  char *name = NULL;
+  LIST            *list = NULL;
+  char             *tgt = NULL;
+  PyObject          *in = NULL;
+  ROOM_DATA       *room = NULL;
+  OBJ_DATA        *cont = NULL;
+  CHAR_DATA         *ch = NULL;
+  const char *prototype = NULL;
 
-  if (!PyArg_ParseTuple(args, "O|O", &tgt, &in)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "count_objs failed. No arguments supplied.");
+  if (!PyArg_ParseTuple(args, "s|O", &tgt, &in)) {
+    PyErr_Format(PyExc_TypeError, "count_objs failed. No arguments supplied.");
     return NULL;
   }
 
-  // see if we're looking by name or vnum
-  if(PyInt_Check(tgt))
-    vnum = PyInt_AsLong(tgt);
-  else if(PyString_Check(tgt))
-    name = PyString_AsString(tgt);
-  else {
-    PyErr_Format(PyExc_TypeError, 
-                    "count_objs failed. Invalid target type supplied.");
-    return NULL;
-  }
+  // get the full key for our prototype
+  prototype = get_fullkey_relative(tgt, get_script_locale());
 
   // if we didn't supply something to look in, assume it means the world
   if(in == NULL)
-    return Py_BuildValue("i", count_objs(NULL, object_list, name, vnum, FALSE));
+    return Py_BuildValue("i", count_objs(NULL, object_list, NULL, prototype, 
+					 FALSE));
 
   // see what we're looking in
-  if(PyInt_Check(in))
-    room = worldGetRoom(gameworld, PyInt_AsLong(in));
+  if(PyString_Check(in))
+    room = worldGetRoom(gameworld, PyString_AsString(in));
   else if(PyRoom_Check(in))
-    room = worldGetRoom(gameworld, PyRoom_AsVnum(in));
+    room = PyRoom_AsRoom(in);
   else if(PyObj_Check(in))
     cont = propertyTableGet(obj_table, PyObj_AsUid(in));
   else if(PyChar_Check(in))
@@ -713,7 +799,7 @@ PyObject *PyObj_count_objs(PyObject *self, PyObject *args) {
     return NULL;
   }
   
-  return Py_BuildValue("i", count_objs(NULL, list, name, vnum, FALSE));
+  return Py_BuildValue("i", count_objs(NULL, list, NULL, prototype, FALSE));
 }
 
 
@@ -735,10 +821,10 @@ PyObject *PyObj_find_obj(PyObject *self, PyObject *args) {
 
   // check for scope of search
   if(in) {
-    if(PyInt_Check(in))
-      room = worldGetRoom(gameworld, PyInt_AsLong(in));
+    if(PyString_Check(in))
+      room = worldGetRoom(gameworld, PyString_AsString(in));
     else if(PyRoom_Check(in))
-      room = worldGetRoom(gameworld, PyRoom_AsVnum(in));
+      room = PyRoom_AsRoom(in);
     else if(PyObj_Check(in))
       cont = propertyTableGet(obj_table, PyObj_AsUid(in));
     else if(PyChar_Check(in))
@@ -761,7 +847,7 @@ PyObject *PyObj_find_obj(PyObject *self, PyObject *args) {
 
   // we're just looking for a single item
   if(count != COUNT_ALL) {
-    OBJ_DATA *obj    = find_obj(looker_ch, list, count, name, NOTHING, 
+    OBJ_DATA *obj    = find_obj(looker_ch, list, count, name, NULL, 
 				(looker_ch ? TRUE : FALSE));
     PyObject *py_obj = Py_None;
     if(obj) py_obj = newPyObj(obj);
@@ -776,15 +862,77 @@ PyObject *PyObj_find_obj(PyObject *self, PyObject *args) {
   }
 }
 
+PyObject *PyObj_find_obj_key(PyObject *self, PyObject *args) {
+  LIST *list           = object_list;
+  PyObject *in         = NULL;
+  ROOM_DATA *room      = NULL;
+  OBJ_DATA  *cont      = NULL;
+  CHAR_DATA *ch        = NULL;
+  CHAR_DATA *looker_ch = NULL;
+  PyObject *looker     = NULL;
+  char *tgt            = NULL;
+  const char *key      = NULL;
+
+  if (!PyArg_ParseTuple(args, "s|OO", &tgt, &in, &looker)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "find_obj failed. No arguments supplied.");
+    return NULL;
+  }
+
+  // figure out our key
+  key = get_fullkey_relative(tgt, get_script_locale());
+
+  // check for scope of search
+  if(in) {
+    if(PyString_Check(in))
+      room = worldGetRoom(gameworld, PyString_AsString(in));
+    else if(PyRoom_Check(in))
+      room = PyRoom_AsRoom(in);
+    else if(PyObj_Check(in))
+      cont = propertyTableGet(obj_table, PyObj_AsUid(in));
+    else if(PyChar_Check(in))
+      ch   = propertyTableGet(mob_table, PyChar_AsUid(in));
+  }
+
+  // check to see who's looking
+  if(looker && PyChar_Check(looker))
+    looker_ch = propertyTableGet(mob_table, PyChar_AsUid(looker));
+
+  // now, do the search
+  int count = 1;
+  char name[SMALL_BUFFER] = "";
+  get_count(tgt, name, &count);
+
+  // we're just looking for a single item
+  if(count != COUNT_ALL) {
+    OBJ_DATA *obj    = find_obj(looker_ch, list, count, NULL, key,
+				(looker_ch ? TRUE : FALSE));
+    PyObject *py_obj = Py_None;
+    if(obj) py_obj = newPyObj(obj);
+    return Py_BuildValue("O", py_obj);
+  }
+  // otherwise, return everything that meets our critereon
+  else {
+    //***********
+    // FINISH ME
+    //***********
+    return Py_BuildValue("O", Py_None);
+  }
+}
+
+
 PyMethodDef obj_module_methods[] = {
   { "load_obj", PyObj_load_obj, METH_VARARGS,
-    "load a object with the specified vnum to a room." },
+    "load a object with the specified oproto to a room." },
   { "count_objs", PyObj_count_objs, METH_VARARGS,
     "count how many occurances of an object there are in the specified scope. "
-    "vnum or name can be used."},
+    "prototype or name can be used."},
   { "find_obj", PyObj_find_obj, METH_VARARGS,
     "Takes a string argument, and returns the object(s) in the scope that "
     "correspond to what the string is searching for."},
+  { "find_obj_key", PyObj_find_obj_key, METH_VARARGS,
+    "Takes a string argument, and returns the object(s) in the scope that "
+    "are an instance of the specified class."},
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -847,8 +995,8 @@ init_PyObj(void) {
 		       "the object's weight (minus contents)");
     PyObj_addGetSetter("uid", PyObj_getuid, NULL,
 		       "the object's unique identification number");
-    PyObj_addGetSetter("vnum", PyObj_getvnum, NULL,
-		       "the virtual number for the object.");
+    PyObj_addGetSetter("prototypes", PyObj_getprototypes, NULL,
+		       "a comma-separated list of this obj's prototypes.");
     PyObj_addGetSetter("bits", PyObj_getbits, PyObj_setbits,
 		       "the object's basic bitvector.");
     PyObj_addGetSetter("carrier", PyObj_getcarrier, PyObj_setcarrier,
@@ -860,12 +1008,19 @@ init_PyObj(void) {
 		       "The container this object is in. "
 		       "None if on a character or in a room");
 
-
     // methods
     PyObj_addMethod("attach", PyObj_attach, METH_VARARGS,
 		    "attach a new script to the object");
     PyObj_addMethod("detach", PyObj_detach, METH_VARARGS,
 		    "detach an old script from the object, by vnum");
+    PyObj_addMethod("isinstance", PyObj_isinstance, METH_VARARGS,
+		    "checks to see if the object inherits from the class");
+    PyObj_addMethod("istype", PyObj_istype, METH_VARARGS,
+		     "checks to see if the object is of the specified type");
+    PyObj_addMethod("settype", PyObj_settype, METH_VARARGS,
+		    "the object will become of the specified type");
+    PyObj_addMethod("edesc", PyObj_edesc, METH_VARARGS,
+		    "adds an extra description to the object.");
 
     makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
     deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;

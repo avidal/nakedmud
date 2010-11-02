@@ -10,13 +10,11 @@
 #include "world.h"
 #include "inform.h"
 #include "character.h"
+#include "room.h"
 #include "handler.h"
 #include "utils.h"
-#include "log.h"
 #include "socket.h"
 #include "save.h"
-#include "event.h"
-#include "action.h"
 #include "storage.h"
 
 
@@ -28,7 +26,7 @@
 //
 // Locks the game for anyone not a member of one of the user groups we specify.
 COMMAND(cmd_lockdown) {
-  // check the current lockdown status
+  // no argument - check the current lockdown status
   if(!*arg) {
     if(!*mudsettingGetString("lockdown"))
       send_to_char(ch, "Lockdown is currently turned off.\r\n");
@@ -78,6 +76,26 @@ COMMAND(cmd_lockdown) {
 
 
 //
+// changes the number of pulses the mud experiences each second
+COMMAND(cmd_pulserate) {
+  if(!*arg)
+    send_to_char(ch,"The mud currently has %d pulses per second.\r\n", 
+		 PULSES_PER_SECOND);
+  else {
+    int pulserate = 0;
+    if(!parse_args(ch, FALSE, cmd, arg, "int",  &pulserate) ||
+       (1000 % pulserate != 0))
+      send_to_char(ch, "The number of pulses per second must divide 1000.\r\n");
+    else {
+      mudsettingSetInt("pulses_per_second", pulserate);
+      send_to_char(ch, "The mud's new pulse rate is %d pulses per second.\r\n",
+		   PULSES_PER_SECOND);
+    }
+  }
+}
+
+
+//
 // BOOM! Shut down the MUD
 COMMAND(cmd_shutdown) {
   shut_down = TRUE;
@@ -87,26 +105,19 @@ COMMAND(cmd_shutdown) {
 //
 // Perform a command multiple times
 COMMAND(cmd_repeat) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "What did you want to repeat, and how many times?\r\n");
+  int    repeats = 0;
+
+  if(!parse_args(ch, TRUE, cmd, arg, "int string", &repeats, &arg))
     return;
-  }
 
-  // how many times should we repeat?
-  char rep_buf[SMALL_BUFFER];
-  arg = one_arg(arg, rep_buf);
-  int  repeats = atoi(rep_buf);
-
-  // no command to delay
-  if(!*arg)
-    send_to_char(ch, "What command did you want to repeat?\r\n");
-  else if(repeats < 1)
-    send_to_char(ch, "You can only repeat commands a positive amounts of time.\r\n");
+  // make sure the integer is a valid number
+  if(repeats < 1)
+    send_to_char(ch, "Commands can only be repeated a positive number of time.\r\n");
   else {
     int i;
     // now, do the repeating
     for(i = 0; i < repeats; i++)
-      do_cmd(ch, arg, TRUE, TRUE);
+      do_cmd(ch, arg, TRUE);
   }
 }
 
@@ -123,7 +134,7 @@ void try_force(CHAR_DATA *ch, CHAR_DATA *vict, char *cmd) {
     send_to_char(ch,   "You force %s to '%s'\r\n", charGetName(vict), cmd);
     send_to_char(vict, "%s forces you to '%s'\r\n",
 		 see_char_as(vict, ch), cmd);
-    do_cmd(vict, cmd, TRUE, TRUE);
+    do_cmd(vict, cmd, TRUE);
   }
 }
 
@@ -131,35 +142,23 @@ void try_force(CHAR_DATA *ch, CHAR_DATA *vict, char *cmd) {
 //
 // force someone to execute a command
 COMMAND(cmd_force) {
-  char name[SMALL_BUFFER];
-  arg = one_arg(arg, name);
-  
-  if(!*name || !*arg)
-    send_to_char(ch, "Force who to do what?\r\n");
-  else {
-    int type    = FOUND_NONE;
-    void *found = generic_find(ch, name, FIND_TYPE_CHAR, FIND_SCOPE_ALL,
-			       TRUE, &type);
+  void    *found = NULL;
+  bool  multiple = FALSE; 
 
-    // did we find a list of characters?
-    if(found == NULL)
-      send_to_char(ch, "No targets found!\r\n");
-    else if(type == FOUND_LIST) {
-      if(listSize(found) == 0)
-	send_to_char(ch, "No targets found.\r\n");
-      else {
-	LIST_ITERATOR *ch_i = newListIterator(found);
-	CHAR_DATA   *one_ch = NULL;
-	ITERATE_LIST(one_ch, ch_i) {
-	  if(ch != one_ch)
-	    try_force(ch, one_ch, arg);
-	} deleteListIterator(ch_i);
-	deleteList(found);
-      }
-    }
-    // a single character...
-    else
-      try_force(ch, found, arg);
+  if(!parse_args(ch, TRUE, cmd, arg, "ch.world.noself.multiple string",
+		 &found, &multiple, &arg))
+    return;
+
+  // did we find a single character, or a list of characters?
+  if(multiple == FALSE)
+    try_force(ch, found, arg);
+  else {
+    LIST_ITERATOR *ch_i = newListIterator(found);
+    CHAR_DATA   *one_ch = NULL;
+    ITERATE_LIST(one_ch, ch_i) {
+      try_force(ch, one_ch, arg);
+    } deleteListIterator(ch_i);
+    deleteList(found);
   }
 }
 
@@ -167,99 +166,79 @@ COMMAND(cmd_force) {
 //
 // Perform a command at another room or person
 COMMAND(cmd_at) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "Do what where?\r\n");
+  ROOM_DATA *room = NULL;
+  void     *found = NULL;
+  int  found_type = PARSE_NONE;
+
+  if(!parse_args(ch, TRUE, cmd, arg, "{ room ch.world.noself } string",
+		 &found, &found_type, &arg))
     return;
-  }
 
-  // how many times should we repeat?
-  char where[SMALL_BUFFER];
-  arg = one_arg(arg, where);
+  // figure out what room we're doing the command at
+  if(found_type == PARSE_ROOM)
+    room = found;
+  else // found_type == PARSE_CHAR
+    room = charGetRoom(found);
 
-  // no command to delay
-  if(!*arg)
-    send_to_char(ch, "What were you trying to do, and where?\r\n");
-  else {
-    // first, are we trying to do this at a room vnum?
-    ROOM_DATA *room = NULL;
-
-    // are we looking for a vnum?
-    if(isdigit(*where))
-      room = worldGetRoom(gameworld, atoi(where));
-
-    // no room? Maybe its the name of someone
-    if(room == NULL) {
-      CHAR_DATA *tgt = generic_find(ch, where, FIND_TYPE_CHAR,
-				    FIND_SCOPE_ALL | FIND_SCOPE_VISIBLE,
-				    FALSE, NULL);
-      if(tgt != NULL)
-	room = charGetRoom(tgt);
-    }
-
-    if(room == NULL)
-      send_to_char(ch, "Where were you trying to do that?\r\n");
-    else {
-      ROOM_DATA *old_room = charGetRoom(ch);
-      char_from_room(ch);
-      char_to_room(ch, room);
-      do_cmd(ch, arg, TRUE, TRUE);
-      char_from_room(ch);
-      char_to_room(ch, old_room);
-    }
-  }
+  // transfer us over to the new room, do the command, then transfer back
+  ROOM_DATA *old_room = charGetRoom(ch);
+  char_from_room(ch);
+  char_to_room(ch, room);
+  do_cmd(ch, arg, TRUE);
+  char_from_room(ch);
+  char_to_room(ch, old_room);
 }
 
 
 //
 // Go to a specific room, object, or character in the game. Rooms are referenced
 // by vnum. Everything else is referenced by name.
-//   usage: goto [thing]
+//   usage: goto <thing>
 //
 //   examples:
 //     goto 100             go to room number 100
 //     goto jim             go to an object/person named jim
 COMMAND(cmd_goto) {
-  if(!arg || !*arg)
-    send_to_char(ch, "Where would you like to go to?\r\n");
-  // we're trying to go to a specific room number
-  else if(isdigit(*arg)) {
-    ROOM_DATA *room = worldGetRoom(gameworld, atoi(arg));
+  ROOM_DATA *room = NULL;
+  void     *found = NULL;
+  int  found_type = PARSE_NONE;
 
-    if(!room)
-      send_to_char(ch, "No such room exists.\r\n");
-    else if(room == charGetRoom(ch))
-      send_to_char(ch, "You're already here, boss.\r\n");
-    else {
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
-	      "$n disappears in a puff of smoke.");
-      char_from_room(ch);
-      char_to_room(ch, room);
-      look_at_room(ch, room);
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
-	      "$n arrives in a puff of smoke.");
-    }
-  }
+  if(!parse_args(ch, TRUE, cmd, arg, "{ room ch.world.noself }", 
+		 &found, &found_type))
+    return;
 
-  // find the character we're trying to go to
+  // what did we find?
+  if(found_type == PARSE_ROOM)
+    room = found;
+  else // found_type == PARSE_CHAR
+    room = charGetRoom(found);
+
+  message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
+	  "$n disappears in a puff of smoke.");
+  char_from_room(ch);
+  char_to_room(ch, room);
+  look_at_room(ch, room);
+  message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
+	  "$n arrives in a puff of smoke.");
+}
+
+
+//
+// ch transfers tgt to dest
+void do_transfer(CHAR_DATA *ch, CHAR_DATA *tgt, ROOM_DATA *dest) {
+  if(dest == charGetRoom(tgt))
+    send_to_char(ch, "%s is already %s.\r\n", charGetName(tgt),
+		 (charGetRoom(ch) == dest ? "here" : "there"));
   else {
-    void *tgt = generic_find(ch, arg, 
-			     FIND_TYPE_CHAR,
-			     FIND_SCOPE_WORLD | FIND_SCOPE_VISIBLE,
-			     FALSE, NULL);
-
-    if(ch == tgt)
-      send_to_char(ch, "You're already here, boss.\r\n");
-    else if(tgt != NULL) {
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
-	      "$n disappears in a puff of smoke.");
-      char_from_room(ch);
-      char_to_room(ch, charGetRoom(tgt));
-      look_at_room(ch, charGetRoom(ch));
-      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM,
-	      "$n arrives in a puff of smoke.");
-    }
-    else
-      send_to_char(ch, "Who were you trying to go to?\r\n");
+    send_to_char(tgt, "%s has transferred you to %s!\r\n",
+		 see_char_as(tgt, ch), roomGetName(dest));
+    message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
+	    "$n disappears in a puff of smoke.");
+    char_from_room(tgt);
+    char_to_room(tgt, dest);
+    look_at_room(tgt, dest);
+    message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
+	    "$n arrives in a puff of smoke.");
   }
 }
 
@@ -267,32 +246,33 @@ COMMAND(cmd_goto) {
 //
 // The opposite of goto. Instead of moving to a specified location, it
 // takes the target to the user.
-//   usage: transfer [player]
+//   usage: transfer <player> [[to] room]
 COMMAND(cmd_transfer) {
-  if(!arg || !*arg)
-    send_to_char(ch, "Who would you like to transfer?\r\n");
-  else {
-    void *tgt = generic_find(ch, arg, 
-			     FIND_TYPE_CHAR,
-			     FIND_SCOPE_WORLD | FIND_SCOPE_VISIBLE,
-			     FALSE, NULL);
+  void     *found = NULL;
+  bool   multiple = FALSE;
+  ROOM_DATA *dest = NULL;
 
-    if(tgt == NULL)
-      send_to_char(ch, "Who are you looking for?\r\n");
-    else if(ch == tgt)
-      send_to_char(ch, "You're already here, boss.\r\n");
-    else if(charGetRoom(ch) == charGetRoom(tgt))
-      send_to_char(ch, "They're already here.\r\n");
+  // if our arguments don't parse properly, 
+  // parse_args will tell the person what is wrong
+  if(parse_args(ch, TRUE, cmd, arg,
+		"ch.world.multiple.noself | [to] room",
+		&found, &multiple, &dest)) {
+    // if we didn't supply a destination, use our current room
+    if(dest == NULL)
+      dest = charGetRoom(ch);
+
+    // if we have multiple people, we'll have to transfer them one by one
+    if(multiple == FALSE)
+      do_transfer(ch, found, dest);
     else {
-      message(ch, tgt, NULL, NULL, TRUE, TO_VICT,
-	      "$n has transferred you!");
-      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
-	      "$n disappears in a puff of smoke.");
-      char_from_room(tgt);
-      char_to_room(tgt, charGetRoom(ch));
-      look_at_room(tgt, charGetRoom(tgt));
-      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM,
-	      "$n arrives in a puff of smoke.");
+      LIST_ITERATOR *tgt_i = newListIterator(found);
+      CHAR_DATA       *tgt = NULL;
+      ITERATE_LIST(tgt, tgt_i) {
+	do_transfer(ch, found, dest);
+      } deleteListIterator(tgt_i);
+
+      // we also have to delete the list that we were given
+      deleteList(found);
     }
   }
 }
@@ -308,20 +288,17 @@ COMMAND(cmd_copyover) {
 //
 // show a list of all the PCs who are linkdead
 COMMAND(cmd_linkdead) {
-  CHAR_DATA *xMob;
-  char buf[MAX_BUFFER];
-  bool found = FALSE;
-  LIST_ITERATOR *mob_i = newListIterator(mobile_list);
+  LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+  CHAR_DATA   *one_ch = NULL;
+  bool          found = FALSE;
 
-  ITERATE_LIST(xMob, mob_i) {
-    if (!(charIsNPC(xMob) || charGetSocket(xMob))) {
-      sprintf(buf, "%s is linkdead.\n\r", charGetName(xMob));
-      text_to_char(ch, buf);
+  ITERATE_LIST(one_ch, ch_i) {
+    if (!(charIsNPC(one_ch) || charGetSocket(one_ch))) {
+      send_to_char(ch, "%s is linkdead.\r\n", charGetName(one_ch));
       found = TRUE;
     }
-  }
-  deleteListIterator(mob_i);
+  } deleteListIterator(ch_i);
 
   if (!found)
-    text_to_char(ch, "Noone is currently linkdead.\n\r");
+    send_to_char(ch, "Noone is currently linkdead.\r\n");
 }

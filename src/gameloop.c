@@ -1,26 +1,29 @@
 //*****************************************************************************
+//
 // gameloop.c
 //
 // contains the entrypoint for the MUD, plus various state-handling functions.
+//
 //*****************************************************************************
 #include <sys/time.h>
 
 #include "mud.h"
-#include "socket.h"
-#include "world.h"
-#include "character.h"
-#include "object.h"
 #include "utils.h"
 #include "save.h"
-#include "handler.h"
-#include "inform.h"
+#include "socket.h"
+#include "world.h"
+#include "room.h"
+#include "room_reset.h"
+#include "character.h"
+#include "object.h"
+#include "exit.h"
 #include "log.h"
 #include "action.h"
 #include "event.h"
 #include "auxiliary.h"
 #include "storage.h"
 #include "races.h"
-#include "body.h"
+#include "hooks.h"
 
 
 
@@ -32,7 +35,7 @@
 #include "items/items.h"
 #include "olc2/olc.h"
 #include "set_val/set_val.h"
-#include "scripts/script.h"
+#include "scripts/scripts.h"
 
 
 
@@ -53,36 +56,37 @@
 #endif
 
 
-/* local procedures */
+// local procedures
 void game_loop    ( int control );
 bool gameloop_end = FALSE;
 
-/* intialize shutdown state */
+// intialize shutdown state
 bool shut_down    = FALSE;
 int  control;
 
-/* what port are we running on? */
+// what port are we running on?
 int mudport       = -1;
 
-/* global variables */
-WORLD_DATA *gameworld = NULL;    // the gameworld, and ll the prototypes
-LIST * object_list = NULL;       // the list of all existing objects
-LIST * socket_list = NULL;       // the list of active sockets
-LIST * mobile_list = NULL;       // the list of existing mobiles
-LIST * mobs_to_delete = NULL;    // mobs pending final extraction
-LIST * objs_to_delete = NULL;    // objs pending final extraction
-LIST * extract_obj_funcs = NULL; // functions called when an obj is extracted
-LIST * extract_mob_funcs = NULL; // functions called when a char is extracted
-PROPERTY_TABLE *mob_table = NULL;// a table of mobs by UID, for quick lookup
-PROPERTY_TABLE *obj_table = NULL;
+// global variables
+WORLD_DATA      *gameworld = NULL; // the gameworld, and ll the prototypes
+LIST          *object_list = NULL; // the list of all existing objects
+LIST          *socket_list = NULL; // the list of active sockets
+LIST          *mobile_list = NULL; // the list of existing mobiles
+LIST            *room_list = NULL; // the list of all existing rooms
+LIST       *mobs_to_delete = NULL; // mobs pending final extraction
+LIST       *objs_to_delete = NULL; // objs pending final extraction
+LIST      *rooms_to_delete = NULL; // rooms pending final extraction
+PROPERTY_TABLE  *mob_table = NULL; // a table of mobs by UID, for quick lookup
+PROPERTY_TABLE  *obj_table = NULL; // a table of objs by UID, for quick lookup
+PROPERTY_TABLE *room_table = NULL; // a table of rooms by UID, for quick lookup
+PROPERTY_TABLE *exit_table = NULL; // a table of exits by UID, for quick lookup
+BUFFER           *greeting = NULL; // message seen when a socket connects
+BUFFER               *motd = NULL; // what characters see when they log on
 
-char        *   greeting = NULL;
-char        *   motd     = NULL;
 
 
-/*
- * This is where it all starts, nothing special.
- */
+//
+// This is where it all starts, nothing special.
 int main(int argc, char **argv)
 {
   extern fd_set fSet;
@@ -129,11 +133,13 @@ int main(int argc, char **argv)
 
   // lists for storing objects, sockets, and mobiles that are
   // currently loaded into the game
-  object_list    = newList();
-  socket_list    = newList();
-  mobile_list    = newList();
-  mobs_to_delete = newList();
-  objs_to_delete = newList();
+  object_list     = newList();
+  socket_list     = newList();
+  mobile_list     = newList();
+  room_list       = newList();
+  mobs_to_delete  = newList();
+  objs_to_delete  = newList();
+  rooms_to_delete = newList();
 
   // tables for quick lookup of mobiles and objects by UID.
   // For optimal speed, the table sizes should be roughly
@@ -141,11 +147,11 @@ int main(int argc, char **argv)
   // loaded into the game at any given time.
   mob_table   = newPropertyTable(charGetUID, 3000);
   obj_table   = newPropertyTable(objGetUID,  3000);
+  room_table  = newPropertyTable(roomGetUID, 3000);
+  exit_table  = newPropertyTable(exitGetUID, 9000);
 
-  // functions that should be called when objs/mobs 
-  // are extracted from the game world
-  extract_obj_funcs = newList();
-  extract_mob_funcs = newList();
+  // make a new world
+  gameworld = newWorld();
 
 
 
@@ -157,11 +163,17 @@ int main(int argc, char **argv)
   log_string("Changing to lib directory.");
   chdir("../lib");
 
+  log_string("Initializing hooks.");
+  init_hooks();
+
   log_string("Initializing bitvectors.");
   init_bitvectors();
 
   log_string("Initializing races and default bodies.");
   init_races();
+
+  log_string("Initializing room resets.");
+  init_room_reset();
 
   log_string("Initializing MUD settings.");
   init_mud_settings();
@@ -180,6 +192,9 @@ int main(int argc, char **argv)
 
   log_string("Initializing logging system.");
   init_logs();
+
+  log_string("Initializing account and player database.");
+  init_save();
 
 
 
@@ -254,6 +269,7 @@ int main(int argc, char **argv)
   worldForceReset(gameworld);
 
 
+
   /**********************************************************************/
   /*                  HANDLE THE SOCKET STARTUP STUFF                   */
   /**********************************************************************/
@@ -274,6 +290,7 @@ int main(int argc, char **argv)
     copyover_recover();
 
 
+
   /**********************************************************************/
   /*             START THE GAME UP, AND HANDLE ITS SHUTDOWN             */
   /**********************************************************************/
@@ -281,8 +298,8 @@ int main(int argc, char **argv)
   log_string("Entering game loop");
   game_loop(control);
 
-  // stop the scripts
-  finalize_scripts();
+  // run our finalize hooks
+  hookRun("shutdown", NULL, NULL, NULL);
 
   // close down the socket
   close(control);
@@ -322,6 +339,9 @@ void update_handler()
   OBJ_DATA *obj = NULL;
   while((obj = listPop(objs_to_delete)) != NULL)
     extract_obj_final(obj);
+  ROOM_DATA *room = NULL;
+  while((room = listPop(rooms_to_delete)) != NULL)
+    extract_room_final(room);
 }
 
 
@@ -338,8 +358,7 @@ void game_loop(int control)
   gettimeofday(&last_time, NULL);
 
   /* do this untill the program is shutdown */
-  while (!shut_down)
-  {
+  while (!shut_down) {
     /* set current_time */
     current_time = time(NULL);
 

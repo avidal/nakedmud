@@ -31,9 +31,13 @@
 #define RESET_POSITION        9 // change the position of a mobile
 #define NUM_RESETS           10
 
+
+// must be called before room resets are usable. Attaches a reset hook
+void init_room_reset(void);
+
 const char    *resetTypeGetName (int type);
 
-RESET_DATA    *newReset         ();
+RESET_DATA    *newReset         (void);
 void           deleteReset      (RESET_DATA *reset);
 RESET_DATA    *resetCopy        (RESET_DATA *reset);
 void           resetCopyTo      (RESET_DATA *from, RESET_DATA *to);
@@ -61,17 +65,16 @@ void           resetAddOn       (RESET_DATA *reset, RESET_DATA *on);
 void           resetAddIn       (RESET_DATA *reset, RESET_DATA *in);
 void           resetAddThen     (RESET_DATA *reset, RESET_DATA *then);
 
-
-//
-// try a reset command
-//
-bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type);
-
-
-//
-// Perform resetRun on all the reset commands in the list, using
-// initiator and initiator_type
-//
-void resetRunOn(LIST *list, void *initiator, int initiator_type);
+RESET_LIST    *newResetList(void);
+void        deleteResetList(RESET_LIST *list);
+RESET_LIST   *resetListCopy(RESET_LIST *list);
+void        resetListCopyTo(RESET_LIST *from, RESET_LIST *to);
+STORAGE_SET *resetListStore(RESET_LIST *list);
+RESET_LIST   *resetListRead(STORAGE_SET *set);
+const char *resetListGetKey(RESET_LIST *list);
+void        resetListSetKey(RESET_LIST *list, const char *key);
+LIST    *resetListGetResets(RESET_LIST *list);
+void           resetListAdd(RESET_LIST *list, RESET_DATA *reset);
+void        resetListRemove(RESET_LIST *list, RESET_DATA *reset);
 
 #endif // __ROOM_RESET_H

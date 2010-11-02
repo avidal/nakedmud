@@ -152,12 +152,8 @@ MAP *newMap(void *hash_func, void *compares) {
 void  deleteMap(MAP *map) {
   int i;
   for(i = 0; i < map->num_buckets; i++) {
-    if(map->buckets[i]) {
-      MAP_ENTRY *entry = NULL;
-      while((entry = listPop(map->buckets[i])) !=NULL)
-	deleteMapEntry(entry);
-      deleteList(map->buckets[i]);
-    }
+    if(map->buckets[i])
+      deleteListWith(map->buckets[i], deleteMapEntry);
   }
   free(map->buckets);
   free(map);

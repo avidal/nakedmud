@@ -26,6 +26,7 @@
 #include "../socket.h"
 #include "../room.h"
 #include "../world.h"
+#include "../object.h"
 #include "../inform.h"
 #include "../handler.h"
 
@@ -33,6 +34,14 @@
 #include "iedit.h"
 #include "items.h"
 #include "worn.h"
+
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../scripts/scripts.h"
+#include "../scripts/pyobj.h"
 
 
 
@@ -48,8 +57,8 @@ typedef struct worn_entry {
 
 WORN_ENTRY *newWornEntry(const char *type, const char *positions) {
   WORN_ENTRY *entry = malloc(sizeof(WORN_ENTRY));
-  entry->type      = strdup(type ? type : "");
-  entry->positions = strdup(positions ? positions : "");
+  entry->type      = strdupsafe(type);
+  entry->positions = strdupsafe(positions);
   return entry;
 }
 
@@ -86,7 +95,7 @@ void deleteWornData(WORN_DATA *data) {
 
 void wornDataCopyTo(WORN_DATA *from, WORN_DATA *to) {
   if(to->type) free(to->type);
-  to->type = strdup(from->type ? from->type : "");
+  to->type = strdupsafe(from->type);
 }
 
 WORN_DATA *wornDataCopy(WORN_DATA *data) {
@@ -125,7 +134,7 @@ const char *wornGetPositions(OBJ_DATA *obj) {
 void wornSetType(OBJ_DATA *obj, const char *type) {
   WORN_DATA *data = objGetTypeData(obj, "worn");
   if(data->type) free(data->type);
-  data->type = strdup(type ? type : "");
+  data->type = strdupsafe(type);
 }
 
 
@@ -152,7 +161,7 @@ void iedit_worn_show_types(SOCKET_DATA *sock) {
   LIST_ITERATOR *type_i = newListIterator(types);
   int col = 0;
 
-  text_to_buffer(sock, "{wEditable item types:\r\n");
+  text_to_buffer(sock, "{wEditable item types:{g\r\n");
   ITERATE_LIST(key, type_i) {
     send_to_socket(sock, "  %-14s%s",
 		   key, ((col != 0 && col % 3 == 0) ? "\r\n": "   "));
@@ -198,6 +207,65 @@ bool iedit_worn_parser (SOCKET_DATA *sock, WORN_DATA *data, int choice,
   }
 }
 
+void worn_from_proto(WORN_DATA *worn, BUFFER *buf) {
+  char worn_type[SMALL_BUFFER];
+  sscanf(bufferString(buf), "me.worn_type = \"%s", worn_type);
+  worn_type[next_letter_in(worn_type, '\"')] = '\0'; // kill closing "
+  if(hashIn(worn_table, worn_type)) {
+    if(worn->type) free(worn->type);
+    worn->type = strdup(worn_type);
+  }
+}
+
+void worn_to_proto(WORN_DATA *worn, BUFFER *buf) {
+  bprintf(buf, "me.worn_type = \"%s\"\n", worn->type);
+}
+
+
+
+//*****************************************************************************
+// python extentions
+//*****************************************************************************
+PyObject *PyObj_getworntype(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL)
+    return NULL;
+  else if(objIsType(obj, "worn"))
+    return Py_BuildValue("s", wornGetType(obj));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only get worntype for wearable items.");
+    return NULL;
+  }
+}
+
+int PyObj_setworntype(PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to set worntype for nonexistent "
+		 "clothing, %d", PyObj_AsUid(self));
+    return -1;
+  }
+  else if(!objIsType(obj, "worn")) {
+    PyErr_Format(PyExc_TypeError, "Tried to set worntype for non-clothing, %s",
+		 objGetClass(obj));
+    return -1;
+  }
+
+  if(!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "Clothing worntype must be a string.");
+    return -1;
+  }
+  
+  if(!hashIn(worn_table, PyString_AsString(value))) {
+    PyErr_Format(PyExc_TypeError, "Invalid worn type, %s.", 
+		 PyString_AsString(value));
+    return -1;
+  }
+
+  wornSetType(obj, PyString_AsString(value));
+  return 0;
+}
+
 
 
 //*****************************************************************************
@@ -223,8 +291,13 @@ void init_worn(void) {
 		wornDataStore, wornDataRead);
 
   // set up the worn OLC too
-  item_add_olc("worn", iedit_worn_menu, iedit_worn_chooser, iedit_worn_parser);
+  item_add_olc("worn", iedit_worn_menu, iedit_worn_chooser, iedit_worn_parser,
+	       worn_from_proto, worn_to_proto);
 
+  // add our new python get/setters
+  PyObj_addGetSetter("worn_type", PyObj_getworntype, PyObj_setworntype,
+		     "The type of clothing this wearable item is.");
+  
   // add in our basic worn types
   worn_add_type("shirt",                        "torso");
   worn_add_type("gloves",       "left hand, right hand");

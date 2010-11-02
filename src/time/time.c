@@ -17,6 +17,7 @@
 #include "../event.h"
 #include "../storage.h"
 #include "../auxiliary.h"
+#include "../hooks.h"
 
 #include "mudtime.h"
 
@@ -26,6 +27,15 @@
 // mandatory modules
 //*****************************************************************************
 #include "../scripts/pyroom.h"
+
+
+
+//*****************************************************************************
+// optional modules
+//*****************************************************************************
+#ifdef MODULE_SET_VAL
+#include "../set_val/set_val.h"
+#endif
 
 
 
@@ -169,7 +179,7 @@ int PyRoom_setndesc(PyObject *self, PyObject *value, void *closure) {
   ROOM_DATA *room = PyRoom_AsRoom(self);
   if(room == NULL) {
     PyErr_Format(PyExc_TypeError,
-		 "Tried to modify nonexistent room, %d", PyRoom_AsVnum(self));
+		 "Tried to modify nonexistent room, %d", PyRoom_AsUid(self));
     return -1;                                                                
   }
 
@@ -182,6 +192,18 @@ int PyRoom_setndesc(PyObject *self, PyObject *value, void *closure) {
 //*****************************************************************************
 // time handling functions
 //*****************************************************************************
+
+//
+// If it's in the night, swap out our desc for the room's night desc
+void room_nightdesc_hook(BUFFER *desc, ROOM_DATA *room, void *none) {
+  if((is_evening() || is_night()) && *roomGetNightDesc(room)) {
+    // if it's the room desc and not an edesc, cat the night desc...
+    if(!strcasecmp(bufferString(desc), roomGetDesc(room))) {
+      bufferClear(desc);
+      bufferCat(desc, roomGetNightDesc(room));
+    }
+  }
+}
 
 //
 // Handle the hourly update of our times
@@ -247,9 +269,14 @@ void init_time() {
   // add a nightdesc get-setter to rooms
   PyRoom_addGetSetter("ndesc", PyRoom_getndesc, PyRoom_setndesc,
 		      "the room's night desc");
+  
+  // add our set fields
+#ifdef MODULE_SET_VAL
+  add_set("ndesc", SET_ROOM, SET_TYPE_STRING, roomSetNightDesc, NULL);
+#endif
 
   // add the time command
-  add_cmd("time", NULL, cmd_time, 0, POS_SITTING,  POS_FLYING,
+  add_cmd("time", NULL, cmd_time, POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
 
   // add night descriptions for rooms
@@ -261,6 +288,7 @@ void init_time() {
 
   // start our time updater
   start_update(NULL, TIME_UPDATE_DELAY, handle_time_update, NULL, NULL, NULL);
+  hookAdd("preprocess_room_desc", room_nightdesc_hook);
 }
 
 

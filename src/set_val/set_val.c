@@ -56,6 +56,7 @@ void charSetUserGroups(CHAR_DATA *ch, const char *groups) {
 HASHTABLE *char_set_table = NULL;
 HASHTABLE *obj_set_table  = NULL;
 HASHTABLE *room_set_table = NULL;
+HASHTABLE *acct_set_table = NULL;
 
 typedef struct set_val_data {
   int   type;    // the type of data (int, double, long, string, etc...)
@@ -116,10 +117,6 @@ void try_set(CHAR_DATA *ch, void *tgt, HASHTABLE *table,
 }
 
 
-// are we trying to set a value from an argument, or from our notepad?
-#define SET_SUBCMD_SET        0
-#define SET_SUBCMD_SETPAD     1
-
 //
 // The entrypoint to the set utility for players in the MUD
 //   usage: set [thing] [field] [value]
@@ -131,19 +128,26 @@ void try_set(CHAR_DATA *ch, void *tgt, HASHTABLE *table,
 COMMAND(cmd_set) {
   char name [SMALL_BUFFER];
   char field[SMALL_BUFFER];
-  bool  file = FALSE;
+  bool player  = FALSE;
+  bool account = FALSE;
 
   // are we trying to modify a character on disk?
-  if(!strncasecmp(arg, "file ", 5)) {
-    file = TRUE;
-    arg += 5;
+  if(!strncasecmp(arg, "player ", 7)) {
+    player = TRUE;
+    arg   += 7;
+  }
+
+  // are we trying to modify an account?
+  if(!strncasecmp(arg, "account ", 8)) {
+    account = TRUE;
+    arg += 8;
   }
 
   const char *val = two_args(arg, name, field);
 
   // check to see if we're trying to set from our notepad. Also, make sure
   // we have a socket and CAN access our notepad.
-  if(subcmd == SET_SUBCMD_SETPAD) {
+  if(!strcasecmp(cmd, "setpad")) {
     if(charGetSocket(ch) && bufferLength(socketGetNotepad(charGetSocket(ch))))
       val = bufferString(socketGetNotepad(charGetSocket(ch)));
     else {
@@ -156,52 +160,46 @@ COMMAND(cmd_set) {
     send_to_char(ch, "Set which value on what?\r\n");
 
   // we're trying to set something on someone's pfile
-  else if(file == TRUE) {
+  else if(player == TRUE) {
     // make sure the player isn't online, currently
-    CHAR_DATA *tgt = generic_find(ch, name, FIND_TYPE_CHAR, FIND_SCOPE_ALL, 
-				  FALSE, NULL);
-    if(tgt != NULL)
-      send_to_char(ch, "%s is currently logged on. No need to touch the pfile.\r\n", charGetName(tgt));
+    CHAR_DATA *tgt = get_player(name);
+    if(tgt == NULL)
+      send_to_char(ch, "No pfile for %s exists!\r\n", name);
+    else if(!charHasMoreUserGroups(ch, tgt)) {
+      send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
+		   HESHE(tgt));
+      unreference_player(tgt);
+    }
     else {
-      tgt = load_player(name);
-      if(tgt == NULL)
-	send_to_char(ch, "No pfile for %s exists!\r\n", name);
-      else if(!charHasMoreUserGroups(ch, tgt))
-	send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
-		     HESHE(tgt));
-      else {
-	try_set(ch, tgt, char_set_table, field, val);
-	save_player(tgt);
-	deleteChar(tgt);
-      }
+      try_set(ch, tgt, char_set_table, field, val);
+      save_player(tgt);
+      unreference_player(tgt);
     }
   }
 
-  // are we trying to set a field on a room?
-  else if(!strcasecmp("room", name)) {
-    if(!canEditZone(worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch))),
-		    ch))
-      send_to_char(ch, "You are not authorized to edit this zone.\r\n");
-    else
-      try_set(ch, charGetRoom(ch), room_set_table, field, val);
-  }
-
-  // are we trying to set a field on a room, by vnum>
-  else if(isdigit(*name) && worldGetRoom(gameworld, atoi(name))) {
-    if(!canEditZone(worldZoneBounding(gameworld, atoi(name)), ch))
-      send_to_char(ch, "You are not authorized to edit this zone.\r\n");
-    else
-      try_set(ch, worldGetRoom(gameworld, atoi(name)),room_set_table,field,val);
+  // we're trying to edit an account
+  else if(account == TRUE) {
+    ACCOUNT_DATA *tgt = get_account(name);
+    
+    if(tgt == NULL)
+      send_to_char(ch, "No such account exists!\r\n");
+    else {
+      try_set(ch, tgt, acct_set_table, field, val);
+      save_account(tgt);
+      unreference_account(tgt);
+    }
   }
 
   // are we setting a field on an object or character in game?
   else {
     int found = FOUND_NONE;
     void *tgt = NULL;
-    tgt = generic_find(ch, name, FIND_TYPE_CHAR | FIND_TYPE_OBJ,
+    tgt = generic_find(ch, name,FIND_TYPE_CHAR | FIND_TYPE_OBJ | FIND_TYPE_ROOM,
 		       FIND_SCOPE_ALL | FIND_SCOPE_VISIBLE, FALSE, &found);
 
-    if(found == FOUND_CHAR) {
+    if(tgt == NULL)
+      send_to_char(ch, "What was the target you were trying to modify?\r\n");
+    else if(found == FOUND_CHAR) {
       if(ch != tgt && !charHasMoreUserGroups(ch, tgt))
 	send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
 		     HESHE(tgt));
@@ -210,8 +208,13 @@ COMMAND(cmd_set) {
     }
     else if(found == FOUND_OBJ)
       try_set(ch, tgt, obj_set_table, field, val);
-    else
-      send_to_char(ch, "What was the target you were trying to modify?\r\n");
+    else if(found == FOUND_ROOM) {
+      if(!canEditZone(worldGetZone(gameworld,get_key_locale(roomGetClass(tgt))),
+		      ch))
+	send_to_char(ch, "You are not authorized to edit that zone.\r\n");
+      else
+	try_set(ch, tgt, room_set_table, field, val);
+    }
   }
 }
 
@@ -227,6 +230,7 @@ void init_set() {
   char_set_table = newHashtable();
   obj_set_table  = newHashtable();
   room_set_table = newHashtable();
+  acct_set_table = newHashtable();
 
   // add in the default sets for the core of the MUD
   /************************************************************/
@@ -245,7 +249,6 @@ void init_set() {
   add_set("mrdesc",   SET_CHAR, SET_TYPE_STRING, charSetMultiRdesc,   NULL);
   add_set("mname",    SET_CHAR, SET_TYPE_STRING, charSetMultiName,    NULL);
   add_set("keywords", SET_CHAR, SET_TYPE_STRING, charSetKeywords,     NULL);
-  add_set("dialog",   SET_CHAR, SET_TYPE_INT,    charSetDialog,       NULL);
   add_set("race",     SET_CHAR, SET_TYPE_STRING, charSetRace,       isRace);
   add_set("groups",   SET_CHAR, SET_TYPE_STRING, charSetUserGroups,   NULL);
 
@@ -263,9 +266,9 @@ void init_set() {
   add_set("keywords", SET_OBJECT,SET_TYPE_STRING,objSetKeywords,      NULL);
 
   // now, add the admin commands for working with set
-  add_cmd("set", NULL, cmd_set, SET_SUBCMD_SET, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("set", NULL, cmd_set, POS_UNCONCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
-  add_cmd("setpad", NULL, cmd_set, SET_SUBCMD_SETPAD, POS_UNCONCIOUS,POS_FLYING,
+  add_cmd("setpad", NULL, cmd_set, POS_UNCONCIOUS,POS_FLYING,
 	  "admin", FALSE, FALSE);
 }
 
@@ -273,9 +276,10 @@ void init_set() {
 void add_set(const char *name, int set_for, int type, void *setter, void *checker) {
   HASHTABLE *table = NULL;
   // first, find our table
-  if     (set_for == SET_CHAR)   table = char_set_table;
-  else if(set_for == SET_OBJECT) table = obj_set_table;
-  else if(set_for == SET_ROOM)   table = room_set_table;
+  if     (set_for == SET_CHAR)    table = char_set_table;
+  else if(set_for == SET_OBJECT)  table = obj_set_table;
+  else if(set_for == SET_ROOM)    table = room_set_table;
+  else if(set_for == SET_ACCOUNT) table = acct_set_table;
 
   // if there was no table, we can't do anything
   if(table == NULL) return;

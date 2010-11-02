@@ -99,7 +99,7 @@ auxiliariesGetFuncs(const char *name) {
 
 HASHTABLE *
 newAuxiliaryData(bitvector_t aux_type) {
-  HASHTABLE        *data = newHashtableSize(25);
+  HASHTABLE        *data = newHashtable();
   HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
@@ -176,7 +176,7 @@ auxiliaryDataStore(HASHTABLE *data) {
 
 HASHTABLE *
 auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type) {
-  HASHTABLE        *data = newHashtableSize(25);
+  HASHTABLE        *data = newHashtable();
   HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
@@ -234,7 +234,7 @@ auxiliaryDataCopyTo(HASHTABLE *from, HASHTABLE *to) {
 
 HASHTABLE *
 auxiliaryDataCopy(HASHTABLE *data) {
-  HASHTABLE *newdata = newHashtableSize(25);
+  HASHTABLE *newdata = newHashtableSize(hashSize(data));
   auxiliaryDataCopyTo(data, newdata);
   return newdata;
 }

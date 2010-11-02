@@ -8,6 +8,7 @@
 //*****************************************************************************
 
 #include "../mud.h"
+#include "../utils.h"
 #include "../storage.h"
 #include "../object.h"
 #include "../world.h"
@@ -17,6 +18,14 @@
 #include "items.h"
 #include "iedit.h"
 #include "furniture.h"
+
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../scripts/scripts.h"
+#include "../scripts/pyobj.h"
 
 
 
@@ -89,8 +98,8 @@ void furnitureSetType(OBJ_DATA *obj, int type) {
 }  
 
 const char *furniture_names[NUM_FURNITURES] = {
-  "table furniture",
-  "sitting furniture"
+  "at",
+  "on"
 };
 
 const char *furnitureTypeGetName(int type) {
@@ -116,8 +125,8 @@ int furnitureTypeGetNum(const char *type) {
 // the resedit olc needs these declared
 void iedit_furniture_menu(SOCKET_DATA *sock, FURNITURE_DATA *data) {
   send_to_socket(sock, 
-		 "{g1) Capacity : {c%d\r\n"
-		 "{g2) Type     : {y[{c%s{y]\r\n",
+		 "{g1) Capacity: {c%d\r\n"
+		 "{g2) Sit Type: {c%s\r\n",
 		 data->capacity,
 		 furnitureTypeGetName(data->type));
 }
@@ -157,6 +166,108 @@ bool iedit_furniture_parser (SOCKET_DATA *sock, FURNITURE_DATA *data, int choice
   }
 }
 
+void furniture_from_proto(FURNITURE_DATA *data, BUFFER *buf) {
+  const char *code = bufferString(buf);
+  char line[SMALL_BUFFER];
+  char *lptr = line;
+  int capacity = 0;
+
+  // two lines: capacity and type. First capacity, then type
+  code = strcpyto(line, code, '\n');
+  sscanf(line, "me.furniture_capacity = %d", &capacity);
+  data->capacity = capacity;
+
+  code = strcpyto(line, code , '\n');
+  while(*lptr && *lptr != '\"') lptr++;
+  lptr++; // skip the leading "
+  lptr[next_letter_in(lptr, '\"')] = '\0'; // kill closing "
+  data->type = furnitureTypeGetNum(lptr);
+}
+
+void furniture_to_proto(FURNITURE_DATA *data, BUFFER *buf) {
+  bprintf(buf, "me.furniture_capacity = %d\n",   data->capacity);
+  bprintf(buf, "me.furniture_type     = \"%s\"\n", 
+	  furnitureTypeGetName(data->type));
+}
+
+
+
+//*****************************************************************************
+// pyobj getters and setters
+//*****************************************************************************
+PyObject *PyObj_getfurncapacity(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL)
+    return NULL;
+  else if(objIsType(obj, "furniture"))
+    return Py_BuildValue("i", furnitureGetCapacity(obj));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only get capacity for furniture.");
+    return NULL;
+  }
+}
+
+int PyObj_setfurncapacity(PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to set capacity for nonexistent "
+		 "furniture, %d", PyObj_AsUid(self));
+    return -1;
+  }
+  else if(!objIsType(obj, "furniture")) {
+    PyErr_Format(PyExc_TypeError, "Tried to set capacity for non-furniture, %s",
+		 objGetClass(obj));
+    return -1;
+  }
+
+  if(!PyInt_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "furniture capacity must be an integer.");
+    return -1;
+  }
+
+  furnitureSetCapacity(obj, PyInt_AsLong(value));
+  return 0;
+}
+
+PyObject *PyObj_getfurntype(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL)
+    return NULL;
+  else if(objIsType(obj, "furniture"))
+    return Py_BuildValue("s", furnitureTypeGetName(furnitureGetType(obj)));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only get furniture type for furniture.");
+    return NULL;
+  }
+}
+
+int PyObj_setfurntype(PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to set furniture type for "
+		 "nonexistent furniture, %d", PyObj_AsUid(self));
+    return -1;
+  }
+  else if(!objIsType(obj, "furniture")) {
+    PyErr_Format(PyExc_TypeError, "Tried to set furniture type for "
+		 "non-furniture, %s", objGetClass(obj));
+    return -1;
+  }
+
+  if(!PyString_Check(value)) {
+    PyErr_Format(PyExc_TypeError, "furniture type must be a string.");
+    return -1;
+  }
+  else if(furnitureTypeGetNum(PyString_AsString(value)) == FURNITURE_NONE) {
+    PyErr_Format(PyExc_TypeError, "Invalid furniture type, %s", 
+		 PyString_AsString(value));
+    return -1;
+  }
+
+  furnitureSetType(obj, furnitureTypeGetNum(PyString_AsString(value)));
+  return 0;
+}
+
 
 
 //*****************************************************************************
@@ -173,5 +284,12 @@ void init_furniture(void) {
 
   // set up the furniture OLC too
   item_add_olc("furniture", iedit_furniture_menu, iedit_furniture_chooser, 
-  	       iedit_furniture_parser);
+  	       iedit_furniture_parser, furniture_from_proto,furniture_to_proto);
+
+  // add our getters and setters for furniture
+  PyObj_addGetSetter("furniture_capacity", 
+		     PyObj_getfurncapacity, PyObj_setfurncapacity,
+		     "The capacity of a furniture object.");
+  PyObj_addGetSetter("furniture_type", PyObj_getfurntype, PyObj_setfurntype,
+		     "The type of furniture this is: 'at' or 'on'.");
 }

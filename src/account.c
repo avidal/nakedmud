@@ -14,6 +14,7 @@
 //*****************************************************************************
 
 #include "mud.h"
+#include "utils.h"
 #include "auxiliary.h"
 #include "storage.h"
 #include "account.h"
@@ -127,7 +128,7 @@ void *accountGetAuxiliaryData(ACCOUNT_DATA *account, const char *data) {
 
 void accountSetPassword(ACCOUNT_DATA *account, const char *password) {
   if(account->password) free(account->password);
-  account->password = strdup(password ? password : "");
+  account->password = strdupsafe(password);
 }
 
 const char *accountGetPassword(ACCOUNT_DATA *account) {
@@ -136,7 +137,7 @@ const char *accountGetPassword(ACCOUNT_DATA *account) {
 
 void accountSetName(ACCOUNT_DATA *account, const char *name) {
   if(account->name) free(account->name);
-  account->name = strdup(name ? name : "");
+  account->name = strdupsafe(name);
 }
 
 const char *accountGetName(ACCOUNT_DATA *account) {

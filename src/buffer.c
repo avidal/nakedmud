@@ -33,7 +33,7 @@ BUFFER    *newBuffer   (int start_capacity) {
 }
 
 void        deleteBuffer(BUFFER *buf) {
-  free(buf->data);
+  if(buf->data) free(buf->data);
   free(buf);
 }
 
@@ -61,17 +61,14 @@ void        bufferClear (BUFFER *buf) {
 }
 
 BUFFER    *bufferCopy  (BUFFER *buf) {
-  BUFFER *newbuf = newBuffer(buf->maxlen);
-  memcpy(newbuf->data, buf->data, buf->maxlen);
-  newbuf->len = buf->len;
+  BUFFER *newbuf = newBuffer(1);
+  bufferCopyTo(buf, newbuf);
   return newbuf;
 }
 
 void        bufferCopyTo(BUFFER *from, BUFFER *to) {
-  free(to->data);
-  to->data   = strdup(from->data);
-  to->len    = from->len;
-  to->maxlen = from->maxlen;
+  bufferClear(to);
+  bufferCat(to, bufferString(from));
 }
 
 const char *bufferString(BUFFER *buf) {
@@ -282,7 +279,7 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
 	col = 0;
       }
       // indent two spaces if we're not at the start of a line 
-      else if(needs_indent && buf_i-1 >= 0 && buf->data[buf_i-1] != '\n') {
+      else if(needs_indent && col != 0) {
 	formatted[fmt_i] = ' '; fmt_i++;
 	formatted[fmt_i] = ' '; fmt_i++;
 	col += 2;

@@ -204,7 +204,7 @@ void olc_handler(SOCKET_DATA *sock, char *arg) {
     case 'Q':
       // if our working copy is different from our actual data, prompt to
       // see if we want to save our changes or not
-      if(olc->working_copy != olc->data) {
+      if(olc->saver) {
 	text_to_buffer(sock, "Save changes (Y/N): ");
 	olc->cmd = MENU_CHOICE_CONFIRM_SAVE;
       }
@@ -260,25 +260,38 @@ void init_olc2() {
 				       newOLCAuxData, deleteOLCAuxData,
 				       NULL, NULL, NULL, NULL));
 
-  // initialize all of our basic OLC commands
+  // initialize all of our basic OLC commands. We should probably have init
+  // functions to add each of the commands... consistency in style an all...
   extern COMMAND(cmd_redit);
+  extern COMMAND(cmd_resedit);
   extern COMMAND(cmd_zedit);
-  extern COMMAND(cmd_dedit);
   extern COMMAND(cmd_medit);
   extern COMMAND(cmd_oedit);
   extern COMMAND(cmd_accedit);
-  add_cmd("zedit", NULL, cmd_zedit, 0, POS_UNCONCIOUS, POS_FLYING,
+  extern COMMAND(cmd_pcedit);
+  extern COMMAND(cmd_mpedit);
+  extern COMMAND(cmd_opedit);
+  extern COMMAND(cmd_rpedit);
+  add_cmd("zedit", NULL, cmd_zedit, POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, TRUE);
-  add_cmd("redit", NULL, cmd_redit, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("redit", NULL, cmd_redit, POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, TRUE);
-  add_cmd("dedit", NULL, cmd_dedit, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("resedit", NULL, cmd_resedit, POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, TRUE);
-  add_cmd("medit", NULL, cmd_medit, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("medit", NULL, cmd_medit, POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, TRUE);
-  add_cmd("oedit", NULL, cmd_oedit, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("oedit", NULL, cmd_oedit, POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, TRUE);
-  add_cmd("accedit", NULL, cmd_accedit, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("accedit", NULL, cmd_accedit, POS_UNCONCIOUS, POS_FLYING,
 	  "admin",   FALSE, TRUE);
+  add_cmd("pcedit",  NULL, cmd_pcedit, POS_UNCONCIOUS, POS_FLYING,
+	  "admin",   FALSE, TRUE);
+  add_cmd("mpedit", NULL, cmd_mpedit, POS_UNCONCIOUS, POS_FLYING,
+	  "scripter", FALSE, TRUE);
+  add_cmd("opedit", NULL, cmd_opedit, POS_UNCONCIOUS, POS_FLYING,
+	  "scripter", FALSE, TRUE);
+  add_cmd("rpedit", NULL, cmd_rpedit, POS_UNCONCIOUS, POS_FLYING,
+	  "scripter", FALSE, TRUE);
 }
 
 void do_olc(SOCKET_DATA *sock,
@@ -304,7 +317,7 @@ void do_olc(SOCKET_DATA *sock,
 void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
 		       int num_vals, int num_cols) {
   int i, print_room;
-  static char fmt[100];
+  char fmt[100];
 
   print_room = (80 - 10*num_cols)/num_cols;
   sprintf(fmt, "  {c%%2d{y) {g%%-%ds%%s", print_room);
@@ -318,7 +331,7 @@ void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
 }
 
 void olc_display_list(SOCKET_DATA *sock, LIST *list, int num_cols) {
-  static char fmt[100];
+  char fmt[100];
   LIST_ITERATOR *list_i = newListIterator(list);
   int print_room, i = 0;
   char *str = NULL;

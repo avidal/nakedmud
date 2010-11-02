@@ -14,7 +14,6 @@
 #include "mud.h"
 #include "extra_descs.h"
 #include "utils.h"
-#include "body.h"
 #include "handler.h"
 #include "storage.h"
 #include "auxiliary.h"
@@ -27,11 +26,12 @@ int next_obj_uid = 1000000;
 
 
 struct object_data {
-  int vnum;                 // our number for builders
   int      uid;                  // our unique identifier
   double   weight;               // how much do we weigh, minus contents
   
   char *name;                    // our name - e.g. "a shirt"
+  char *prototypes;              // a list of the types we're instances of
+  char *class;                   // the prototype we most directly inherit from
   char *keywords;                // words to reference us by
   char *rdesc;                   // our room description
   char *multi_name;              // our name when more than 1 appears
@@ -57,11 +57,12 @@ struct object_data {
 OBJ_DATA *newObj() {
   OBJ_DATA *obj = calloc(1, sizeof(OBJ_DATA));
   obj->uid            = next_obj_uid++;
-  obj->vnum           = NOTHING;
 
   obj->weight         = 0.1;
 
   obj->bits           = bitvectorInstanceOf("obj_bits");
+  obj->prototypes     = strdup("");
+  obj->class          = strdup("");
   obj->name           = strdup("");
   obj->keywords       = strdup("");
   obj->rdesc          = strdup("");
@@ -86,6 +87,8 @@ void deleteObj(OBJ_DATA *obj) {
   // same goes for users
   deleteList(obj->users);
 
+  if(obj->class)      free(obj->class);
+  if(obj->prototypes) free(obj->prototypes);
   if(obj->name)       free(obj->name);
   if(obj->keywords)   free(obj->keywords);
   if(obj->rdesc)      free(obj->rdesc);
@@ -102,7 +105,8 @@ void deleteObj(OBJ_DATA *obj) {
 
 OBJ_DATA *objRead(STORAGE_SET *set) {
   OBJ_DATA *obj = newObj();
-  objSetVnum(obj,               read_int(set, "vnum"));
+  objSetClass(obj,           read_string(set, "class"));
+  objSetPrototypes(obj,      read_string(set, "prototypes"));
   objSetWeightRaw(obj,       read_double(set, "weight"));
   objSetName(obj,            read_string(set, "name"));
   objSetKeywords(obj,        read_string(set, "keywords"));
@@ -131,7 +135,8 @@ OBJ_DATA *objRead(STORAGE_SET *set) {
 
 STORAGE_SET *objStore(OBJ_DATA *obj) {
   STORAGE_SET *set = new_storage_set();
-  store_int   (set, "vnum",      obj->vnum);
+  store_string(set, "class",     obj->class);
+  store_string(set, "prototypes",obj->prototypes);
   store_double(set, "weight",    obj->weight);
   store_string(set, "name",      obj->name);
   store_string(set, "keywords",  obj->keywords);
@@ -150,7 +155,8 @@ STORAGE_SET *objStore(OBJ_DATA *obj) {
 
 void objCopyTo(OBJ_DATA *from, OBJ_DATA *to) {
   objSetWeightRaw (to, objGetWeightRaw(from));
-  objSetVnum      (to, objGetVnum(from));
+  objSetClass     (to, objGetClass(from));
+  objSetPrototypes(to, objGetPrototypes(from));
   objSetName      (to, objGetName(from));
   objSetKeywords  (to, objGetKeywords(from));
   objSetRdesc     (to, objGetRdesc(from));
@@ -168,10 +174,13 @@ OBJ_DATA *objCopy(OBJ_DATA *obj) {
   return newobj;
 }
 
+bool objIsInstance(OBJ_DATA *obj, const char *prototype) {
+  return is_keyword(obj->prototypes, prototype, FALSE);
+}
+
 bool objIsName(OBJ_DATA *obj, const char *name) {
   return is_keyword(obj->keywords, name, TRUE);
 }
-
 
 void objAddChar(OBJ_DATA *obj, CHAR_DATA *ch) {
   listPut(obj->users, ch);
@@ -196,8 +205,12 @@ LIST *objGetUsers(OBJ_DATA *obj) {
   return obj->users;
 }
 
-int objGetVnum(OBJ_DATA *obj) {
-  return obj->vnum;
+const char *objGetClass(OBJ_DATA *obj) {
+  return obj->class;
+}
+
+const char *objGetPrototypes(OBJ_DATA *obj) {
+  return obj->prototypes;
 }
 
 const char *objGetName(OBJ_DATA *obj) {
@@ -283,23 +296,33 @@ void *objGetAuxiliaryData(const OBJ_DATA *obj, const char *name) {
   return hashGet(obj->auxiliary_data, name);
 }
 
-void objSetVnum(OBJ_DATA *obj, int vnum) {
-  obj->vnum = vnum;
-}
-
 void objSetKeywords(OBJ_DATA *obj, const char *keywords) {
   if(obj->keywords) free(obj->keywords);
-  obj->keywords = strdup(keywords ? keywords : "");
+  obj->keywords = strdupsafe(keywords);
 }
 
 void objSetRdesc(OBJ_DATA *obj, const char *rdesc) {
   if(obj->rdesc) free(obj->rdesc);
-  obj->rdesc = strdup(rdesc ? rdesc : "");
+  obj->rdesc = strdupsafe(rdesc);
+}
+
+void objSetClass(OBJ_DATA *obj, const char *prototype) {
+  if(obj->class) free(obj->class);
+  obj->class = strdupsafe(prototype);
+}
+
+void objSetPrototypes(OBJ_DATA *obj, const char *prototypes) {
+  if(obj->prototypes) free(obj->prototypes);
+  obj->prototypes = strdupsafe(obj->prototypes);
+}
+
+void objAddPrototype(OBJ_DATA *obj, const char *prototype) {
+  add_keyword(&obj->prototypes, prototype);
 }
 
 void objSetName(OBJ_DATA *obj, const char *name) {
   if(obj->name) free(obj->name);
-  obj->name = strdup(name ? name : "");
+  obj->name = strdupsafe(name);
 }
 
 void objSetDesc(OBJ_DATA *obj, const char *desc) {
@@ -309,12 +332,12 @@ void objSetDesc(OBJ_DATA *obj, const char *desc) {
 
 void objSetMultiName(OBJ_DATA *obj, const char *multi_name) {
   if(obj->multi_name) free(obj->multi_name);
-  obj->multi_name = strdup(multi_name ? multi_name : "");
+  obj->multi_name = strdupsafe(multi_name);
 }
 
 void objSetMultiRdesc(OBJ_DATA *obj, const char *multi_rdesc) {
   if(obj->multi_rdesc) free(obj->multi_rdesc);
-  obj->multi_rdesc = strdup(multi_rdesc ? multi_rdesc : "");
+  obj->multi_rdesc = strdupsafe(multi_rdesc);
 }
 
 void objSetEdescs(OBJ_DATA *obj, EDESC_SET *edescs) {

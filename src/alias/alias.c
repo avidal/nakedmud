@@ -30,15 +30,13 @@ typedef struct alias_aux_data {
 
 ALIAS_AUX_DATA *
 newAliasAuxData() {
-  ALIAS_AUX_DATA *data = malloc(sizeof(ALIAS_AUX_DATA));
+  ALIAS_AUX_DATA *data = calloc(1, sizeof(ALIAS_AUX_DATA));
   //
   // Hashtables can take up lots of storage space. Because of this, let's
   // not create any tables until it's actually needed. This will cut down
   // on lots of memory usage w.r.t. NPCs who do not use aliases
   //  data->aliases        = newHashtable();
   //
-  data->aliases        = NULL;
-  data->alias_queue    = 0;
   return data;
 }
 
@@ -286,12 +284,12 @@ void init_aliases() {
 				       aliasAuxDataStore, aliasAuxDataRead));
 
   // allow people to view their aliases
-  add_cmd("alias", NULL, cmd_alias, 0, POS_UNCONCIOUS, POS_FLYING, 
+  add_cmd("alias", NULL, cmd_alias, POS_UNCONCIOUS, POS_FLYING, 
 	  "player", FALSE, TRUE);
 }
 
 
-bool try_alias(CHAR_DATA *ch, char *command, char *arg, bool scripts_ok) {
+bool try_alias(CHAR_DATA *ch, char *command, char *arg) {
   // is this command from an alias that executes multi commands?
   // if it is, don't let it trigger any further aliases, or else we might
   // get stuck in an infinite loop
@@ -327,7 +325,7 @@ bool try_alias(CHAR_DATA *ch, char *command, char *arg, bool scripts_ok) {
 	charSetAliasesQueued(ch, num_cmds);
       }
       if(num_cmds > 0)
-	do_cmd(ch, cmds[0], scripts_ok, FALSE);
+	do_cmd(ch, cmds[0], FALSE);
       
       // clean up our mess
       for(i = 0; i < num_cmds; i++)

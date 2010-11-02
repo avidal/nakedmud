@@ -27,7 +27,7 @@ void edesc_menu(SOCKET_DATA *sock, EDESC_DATA *edesc) {
 		 "{c%s\r\n"
 		 "{g2) Description\r\n"
 		 "{c%s\r\n",
-		 edescSetGetKeywords(edesc), 
+		 edescGetKeywords(edesc), 
 		 edescSetGetDesc(edesc)
 		 );
 }
@@ -72,7 +72,7 @@ void edesc_set_menu(SOCKET_DATA *sock, EDESC_SET *set) {
   // print out each one
   for(i = 0; i < entries; i++)
     send_to_socket(sock, "  {g%2d) {c%s\r\n", i, 
-		   edescSetGetKeywords(edescSetGetNum(set, i)));
+		   edescGetKeywords(edescSetGetNum(set, i)));
   send_to_socket(sock,
 		 "\r\n"
 		 "{gE) edit entry\r\n"

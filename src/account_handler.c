@@ -13,16 +13,13 @@
 #include "socket.h"
 #include "account.h"
 #include "character.h"
+#include "room.h"
 #include "inform.h"
 #include "save.h"
 #include "char_gen.h"
+#include "hooks.h"
 
 
-
-//*****************************************************************************
-// mandatory modules
-//*****************************************************************************
-#include "scripts/script.h"
 
 // mccp support
 const unsigned char do_echo   [] = { IAC, WONT, TELOPT_ECHO,      '\0' };
@@ -101,12 +98,19 @@ void account_ask_name(SOCKET_DATA *sock, char *arg) {
     log_string("Account '%s' is trying to connect.", arg);
 
     // check for new account
-    if ( (acct = load_account(arg)) == NULL) {
+    if ( (acct = get_account(arg)) == NULL) {
       // check for lockdown
       if(*mudsettingGetString("lockdown") &&
 	 !is_keyword(mudsettingGetString("lockdown"), DFLT_USER_GROUP, FALSE)) {
 	text_to_socket(sock, "Sorry, creating new accounts is not allowed at the moment.\r\n");
 	close_socket(sock, FALSE);
+	return;
+      }
+
+      // make sure someone else is not creating an account with this name
+      if(account_creating(arg)) {
+	text_to_socket(sock, "Someone is already creating an account with "
+		       "that name.\r\nTry again: ");
 	return;
       }
 
@@ -183,8 +187,12 @@ void account_verify_password(SOCKET_DATA *sock, char *arg) {
 	       accountGetPassword(socketGetAccount(sock)))) {
     text_to_buffer(sock, (char *)do_echo);
 
-    // account created. Save it, and plop it into the account menu
-    save_account(socketGetAccount(sock));
+    // account created. Register it, and plop it into the account menu. If it
+    // is already created, we're just editing the password. So save changes.
+    if(!account_exists(accountGetName(socketGetAccount(sock))))
+      register_account(socketGetAccount(sock));
+    else
+      save_account(socketGetAccount(sock));
     socketReplaceInputHandler(sock, account_handle_menu, account_menu);
   }
   else {
@@ -220,7 +228,7 @@ void account_load_char(SOCKET_DATA *sock, int ch_num) {
     }
 
     // hmmm... our pfile is missing!!
-    else if ((ch = load_player(ch_name)) == NULL)
+    else if ((ch = get_player(ch_name)) == NULL)
       text_to_socket(sock, "ERROR: Your pfile is missing!\n\r");
 
     // everything is OK
@@ -233,7 +241,7 @@ void account_load_char(SOCKET_DATA *sock, int ch_num) {
       if(*mudsettingGetString("lockdown") &&
 	 !bitIsSet(charGetUserGroups(ch), mudsettingGetString("lockdown"))) {
 	send_to_char(ch, "You are currently locked out of the mud.\r\n");
-	deleteChar(ch);
+	unreference_player(ch);
 	socketSetChar(sock, NULL);
 	return;
       }
@@ -246,17 +254,17 @@ void account_load_char(SOCKET_DATA *sock, int ch_num) {
 	// input handler
 	socketPushInputHandler(sock, handle_cmd_input, show_prompt);
 
-	text_to_buffer(sock, motd);
+	text_to_buffer(sock, bufferString(motd));
 	look_at_room(ch, charGetRoom(ch));
 
-	// check enterance scripts
-	try_enterance_script(ch, charGetRoom(ch), NULL);
+	// run entrance hooks
+	hookRun("enter", ch, charGetRoom(ch), NULL);
       }
       else {
 	text_to_buffer(sock, "There was a problem entering the game. Try again later!\r\n");
 	// do not extract, just delete. We failed to enter
 	// the game, so there is no need to extract from the game.
-	deleteChar(socketGetChar(sock));
+	unreference_player(socketGetChar(sock));
 	socketSetChar(sock, NULL);
       }
     }

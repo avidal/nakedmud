@@ -14,11 +14,14 @@
 #include "storage.h"
 #include "room.h"
 #include "world.h"
+#include "zone.h"
 #include "character.h"
 #include "body.h"
 #include "object.h"
 #include "exit.h"
 #include "handler.h"
+#include "prototype.h"
+#include "hooks.h"
 #include "room_reset.h"
 
 
@@ -32,13 +35,88 @@
 
 
 
+//*****************************************************************************
+// reset list
+//*****************************************************************************
+struct reset_list {
+  char       *key; // our key in the world
+  LIST    *resets; // our list of resets
+};
+
+RESET_LIST *newResetList(void) {
+  RESET_LIST *list = malloc(sizeof(RESET_LIST));
+  list->resets = newList();
+  list->key    = strdup("");
+  return list;
+}
+
+void deleteResetList(RESET_LIST *list) {
+  if(list->resets) deleteListWith(list->resets, deleteReset);
+  if(list->key)    free(list->key);
+  free(list);
+}
+
+RESET_LIST *resetListCopy(RESET_LIST *list) {
+  RESET_LIST *newlist = malloc(sizeof(RESET_LIST));
+  if(list->resets) newlist->resets = listCopyWith(list->resets, resetCopy);
+  else             newlist->resets = newList();
+  newlist->key =   strdupsafe(list->key);
+  return newlist;
+}
+
+void resetListCopyTo(RESET_LIST *from, RESET_LIST *to) {
+  if(to->resets)   deleteListWith(to->resets, deleteReset);
+  if(from->resets) to->resets = listCopyWith(from->resets, resetCopy);
+  else             to->resets = newList();
+  if(to->key)      free(to->key);
+  to->key =        strdupsafe(from->key);
+}
+
+STORAGE_SET *resetListStore(RESET_LIST *list) {
+  STORAGE_SET *set = new_storage_set();
+  store_list(set, "resets", gen_store_list(list->resets, resetStore));
+  return set;
+}
+
+RESET_LIST *resetListRead(STORAGE_SET *set) {
+  RESET_LIST *list = calloc(1, sizeof(RESET_LIST));
+  list->resets = gen_read_list(read_list(set, "resets"), resetRead);
+  return list;
+}
+
+LIST *resetListGetResets(RESET_LIST *list) {
+  return list->resets;
+}
+
+void resetListAdd(RESET_LIST *list, RESET_DATA *reset) {
+  listPut(list->resets, reset);
+}
+
+void resetListRemove(RESET_LIST *list, RESET_DATA *reset) {
+  listRemove(list->resets, reset);
+}
+
+void resetListSetKey(RESET_LIST *list, const char *key) {
+  if(list->key) free(list->key);
+  list->key = strdupsafe(key);
+}
+
+const char *resetListGetKey(RESET_LIST *list) {
+  return list->key;
+}
+
+
+
+//*****************************************************************************
+// reset data
+//*****************************************************************************
 struct reset_data {
   int        type; // what kind of reset are we?
   int       times; // how many times should it be executed?
   int      chance; // what is our chance of success?
   int         max; // what is the max number of us that can be in the game?
   int    room_max; // what is the max number of us that can be in the room?
-  char       *arg; // what is our reset arg (e.g. mob vnum, direction name)
+  char       *arg; // what is our reset arg (e.g. mob proto, direction name)
   LIST        *in; // what resets do we put into ourself?
   LIST        *on; // what resets do we put onto ourself?
   LIST      *then; // if this succeeds, what else do we do?
@@ -202,7 +280,7 @@ void           resetSetRoomMax  (RESET_DATA *reset, int room_max) {
 
 void           resetSetArg      (RESET_DATA *reset, const char *arg) {
   if(reset->arg) free(reset->arg);
-  reset->arg = strdup(arg ? arg : "");
+  reset->arg = strdupsafe(arg);
 }
 
 void           resetAddOn       (RESET_DATA *reset, RESET_DATA *on) {
@@ -220,47 +298,50 @@ void           resetAddThen     (RESET_DATA *reset, RESET_DATA *then) {
 
 
 //*****************************************************************************
-//
 // resetRun and all of its related functions
-//
 //*****************************************************************************
+
+// needs to be declared...
+bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type,
+	      const char *locale);
 
 //
 // Perform resetRun on all the reset commands in the list, using
 // initiator and initiator_type
-//
-void resetRunOn(LIST *list, void *initiator, int initiator_type) {
+void resetRunOn(LIST *list, void *initiator, int initiator_type, 
+		const char *locale) {
   if(listSize(list) > 0) {
     LIST_ITERATOR *list_i = newListIterator(list);
     RESET_DATA     *reset = NULL;
     ITERATE_LIST(reset, list_i)
-      resetRun(reset, initiator, initiator_type);
+      resetRun(reset, initiator, initiator_type, locale);
     deleteListIterator(list_i);
   }
 }
 
-
 //
 // try performing an object load, based on the reset data we have
-//
-bool try_reset_load_object(RESET_DATA *reset, void *initiator, int initiator_type) {
-  int vnum = atoi(resetGetArg(reset));
-  OBJ_DATA *proto = worldGetObj(gameworld, vnum);
+bool try_reset_load_object(RESET_DATA *reset, void *initiator, 
+			   int initiator_type, const char *locale) {
+  const char *fullkey = get_fullkey_relative(resetGetArg(reset), locale);
+  PROTO_DATA   *proto = worldGetType(gameworld, "oproto", fullkey);
   // if there's no prototype, break out
-  if(proto == NULL)
+  if(proto == NULL || protoIsAbstract(proto))
     return FALSE;
 
   // see if we're already at our max
   if(resetGetMax(reset) != 0 && 
-     count_objs(NULL, object_list, NULL, vnum, FALSE) >= resetGetMax(reset))
+     count_objs(NULL, object_list, NULL, fullkey, FALSE) >= 
+     resetGetMax(reset))
     return FALSE;
   if(initiator_type == INITIATOR_ROOM && resetGetRoomMax(reset) != 0 &&
-     (count_objs(NULL, roomGetContents(initiator), NULL, vnum, FALSE) >= 
-      resetGetRoomMax(reset)))
+     (count_objs(NULL, roomGetContents(initiator), NULL, fullkey,
+		 FALSE) >= resetGetRoomMax(reset)))
     return FALSE;
 
-  OBJ_DATA *obj = objCopy(proto);
-  obj_to_game(obj);
+  OBJ_DATA *obj = protoObjRun(proto);
+  if(obj == NULL)
+    return FALSE;
 
   // to the room
   if(initiator_type == INITIATOR_ROOM)
@@ -309,9 +390,9 @@ bool try_reset_load_object(RESET_DATA *reset, void *initiator, int initiator_typ
   }
 
   // now, run all of our stuff
-  resetRunOn(reset->on,   obj, INITIATOR_ON_OBJ);
-  resetRunOn(reset->in,   obj, INITIATOR_IN_OBJ);
-  resetRunOn(reset->then, obj, INITIATOR_THEN_OBJ);
+  resetRunOn(reset->on,   obj, INITIATOR_ON_OBJ,   locale);
+  resetRunOn(reset->in,   obj, INITIATOR_IN_OBJ,   locale);
+  resetRunOn(reset->then, obj, INITIATOR_THEN_OBJ, locale);
 
   return TRUE;
 }
@@ -319,25 +400,26 @@ bool try_reset_load_object(RESET_DATA *reset, void *initiator, int initiator_typ
 
 //
 // try performing a mobile load, based on the reset data we have
-//
-bool try_reset_load_mobile(RESET_DATA *reset, void *initiator, int initiator_type) {
-  int vnum = atoi(resetGetArg(reset));
-  CHAR_DATA *proto = worldGetMob(gameworld, vnum);
+bool try_reset_load_mobile(RESET_DATA *reset, void *initiator, 
+			   int initiator_type, const char *locale) {
+  const char *fullkey = get_fullkey_relative(resetGetArg(reset), locale);
+  PROTO_DATA   *proto = worldGetType(gameworld, "mproto", fullkey);
   // if there's no prototype, break out
-  if(proto == NULL)
+  if(proto == NULL || protoIsAbstract(proto))
     return FALSE;
 
   // see if we're already at our max
   if(resetGetMax(reset) != 0 && 
-     count_chars(NULL, mobile_list, NULL, vnum, FALSE) >= resetGetMax(reset))
+     count_chars(NULL, mobile_list, NULL, fullkey, FALSE) >= resetGetMax(reset))
     return FALSE;
   if(initiator_type == INITIATOR_ROOM && resetGetRoomMax(reset) != 0 &&
-     (count_chars(NULL, roomGetCharacters(initiator), NULL, vnum, FALSE) >= 
-      resetGetRoomMax(reset)))
+     (count_chars(NULL, roomGetCharacters(initiator), NULL, fullkey,
+		  FALSE) >= resetGetRoomMax(reset)))
     return FALSE;
 
-  CHAR_DATA *mob = charCopy(proto);
-  char_to_game(mob);
+  CHAR_DATA *mob = protoMobRun(proto);
+  if(mob == NULL)
+    return FALSE;
 
   // to the room
   if(initiator_type == INITIATOR_ROOM)
@@ -370,9 +452,9 @@ bool try_reset_load_mobile(RESET_DATA *reset, void *initiator, int initiator_typ
   }
 
   // now, run all of our followup stuff
-  resetRunOn(reset->on,   mob, INITIATOR_ON_MOB);
-  resetRunOn(reset->in,   mob, INITIATOR_IN_MOB);
-  resetRunOn(reset->then, mob, INITIATOR_THEN_MOB);
+  resetRunOn(reset->on,   mob, INITIATOR_ON_MOB,   locale);
+  resetRunOn(reset->in,   mob, INITIATOR_IN_MOB,   locale);
+  resetRunOn(reset->then, mob, INITIATOR_THEN_MOB, locale);
 
   return TRUE;
 }
@@ -380,27 +462,24 @@ bool try_reset_load_mobile(RESET_DATA *reset, void *initiator, int initiator_typ
 
 //
 // handles "find" and "purge" in one function
-//
 bool try_reset_old_object(RESET_DATA *reset, void *initiator,int initiator_type,
-			  int reset_cmd) {
-  OBJ_DATA *obj = NULL;
+			  int reset_cmd, const char *locale) {
+  const char *fullkey = get_fullkey_relative(resetGetArg(reset), locale);
+  OBJ_DATA       *obj = NULL;
 
   // is it the room?
   if(initiator_type == INITIATOR_ROOM)
-    obj = find_obj(NULL, roomGetContents(initiator), 1, NULL,
-		   atoi(resetGetArg(reset)), FALSE);
+    obj = find_obj(NULL, roomGetContents(initiator),  1, NULL, fullkey, FALSE);
   // is it in a container?
   else if(initiator_type == INITIATOR_IN_OBJ)
-    obj = find_obj(NULL, objGetContents(initiator), 1, NULL,
-		   atoi(resetGetArg(reset)), FALSE);
+    obj = find_obj(NULL, objGetContents(initiator),   1, NULL, fullkey, FALSE);
   // is it in a person's inventory?
   else if(initiator_type == INITIATOR_IN_MOB)
-    obj = find_obj(NULL, charGetInventory(initiator), 1, NULL,
-		   atoi(resetGetArg(reset)), FALSE);
+    obj = find_obj(NULL, charGetInventory(initiator), 1, NULL, fullkey, FALSE);
   // is it in a person's equipment?
   else if(initiator_type == INITIATOR_ON_MOB) {
     LIST *eq = bodyGetAllEq(charGetBody(initiator));
-    obj = find_obj(NULL, eq, 1, NULL, atoi(resetGetArg(reset)), FALSE);
+    obj = find_obj(NULL, eq, 1, NULL, fullkey, FALSE);
     deleteList(eq);
   }
 
@@ -409,9 +488,9 @@ bool try_reset_old_object(RESET_DATA *reset, void *initiator,int initiator_type,
     return FALSE;
 
   // now, run our reset sscripts
-  resetRunOn(reset->on,   obj, INITIATOR_ON_OBJ);
-  resetRunOn(reset->in,   obj, INITIATOR_IN_OBJ);
-  resetRunOn(reset->then, obj, INITIATOR_THEN_OBJ);
+  resetRunOn(reset->on,   obj, INITIATOR_ON_OBJ,   locale);
+  resetRunOn(reset->in,   obj, INITIATOR_IN_OBJ,   locale);
+  resetRunOn(reset->then, obj, INITIATOR_THEN_OBJ, locale);
 
   // if this is a purge and it wasn't our initiator, kill it
   // if we purge our initiator, we might run into some problems
@@ -424,55 +503,55 @@ bool try_reset_old_object(RESET_DATA *reset, void *initiator,int initiator_type,
 
 //
 // find an object
-//
-bool try_reset_find_object(RESET_DATA *reset, void *initiator, int initiator_type) {
-  return try_reset_old_object(reset, initiator, initiator_type, RESET_FIND_OBJECT);
+bool try_reset_find_object(RESET_DATA *reset, void *initiator, 
+			   int initiator_type, const char *locale) {
+  return try_reset_old_object(reset, initiator, initiator_type, 
+			      RESET_FIND_OBJECT, locale);
 }
 
 
 //
 // purge an object
-//
-bool try_reset_purge_object(RESET_DATA *reset, void *initiator, int initiator_type) {
-  return try_reset_old_object(reset, initiator, initiator_type, RESET_PURGE_OBJECT);
+bool try_reset_purge_object(RESET_DATA *reset, void *initiator, 
+			    int initiator_type, const char *locale) {
+  return try_reset_old_object(reset, initiator, initiator_type, 
+			      RESET_PURGE_OBJECT, locale);
 }
 
 
 //
 // handles "find" and "purge" in one function
-//
 bool try_reset_old_mobile(RESET_DATA *reset, void *initiator,int initiator_type,
-			  int reset_cmd) {
-  CHAR_DATA *mob = NULL;
+			  int reset_cmd, const char *locale) {
+  const char *fullkey = get_fullkey_relative(resetGetArg(reset), locale);
+  CHAR_DATA      *mob = NULL;
 
   // is it the room?
   if(initiator_type == INITIATOR_ROOM)
-    mob = find_char(NULL, roomGetCharacters(initiator), 1, NULL, 
-		    atoi(resetGetArg(reset)), FALSE);
+    mob = find_char(NULL, roomGetCharacters(initiator),1, NULL, fullkey, FALSE);
   // is it furniture?
   else if(initiator_type == INITIATOR_ON_OBJ)
-    mob = find_char(NULL, objGetUsers(initiator), 1, NULL,
-		    atoi(resetGetArg(reset)), FALSE);
+    mob = find_char(NULL, objGetUsers(initiator), 1, NULL, fullkey, FALSE);
   // after an object
   else if(initiator_type == INITIATOR_THEN_OBJ) {
     if(objGetRoom(initiator) == NULL)
       return FALSE;
     mob = find_char(NULL, roomGetCharacters(objGetRoom(initiator)), 1, NULL,
-		    atoi(resetGetArg(reset)), FALSE);
+		    fullkey, FALSE);
   }
   // after another mob
   else if(initiator_type == INITIATOR_THEN_MOB)
     mob = find_char(NULL, roomGetCharacters(charGetRoom(initiator)), 1, NULL,
-		    atoi(resetGetArg(reset)), FALSE);
+		    fullkey, FALSE);
 
   // if we didn't find it, return FALSE
   if(mob == NULL)
     return FALSE;
 
   // if we found it, do the reset of the commands
-  resetRunOn(reset->on,   mob, INITIATOR_ON_MOB);
-  resetRunOn(reset->in,   mob, INITIATOR_IN_MOB);
-  resetRunOn(reset->then, mob, INITIATOR_THEN_MOB);
+  resetRunOn(reset->on,   mob, INITIATOR_ON_MOB,   locale);
+  resetRunOn(reset->in,   mob, INITIATOR_IN_MOB,   locale);
+  resetRunOn(reset->then, mob, INITIATOR_THEN_MOB, locale);
 
   // if this is a purge and it wasn't our initiator, kill it
   // if we purge our initiator, we might run into some problems
@@ -485,27 +564,26 @@ bool try_reset_old_mobile(RESET_DATA *reset, void *initiator,int initiator_type,
 
 //
 // find a mobile
-//
-bool try_reset_find_mobile(RESET_DATA *reset, void *initiator, int initiator_type) {
-  return try_reset_old_mobile(reset, initiator, initiator_type, RESET_FIND_MOBILE);
+bool try_reset_find_mobile(RESET_DATA *reset, void *initiator, 
+			   int initiator_type, const char *locale) {
+  return try_reset_old_mobile(reset, initiator, initiator_type, RESET_FIND_MOBILE, locale);
 }
 
 
 //
 // purge a mobile
-//
-bool try_reset_purge_mobile(RESET_DATA *reset, void *initiator, int initiator_type) {
-  return try_reset_old_mobile(reset, initiator, initiator_type, RESET_PURGE_MOBILE);
+bool try_reset_purge_mobile(RESET_DATA *reset, void *initiator, 
+			    int initiator_type, const char *locale) {
+  return try_reset_old_mobile(reset, initiator, initiator_type, RESET_PURGE_MOBILE, locale);
 }
 
 
 //
 // try forcing a mobile to change positions
-//
 bool try_reset_position(RESET_DATA *reset, void *initiator, int initiator_type){
   if(!initiator || initiator_type != INITIATOR_THEN_MOB)
     return FALSE;
-  int pos = atoi(resetGetArg(reset));
+  int pos = posGetNum(resetGetArg(reset));
   if(pos < 0 || pos >= NUM_POSITIONS)
     return FALSE;
   charSetPos(initiator, pos);
@@ -515,17 +593,18 @@ bool try_reset_position(RESET_DATA *reset, void *initiator, int initiator_type){
 
 //
 // the blanket function for reset_open/close/lock
-//
 bool try_reset_opening(RESET_DATA *reset, void *initiator, int initiator_type,
 		       bool closed, bool locked) {
   // we're trying to open an exit
   if(initiator_type == INITIATOR_ROOM) {
-    int dirnum = dirGetNum(resetGetArg(reset));
-    EXIT_DATA *exit = NULL;
-    if(dirnum != DIR_NONE)
-      exit = roomGetExit(initiator, dirnum);
-    else
-      exit = roomGetExitSpecial(initiator, resetGetArg(reset));
+    EXIT_DATA *exit = roomGetExit(initiator, resetGetArg(reset));
+    int      dirnum = DIR_NONE;
+
+    // are we using an abbreviation?
+    if(exit == NULL && (dirnum = dirGetAbbrevNum(resetGetArg(reset)))!=DIR_NONE)
+      exit = roomGetExit(initiator, dirGetName(dirnum));
+
+    // did we find a valid exit?
     if(exit == NULL)
       return FALSE;
 
@@ -533,6 +612,8 @@ bool try_reset_opening(RESET_DATA *reset, void *initiator, int initiator_type,
     exitSetClosed(exit, closed);
     return TRUE;
   }
+
+  // we're trying to open a container
   else if(initiator_type == INITIATOR_THEN_OBJ) {
     if(!objIsType(initiator, "container"))
       return FALSE;
@@ -548,7 +629,6 @@ bool try_reset_opening(RESET_DATA *reset, void *initiator, int initiator_type,
 
 //
 // try opening something
-//
 bool try_reset_open(RESET_DATA *reset, void *initiator, int initiator_type) {
   return try_reset_opening(reset, initiator, initiator_type, FALSE, FALSE);
 }
@@ -556,7 +636,6 @@ bool try_reset_open(RESET_DATA *reset, void *initiator, int initiator_type) {
 
 //
 // try closing and unlocking something 
-//
 bool try_reset_close(RESET_DATA *reset, void *initiator, int initiator_type) {
   return try_reset_opening(reset, initiator, initiator_type, TRUE, FALSE);
 }
@@ -564,7 +643,6 @@ bool try_reset_close(RESET_DATA *reset, void *initiator, int initiator_type) {
 
 //
 // Try closing and locking something
-//
 bool try_reset_lock(RESET_DATA *reset, void *initiator, int initiator_type) {
   return try_reset_opening(reset, initiator, initiator_type, TRUE, TRUE);
 }
@@ -572,12 +650,11 @@ bool try_reset_lock(RESET_DATA *reset, void *initiator, int initiator_type) {
 
 //
 // run the reset data
-//
-bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type) {
+bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type,
+	      const char *locale) {
   //
   // possible problem: how do we know what to return if we're
-  // running the reset data multiple times? 
-  //
+  // running the reset data multiple times?
   bool ret_val = FALSE;
 
   // go through for however many times we need to
@@ -588,22 +665,22 @@ bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type) {
       continue;
     switch(resetGetType(reset)) {
     case RESET_LOAD_OBJECT:
-      ret_val = try_reset_load_object(reset, initiator, initiator_type);
+      ret_val = try_reset_load_object(reset, initiator, initiator_type, locale);
       break;
     case RESET_LOAD_MOBILE:
-      ret_val = try_reset_load_mobile(reset, initiator, initiator_type);
+      ret_val = try_reset_load_mobile(reset, initiator, initiator_type, locale);
       break;
     case RESET_FIND_OBJECT:
-      ret_val = try_reset_find_object(reset, initiator, initiator_type);
+      ret_val = try_reset_find_object(reset, initiator, initiator_type, locale);
       break;
     case RESET_FIND_MOBILE:
-      ret_val = try_reset_find_mobile(reset, initiator, initiator_type);
+      ret_val = try_reset_find_mobile(reset, initiator, initiator_type, locale);
       break;
     case RESET_PURGE_OBJECT:
-      ret_val = try_reset_purge_object(reset, initiator, initiator_type);
+      ret_val = try_reset_purge_object(reset, initiator, initiator_type,locale);
       break;
     case RESET_PURGE_MOBILE:
-      ret_val = try_reset_purge_mobile(reset, initiator, initiator_type);
+      ret_val = try_reset_purge_mobile(reset, initiator, initiator_type,locale);
       break;
     case RESET_OPEN:
       ret_val = try_reset_open(reset, initiator, initiator_type);
@@ -622,4 +699,31 @@ bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type) {
     }
   }
   return ret_val;
+}
+
+
+
+//*****************************************************************************
+// initialization function
+//*****************************************************************************
+
+//
+// room reset hook. Whenever a room is reset, apply all of its reset rules
+void room_reset_hook(ZONE_DATA *zone, void *none1, void *none2) {
+  LIST_ITERATOR *res_i = newListIterator(zoneGetResettable(zone));
+  char           *name = NULL;
+  const char   *locale = zoneGetKey(zone);
+  RESET_LIST     *list = NULL;
+  ROOM_DATA      *room = NULL;
+  ITERATE_LIST(name, res_i) {
+    room = worldGetRoom(gameworld, get_fullkey(name, locale));
+    list = worldGetType(gameworld, "reset", get_fullkey(name, locale));
+    // do we have resets? If so, apply them...
+    if(room != NULL && list != NULL)
+      resetRunOn(resetListGetResets(list), room, INITIATOR_ROOM, locale);
+  } deleteListIterator(res_i);
+}
+
+void init_room_reset(void) {
+  hookAdd("reset", room_reset_hook);
 }

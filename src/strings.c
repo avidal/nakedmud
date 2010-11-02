@@ -56,6 +56,39 @@ bool is_prefix(const char *aStr, const char *bStr)
   return TRUE;
 }
 
+
+// same as one_arg, but can take constants
+const char *one_arg_safe(const char *fStr, char *bStr) {
+  /* skip leading spaces */
+  while (isspace(*fStr))
+    fStr++; 
+
+  /* copy the beginning of the string */
+  while (*fStr != '\0')
+  {
+    /* have we reached the end of the first word ? */
+    if (isspace(*fStr))
+    {
+      fStr++;
+      break;
+    }
+
+    /* copy one char */
+    *bStr++ = *fStr++;
+  }
+
+  /* terminate string */
+  *bStr = '\0';
+
+  /* skip past any leftover spaces */
+  while (isspace(*fStr))
+    fStr++;
+
+  /* return the leftovers */
+  return fStr;
+}
+
+
 char *one_arg(char *fStr, char *bStr)
 {
   /* skip leading spaces */

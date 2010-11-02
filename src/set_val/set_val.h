@@ -22,6 +22,7 @@
 #define SET_CHAR           0
 #define SET_OBJECT         1
 #define SET_ROOM           2
+#define SET_ACCOUNT        3
 
 
 //

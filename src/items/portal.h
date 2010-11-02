@@ -11,11 +11,11 @@
 //*****************************************************************************
 
 //
-// return the vnum of the room that the portal leads to
-int portalGetDest(OBJ_DATA *obj);
+// return the key of the room that the portal leads to
+const char *portalGetDest(OBJ_DATA *obj);
 
 //
 // set the destination of the portal
-void portalSetDest(OBJ_DATA *obj, int dest);
+void portalSetDest(OBJ_DATA *obj, const char *dest);
 
 #endif // PORTAL_H

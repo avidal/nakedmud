@@ -32,6 +32,7 @@
 #include "utils.h"
 #include "character.h"
 #include "action.h"
+#include "hooks.h"
 
 #ifdef MODULE_FACULTY
 #include "faculty/faculty.h"
@@ -52,9 +53,7 @@ struct action_data {
 
 
 //*****************************************************************************
-//
 // A small test for delayed actions ... proof of concept
-//
 //*****************************************************************************
 void do_dsay(CHAR_DATA *ch, void *data, bitvector_t where, char *arg) {
   communicate(ch, arg, COMM_LOCAL);
@@ -76,9 +75,7 @@ COMMAND(cmd_dsay) {
 
 
 //*****************************************************************************
-//
 // single action handling
-//
 //*****************************************************************************
 ACTION_DATA *newAction(int delay, 	
 		       bitvector_t where,
@@ -90,7 +87,7 @@ ACTION_DATA *newAction(int delay,
   action->on_interrupt = on_interrupt;
   action->delay        = delay;
   action->data         = data;
-  action->arg          = strdup(arg ? arg :"");
+  action->arg          = strdupsafe(arg);
   action->where        = where;
   return action;
 }
@@ -115,22 +112,26 @@ void stop_all_actions(CHAR_DATA *ch) {
 #endif
 }
 
+// stop_all_actions as a hook
+void stop_all_actions_hook(CHAR_DATA *ch, void *none1, void *none2) {
+  stop_all_actions(ch);
+}
+
+
 
 //*****************************************************************************
-//
 // actor list handling
-//
 //*****************************************************************************
 void init_actions() {
   // use the standard pointer hasher and comparator
   actors = newMap(NULL, NULL);
 
   // add in our example delayed action
-  add_cmd("dsay", NULL, cmd_dsay, 0, POS_SITTING, POS_FLYING, 
+  add_cmd("dsay", NULL, cmd_dsay, POS_SITTING, POS_FLYING, 
 	  "admin", TRUE, FALSE);
 
   // make sure the character does not continue actions after being extracted
-  add_extract_mob_func(stop_all_actions);
+  hookAdd("char_from_game", stop_all_actions_hook);
 }
 
 bool is_acting(void *ch, bitvector_t where) {

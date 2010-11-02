@@ -81,7 +81,6 @@ void init_bitvectors() {
   // and also create some of the basic bitvectors and 
   // bits that come stock and are required for the core release
   bitvectorCreate("char_prfs");
-  bitvectorAddBit("char_prfs", "buildwalk");
 
   bitvectorCreate("obj_bits");
   bitvectorAddBit("obj_bits", "notake");

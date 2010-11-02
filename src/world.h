@@ -8,95 +8,51 @@
 //
 //*****************************************************************************
 
-
 //
-// Create a new world from the path. The path is the directory the world
-// data is stored in.
-WORLD_DATA *newWorld(const char *path);
+// Create a new, empty world. To load in zone data, the world's 
+// path must be set, and then a call to worldInit
+WORLD_DATA *newWorld(void);
 
 //
 // Delete the world from memory.
 void deleteWorld(WORLD_DATA *world);
 
 //
-// Removes the room with the ID from the world, and returns it.
-// returns NULL if the room does not exist.
-ROOM_DATA     *worldRemoveRoomVnum(WORLD_DATA *world, int vnum);
-CHAR_DATA      *worldRemoveMobVnum(WORLD_DATA *world, int  vnum);
-OBJ_DATA       *worldRemoveObjVnum(WORLD_DATA *world, int  vnum);
-SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, int vnum);
-DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, int vnum);
-ZONE_DATA     *worldRemoveZoneVnum(WORLD_DATA *world, int vnum);
-
-//
-// Removes (no delete) the thing from the world. Returns true if successful,
-// and false if it does not exist in the world.
-bool   worldRemoveRoom(WORLD_DATA *world, ROOM_DATA *room);
-bool    worldRemoveMob(WORLD_DATA *world, CHAR_DATA  *mob);
-bool    worldRemoveObj(WORLD_DATA *world, OBJ_DATA  *obj);
-bool worldRemoveScript(WORLD_DATA *world, SCRIPT_DATA *script);
-bool worldRemoveDialog(WORLD_DATA *world, DIALOG_DATA *dialog);
-bool   worldRemoveZone(WORLD_DATA *world, ZONE_DATA *zone);
-
-//
 // Saves the world to disk at the specified directory path
 bool worldSave(WORLD_DATA *world, const char *dirpath);
 
 //
-// save individual items to disk
-bool worldSaveRoom  (WORLD_DATA *world, ROOM_DATA   *room);
-bool worldSaveMob   (WORLD_DATA *world, CHAR_DATA   *ch);
-bool worldSaveObj   (WORLD_DATA *world, OBJ_DATA    *obj);
-bool worldSaveScript(WORLD_DATA *world, SCRIPT_DATA *script);
-bool worldSaveDialog(WORLD_DATA *world, DIALOG_DATA *dialog);
-
-//
-// check to see if individual items have been loaded into memory yet
-bool   worldIsRoomLoaded(WORLD_DATA *world, int vnum);
-bool    worldIsMobLoaded(WORLD_DATA *world, int vnum);
-bool    worldIsObjLoaded(WORLD_DATA *world, int vnum);
-bool worldIsScriptLoaded(WORLD_DATA *world, int vnum);
-bool worldIsDialogLoaded(WORLD_DATA *world, int vnum);
-
-//
-// unload the specified thing from memory
-void   worldUnloadRoom(WORLD_DATA *world, int vnum);
-void    worldUnloadMob(WORLD_DATA *world, int vnum);
-void    worldUnloadObj(WORLD_DATA *world, int vnum);
-void worldUnloadScript(WORLD_DATA *world, int vnum);
-void worldUnloadDialog(WORLD_DATA *world, int vnum);
-
-//
-// Loads a world from disk
-WORLD_DATA *worldLoad(const char *dirpath);
+// Initializes the world. This includes any stuff that might need to be done
+// when the world first starts up. e.g. reading in zones, or running startup
+// scripts
+void worldInit(WORLD_DATA *world);
 
 //
 // Pulse all of the zones in the world
 void worldPulse(WORLD_DATA *world);
 void worldForceReset(WORLD_DATA *world);
 
-
-
-//*****************************************************************************
 //
-// set and get functions
-//
-//*****************************************************************************
-ZONE_DATA *worldZoneBounding(WORLD_DATA *world, int vnum);
-ZONE_DATA      *worldGetZone(WORLD_DATA *world, int vnum);
-const char *worldGetZonePath(WORLD_DATA *world, int vnum);
-ROOM_DATA      *worldGetRoom(WORLD_DATA *world, int vnum);
-CHAR_DATA       *worldGetMob(WORLD_DATA *world, int  vnum);
-OBJ_DATA        *worldGetObj(WORLD_DATA *world, int  vnum);
-SCRIPT_DATA  *worldGetScript(WORLD_DATA *world, int vnum);
-DIALOG_DATA  *worldGetDialog(WORLD_DATA *world, int vnum);
-LIST          *worldGetZones(WORLD_DATA *world);
+// new world interface
+void    *worldGetType(WORLD_DATA *world, const char *type, const char *key);
+void *worldRemoveType(WORLD_DATA *world, const char *type, const char *key);
+void    worldSaveType(WORLD_DATA *world, const char *type, const char *key);
+void     worldPutType(WORLD_DATA *world, const char *type, const char *key,
+		      void *data);
+void     worldAddType(WORLD_DATA *world, const char *type, void *reader,
+		      void *storer, void *deleter, void *typesetter);
 
-void   worldPutZone(WORLD_DATA *world, ZONE_DATA *zone);
-void   worldPutRoom(WORLD_DATA *world, ROOM_DATA *room);
-void    worldPutMob(WORLD_DATA *world, CHAR_DATA  *mob);
-void    worldPutObj(WORLD_DATA *world, OBJ_DATA  *obj);
-void worldPutScript(WORLD_DATA *world, SCRIPT_DATA *script);
-void worldPutDialog(WORLD_DATA *world, DIALOG_DATA *dialog);
+ZONE_DATA *worldRemoveZone(WORLD_DATA *world, const char *key);
+ROOM_DATA    *worldGetRoom(WORLD_DATA *world, const char *key);
+ROOM_DATA *worldRemoveRoom(WORLD_DATA *world, const char *key);
+bool       worldRoomLoaded(WORLD_DATA *world, const char *key);
+void          worldPutRoom(WORLD_DATA *world, const char *key, ROOM_DATA *room);
+
+void            worldPutZone(WORLD_DATA *world, ZONE_DATA *zone);
+ZONE_DATA      *worldGetZone(WORLD_DATA *world, const char *key);
+LIST       *worldGetZoneKeys(WORLD_DATA *world);
+const char *worldGetZonePath(WORLD_DATA *world, const char *key);
+void            worldSetPath(WORLD_DATA *world, const char *path);
+const char     *worldGetPath(WORLD_DATA *world);
 
 #endif // __WORLD_H

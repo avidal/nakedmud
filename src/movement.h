@@ -1,5 +1,5 @@
-#ifndef __MOVEMENT_H
-#define __MOVEMENT_H
+#ifndef MOVEMENT_H
+#define MOVEMENT_H
 //*****************************************************************************
 //
 // movement.h
@@ -8,30 +8,20 @@
 //
 //*****************************************************************************
 
-
-
 //
-// Try to move in a specified direction. Returns true if the move was
-// successful, and false otherwise. A move might be false if a) there is
-// no (noticable) opened exit in the direction, the character is busy with
-// some activity (e.g. fighting) that will not let him move, or his position
-// is not one that is easily movable in (e.g. sleeping, resting, dead).
-// if dir != DIR_NONE, then it is tried. Otherwise, specdir is tried
-// as a room-specific direction to exit in.
-//
-bool try_move(CHAR_DATA *ch, int dir, const char *specdir);
+// Try to move in a specified direction. Returns the exit that was gone through
+// if successful. A move might be false if a) there is a no (noticable) opened
+// exit in the direction, the character is busy with some activity
+// (.e.g fighting) that will not let him move, or his position is not one that
+// is easily movable in (e.g. sleeping, resting, dead). The direction can be
+// anything. Abbreviations of the normal directions (n, s, e, w) are handled
+// properly by this function. Does not send messages to the rooms saying the
+// person has entered/exited.
+EXIT_DATA *try_move(CHAR_DATA *ch, const char *dir);
 
 //
-// Go through an exit. use dir for display purposes to the room
-// (e.g. bob leaves north). If dir == DIR_NONE, no direction info
-// is said. Return the new room we are in, if we moved
-//
-ROOM_DATA *try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir);
+// Exactly the same as try_move, except this also sends messages saying the
+// person has entered/exited.
+EXIT_DATA *try_move_mssg(CHAR_DATA *ch, const char *dir);
 
-//
-// Try creating a new room in the specified direction, drawn from the
-// zone we're currently in.
-//
-bool try_buildwalk(CHAR_DATA *ch, int dir);
-
-#endif // __MOVEMENT_H
+#endif // MOVEMENT_H

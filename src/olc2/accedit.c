@@ -26,28 +26,6 @@
 
 
 
-//
-// Saves the account, updates all of the accounts with this name currently
-// in use, and deletes the account we're working with from memory.
-void accedit_cleanup(ACCOUNT_DATA *acct) {
-  LIST_ITERATOR *sock_i = newListIterator(socket_list);
-  SOCKET_DATA   *sock   = NULL;
-
-  // first, update all of the accounts online
-  ITERATE_LIST(sock, sock_i) {
-    if(socketGetAccount(sock) &&
-       !strcasecmp(accountGetName(socketGetAccount(sock)),
-		   accountGetName(acct)))
-      accountCopyTo(acct, socketGetAccount(sock));
-  } deleteListIterator(sock_i);
-
-  // now, save the account
-  save_account(acct);
-  // and free up the memory
-  deleteAccount(acct);
-}
-
-
 void accedit_menu(SOCKET_DATA *sock, ACCOUNT_DATA *acct) {
   LIST_ITERATOR *ch_i = newListIterator(accountGetChars(acct));
   char            *ch = NULL;
@@ -83,7 +61,9 @@ bool accedit_parser(SOCKET_DATA *sock, ACCOUNT_DATA *acct, int choice,
 		  const char *arg) {
   switch(choice) {
   case ACCEDIT_NEW_CHAR:
-    if(!char_exists(arg))
+    if(!*arg)
+      return TRUE;
+    else if(!player_exists(arg))
       return FALSE;
     else {
       listPutWith(accountGetChars(acct), strdup(arg), strcasecmp);
@@ -111,12 +91,12 @@ COMMAND(cmd_accedit) {
   if(!arg || !*arg)
     send_to_char(ch, "You must supply an account name, first!\r\n");
   else {
-    ACCOUNT_DATA *acct = load_account(arg);
+    ACCOUNT_DATA *acct = get_account(arg);
     if(acct == NULL)
       send_to_char(ch, "Account '%s' does not exist!\r\n", arg);
     else {
       do_olc(charGetSocket(ch), accedit_menu, accedit_chooser, accedit_parser,
-	     NULL, NULL, NULL, accedit_cleanup, acct);
+	     NULL, NULL, unreference_account, save_account, acct);
     }
   }
 }

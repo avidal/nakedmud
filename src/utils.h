@@ -15,7 +15,7 @@
 //*****************************************************************************
 #define MAX_INT               214743647
 #define PI                    3.14159265
-#define e                     2.71828182
+#define MATH_E                2.71828182
 
 #define UMIN(a, b)	      ((a) < (b) ? (a) : (b))
 #ifndef MIN
@@ -62,7 +62,7 @@ const char *numth(int num);
 #define HESHE(ch)             (charGetSex(ch) == SEX_MALE ? "he" : \
 			       (charGetSex(ch) == SEX_FEMALE ? "she" : "it"))
 
-bool  can_see_char      ( CHAR_DATA *ch, CHAR_DATA *target);
+bool  can_see_char        ( CHAR_DATA *ch, CHAR_DATA *target);
 bool  can_see_obj         ( CHAR_DATA *ch, OBJ_DATA  *target);
 bool  can_see_exit        ( CHAR_DATA *ch, EXIT_DATA *exit);
 bool  try_enter_game      ( CHAR_DATA *ch);
@@ -74,9 +74,6 @@ int   can_see_invis       ( CHAR_DATA *ch);
 // and returns SOMEONE/SOMETHING otherwise.
 const char *see_char_as (CHAR_DATA *ch, CHAR_DATA *target);
 const char *see_obj_as  (CHAR_DATA *ch, OBJ_DATA  *target);
-
-bool  try_dialog          (CHAR_DATA *ch, CHAR_DATA *listener,const char *mssg);
-void  try_dialog_all      (CHAR_DATA *ch, LIST *listeners, const char *mssg);
 
 void     show_prompt(SOCKET_DATA *socket);
 const char *custom_prompt (CHAR_DATA *ch);
@@ -115,12 +112,8 @@ void add_keyword          (char **keywords_ptr, const char *word);
 void remove_keyword       (char *keywords, const char *word);
 void trim                 (char *string);
 void strip_word           (char *string, const char *word);
-int  replace_string       (char **string, const char *a, const char *b, 
-			   bool all);
-char *tag_keywords        (const char *keywords, const char *string,
+void buf_tag_keywords     (BUFFER *buf, const char *keywords,
 			   const char *start_tag, const char *end_tag);
-void format_string        (char **ptr_string, int max_width, 
-		          unsigned int maxlen, bool indent);
 int  count_letters        (const char *string, const char ch, const int strlen);
 int  count_occurences     (const char *string, const char *word);
 char *line_start          (char *string, int line);
@@ -132,34 +125,74 @@ int next_letter_in        (const char *string, char marker);
 int string_hash           (const char *key);
 bool endswith             (const char *string, const char *end);
 bool startswith           (const char *string, const char *start);
+const char *strcpyto      (char *to, const char *from, char end);
 
 
 
 //*****************************************************************************
 // utilities for game functioning
 //*****************************************************************************
-void  extract_obj          ( OBJ_DATA *obj);
-void  extract_mobile       ( CHAR_DATA *ch );
 
-// Make sure a certain procedure is called when we are extracting an npc/char
-void  add_extract_obj_func ( void (* func)(OBJ_DATA *));
-void  add_extract_mob_func ( void (* func)(CHAR_DATA *));
+// remove the thing from the game, and delete it
+void         extract_mobile(CHAR_DATA *ch);
+void            extract_obj(OBJ_DATA  *obj);
+void           extract_room(ROOM_DATA *room);
 
 // don't call these. These are for use by gameloop.c only. Use the non-final
 // versions, please!!
-void  extract_obj_final    ( OBJ_DATA *obj);
-void  extract_mobile_final ( CHAR_DATA *ch);
+void   extract_mobile_final(CHAR_DATA *ch);
+void      extract_obj_final(OBJ_DATA  *obj);
+void     extract_room_final(ROOM_DATA *room);
 
 char *get_time             ( void );
 void  communicate          ( CHAR_DATA *dMob, char *txt, int range );
 void  load_muddata         ( void );
 CHAR_DATA  *check_reconnect( const char *player );
 
+// transfers things from one room to another
+void do_mass_transfer(ROOM_DATA *from, ROOM_DATA *to, bool chars, bool mobs, 
+		      bool objs);
+
 
 
 //*****************************************************************************
 // misc utils
 //*****************************************************************************
+
+//
+// a function that breaks a type key into its name and locale (zone). Each key 
+// must contain its name and zone, separated by an @. For instance:
+//   sword@bobs_zone
+//
+// returns true if the name and locale were successfully found. It is assumed
+// there will be enough memory in the name and locale buffers to copy data over
+bool parse_worldkey(const char *key, char *name, char *locale);
+
+//
+// same as parse_worldkey, but if no locale is supplied, use the zone that the
+// character is currently in
+bool parse_worldkey_relative(CHAR_DATA *ch, const char *key, char *name, 
+			     char *locale);
+
+//
+// returns the locale of a key, and \0 if none exists
+const char *get_key_locale(const char *key);
+
+//
+// returns the name of a key, and \0 if none exists
+const char *get_key_name(const char *key);
+
+//
+// returns the full key of something. A full key is a name and a locale (zone
+// key) separated by an @ sign. Assumes name and locale are both valid (i.e.
+// neither have an @ sign in them).
+const char *get_fullkey(const char *name, const char *locale);
+
+//
+// returns the full key of something (name + locale), relative to the supplied
+// locale. If the key doesn't already have a locale, this function will build
+// the one supplied into the returned value.
+const char *get_fullkey_relative(const char *key, const char *locale);
 
 //
 // Returns whether or not the command matches the pattern. Patterns are just
@@ -177,6 +210,10 @@ bool cmd_matches(const char *pattern, const char *cmd);
 bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2);
 
 //
+// returns TRUE if the character can edit the given zone
+bool canEditZone(ZONE_DATA *zone, CHAR_DATA *ch);
+
+//
 // a function that returns the argument passed into it
 void *identity_func(void *data);
 
@@ -188,20 +225,20 @@ bool dir_exists (const char *dname);
 
 //
 // count how many objects are in the list, that meet our critereon.
-// If name is not NULL, we search by name. Otherwise, we search by vnum.
+// If name is not NULL, we search by name. Otherwise, we search by prototype.
 // must_see TRUE, a looker must be supplied. Same thing goes for count_letters
-int   count_objs   (CHAR_DATA *looker, LIST *list, const char *name, int vnum,
-		    bool must_see);
-int   count_chars  (CHAR_DATA *looker, LIST *list, const char *name, int vnum,
-		    bool must_see);
+int   count_objs   (CHAR_DATA *looker, LIST *list, const char *name,
+		    const char *prototype, bool must_see);
+int   count_chars  (CHAR_DATA *looker, LIST *list, const char *name,
+		    const char *prototype, bool must_see);
 CHAR_DATA *find_char(CHAR_DATA *looker, LIST *list, int num, const char *name,
-		     int vnum, bool must_see);
+		     const char *prototype, bool must_see);
 OBJ_DATA *find_obj (CHAR_DATA *looker, LIST *list, int num, const char *name,
-		    int vnum, bool must_see);
-LIST *find_all_chars(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
-		     bool must_see);
-LIST *find_all_objs(CHAR_DATA *looker, LIST *list, const char *name, int vnum, 
-		    bool must_see);
+		    const char *prototype, bool must_see);
+LIST *find_all_chars(CHAR_DATA *looker, LIST *list, const char *name,
+		     const char *prototype, bool must_see);
+LIST *find_all_objs(CHAR_DATA *looker, LIST *list, const char *name,
+		    const char *prototype, bool must_see);
 
 // in the various find() routines, it may sometimes arise that someone
 // wants to find multiple things (e.g. all.cookies, all.women). This is
@@ -241,12 +278,8 @@ char *print_list(LIST *list, void *descriptor, void *multi_descriptor);
 //
 // multi-descriptor is a pointer to the function that gets a copy of the
 // thing's description if there is more than 1 copy of it in the list.
-//
-// vnum_getter is a pointer to a function that returns the thing's vnum for
-// displaying to players of builder level and above. vnum_getter can be NULL 
-// to display no vnums.
 void show_list(CHAR_DATA *ch, LIST *list, void *descriptor, 
-	       void *multi_descriptor, void *vnum_getter);
+	       void *multi_descriptor);
 
 
 //
@@ -262,9 +295,28 @@ LIST *get_used_items(CHAR_DATA *ch, LIST *list, bool invis_ok);
 
 
 //
-// returns true if the character has an object with the
-// specified vnum in his inventory. Returns false otherwise.
-// useful fo checking keys
-bool has_obj(CHAR_DATA *ch, int vnum);
+// returns true if the character has an object that is an instance of the
+// specified prototype in his inventory. Returns false otherwise.
+bool has_obj(CHAR_DATA *ch, const char *prototype);
+
+
+//
+// Delete an object, room, mobile, etc... from the game. First remove it from
+// the gameworld database, and then delete it and its contents. The onus is on
+// the builder to make sure deleting a prototype won't screw anything up (e.g.
+// people standing about in a room when it's deleted).
+bool do_delete(CHAR_DATA *ch, const char *type, void *deleter, const char *arg);
+
+
+//
+// generic xxxlist for listing all the entries of one type for a zone (e.g.
+// mprotos, oprotos, scripts...)
+void do_list(CHAR_DATA *ch, const char *locale, const char *type, 
+	     const char *header, void *informer);
+
+
+//
+// moves something of the given type with one name to the other name
+bool do_rename(CHAR_DATA *ch,const char *type,const char *from,const char *to);
 
 #endif // __UTILS_H

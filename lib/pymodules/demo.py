@@ -37,10 +37,10 @@ from mud import add_cmd
 # this command takes in 4 arguments: the character who performed it, the command
 # name, a subcommand value, and the argument supplied to the command. ch is
 # a Character, cmd is a string, subcmd is an int, and arg is a string
-def cmd_pycmd(ch, cmd, subcmd, arg):
+def cmd_pycmd(ch, cmd, arg):
     ch.send("Hello, " + ch.name + ". This is a demo Python command!")
 
 # let the MUD know it should add a command. This works exactly like add_cmd in 
 # the C source. Good examples of how to use it can be found in interpret.c
-add_cmd('pycmd', None, cmd_pycmd, 0, 'unconcious', 'flying', 'admin', 
+add_cmd('pycmd', None, cmd_pycmd, 'unconcious', 'flying', 'admin', 
 	False, False)

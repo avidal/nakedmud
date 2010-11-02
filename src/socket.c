@@ -10,6 +10,8 @@
 #include <netdb.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h> 
+#include <zlib.h>
+#include <pthread.h>
 
 #include "mud.h"
 #include "character.h"
@@ -18,6 +20,7 @@
 #include "utils.h"
 #include "socket.h"
 #include "auxiliary.h"
+#include "hooks.h"
 
 
 
@@ -199,7 +202,7 @@ bool new_socket(int sock)
   text_to_buffer(sock_new, (char *) compress_will);
 
   /* send the greeting */
-  text_to_buffer(sock_new, greeting);
+  text_to_buffer(sock_new, bufferString(greeting));
   text_to_buffer(sock_new, "What is your account (not character) name? ");
 
   /* everything went as it was supposed to */
@@ -249,7 +252,7 @@ void close_socket(SOCKET_DATA *dsock, bool reconnect)
   }
   
   if(dsock->account)
-    deleteAccount(dsock->account);
+    unreference_account(dsock->account);
 
   /* set the closed state */
   dsock->closed = TRUE;
@@ -403,7 +406,7 @@ void  send_to_socket( SOCKET_DATA *dsock, const char *format, ...) {
 void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
 {
   static char output[8 * MAX_BUFFER];
-  bool underline = FALSE, bold = FALSE;
+  bool cr = FALSE, underline = FALSE, bold = FALSE;
   int iPtr = 0, last = -1, i = 0, j, k;
   int length = strlen(txt);
 
@@ -457,6 +460,16 @@ void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
       default:
         output[iPtr++] = *txt++;
         break;
+      case '\r':
+	cr = TRUE;
+	output[iPtr++] = *txt++;
+	break;
+      case '\n':
+	if(cr == FALSE)
+	  output[iPtr++] = '\r';
+	output[iPtr++] = *txt++;
+	cr = FALSE;
+	break;
       case '{':
         i++; txt++;
 
@@ -876,7 +889,7 @@ void copyover_recover() {
     listPut(socket_list, dsock);
 
     // load account data
-    if((account = load_account(acct)) != NULL)
+    if((account = get_account(acct)) != NULL)
       socketSetAccount(dsock, account);
     // no luck!
     else {
@@ -886,7 +899,7 @@ void copyover_recover() {
     }
 
     // load player data
-    if ((dMob = load_player(name)) != NULL) {
+    if ((dMob = get_player(name)) != NULL) {
       // attach to socket
       charSetSocket(dMob, dsock);
       socketSetChar(dsock, dMob);
@@ -896,7 +909,7 @@ void copyover_recover() {
       if(!try_enter_game(dMob)) {
 	printf("Enter game failed.\r\n");
 	// do not bother extracting, since we haven't entered the game yet
-	deleteChar(socketGetChar(dsock));
+	unreference_player(socketGetChar(dsock));
 	socketSetChar(dsock, NULL);
 	close_socket(dsock, FALSE);
 	continue;
@@ -1109,6 +1122,9 @@ void do_copyover(CHAR_DATA *ch) {
 
   sprintf(buf, "\n\r <*>            The world starts spinning             <*>\n\r");
 
+  // execute our shutdown hooks
+  hookRun("shutdown", NULL, NULL, NULL);
+
   // For each playing descriptor, save its character and account
   ITERATE_LIST(sock, sock_i) {
     compressEnd(sock, sock->compressing, FALSE);
@@ -1134,7 +1150,7 @@ void do_copyover(CHAR_DATA *ch) {
 
   // close any pending sockets
   recycle_sockets();
-  
+
   // exec - descriptors are inherited
   sprintf(control_buf, "%d", control);
   sprintf(port_buf, "%d", mudport);

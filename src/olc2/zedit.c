@@ -23,6 +23,68 @@
 
 
 //*****************************************************************************
+// functions for editing zone reset lists
+//*****************************************************************************
+#define ZRESLIST_NEW     1
+#define ZRESLIST_DELETE  2
+
+void zreslist_menu(SOCKET_DATA *sock, LIST *list) {
+  if(listSize(list) > 0) {
+    listSortWith(list, strcasecmp);
+
+    LIST_ITERATOR *room_i = newListIterator(list);
+    char            *room = NULL;
+
+    send_to_socket(sock, "{wRooms reset on zone pulse:\r\n");
+    ITERATE_LIST(room, room_i) {
+      send_to_socket(sock, "{g  %s\r\n", room);
+    } deleteListIterator(room_i);
+    send_to_socket(sock, "\r\n");
+  }
+
+  send_to_socket(sock,
+		 "  N) new room\r\n"
+		 "  D) delete room\r\n");
+}
+
+int zreslist_chooser(SOCKET_DATA *sock, LIST *list, const char *option) {
+  switch(toupper(*option)) {
+  case 'N':
+    send_to_socket(sock, "Enter the room key: ");
+    return ZRESLIST_NEW;
+  case 'D':
+    send_to_socket(sock, "Enter the room key: ");
+    return ZRESLIST_DELETE;
+  default:
+    return MENU_CHOICE_INVALID;
+  }
+}
+
+bool zreslist_parser(SOCKET_DATA *sock, LIST *list, int choice, 
+		     const char *arg) {
+  // ignore length-zero commands
+  if(strlen(arg) == 0)
+    return TRUE;
+
+  switch(choice) {
+  case ZRESLIST_NEW: {
+    if(!listGetWith(list, arg, strcasecmp))
+      listPutWith(list, strdup(arg), strcasecmp);
+    return TRUE;
+  }
+  case ZRESLIST_DELETE: {
+    char *found = listRemoveWith(list, arg, strcasecmp);
+    if(found != NULL) free(found);
+    return TRUE;
+  }
+  default:
+    return FALSE;
+  }
+}
+
+
+
+//*****************************************************************************
 // room editing functions
 //*****************************************************************************
 // the different fields of a room we can edit
@@ -32,17 +94,17 @@
 
 void zedit_menu(SOCKET_DATA *sock, ZONE_DATA *zone) {
   send_to_socket(sock,
-		 "{y[{c%d{y]\r\n"
+		 "{y[{c%s{y]\r\n"
 		 "{g1) Name\r\n{c%s\r\n"
 		 "{g2) Editors\r\n{c%s\r\n"
 		 "{g3) Reset timer: {c%d{g min%s\r\n"
-		 "{g4) Description\r\n{c%s\r\n"
+		 "{g4) Resettable rooms: {c%d\r\n"
+		 "{g5) Description\r\n{c%s\r\n"
 		 ,
-		 zoneGetVnum(zone), zoneGetName(zone), zoneGetEditors(zone),
+		 zoneGetKey(zone), zoneGetName(zone), zoneGetEditors(zone),
 		 zoneGetPulseTimer(zone), (zoneGetPulseTimer(zone)==1 ? "":"s"),
-		 zoneGetDesc(zone));
+		 listSize(zoneGetResettable(zone)), zoneGetDesc(zone));
 }
-
 
 int zedit_chooser(SOCKET_DATA *sock, ZONE_DATA *zone, const char *option) {
   switch(toupper(*option)) {
@@ -56,6 +118,10 @@ int zedit_chooser(SOCKET_DATA *sock, ZONE_DATA *zone, const char *option) {
     text_to_buffer(sock, "Enter a new reset timer: ");
     return ZEDIT_TIMER;
   case '4':
+    do_olc(sock, zreslist_menu, zreslist_chooser, zreslist_parser, 
+	   NULL, NULL, NULL, NULL, zoneGetResettable(zone));
+    return MENU_NOCHOICE;
+  case '5':
     text_to_buffer(sock, "Enter a new description:\r\n");
     socketStartEditor(sock, text_editor, zoneGetDescBuffer(zone));
     return MENU_NOCHOICE;
@@ -90,19 +156,16 @@ void save_zone(ZONE_DATA *zone) {
 COMMAND(cmd_zedit) {
   // we want to create a new zone?
   if(!strncasecmp(arg, "new ", 4)) {
-    int vnum = 0;
-    int min = 0, max = 0;
+    char key[100];
 
     // scan for the parameters
-    sscanf(arg+4, "%d %d %d", &vnum, &min, &max);
+    sscanf(arg+4, "%s", key);
 
-    if(worldGetZone(gameworld, vnum))
-      send_to_char(ch, "A zone already exists with that vnum.\r\n");
-    else if(worldZoneBounding(gameworld, min) || worldZoneBounding(gameworld, max))
-      send_to_char(ch, "There is already a zone bounding that vnum range.\r\n");
+    if(worldGetZone(gameworld, key))
+      send_to_char(ch, "A zone already exists with that key.\r\n");
     else {
       char buf[MAX_BUFFER];
-      ZONE_DATA *zone = newZone(vnum, min, max);
+      ZONE_DATA *zone = newZone(key);
       sprintf(buf, "%s's zone", charGetName(ch));
       zoneSetName(zone, buf);
       sprintf(buf, "A new zone created by %s\r\n", charGetName(ch));
@@ -110,22 +173,22 @@ COMMAND(cmd_zedit) {
       zoneSetEditors(zone, charGetName(ch));
 
       worldPutZone(gameworld, zone);
-      send_to_char(ch, "You create a new zone (vnum %d).\r\n", vnum);
+      send_to_char(ch, "You create a new zone (key %s).\r\n", key);
       worldSave(gameworld, WORLD_PATH);
     }
   }
 
   // we want to edit a preexisting zone
   else {
-    ZONE_DATA *zone = NULL;
-    int vnum   = (!*arg ? 
-			zoneGetVnum(worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch)))) : atoi(arg));
- 
+    ZONE_DATA *zone = 
+      (*arg ? worldGetZone(gameworld, arg) : 
+       worldGetZone(gameworld, 
+		    get_key_locale(roomGetClass(charGetRoom(ch)))));
+
     // make sure there is a corresponding zone ...
-    if((zone = worldGetZone(gameworld, vnum)) == NULL)
-      send_to_char(ch, 
-		   "No such zone exists. To create a new one, use "
-		   "zedit new <vnum> <min> <max>\r\n");
+    if(zone == NULL)
+      send_to_char(ch, "No such zone exists. To create a new one, use "
+		       "zedit new <key>\r\n");
     else if(!canEditZone(zone, ch))
       send_to_char(ch, "You are not authorized to edit this zone.\r\n");  
     else {

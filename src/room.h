@@ -58,101 +58,82 @@
 
 //
 // Create a clean, new room
-//
 ROOM_DATA *newRoom();
 
 
 //
 // Delete a room, and detach it from all of its dependant structures
-//
 void deleteRoom(ROOM_DATA *room);
 
 
 //
-// run the room's reset scripts
-//
-void roomReset(ROOM_DATA *room);
-bool roomIsResettable(ROOM_DATA *room);
-
-
-//
 // make a copy of the room
-//
 ROOM_DATA *roomCopy(ROOM_DATA *room);
 
 
 //
 // Copy one room to another
-//
 void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to);
 
 
 //
 // parse and store room data
-//
 ROOM_DATA    *roomRead(STORAGE_SET *set);
 STORAGE_SET *roomStore(ROOM_DATA *room);
 
+bool           roomIsInstance(ROOM_DATA *room, const char *prototype);
+const char *roomGetPrototypes(ROOM_DATA *room);
+void         roomAddPrototype(ROOM_DATA *room, const char *prototype);
+void        roomSetPrototypes(ROOM_DATA *room, const char *prototypes);
+
+
 
 //*****************************************************************************
-//
 // add and remove functions
-//
 //*****************************************************************************
-
 void       roomRemoveChar     (ROOM_DATA *room, const CHAR_DATA *ch);
 void       roomRemoveObj      (ROOM_DATA *room, const OBJ_DATA *obj);
 
 void       roomAddChar        (ROOM_DATA *room, CHAR_DATA *ch);
 void       roomAddObj         (ROOM_DATA *room, OBJ_DATA *obj);
 
-void       roomDigExit        (ROOM_DATA *room, int dir, int to);
-void       roomDigExitSpecial (ROOM_DATA *room, const char *dir, int to);
+
 
 //*****************************************************************************
-//
 // get and set functions for rooms
-//
 //*****************************************************************************
-
-int   roomGetVnum        (const ROOM_DATA *room);
 const char *roomGetName        (const ROOM_DATA *room);
 const char *roomGetDesc        (const ROOM_DATA *room);
 int         roomGetTerrain     (const ROOM_DATA *room);
 BUFFER     *roomGetDescBuffer  (const ROOM_DATA *room);
 
-int         roomGetExitDir      (const ROOM_DATA *room, EXIT_DATA *exit);
-const char *roomGetExitDirSpecial(const ROOM_DATA *room, EXIT_DATA *exit);
-EXIT_DATA  *roomGetExit         (const ROOM_DATA *room, int dir);
-EXIT_DATA  *roomGetExitSpecial  (const ROOM_DATA *room, const char *dir);
-const char **roomGetExitNames   (const ROOM_DATA *room, int *num);
+void           roomSetExit(ROOM_DATA *room, const char *dir, EXIT_DATA *exit);
+EXIT_DATA     *roomGetExit(ROOM_DATA *room, const char *dir);
+EXIT_DATA  *roomRemoveExit(ROOM_DATA *room, const char *dir);
+const char *roomGetExitDir(ROOM_DATA *room, EXIT_DATA *exit);
+LIST     *roomGetExitNames(ROOM_DATA *room);
+
 EDESC_SET  *roomGetEdescs       (const ROOM_DATA *room);
 const char *roomGetEdesc        (const ROOM_DATA *room, const char *keyword);
 void       *roomGetAuxiliaryData(const ROOM_DATA *room, const char *name);
 LIST       *roomGetCharacters   (const ROOM_DATA *room);
 LIST       *roomGetContents     (const ROOM_DATA *room);
 BITVECTOR  *roomGetBits         (const ROOM_DATA *room);
+int         roomGetUID          (const ROOM_DATA *room);
+NEAR_MAP   *roomGetCmdTable     (const ROOM_DATA *room);
 
-LIST       *roomGetResets      (const ROOM_DATA *room);
-void        roomRemoveReset    (ROOM_DATA *room, RESET_DATA *reset);
-void        roomAddReset       (ROOM_DATA *room, RESET_DATA *reset);
+const char *roomGetClass       (ROOM_DATA *room);
+void        roomSetClass       (ROOM_DATA *room, const char *prototype);
 
 void        roomSetEdescs      (ROOM_DATA *room, EDESC_SET *edescs);
-void        roomSetVnum        (ROOM_DATA *room, int vnum);
 void        roomSetName        (ROOM_DATA *room, const char *name);
 void        roomSetDesc        (ROOM_DATA *room, const char *desc);
 void        roomSetTerrain     (ROOM_DATA *room, int terrain_type);
 
-void        roomSetExit        (ROOM_DATA *room,int dir, EXIT_DATA *exit);
-void        roomSetExitSpecial (ROOM_DATA *room,const char *dir, EXIT_DATA *exit);
-
-
 
 
 //*****************************************************************************
-//
 // direction stuff
-//
 //*****************************************************************************
 const char *dirGetName(int dir);
 const char *dirGetAbbrev(int dir);
@@ -162,10 +143,9 @@ int dirGetNum(const char *dir);
 int dirGetAbbrevNum(const char *dir);
 
 
+
 //*****************************************************************************
-//
 // terrain stuff
-//
 //*****************************************************************************
 const char *terrainGetName(int terrain);
 int  terrainGetNum(const char *terrain);

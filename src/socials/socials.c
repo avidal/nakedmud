@@ -92,14 +92,14 @@ SOCIAL_DATA *newSocial(const char *cmds,
 		       const char *to_room_tgt,
 		       int min_pos, int max_pos) {
   SOCIAL_DATA *data = malloc(sizeof(SOCIAL_DATA));
-  data->cmds          = strdup(cmds);
-  data->to_char_notgt = strdup(to_char_notgt ? to_char_notgt : "");
-  data->to_room_notgt = strdup(to_room_notgt ? to_room_notgt : "");
-  data->to_char_self  = strdup(to_char_self  ? to_char_self  : "");
-  data->to_room_self  = strdup(to_room_self  ? to_room_self  : "");
-  data->to_char_tgt   = strdup(to_char_tgt   ? to_char_tgt   : "");
-  data->to_vict_tgt   = strdup(to_vict_tgt   ? to_vict_tgt   : "");
-  data->to_room_tgt   = strdup(to_room_tgt   ? to_room_tgt   : "");
+  data->cmds          = strdupsafe(cmds);
+  data->to_char_notgt = strdupsafe(to_char_notgt);
+  data->to_room_notgt = strdupsafe(to_room_notgt);
+  data->to_char_self  = strdupsafe(to_char_self);
+  data->to_room_self  = strdupsafe(to_room_self);
+  data->to_char_tgt   = strdupsafe(to_char_tgt);
+  data->to_vict_tgt   = strdupsafe(to_vict_tgt);
+  data->to_room_tgt   = strdupsafe(to_room_tgt);
   data->min_pos       = min_pos;
   data->max_pos       = max_pos;
   return data;
@@ -161,14 +161,14 @@ void socialCopyTo(SOCIAL_DATA *from, SOCIAL_DATA *to) {
   if(to->to_room_tgt)   free(to->to_room_tgt);
 
   // copy over all of the new descs and commands
-  to->cmds          = strdup(from->cmds          ? from->cmds          : "");
-  to->to_char_notgt = strdup(from->to_char_notgt ? from->to_char_notgt : "");
-  to->to_room_notgt = strdup(from->to_room_notgt ? from->to_room_notgt : "");
-  to->to_char_self  = strdup(from->to_char_self  ? from->to_char_self  : "");
-  to->to_room_self  = strdup(from->to_room_self  ? from->to_room_self  : "");
-  to->to_char_tgt   = strdup(from->to_char_tgt   ? from->to_char_tgt   : "");
-  to->to_vict_tgt   = strdup(from->to_vict_tgt   ? from->to_vict_tgt   : "");
-  to->to_room_tgt   = strdup(from->to_room_tgt   ? from->to_room_tgt   : "");
+  to->cmds          = strdupsafe(from->cmds);
+  to->to_char_notgt = strdupsafe(from->to_char_notgt);
+  to->to_room_notgt = strdupsafe(from->to_room_notgt);
+  to->to_char_self  = strdupsafe(from->to_char_self);
+  to->to_room_self  = strdupsafe(from->to_room_self);
+  to->to_char_tgt   = strdupsafe(from->to_char_tgt);
+  to->to_vict_tgt   = strdupsafe(from->to_vict_tgt);
+  to->to_room_tgt   = strdupsafe(from->to_room_tgt);
   to->min_pos       = from->min_pos;
   to->max_pos       = from->max_pos;
 }
@@ -223,37 +223,37 @@ int socialGetMaxPos(SOCIAL_DATA *social) {
 
 void socialSetCharNotgt(SOCIAL_DATA *social, const char *mssg) {
   if(social->to_char_notgt) free(social->to_char_notgt);
-  social->to_char_notgt   = strdup(mssg ? mssg : "");
+  social->to_char_notgt   = strdupsafe(mssg);
 }
 
 void socialSetRoomNotgt(SOCIAL_DATA *social, const char *mssg) {
   if(social->to_room_notgt) free(social->to_room_notgt);
-  social->to_room_notgt   = strdup(mssg ? mssg : "");
+  social->to_room_notgt   = strdupsafe(mssg);
 }
 
 void socialSetCharSelf(SOCIAL_DATA *social, const char *mssg) {
   if(social->to_char_self) free(social->to_char_self);
-  social->to_char_self   = strdup(mssg ? mssg : "");
+  social->to_char_self   = strdupsafe(mssg);
 }
 
 void socialSetRoomSelf(SOCIAL_DATA *social, const char *mssg) {
   if(social->to_room_self) free(social->to_room_self);
-  social->to_room_self   = strdup(mssg ? mssg : "");
+  social->to_room_self   = strdupsafe(mssg);
 }
 
 void socialSetCharTgt(SOCIAL_DATA *social, const char *mssg) {
   if(social->to_char_tgt) free(social->to_char_tgt);
-  social->to_char_tgt   = strdup(mssg ? mssg : "");
+  social->to_char_tgt   = strdupsafe(mssg);
 }
 
 void socialSetVictTgt(SOCIAL_DATA *social, const char *mssg) {
   if(social->to_vict_tgt) free(social->to_vict_tgt);
-  social->to_vict_tgt   = strdup(mssg ? mssg : "");
+  social->to_vict_tgt   = strdupsafe(mssg);
 }
 
 void socialSetRoomTgt(SOCIAL_DATA *social, const char *mssg) {
   if(social->to_room_tgt) free(social->to_room_tgt);
-  social->to_room_tgt   = strdup(mssg ? mssg : "");
+  social->to_room_tgt   = strdupsafe(mssg);
 }
 
 void socialSetMinPos(SOCIAL_DATA *social, int pos) {
@@ -451,16 +451,16 @@ void init_socials() {
   SOCIAL_DATA     *data = NULL;
 
   ITERATE_HASH(cmd, data, hash_i)
-    add_cmd(cmd, NULL, cmd_social, 0, data->min_pos, data->max_pos, 
+    add_cmd(cmd, NULL, cmd_social, data->min_pos, data->max_pos, 
 	    "player", TRUE, FALSE);
   deleteHashIterator(hash_i);
 
   // link/unlink commands for the admins
-  add_cmd("soclink", NULL, cmd_soclink, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("soclink", NULL, cmd_soclink, POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
-  add_cmd("socunlink", NULL, cmd_socunlink, 0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("socunlink", NULL, cmd_socunlink, POS_UNCONCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
-  add_cmd("socials",   NULL, cmd_socials,   0, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("socials",   NULL, cmd_socials,   POS_UNCONCIOUS, POS_FLYING,
 	  "player",  TRUE, FALSE);
 
   // let add_social know it can start saving again
@@ -485,7 +485,7 @@ void add_social(SOCIAL_DATA *social) {
     unlink_social(cmd_list[i]);
     hashPut(social_table, cmd_list[i], social);
     // add the new command to the game
-    add_cmd(cmd_list[i], NULL, cmd_social, 0, social->min_pos, social->max_pos,
+    add_cmd(cmd_list[i], NULL, cmd_social, social->min_pos, social->max_pos,
 	    "player", TRUE, FALSE);
     free(cmd_list[i]);
   }
@@ -513,7 +513,7 @@ void link_social(const char *new_cmd, const char *old_cmd) {
     hashPut(social_table, new_cmd, data);
     
     // add the new command to the game
-    add_cmd(new_cmd, NULL, cmd_social, 0, data->min_pos, data->max_pos,
+    add_cmd(new_cmd, NULL, cmd_social, data->min_pos, data->max_pos,
 	    "player", TRUE, FALSE);
   }
 

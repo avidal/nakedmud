@@ -13,40 +13,28 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <dirent.h> 
+#include <time.h>
 
 // include main header file
 #include "mud.h"
+#include "prototype.h"
 #include "character.h"
 #include "object.h"
 #include "world.h"
 #include "zone.h"
 #include "room.h"
+#include "room_reset.h"
 #include "exit.h"
 #include "socket.h"
 #include "utils.h"
 #include "save.h"
 #include "handler.h"
 #include "inform.h"
-#include "dialog.h"
 #include "event.h"
 #include "action.h"
+#include "hooks.h"
 
 
-
-//*****************************************************************************
-// mandatory modules
-//*****************************************************************************
-#include "scripts/script.h"
-
-
-
-void  add_extract_obj_func (void (* func)(OBJ_DATA *)) {
-  listQueue(extract_obj_funcs, func);
-}
-
-void  add_extract_mob_func (void (* func)(CHAR_DATA *)) {
-  listQueue(extract_mob_funcs, func);
-}
 
 void  extract_obj_final(OBJ_DATA *obj) {
   obj_from_game(obj);
@@ -54,13 +42,6 @@ void  extract_obj_final(OBJ_DATA *obj) {
 }
 
 void extract_obj(OBJ_DATA *obj) {
-  // go through all of our extraction functions
-  LIST_ITERATOR *ex_i = newListIterator(extract_obj_funcs);
-  void (* ex_func)(OBJ_DATA *) = NULL;
-  ITERATE_LIST(ex_func, ex_i)
-    ex_func(obj);
-  deleteListIterator(ex_i);
-
   // make sure we're not attached to anything
   CHAR_DATA *sitter = NULL;
   while( (sitter = listGet(objGetUsers(obj), 0)) != NULL)
@@ -72,10 +53,10 @@ void extract_obj(OBJ_DATA *obj) {
 
   if(objGetRoom(obj))
     obj_from_room(obj);
-  if(objGetCarrier(obj))
-    obj_from_char(obj);
   if(objGetWearer(obj))
     try_unequip(objGetWearer(obj), obj);
+  if(objGetCarrier(obj))
+    obj_from_char(obj);
   if(objGetContainer(obj))
     obj_from_obj(obj);
 
@@ -85,24 +66,22 @@ void extract_obj(OBJ_DATA *obj) {
 
 void extract_mobile_final(CHAR_DATA *ch) {
   char_from_game(ch);
-  deleteChar(ch);
+  if(charIsNPC(ch))
+    deleteChar(ch);
+  else
+    unreference_player(ch);
 }
 
 void extract_mobile(CHAR_DATA *ch) {
-  // go through all of our extraction functions
-  LIST_ITERATOR *ex_i = newListIterator(extract_mob_funcs);
-  void (* ex_func)(CHAR_DATA *) = NULL;
-  ITERATE_LIST(ex_func, ex_i)
-    ex_func(ch);
-  deleteListIterator(ex_i);
-
   // unequip everything the character is wearing
   // and send it to inventory
   unequip_all(ch);
   // extract everything in the character's inventory
-  OBJ_DATA *obj = NULL;
-  while( (obj = listGet(charGetInventory(ch), 0)) != NULL)
+  LIST_ITERATOR *obj_i = newListIterator(charGetInventory(ch));
+  OBJ_DATA        *obj = NULL;
+  ITERATE_LIST(obj, obj_i) {
     extract_obj(obj);
+  } deleteListIterator(obj_i);
 
   // make sure we're not attached to anything
   if(charGetFurniture(ch))
@@ -120,6 +99,39 @@ void extract_mobile(CHAR_DATA *ch) {
     listPut(mobs_to_delete, ch);
 }
 
+void extract_room_final(ROOM_DATA *room) {
+  room_from_game(room);
+  deleteRoom(room);
+}
+
+void extract_room(ROOM_DATA *room) {
+  // extract all of the objects characters in us
+  CHAR_DATA *ch = NULL;
+  while( (ch = listGet(roomGetCharacters(room), 0)) != NULL)
+    extract_mobile(ch);
+
+  // and the objects
+  OBJ_DATA *obj = NULL;
+  while( (obj = listGet(roomGetContents(room), 0)) != NULL)
+    extract_obj(obj);
+
+  // remove us from the world we're in ... the if should always be true if
+  // we are in fact part of the world.
+  if(worldRoomLoaded(gameworld, roomGetClass(room)) &&
+     worldGetRoom(gameworld, roomGetClass(room)) == room)
+    worldRemoveRoom(gameworld, roomGetClass(room));
+
+  // If anyone's last room was us, make sure we set the last room to NULL
+  LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+  ITERATE_LIST(ch, ch_i) {
+    if(charGetLastRoom(ch) == room)
+      charSetLastRoom(ch, NULL);
+  } deleteListIterator(ch_i);
+
+  if(!listIn(rooms_to_delete, room))
+    listPut(rooms_to_delete, room);
+}
+
 void communicate(CHAR_DATA *dMob, char *txt, int range)
 {
   switch(range) {
@@ -127,23 +139,21 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
     bug("Communicate: Bad Range %d.", range);
     return;
 
-  case COMM_LOCAL: {  /* everyone in the same room */
-    char other_buf[MAX_BUFFER];
-    sprintf(other_buf, "{y$n says, '%s'{n", txt);
-    send_to_char(dMob, "{yYou say, '%s'{n\r\n", txt);
-    message(dMob, NULL, NULL, NULL, FALSE, TO_ROOM, other_buf);
-    try_dialog_all(dMob, roomGetCharacters(charGetRoom(dMob)), txt);
-    try_speech_script(dMob, NULL, txt);
+    // to everyone in the same room
+  case COMM_LOCAL:
+    mssgprintf(dMob, NULL, NULL, NULL, FALSE, TO_CHAR,
+	       "{yYou say, '%s'{n", txt);
+    mssgprintf(dMob, NULL, NULL, NULL, FALSE, TO_ROOM, 
+	       "{y$n says, '%s'{n", txt);
     break;
-  }
 
-  case COMM_GLOBAL: { /* everyone in the world */
-    char other_buf[MAX_BUFFER];
-    sprintf(other_buf, "{c$n chats, '%s'{n", txt);
-    send_to_char(dMob, "{cYou chat, '%s'{n\r\n", txt);
-    message(dMob, NULL, NULL, NULL, FALSE, TO_WORLD, other_buf);
+    // to everyone in the world
+  case COMM_GLOBAL:
+    mssgprintf(dMob, NULL, NULL, NULL, FALSE, TO_CHAR,
+	       "{cYou chat, '%s'{n", txt);
+    mssgprintf(dMob, NULL, NULL, NULL, FALSE, TO_WORLD, 
+	       "{c$n chats, '%s'{n", txt);
     break;
-  }
 
   case COMM_LOG:
     send_to_groups("admin", "[LOG: %s]\r\n", txt);
@@ -156,20 +166,22 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
  * load the world and its inhabitants, as well as other misc game data
  */
 void load_muddata() {  
-  gameworld = worldLoad(WORLD_PATH);
   if(gameworld == NULL) {
     log_string("ERROR: Could not boot game world.");
     abort();
   }
-  else {
-    // see if any of our zones are in old formats and need to be converted
-    ZONE_DATA       *zone = NULL;
-    LIST_ITERATOR *zone_i = newListIterator(worldGetZones(gameworld));
-    ITERATE_LIST(zone, zone_i) {
-      if(zoneIsOldFormat(gameworld, zoneGetVnum(zone)))
-	zoneConvertFormat(zone);
-    } deleteListIterator(zone_i);
-  }
+
+  worldAddType(gameworld, "mproto", protoRead,  protoStore,  deleteProto, 
+	       protoSetKey);
+  worldAddType(gameworld, "oproto", protoRead,  protoStore,  deleteProto,
+	       protoSetKey);
+  worldAddType(gameworld, "rproto", protoRead,  protoStore,  deleteProto,
+	       protoSetKey);
+  worldAddType(gameworld, "reset",  resetListRead, resetListStore, 
+	       deleteResetList, resetListSetKey);
+
+  worldSetPath(gameworld, WORLD_PATH);
+  worldInit(gameworld);
 
   greeting = read_file("../lib/txt/greeting");
   motd     = read_file("../lib/txt/motd");
@@ -202,7 +214,7 @@ bool try_enter_game(CHAR_DATA *ch) {
     send_to_char(ch, 
 		 "Your loadroom seems to be missing. Attempting to "
 		 "load you to the start room.\r\n");
-    log_string("ERROR: %s had invalid loadroom, %d", 
+    log_string("ERROR: %s had invalid loadroom, %s", 
 	       charGetName(ch), charGetLoadroom(ch));
     loadroom = worldGetRoom(gameworld, START_ROOM);
   }
@@ -227,8 +239,7 @@ bool try_enter_game(CHAR_DATA *ch) {
   }
 }
 
-CHAR_DATA *check_reconnect(const char *player)
-{
+CHAR_DATA *check_reconnect(const char *player) {
   CHAR_DATA *dMob;
   LIST_ITERATOR *mob_i = newListIterator(mobile_list);
 
@@ -244,6 +255,29 @@ CHAR_DATA *check_reconnect(const char *player)
 
   deleteListIterator(mob_i);
   return dMob;
+}
+
+void do_mass_transfer(ROOM_DATA *from, ROOM_DATA *to, bool chars, bool mobs,
+		      bool objs) {
+  if(chars || mobs) {
+    LIST_ITERATOR *ch_i = newListIterator(roomGetCharacters(from));
+    CHAR_DATA       *ch = NULL;
+    ITERATE_LIST(ch, ch_i) {
+      if(mobs || (chars && !charIsNPC(ch))) {
+	char_from_room(ch);
+	char_to_room(ch, to);
+      }
+    } deleteListIterator(ch_i);
+  }
+
+  if(objs) {
+    LIST_ITERATOR *obj_i = newListIterator(roomGetContents(from));
+    OBJ_DATA        *obj = NULL;
+    ITERATE_LIST(obj, obj_i) {
+      obj_from_room(obj);
+      obj_to_room(obj, to);
+    } deleteListIterator(obj_i);
+  }
 }
 
 
@@ -291,8 +325,8 @@ const char *see_obj_as  (CHAR_DATA *ch, OBJ_DATA  *target) {
   return SOMETHING;
 }
 
-int count_objs(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
-	       bool must_see) {
+int count_objs(CHAR_DATA *looker, LIST *list, const char *name, 
+	       const char *prototype, bool must_see) {
   LIST_ITERATOR *obj_i = newListIterator(list);
   OBJ_DATA *obj;
   int count = 0;
@@ -303,8 +337,8 @@ int count_objs(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
     // if we have a name, search by it
     if(name && *name && objIsName(obj, name))
       count++;
-    // otherwise search by vnum
-    else if(!name && objGetVnum(obj) == vnum)
+    // otherwise search by prototype
+    else if(prototype && *prototype && objIsInstance(obj, prototype))
       count++;
   }
   deleteListIterator(obj_i);
@@ -312,8 +346,8 @@ int count_objs(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
 }
 
 
-int count_chars(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
-		bool must_see) {
+int count_chars(CHAR_DATA *looker, LIST *list, const char *name,
+		const char *prototype, bool must_see) {
   LIST_ITERATOR *char_i = newListIterator(list);
   CHAR_DATA *ch;
   int count = 0;
@@ -324,8 +358,8 @@ int count_chars(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
     // if we have a name, search by it
     if(name && *name && charIsName(ch, name))
       count++;
-    // otherwise, search by vnum
-    else if(!name && charGetVnum(ch) == vnum)
+    // otherwise, search by prototype
+    else if(prototype && *prototype && charIsInstance(ch, prototype))
       count++;
   }
   deleteListIterator(char_i);
@@ -336,10 +370,10 @@ int count_chars(CHAR_DATA *looker, LIST *list, const char *name, int vnum,
 
 //
 // find the numth occurance of the character with name, "name"
-// if name is not supplied, search by vnum
+// if name is not supplied, search by prototype
 //
 CHAR_DATA *find_char(CHAR_DATA *looker, LIST *list, int num, const char *name,
-		     int vnum, bool must_see) {
+		     const char *prototype, bool must_see) {
   if(num <= 0)
     return NULL;
 
@@ -352,8 +386,8 @@ CHAR_DATA *find_char(CHAR_DATA *looker, LIST *list, int num, const char *name,
     // if we have a name, search by name
     if(name && *name && charIsName(ch, name))
       num--;
-    // otherwise search by vnum
-    else if(!name && charGetVnum(ch) == vnum)
+    // otherwise search by prototype
+    else if(prototype && *prototype && charIsInstance(ch, prototype))
       num--;
     if(num == 0)
       break;
@@ -365,10 +399,10 @@ CHAR_DATA *find_char(CHAR_DATA *looker, LIST *list, int num, const char *name,
 
 //
 // find the numth occurance of the object with name, "name"
-// if name is not supplied, search by vnum
+// if name is not supplied, search by prototype
 //
 OBJ_DATA *find_obj(CHAR_DATA *looker, LIST *list, int num, 
-		   const char *name, int vnum, bool must_see) {
+		   const char *name, const char *prototype, bool must_see) {
   if(num == 0)
     return NULL;
 
@@ -381,8 +415,8 @@ OBJ_DATA *find_obj(CHAR_DATA *looker, LIST *list, int num,
     // if a name is supplied, search by name
     if(name && *name && objIsName(obj, name))
       num--;
-    // otherwise, search by vnum
-    if(!name && objGetVnum(obj) == vnum)
+    // otherwise, search by prototype
+    else if(prototype && *prototype && objIsInstance(obj, prototype))
       num--;
     if(num == 0)
       break;
@@ -397,7 +431,7 @@ OBJ_DATA *find_obj(CHAR_DATA *looker, LIST *list, int num,
 // if name is NULL
 //
 LIST *find_all_chars(CHAR_DATA *looker, LIST *list, const char *name,
-		     int vnum, bool must_see) {
+		     const char *prototype, bool must_see) {
   LIST_ITERATOR *char_i = newListIterator(list);
   LIST *char_list = newList();
   CHAR_DATA *ch;
@@ -407,7 +441,7 @@ LIST *find_all_chars(CHAR_DATA *looker, LIST *list, const char *name,
       continue;
     if(name && (!*name || charIsName(ch, name)))
       listPut(char_list, ch);
-    else if(!name && charGetVnum(ch) == vnum)
+    else if(prototype && *prototype && charIsInstance(ch, prototype))
       listPut(char_list, ch);
   }
   deleteListIterator(char_i);
@@ -420,7 +454,7 @@ LIST *find_all_chars(CHAR_DATA *looker, LIST *list, const char *name,
 // the list must be deleted after use.
 //
 LIST *find_all_objs(CHAR_DATA *looker, LIST *list, const char *name, 
-		    int vnum, bool must_see) {
+		    const char *prototype, bool must_see) {
 
   LIST_ITERATOR *obj_i = newListIterator(list);
   LIST *obj_list = newList();
@@ -431,7 +465,7 @@ LIST *find_all_objs(CHAR_DATA *looker, LIST *list, const char *name,
       continue;
     if(name && (!*name || objIsName(obj, name)))
       listPut(obj_list, obj);
-    else if(!name && objGetVnum(obj) == vnum)
+    else if(prototype && *prototype && objIsInstance(obj, prototype))
       listPut(obj_list, obj);
   }
   deleteListIterator(obj_i);
@@ -514,114 +548,23 @@ int string_hash(const char *key) {
 bool endswith(const char *string, const char *end) {
   int slen = strlen(string);
   int elen = strlen(end);
-  return (slen >= elen && !strcmp(string + slen - elen, end));
+  return (slen >= elen && !strcasecmp(string + slen - elen, end));
 }
 
 bool startswith(const char *string, const char *start) {
-  return !strncmp(string, start, strlen(start));
+  return !strncasecmp(string, start, strlen(start));
 }
 
+const char *strcpyto(char *to, const char *from, char end) {
+  // copy everything up to end, and then delimit our destination buffer
+  for(; *from != '\0' && *from != end; to++, from++)
+    *to = *from;
+  *to = '\0';
 
-
-void format_string(char **string, int max_width, 
-		   unsigned int maxlen, bool indent) {
-  char formatted[MAX_BUFFER];
-  bool needs_capital = TRUE;
-  bool needs_indent  = FALSE; // no indent on the first line, unless
-                              // we get the OK from the indent parameter
-  int format_i = 0, string_i = 0, col = 0, next_space = 0;
-
-  // put in our indent
-  if(indent) {
-    sprintf(formatted, "   ");
-    format_i += 3;
-    col      += 3;
-
-    // skip the leading spaces
-    while(isspace((*string)[string_i]) && (*string)[string_i] != '\0')
-      string_i++;
-  }
-
-
-  for(; (*string)[string_i] != '\0'; string_i++) {
-
-    // we have to put a newline in because the word won't fit on the line
-    next_space = next_space_in((*string)+string_i);
-    if(next_space == -1)
-      next_space = strlen((*string)+string_i);
-    if(col + next_space > max_width-2) {
-      formatted[format_i] = '\r'; format_i++;
-      formatted[format_i] = '\n'; format_i++;
-      col = 0;
-    }
-
-    char ch = (*string)[string_i];
-
-    // no spaces on newlines
-    if(isspace(ch) && col == 0)
-      continue;
-    // we will do our own sentance formatting
-    else if(needs_capital && isspace(ch))
-      continue;
-    // delete multiple spaces
-    else if(isspace(ch) && format_i > 0 && isspace(formatted[format_i-1]))
-      continue;
-    // treat newlines as spaces (to separate words on different lines), 
-    // since we are creating our own newlines
-    else if(ch == '\r' || ch == '\n') {
-      // we've already spaced
-      if(col == 0)
-	continue;
-      formatted[format_i] = ' ';
-      col++;
-    }
-    // if someone is putting more than 1 sentence delimiter, we
-    // need to catch it so we will still capitalize the next word
-    else if(strchr("?!.", ch)) {
-      needs_capital = TRUE;
-      needs_indent  = TRUE;
-      formatted[format_i] = ch;
-      col++;
-    }
-    // see if we are the first letter after the end of a sentence
-    else if(needs_capital) {
-      // check if indenting will make it so we don't
-      // have enough room to print the word. If that's the
-      // case, then skip down to a new line instead
-      if(col + 2 + next_space_in((*string)+string_i) > max_width-2) {
-	formatted[format_i] = '\r'; format_i++;
-	formatted[format_i] = '\n'; format_i++;
-	col = 0;
-      }
-      // indent two spaces if we're not at the start of a line 
-      else if(needs_indent && string_i-1 >= 0 && (*string)[string_i-1] != '\n'){
-	formatted[format_i] = ' '; format_i++;
-	formatted[format_i] = ' '; format_i++;
-	col += 2;
-      }
-      // capitalize the first letter on the new word
-      formatted[format_i] = toupper(ch);
-      needs_capital = FALSE;
-      needs_indent  = FALSE;
-      col++;
-    }
-    else {
-      formatted[format_i] = ch;
-      col++;
-    }
-
-    format_i++;
-  }
-
-  // tag a newline onto the end of the string if there isn't one already
-  if(format_i > 0 && formatted[format_i-1] != '\n') {
-    formatted[format_i++] = '\r';
-    formatted[format_i++] = '\n';
-  }
-
-  formatted[format_i] = '\0';
-  free(*string);
-  *string = strdup(formatted);
+  // skip our end character and return whatever's left
+  if(*from != '\0')
+    from++;
+  return from;
 }
 
 //
@@ -867,7 +810,7 @@ void remove_keyword(char *keywords, const char *word) {
 //
 void center_string(char *buf, const char *string, int linelen, int buflen, 
 		   bool border) {
-  static char fmt[32];
+  char fmt[32];
   int str_len = strlen(string);
   int spaces  = (linelen - str_len)/2;
 
@@ -938,7 +881,7 @@ double rand_gaussian(void) {
 }
 
 double sigmoid(double val) {
-  return 1.0 / (1.0 + pow(e, -val));
+  return 1.0 / (1.0 + pow(MATH_E, -val));
 }
 
 
@@ -954,44 +897,6 @@ const char *numth(int num) {
     return "rd";
   else
     return "th";
-}
-
-
-//
-// Replace occurances of a with b. return how many occurances were replaced
-//
-int replace_string(char **string, const char *a, const char *b, bool all) {
-  static char buf[MAX_BUFFER * 4];
-  char *text = *string;
-  int buf_i  = 0, i = 0, found = 0;
-  int a_len  = strlen(a), b_len = strlen(b);
-  *buf = '\0';
-
-  for(i = 0; text[i] != '\0'; i++) {
-    // we've found a match
-    if(!strncmp(a, &text[i], a_len)) {
-      strcpy(buf+buf_i, b);
-      buf_i += b_len;
-      i     += a_len - 1;
-
-      found++;
-      // print the rest, and exit
-      if(!all) {
-	strcpy(buf+buf_i, text+i+1);
-	buf_i = strlen(buf);
-	break;
-      }
-    }
-    else {
-      buf[buf_i] = text[i];
-      buf_i++;
-    }
-  }
-
-  buf[buf_i] = '\0';
-  free(text);
-  *string = strdup(buf);
-  return found;
 }
 
 
@@ -1035,7 +940,8 @@ void strip_word(char *string, const char *word) {
   }
 }
 
-char *tag_keywords(const char *keywords, const char *string,
+
+char *tag_keywords(const char *string, const char *keywords, 
 		   const char *start_tag, const char *end_tag) {
   char buf[strlen(string) * 2];
   int i = 0, j = 0;
@@ -1076,6 +982,14 @@ char *tag_keywords(const char *keywords, const char *string,
 }
 
 
+void buf_tag_keywords(BUFFER *buf, const char *keywords, const char *start_tag,
+		      const char *end_tag) {
+  char *new_str = tag_keywords(bufferString(buf), keywords, start_tag, end_tag);
+  bufferClear(buf);
+  bufferCat(buf, new_str);
+  free(new_str);
+}
+
 bitvector_t parse_bits(const char *string) {
   bitvector_t bits = 0;
 
@@ -1114,34 +1028,6 @@ void print_bits(bitvector_t bits, const char **names, char *buf) {
 
   if(count == 0)
     sprintf(buf, "NOBITS");
-}
-
-bool  try_dialog(CHAR_DATA *ch, CHAR_DATA *listener, const char *mssg) {
-  if(charIsNPC(listener)) {
-    DIALOG_DATA *dialog = worldGetDialog(gameworld, charGetDialog(listener));
-    RESPONSE_DATA *resp = (dialog ? dialogGetResponse(dialog, mssg):NULL);
-    // we've got a response, say it
-    if(resp) {
-      char *response = tagResponses(dialog,
-				    responseGetMessage(resp),
-				    "{c", "{p");
-      send_to_char(ch, "{p%s replies, '%s'\r\n", charGetName(listener), response);
-      free(response);
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-void try_dialog_all(CHAR_DATA *ch, LIST *listeners, const char *mssg) {
-  LIST_ITERATOR *list_i = newListIterator(listeners);
-  CHAR_DATA   *listener = NULL;
-
-  ITERATE_LIST(listener, list_i) {
-    if(ch == listener) continue;
-    try_dialog(ch, listener, mssg);
-  }
-  deleteListIterator(list_i);
 }
 
 
@@ -1213,10 +1099,9 @@ char *print_list(LIST *list, void *descriptor, void *multi_descriptor) {
 
 
 void show_list(CHAR_DATA *ch, LIST *list, void *descriptor, 
-	       void *multi_descriptor, void *vnum_getter) {
+	       void *multi_descriptor) {
   const char             *(* desc_func)(void *) = descriptor;
   const char            *(* multi_desc)(void *) = multi_descriptor;
-  int                    (*  vnum_func)(void *) = vnum_getter;
 
   int i;
   int size = listSize(list);
@@ -1256,20 +1141,13 @@ void show_list(CHAR_DATA *ch, LIST *list, void *descriptor,
     if(things[i] == NULL)
       break;
     else {
-      char vnum_buf[20];
-      if(vnum_func != NULL && bitIsOneSet(charGetUserGroups(ch), "builder"))
-	sprintf(vnum_buf, "[%d] ", vnum_func(things[i]));
-      else
-	*vnum_buf = '\0';
-
       if(counts[i] == 1)
-	send_to_char(ch, "{g%s%s\r\n", vnum_buf, desc_func(things[i]));
+	send_to_char(ch, "{g%s\r\n", desc_func(things[i]));
       else if(multi_desc == NULL || !*multi_desc(things[i]))
-	send_to_char(ch, "{g%s(%d) %s\r\n", vnum_buf, 
-		     counts[i], desc_func(things[i]));
+	send_to_char(ch, "{g(%d) %s\r\n", counts[i], desc_func(things[i]));
       else {
 	char fmt[SMALL_BUFFER];
-	sprintf(fmt, "{g%s%s\r\n", vnum_buf, multi_desc(things[i]));
+	sprintf(fmt, "{g%s\r\n", multi_desc(things[i]));
 	send_to_char(ch, fmt, counts[i]);
       }
     }
@@ -1310,9 +1188,9 @@ LIST *get_used_items(CHAR_DATA *ch, LIST *list, bool invis_ok) {
   return newlist;
 }
 
-bool has_obj(CHAR_DATA *ch, int vnum) {
-  LIST *vis_inv = find_all_objs(ch, charGetInventory(ch), NULL, vnum, TRUE);
-  int ret_val = FALSE;
+bool has_obj(CHAR_DATA *ch, const char *prototype) {
+  LIST *vis_inv = find_all_objs(ch, charGetInventory(ch), NULL, prototype,TRUE);
+  int   ret_val = FALSE;
   if(listSize(vis_inv) > 0)
     ret_val = TRUE;
   deleteList(vis_inv);
@@ -1321,6 +1199,70 @@ bool has_obj(CHAR_DATA *ch, int vnum) {
 
 void *identity_func(void *data) {
   return data;
+}
+
+bool parse_worldkey(const char *key, char *name, char *locale) {
+  *name = *locale = '\0';
+  int pos = next_letter_in(key, '@');
+  if(pos == -1)
+    return FALSE;
+  else {
+    strncpy(name, key, pos);
+    *(name+pos) = '\0';
+    strcpy(locale, key+pos+1);
+    if(*name == '\0' || *locale == '\0')
+      return FALSE;
+    return TRUE;
+  }
+}
+
+bool parse_worldkey_relative(CHAR_DATA *ch, const char *key, char *name, 
+			     char *locale) {
+  int pos = next_letter_in(key, '@');
+  if(pos != -1)
+    return parse_worldkey(key, name, locale);
+  else {
+    strcpy(name, key);
+    strcpy(locale, get_key_locale(roomGetClass(charGetRoom(ch))));
+    return TRUE;
+  }
+}
+
+const char *get_key_locale(const char *key) {
+  int pos = next_letter_in(key, '@');
+  if(pos == -1)
+    return "";
+  else
+    return key+pos+1;
+}
+
+const char *get_key_name(const char *key) {
+  int pos = next_letter_in(key, '@');
+  if(pos == -1)
+    return key;
+  else {
+    static char name[SMALL_BUFFER];
+    strcpy(name, key);
+    name[pos] = '\0';
+    return name;
+  }
+}
+
+const char *get_fullkey(const char *name, const char *locale) {
+  static char full_key[SMALL_BUFFER];
+  sprintf(full_key, "%s@%s", name, locale);
+  return full_key;
+}
+
+const char *get_fullkey_relative(const char *key, const char *locale) {
+  int pos = next_letter_in(key, '@');
+  if(pos > 0)
+    return key;
+  else {
+    static char full_key[SMALL_BUFFER];
+    sprintf(full_key, "%s@%s", key, locale);
+    return full_key;
+  }
 }
 
 bool cmd_matches(const char *pattern, const char *cmd) {
@@ -1339,6 +1281,12 @@ bool charHasMoreUserGroups(CHAR_DATA *ch1, CHAR_DATA *ch2) {
 		      bitvectorGetBits(charGetUserGroups(ch2))) &&
 	  !bitIsAllSet(charGetUserGroups(ch2),
 		       bitvectorGetBits(charGetUserGroups(ch1))));
+}
+
+bool canEditZone(ZONE_DATA *zone, CHAR_DATA *ch) {
+  return (!charIsNPC(ch) && 
+	  (is_keyword(zoneGetEditors(zone), charGetName(ch), FALSE) ||
+	   bitIsOneSet(charGetUserGroups(ch), "admin")));
 }
 
 bool file_exists(const char *fname) {
@@ -1367,3 +1315,98 @@ const char *custom_prompt(CHAR_DATA *ch) {
   return prompt;
 }
 
+//
+// Delete an object, room, mobile, etc... from the game. First remove it from
+// the gameworld database, and then delete it and its contents. The onus is on
+// the builder to make sure deleting a prototype won't screw anything up (e.g.
+// people standing about in a room when it's deleted).
+bool do_delete(CHAR_DATA *ch, const char *type, void *deleter, const char *arg){
+  void  (* delete_func)(void *data) = deleter;
+  void      *data = NULL;
+  const char *key = get_fullkey_relative(arg, 
+		        get_key_locale(roomGetClass(charGetRoom(ch))));
+  ZONE_DATA *zone = worldGetZone(gameworld, get_key_locale(key));
+  
+  if(!arg || !*arg)
+    send_to_char(ch, "Which %s did you want to delete?\r\n", type);
+  else if(zone == NULL)
+    send_to_char(ch, "No such zone exists.\r\n");
+  else if(!canEditZone(zone, ch))
+    send_to_char(ch, "You are not authorized to edit that zone.\r\n");
+  else if((data = worldRemoveType(gameworld, type, key)) == NULL)
+    send_to_char(ch, "The %s you tried to delete does not exist.\r\n", type);
+  else {
+    send_to_char(ch, "You remove the %s %s from the world database.\r\n", 
+		 key, type);
+    delete_func(data);
+    return TRUE;
+  }
+  return FALSE;
+}
+
+//
+// generic xxxlist for builders.
+void do_list(CHAR_DATA *ch, const char *locale, const char *type, 
+	     const char *header, void *informer) {
+  ZONE_DATA *zone = worldGetZone(gameworld, locale);
+  if(zone == NULL)
+    send_to_char(ch, "No such zone exists.\r\n");
+  else {
+    const char *(* info_func)(void *) = informer;
+    LIST *name_list = zoneGetTypeKeys(zone, type);
+    listSortWith(name_list, strcasecmp);
+    LIST_ITERATOR *name_i = newListIterator(name_list);
+    char            *name = NULL;
+    BUFFER           *buf = newBuffer(1);
+    void            *data = NULL;
+    bprintf(buf, " {wKey %74s \r\n"
+"{b--------------------------------------------------------------------------------{n\r\n", header);
+    ITERATE_LIST(name, name_i) {
+      data = worldGetType(gameworld, type, get_fullkey(name, locale));
+      if(data != NULL)
+	bprintf(buf, " {c%-20s %57s{n\r\n", name, 
+		(info_func ? info_func(zoneGetType(zone, type, name)) : ""));
+    } deleteListIterator(name_i);
+    deleteListWith(name_list, free);
+    page_string(charGetSocket(ch), bufferString(buf));
+    deleteBuffer(buf);
+  }
+}
+
+//
+// moves something of the given type with one name to the other name
+bool do_rename(CHAR_DATA *ch,const char *type,const char *from,const char *to) {
+  // make sure we can edit all of the zones involved
+  const char  *locale = get_key_locale(roomGetClass(charGetRoom(ch)));
+  void           *tgt = NULL;
+  ZONE_DATA     *zone = NULL;
+
+  // make sure "to" does not already exist, and that we have zone editing privs
+  if((zone = worldGetZone(gameworld, 
+	     get_key_locale(get_fullkey_relative(to, locale)))) == NULL)
+    send_to_char(ch, "Destination zone does not exist!\r\n");
+  else if(!canEditZone(zone, ch))
+    send_to_char(ch, "You cannot edit the destination zone.\r\n");
+  else if(worldGetType(gameworld, type, get_fullkey_relative(to, locale)))
+    send_to_char(ch, "%s already exists!\r\n", to);
+  else {
+    // make sure "from" exists, and that we have zone editing privs
+    if((zone = worldGetZone(gameworld, 
+	       get_key_locale(get_fullkey_relative(from, locale)))) == NULL)
+      send_to_char(ch, "The originating zone does not exist!\r\n");
+    else if(!canEditZone(zone, ch))
+      send_to_char(ch, "You do not have editing priviledges for %s!\r\n", from);
+    else if( (tgt = worldRemoveType(gameworld, type, 
+                    get_fullkey_relative(from, locale))) == NULL)
+      send_to_char(ch, "%s %s does not exist.\r\n", from, type);
+    else {
+      send_to_char(ch, "%s %s renamed to %s.\r\n", from, type, to);
+      worldPutType(gameworld, type, get_fullkey_relative(to, locale), tgt);
+      worldSaveType(gameworld, type, get_fullkey_relative(to, locale));
+      return TRUE;
+    }
+  }
+
+  // failed!
+  return FALSE;
+}

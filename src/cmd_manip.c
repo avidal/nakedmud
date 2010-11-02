@@ -16,7 +16,6 @@
 #include "exit.h"
 #include "world.h"
 #include "room.h"
-#include "extra_descs.h"
 #include "object.h"
 
 
@@ -43,57 +42,43 @@ void try_manip_other_exit(ROOM_DATA *room, EXIT_DATA *exit,
   // see if there's a room on the other side
   ROOM_DATA         *to = worldGetRoom(gameworld, exitGetTo(exit));
   EXIT_DATA *other_exit = NULL;
+  const char   *opp_dir = NULL;
   if(to == NULL)
     return;
 
-  // check to see if we've specified the return direction
-  if(*exitGetOpposite(exit)) { 
-    int ex_dir_num = dirGetNum(exitGetOpposite(exit));
-    if(ex_dir_num == DIR_NONE)
-      other_exit = roomGetExitSpecial(to, exitGetOpposite(exit));
-    else
-      other_exit = roomGetExit(to, ex_dir_num);
-  }
-  // manually look it up...
+  // check to see if we can figure out a return direction
+  if(*exitGetOpposite(exit))
+    opp_dir = exitGetOpposite(exit);
   else {
-    int ex_dir_num = roomGetExitDir(room, exit);
-    // normal exit
-    if(ex_dir_num != DIR_NONE)
-      other_exit = roomGetExit(to, dirGetOpposite(ex_dir_num));
+    int opp_num = dirGetNum(roomGetExitDir(room, exit));
+    if(opp_num != DIR_NONE)
+      opp_dir = dirGetName(dirGetOpposite(opp_num));
   }
 
-  // did we find another exit?
-  if(other_exit != NULL) {
-    // are we changing the close state?
-    if(exitIsClosed(other_exit) != closed) {
-      // first, make sure it's not locked
-      if(!exitIsLocked(other_exit)) {
-	// only send messages if we're changing the state
-	if(exitIsClosed(other_exit) != closed) {
-	  exitSetClosed(other_exit, closed);
-	  send_to_list(roomGetCharacters(to),
-		       "%s %s from the other side.\r\n",
-		       (*exitGetName(other_exit)?exitGetName(other_exit):
-			"An exit"),
-		       (closed ? "closes" : "opens"));
-	}
-      }
+  // do we have an opposite direction to manipulate?
+  if(opp_dir == NULL)
+    return;
+
+  // do we have an opposite exit to manipulate?
+  if( (other_exit = roomGetExit(to, opp_dir)) != NULL) {
+    // are we changing the close state, and the exit's not locked?
+    if(exitIsClosed(other_exit) != closed && !exitIsLocked(other_exit)) {
+      exitSetClosed(other_exit, closed);
+      send_to_list(roomGetCharacters(to),
+		   "%s %s from the other side.\r\n",
+		   (*exitGetName(other_exit)?exitGetName(other_exit):
+		    "An exit"),
+		   (closed ? "closes" : "opens"));
     }
 
-    // are we changing the lock state?
-    if(exitIsLocked(other_exit) != locked) {
-      // first make sure it's closed
-      if(exitIsClosed(other_exit)) {
-	// only send messages if we're changing the state
-	if(exitIsLocked(other_exit) != locked) {
-	  exitSetLocked(other_exit, locked);
-	  send_to_list(roomGetCharacters(to),
-		       "%s %s from the other side.\r\n",
-		       (*exitGetName(other_exit)?exitGetName(other_exit):
-			"An exit"),
-		       (locked ? "locks" : "unlocks"));
-	}
-      }
+    // are we changing the lock state, and the exit is closed?
+    if(exitIsLocked(other_exit) != locked && exitIsClosed(other_exit)) {
+      exitSetLocked(other_exit, locked);
+      send_to_list(roomGetCharacters(to),
+		   "%s %s from the other side.\r\n",
+		   (*exitGetName(other_exit)?exitGetName(other_exit):
+		    "An exit"),
+		   (locked ? "locks" : "unlocks"));
     }
   }
 }
@@ -110,36 +95,29 @@ void try_manip_other_exit(ROOM_DATA *room, EXIT_DATA *exit,
 // immediate visible range (room, inventory, body). do_lock automatically
 // checks if we have the key on us.
 //
-//  usage: lock [thing]
-//
 //  examples:
 //    lock door                lock a door in the room
 //    lock south               lock the south exit
 //    lock 2.chest             lock the 2nd chest in our visible range
-//
 COMMAND(cmd_lock) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "What were you wanting to lock?\r\n");
+  int found_type = PARSE_NONE;
+  void    *found = NULL;
+
+  if(!parse_args(ch, TRUE, cmd, arg, "[the] { obj.room.inv.eq exit }", 
+		 &found, &found_type))
     return;
-  }
 
-  int found_type = FOUND_NONE;
-  void *found    = generic_find(ch, arg,
-				FIND_TYPE_OBJ | FIND_TYPE_EXIT, 
-				FIND_SCOPE_IMMEDIATE,
-				FALSE, &found_type);
-
-
-  // did we find something?
-  if(found && found_type == FOUND_EXIT) {
+  // did we find an exit or an object?
+  if(found_type == PARSE_EXIT) {
     if(!exitIsClosed(found))
       send_to_char(ch, "%s must be closed first.\r\n", exitGetName(found));
     else if(exitIsLocked(found))
       send_to_char(ch, "%s is already locked.\r\n", exitGetName(found));
-    else if(exitGetKey(found) == NOTHING)
+    else if(!*exitGetKey(found))
       send_to_char(ch, "You cannot figure out how %s would be locked.\r\n",
 		   exitGetName(found));
-    else if(!has_obj(ch, exitGetKey(found)))
+    else if(!has_obj(ch, get_fullkey_relative(exitGetKey(found), 
+			     get_key_locale(roomGetClass(charGetRoom(ch))))))
       send_to_char(ch, "You cannot seem to find the key.\r\n");
     else {
       send_to_char(ch, "You lock %s.\r\n", exitGetName(found));
@@ -153,17 +131,19 @@ COMMAND(cmd_lock) {
     }
   }
 
-  else if(found && found_type == FOUND_OBJ) {
+  // object found
+  else { // if(found_type == PARSE_OBJ) {
     if(!objIsType(found, "container"))
       send_to_char(ch, "%s is not a container.\r\n", objGetName(found));
     else if(!containerIsClosed(found))
       send_to_char(ch, "%s must be closed first.\r\n", objGetName(found));
     else if(containerIsLocked(found))
       send_to_char(ch, "%s is already locked.\r\n", objGetName(found));
-    else if(containerGetKey(found) == NOTHING)
+    else if(!*containerGetKey(found))
       send_to_char(ch, "You cannot figure out how %s would be locked.\r\n",
 		   objGetName(found));
-    else if(!has_obj(ch, containerGetKey(found)))
+    else if(!has_obj(ch, get_fullkey_relative(containerGetKey(found),
+				     get_key_locale(objGetClass(found)))))
       send_to_char(ch, "You cannot seem to find the key.\r\n");
     else {
       send_to_char(ch, "You lock %s.\r\n", objGetName(found));
@@ -171,36 +151,28 @@ COMMAND(cmd_lock) {
       containerSetLocked(found, TRUE);
     }
   }
-  else
-    send_to_char(ch, "What did you want to lock?\r\n");
 }
-
 
 
 //
 // the opposite of lock
-//
 COMMAND(cmd_unlock) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "What were you wanting to unlock?\r\n");
+  int found_type = PARSE_NONE;
+  void    *found = NULL;
+
+  if(!parse_args(ch, TRUE, cmd, arg, "[the] { obj.room.inv exit }", 
+		 &found, &found_type))
     return;
-  }
-
-  int found_type = FOUND_NONE;
-  void *found    = generic_find(ch, arg,
-				FIND_TYPE_OBJ | FIND_TYPE_EXIT, 
-				FIND_SCOPE_IMMEDIATE,
-				FALSE, &found_type);
-
 
   // did we find something?
-  if(found && found_type == FOUND_EXIT) {
+  if(found_type == PARSE_EXIT) {
     if(!exitIsLocked(found))
       send_to_char(ch, "%s is not locked.\r\n", exitGetName(found));
-    else if(exitGetKey(found) == NOTHING)
+    else if(!*exitGetKey(found))
       send_to_char(ch, "You cannot figure out how %s would be unlocked.\r\n",
 		   exitGetName(found));
-    else if(!has_obj(ch, exitGetKey(found)))
+    else if(!has_obj(ch, get_fullkey_relative(exitGetKey(found), 
+			     get_key_locale(roomGetClass(charGetRoom(ch))))))
       send_to_char(ch, "You cannot seem to find the key.\r\n");
     else {
       send_to_char(ch, "You unlock %s.\r\n", exitGetName(found));
@@ -214,15 +186,16 @@ COMMAND(cmd_unlock) {
     }
   }
 
-  else if(found && found_type == FOUND_OBJ) {
+  else { // if(found_type == PARSE_OBJ) {
     if(!objIsType(found, "container"))
       send_to_char(ch, "%s is not a container.\r\n", objGetName(found));
     else if(!containerIsLocked(found))
       send_to_char(ch, "%s is not locked.\r\n", objGetName(found));
-    else if(containerGetKey(found) == NOTHING)
+    else if(!*containerGetKey(found))
       send_to_char(ch, "You cannot figure out how %s would be unlocked.\r\n",
 		   objGetName(found));
-    else if(!has_obj(ch, containerGetKey(found)))
+    else if(!has_obj(ch, get_fullkey_relative(containerGetKey(found), 
+				     get_key_locale(objGetClass(found)))))
       send_to_char(ch, "You cannot seem to find the key.\r\n");
     else {
       send_to_char(ch, "You unlock %s.\r\n", objGetName(found));
@@ -230,11 +203,7 @@ COMMAND(cmd_unlock) {
       containerSetLocked(found, FALSE);
     }
   }
-  else
-    send_to_char(ch, "What did you want to unlock?\r\n");
 }
-
-
 
 
 //
@@ -242,49 +211,31 @@ COMMAND(cmd_unlock) {
 //  your inventory. The container must be in your immediate visible range
 //  (room, inventory, body)
 //
-//  usage: put [thing] [container]
+//  usage: put [the] <thing> [in the] <container>
 //
 //  examples:
 //    put coin bag             put a coin into the bag
 //    put all.shirt closet     put all of the shirts in the closet
-//
 COMMAND(cmd_put) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "Put what where?\r\n");
+  void    *found = NULL;
+  bool  multiple = FALSE;
+  OBJ_DATA *cont = NULL;
+
+  if(!parse_args(ch, TRUE, cmd, arg, 
+		 "[the] obj.inv.multiple [in the] obj.room.inv",
+		 &found, &multiple, &cont))
     return;
-  }
-
-  // get the name of what we're trying to move
-  char name[SMALL_BUFFER];
-  arg = one_arg(arg, name);
-
-  int found_type = FOUND_NONE;
-  void *found    = generic_find(ch, name,
-				FIND_TYPE_OBJ, 
-				FIND_SCOPE_INV | FIND_SCOPE_VISIBLE,
-				TRUE, &found_type);
-
-  OBJ_DATA *cont = generic_find(ch, arg,
-				FIND_TYPE_OBJ, FIND_SCOPE_IMMEDIATE,
-				FALSE, NULL);
-
-  // make sure we've got what we need
-  if(!found || !cont) {
-    send_to_char(ch, "Put what where?\r\n");
-    return;
-  }
-
+  
   // make sure we have a container
-  if(!objIsType(cont, "container")) {
+  if(!objIsType(cont, "container"))
     send_to_char(ch, "%s is not a container.\r\n", objGetName(cont));
-    return;
-  }
 
   // did we find a list of things or a single item?
-  if(found_type == FOUND_OBJ)
+  else if(multiple == FALSE)
     do_put(ch, found, cont);
+
   // we have to move a bunch of things
-  else if(found_type == FOUND_LIST) {
+  else {
     OBJ_DATA *obj = NULL;
     while( (obj = listPop(found)) != NULL)
       do_put(ch, obj, cont);
@@ -297,7 +248,7 @@ COMMAND(cmd_put) {
 //  attempt to open a door or container. The container must be in our immediate
 //  visible range (room, inventory, body).
 //
-//  usage: open [thing]
+//  usage: open [the] <thing>
 //
 //  examples:
 //    open door               open a door
@@ -305,19 +256,15 @@ COMMAND(cmd_put) {
 //    open east               open the east exit
 //    open backpack on self   open a backpack you are wearing
 COMMAND(cmd_open) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "What did you want to open?\r\n");
-    return;
-  }
+  void    *found = NULL;
+  int found_type = PARSE_NONE;
 
-  int found_type = FOUND_NONE;
-  void *found = generic_find(ch, arg,
-			     FIND_TYPE_OBJ | FIND_TYPE_EXIT,
-			     FIND_SCOPE_IMMEDIATE,
-			     FALSE, &found_type);
+  if(!parse_args(ch, TRUE, cmd, arg, "{ obj.room.inv.eq exit }",
+		 &found, &found_type))
+    return;
 
   // open an exit
-  if(found && found_type == FOUND_EXIT) {
+  if(found_type == PARSE_EXIT) {
     if(!exitIsClosable(found))
       send_to_char(ch, "But %s cannot be opened!\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "it"));
@@ -340,7 +287,7 @@ COMMAND(cmd_open) {
   }
 
   // open a container
-  else if(found && found_type == FOUND_OBJ) {
+  else { // if(found_type == FOUND_OBJ) {
     // make sure it's a container and it can be opened
     if(!objIsType(found, "container") || !containerIsClosable(found))
       send_to_char(ch, "But it cannot be opened!\r\n");
@@ -354,35 +301,28 @@ COMMAND(cmd_open) {
       containerSetClosed(found, FALSE);
     }
   }
-  else
-    send_to_char(ch, "What did you want to open?\r\n");
 }
 
 
 //
 // cmd_close is used to close containers and exits.
-//   usage: open [thing]
+//   usage: open <thing>
 //
 //   examples:
 //     close door               close a door
 //     close 2.bag              close your second bag
 //     close east               close the east exit
 //     close backpack on self   close a backpack you are wearing
-//
 COMMAND(cmd_close) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "What did you want to close?\r\n");
-    return;
-  }
+  void    *found = NULL;
+  int found_type = PARSE_NONE;
 
-  int found_type = FOUND_NONE;
-  void *found = generic_find(ch, arg,
-			     FIND_TYPE_OBJ | FIND_TYPE_EXIT,
-			     FIND_SCOPE_IMMEDIATE,
-			     FALSE, &found_type);
+  if(!parse_args(ch, TRUE, cmd, arg, "{ obj.room.eq.inv exit }",
+		 &found, &found_type))
+    return;
 
   // close an exit
-  if(found && found_type == FOUND_EXIT) {
+  if(found_type == PARSE_EXIT) {
     if(!exitIsClosable(found))
       send_to_char(ch, "But %s cannot be closed!\r\n",
 		   (*exitGetName(found) ? exitGetName(found) : "it"));
@@ -404,7 +344,7 @@ COMMAND(cmd_close) {
   }
 
   // close a container
-  else if(found && found_type == FOUND_OBJ) {
+  else { // if(found_type == PARSE_OBJ) {
     // make sure it's a container and it can be closed
     if(!objIsType(found, "container") || !containerIsClosable(found))
       send_to_char(ch, "But it cannot even be closed!\r\n");
@@ -416,20 +356,17 @@ COMMAND(cmd_close) {
       containerSetClosed(found, TRUE);
     }
   }
-  else
-    send_to_char(ch, "What did you want to close?\r\n");
 }
 
 
 //
 // cmd_get is used to move objects from containers or the room to your inventory
-//   usage: get [object] [from]
+//   usage: get <object> <from>
 //
 //   examples:
 //     get sword            get a sword from the room
 //     get 2.cupcake bag    get the second cupcake from your bag
 //     get all.coin         get all of the coins on the ground
-//
 COMMAND(cmd_get) {
   if(!arg || !*arg) {
     send_to_char(ch, "What did you want to get?\r\n");
@@ -475,11 +412,11 @@ COMMAND(cmd_get) {
     get_count(name, name, &count);
     if(count == COUNT_ALL) {
       found_type = FOUND_LIST;
-      found      = find_all_objs(ch, objGetContents(cont), name, NOTHING, TRUE);
+      found      = find_all_objs(ch, objGetContents(cont), name, NULL, TRUE);
     }
     else {
       found_type = FOUND_OBJ;
-      found      = find_obj(ch, objGetContents(cont), count, name,NOTHING,TRUE);
+      found      = find_obj(ch, objGetContents(cont), count, name, NULL, TRUE);
     }
   }
   // otherwise, search the room for visible things
@@ -506,83 +443,68 @@ COMMAND(cmd_get) {
 //
 // cmd_give is used to transfer an object in your possession to 
 // another character
-//   usage: give [object] [person]
+//   usage: give [the] <object> [to] <person>
 //
 //   examples:
 //     give doll girl           give a doll in your inventory to a girl
 //     give all.coin robber     give all of your money to the robber
 //
 COMMAND(cmd_give) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "Give what to whom?\r\n");
+  CHAR_DATA *recv = NULL;  // the person we're giving stuff to
+  void   *to_give = NULL;  // may be a list or a single item
+  bool   multiple = FALSE; // are we giving one or multiple items?
+
+  // try to give objects from our inventory. We can give multiple items. Give
+  // them to a person in the room who is not ourself. The fact we can see the
+  // receiver is implied. If we fail to find our items or receiver, parse_args
+  // will tell the character what he did wrong, and we will halt the command
+  if(!parse_args(ch,TRUE,cmd,arg, "[the] obj.inv.multiple [to] ch.room.noself",
+		 &to_give, &multiple, &recv))
     return;
-  }
-  
-  strip_word(arg, "to");
-  char obj_name[SMALL_BUFFER];
-  arg = one_arg(arg, obj_name);
 
-  int found_type = FOUND_NONE;
-  void *found = generic_find(ch, obj_name, 
-			     FIND_TYPE_OBJ, 
-			     FIND_SCOPE_INV | FIND_SCOPE_VISIBLE, 
-			     TRUE, &found_type);
-
-  CHAR_DATA *recv = generic_find(ch, arg,
-				 FIND_TYPE_CHAR,
-				 FIND_SCOPE_ROOM | FIND_SCOPE_VISIBLE,
-				 FALSE, NULL);
-
-  if(!recv)
-    send_to_char(ch, "Whom where you looking for?\r\n");
-  else if(recv == ch)
-    send_to_char(ch, "You don't need to give yourself anything!\r\n");
-  else if(found && found_type == FOUND_LIST) {
-    OBJ_DATA *obj = NULL;
-    while( (obj = listPop(found)) != NULL)
+  // just a single item to give...
+  if(multiple == FALSE)
+    do_give(ch, recv, to_give);
+  // we have a list of items to give
+  else {
+    LIST_ITERATOR *obj_i = newListIterator(to_give);
+    OBJ_DATA        *obj = NULL;
+    ITERATE_LIST(obj, obj_i) {
       do_give(ch, recv, obj);
-    deleteList(found);
+    } deleteListIterator(obj_i);
+
+    // we also have to delete the list that parse_args sent us
+    deleteList(to_give);
   }
-  else if(found && found_type == FOUND_OBJ) {
-    do_give(ch, recv, found);
-  }
-  else
-    send_to_char(ch, "Give what to whom?\r\n");
 }
 
 
 //
 // cmd_drop is used to transfer an object in your inventory to the ground
-//   usage: drop [item]
+//   usage: drop <item>
 //
 //   examples:
 //     drop bag          drop a bag you have
 //     drop all.bread    drop all of the bread you are carrying
 //     drop 2.cupcake    drop the second cupcake in your posession
-//
 COMMAND(cmd_drop) {
-  if(!arg || !*arg) {
-    send_to_char(ch, "What did you want to drop?\r\n");
-    return;
-  }
+  void   *found = NULL;
+  bool multiple = FALSE;
 
-  int found_type = FOUND_NONE;
-  void *found    = generic_find(ch, arg,
-				FIND_TYPE_OBJ,
-				FIND_SCOPE_INV | FIND_SCOPE_VISIBLE,
-				TRUE, &found_type);
+  if(!parse_args(ch, TRUE, cmd, arg, "[the] obj.inv.multiple",&found,&multiple))
+    return;
+
+  // are we dropping a list of things, or just one?
+  if(multiple == FALSE)
+    do_drop(ch, found);
 
   // we got a list of things... drop 'em all
-  if(found_type == FOUND_LIST && found) {
+  else {
     OBJ_DATA *obj = NULL;
     while( (obj = listPop(found)) != NULL)
       do_drop(ch, obj);
     deleteList(found);
   }
-  else if(found_type == FOUND_OBJ && found)
-    do_drop(ch, found);
-  else 
-    send_to_char(ch, "You can't find what you're looking for.\r\n");
 }
 
 
@@ -596,64 +518,53 @@ COMMAND(cmd_drop) {
 //                                           inventory
 //     wear gloves left hand, right hand     wear the gloves on your left and
 //                                           right hands
-//
 COMMAND(cmd_wear) {
-  if(!*arg)
-    send_to_char(ch, "Wear what where?\r\n");
+  void   *found = NULL;
+  bool multiple = FALSE;
+  char   *where = NULL;
+
+  if(!parse_args(ch, TRUE, cmd, arg, "[the] obj.inv.multiple | [on my] string", 
+		 &found, &multiple, &where))
+    return;
+
+  // are we wearing one thing, or multiple things?
+  if(multiple == FALSE)
+    do_wear(ch, found, where);
+
+  // we're trying to wear multiple items
   else {
-    char pos[MAX_BUFFER];
-    arg = one_arg(arg, pos);
-  
-    int found_type = FOUND_NONE;
-    void *found = generic_find(ch, pos,
-			       FIND_TYPE_OBJ,
-			       FIND_SCOPE_INV | FIND_SCOPE_VISIBLE,
-			       TRUE, &found_type);
-
-    if(found && found_type == FOUND_LIST) {
-      OBJ_DATA *obj = NULL;
-      while( (obj = listPop(found)) != NULL)
-	do_wear(ch, obj, arg);
-      deleteList(found);
-    }
-
-    else if(found && found_type == FOUND_OBJ)
-      do_wear(ch, found, arg);
-
-    else
-      send_to_char(ch, "You can't find what you're looking for.\r\n");
+    OBJ_DATA *obj = NULL;
+    while( (obj = listPop(found)) != NULL)
+      do_wear(ch, obj, where);
+    deleteList(found);
   }
 }
 
 
 //
 // cmd_remove is used to unequip items on your body to your inventory
-//   usage: remove [item]
+//   usage: remove <item>
 //
 //   examples:
 //     remove mask             remove the mask you are wearing
 //     remove all.ring         remove all the rings you have on
 //     remove 2.ring           remove the 2nd ring you have equipped
-//
 COMMAND(cmd_remove) {
-  if(!*arg)
-    send_to_char(ch, "What did you want to remove?\r\n");
-  else {
-    int found_type = FOUND_NONE;
-    void *found = generic_find(ch, arg,
-			       FIND_TYPE_OBJ,
-			       FIND_SCOPE_WORN | FIND_SCOPE_VISIBLE,
-			       TRUE, &found_type);
+  void   *found = NULL;
+  bool multiple = FALSE;
 
-    if(found && found_type == FOUND_LIST) {
-      OBJ_DATA *obj = NULL;
-      while( (obj = listPop(found)) != NULL)
-	do_remove(ch, obj);
-      deleteList(found);
-    }
-    else if(found && found_type == FOUND_OBJ)
-      do_remove(ch, found);
-    else 
-      send_to_char(ch, "What did you want to remove?\r\n");
+  if(!parse_args(ch, TRUE, cmd, arg, "obj.eq.multiple", &found, &multiple))
+    return;
+
+  // are we trying to remove one thing, or multiple things?
+  if(multiple == FALSE)
+    do_remove(ch, found);
+
+  // removing multiple things...
+  else {
+    OBJ_DATA *obj = NULL;
+    while( (obj = listPop(found)) != NULL)
+      do_remove(ch, obj);
+    deleteList(found);
   }
 }

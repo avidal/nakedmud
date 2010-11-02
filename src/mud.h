@@ -8,8 +8,6 @@
 // include this header.
 //
 //*****************************************************************************
-#include <zlib.h>
-#include <pthread.h>
 #include <arpa/telnet.h>
 #include "wrapsock.h"
 
@@ -45,7 +43,6 @@
 typedef struct socket_data                SOCKET_DATA;
 typedef struct account_data               ACCOUNT_DATA;
 typedef struct char_data                  CHAR_DATA;  
-typedef struct datatable                  DATATABLE;
 typedef struct storage_set                STORAGE_SET;
 typedef struct storage_set_list           STORAGE_SET_LIST;
 typedef struct prototype_data             PROTO_DATA;
@@ -54,7 +51,6 @@ typedef struct script_set_data            SCRIPT_SET;
 typedef struct edesc_data                 EDESC_DATA;
 typedef struct edesc_set_data             EDESC_SET;
 typedef struct response_data              RESPONSE_DATA;
-typedef struct dialog_data                DIALOG_DATA;
 
 typedef struct script_data                SCRIPT_DATA;
 typedef struct world_data                 WORLD_DATA;
@@ -65,6 +61,7 @@ typedef struct object_data                OBJ_DATA;
 typedef struct shop_data                  SHOP_DATA;
 typedef struct body_data                  BODY_DATA;
 typedef struct reset_data                 RESET_DATA;
+typedef struct reset_list                 RESET_LIST;
 
 typedef long                              bitvector_t;
 typedef unsigned char                     bool;
@@ -79,10 +76,13 @@ typedef unsigned char                     bool;
 #include "property_table.h"
 #include "list.h"
 #include "map.h"
+#include "near_map.h"
 #include "hashtable.h"
 #include "set.h"
 #include "buffer.h"
 #include "bitvector.h"
+#include "parse.h"
+#include "command.h"
 
 
 
@@ -102,12 +102,13 @@ typedef unsigned char                     bool;
 #define eBOLD   1
 
 /* A few globals */
-#define PULSES_PER_SECOND    10                   /* must divide 1000 : 4, 5 or 8 works */
+#define DFLT_PULSES_PER_SECOND 10
+#define PULSES_PER_SECOND   mudsettingGetInt("pulses_per_second")
 #define SECOND              * PULSES_PER_SECOND   /* used for figuring out how many pulses in a second*/
 #define SECONDS             SECOND                /* same as above */
 #define MINUTE              * 60 SECONDS          /* one minute */
 #define MINUTES             MINUTE
-#define MAX_INPUT_LEN       512                   /* max length of a string someone can input */
+#define MAX_INPUT_LEN      1024                   /* max length of a string someone can input */
 #define SMALL_BUFFER       1024
 #define MAX_BUFFER         8192                   /* seems like a decent amount         */
 #define MAX_SCRIPT         16384                  /* max length of a script */
@@ -116,6 +117,8 @@ typedef unsigned char                     bool;
 #define COPYOVER_FILE      "../.copyover.dat"     /* tempfile to store copyover data    */
 #define EXE_FILE           "../src/NakedMud"      /* the name of the mud binary         */
 #define DEFAULT_PORT       4000                   /* the default port we run on */
+#define SCREEN_WIDTH       80                     // the width of a term screen
+#define PARA_INDENT        3                      // num of spaces to start para
 
 /* Thread States */
 #define TSTATE_LOOKUP          0  /* Socket is in host_lookup        */
@@ -128,10 +131,10 @@ typedef unsigned char                     bool;
 #define COMM_GLOBAL            1  /* all over the game               */
 #define COMM_LOG              10  /* admins only                     */
 
-
-#define NOWHERE        (-1)
-#define NOTHING        (-1)
-#define NOBODY         (-1)
+// these are there UIDs for things that have not yet been created
+#define NOBODY               (-1)
+#define NOTHING              (-1)
+#define NOWHERE              (-1)
 
 #define SOMWHERE        "somewhere"
 #define SOMETHING       "something"
@@ -139,26 +142,25 @@ typedef unsigned char                     bool;
 #define NOTHING_SPECIAL "you see nothing special."
 
 // the room that new characters are dropped into
-#define START_ROOM      100
+#define START_ROOM      mudsettingGetString("start_room")
+#define DFLT_START_ROOM "tavern_entrance@examples"
 
 #define WORLD_PATH     "../lib/world"
-
 
 
 
 //*****************************************************************************
 // core functions for working with new commands
 //*****************************************************************************
-#define CMD_PTR(name)      void (* name)(CHAR_DATA *ch, const char *cmd, \
-					 int subcmd, char *arg)
-#define COMMAND(name)      void name(CHAR_DATA *ch, const char *cmd, \
-				     int subcmd, char *arg)
 void init_commands();
 void show_commands(CHAR_DATA *ch, const char *user_groups);
 void remove_cmd   (const char *cmd);
-void add_cmd      (const char *cmd, const char *sort_by, void *func, 
-	           int subcmd, int min_pos, int max_pos,
-	           const char *user_group, bool mob_ok, bool interrupts);
+void add_cmd      (const char *cmd, const char *sort_by, COMMAND(func),
+	           int min_pos, int max_pos, const char *user_group, 
+		   bool mob_ok, bool interrupts);
+void add_py_cmd   (const char *cmd, const char *sort_by, void *pyfunc,
+		   int min_pos, int max_pos, const char *user_group,
+		   bool mob_ok, bool interrupts);
 bool cmd_exists   (const char *cmd);
 
 
@@ -193,25 +195,28 @@ bool        mudsettingGetBool  (const char *key);
 //*****************************************************************************
 // Global Variables
 //*****************************************************************************
-extern  LIST           *object_list;
-extern  PROPERTY_TABLE *obj_table;      /* same contents as object_list, but
-					   arranged by uid (unique ID)        */
-extern  LIST           *socket_list;
-extern  LIST           *mobile_list;
-extern  LIST           *mobs_to_delete;    // mobs/objs that have had extraction
-extern  LIST           *objs_to_delete;    // and now need extract_final
-extern  LIST           *extract_obj_funcs; // functions called on obj extraction
-extern  LIST           *extract_mob_funcs; // functions called on mob extraction
-extern  PROPERTY_TABLE *mob_table;      /* same contents as mobile_list, but
-					   arranged by uid (unique ID)        */
-extern  bool            shut_down;      /* used for shutdown                  */
-extern  int             mudport;        /* What port are we running on?       */
-extern  char        *   greeting;       /* the welcome greeting               */
-extern  char        *   motd;           /* the MOTD message                   */
-extern  int             control;        /* boot control socket thingy         */
-extern  time_t          current_time;   /* let's cut down on calls to time()  */
+extern  LIST             *object_list; // all objects currently in the game
+extern  LIST             *socket_list; // all sockets currently conencted
+extern  LIST             *mobile_list; // all mobiles currently in the game
+extern  LIST               *room_list; // all rooms currently in the game
 
-extern WORLD_DATA    *   gameworld;     // the world of the game
+extern  LIST          *mobs_to_delete; // mobs/objs/rooms that have had
+extern  LIST          *objs_to_delete; // extraction and now need 
+extern  LIST         *rooms_to_delete; // extract_final
+
+extern  PROPERTY_TABLE     *mob_table; // a mapping between uid and mob
+extern  PROPERTY_TABLE     *obj_table; // a mapping between uid and obj
+extern  PROPERTY_TABLE    *room_table; // a mapping between uid and room
+extern  PROPERTY_TABLE    *exit_table; // a mapping between uid and exit
+
+extern  bool                shut_down; // used for shutdown
+extern  int                   mudport; // What port are we running on?
+extern  BUFFER              *greeting; // the welcome greeting
+extern  BUFFER                  *motd; // the MOTD message
+extern  int                   control; // boot control socket thingy
+extern  time_t           current_time; // let's cut down on calls to time()
+
+extern  WORLD_DATA         *gameworld; // database and thing that holds rooms
 
 
 
@@ -241,24 +246,15 @@ void account_handle_menu      ( SOCKET_DATA *sock, char *arg);
 void account_menu             ( SOCKET_DATA *sock);
 
 
-//
-// Some command scripts may want to re-force a character to
-// perform the command. In that case, scripts_ok can be
-// set to FALSE so that the command script doesn't re-run
-void  do_cmd                  ( CHAR_DATA *ch, char *arg, 
-				bool scripts_ok, bool aliases_ok);
+void  do_cmd                  ( CHAR_DATA *ch, char *arg, bool aliases_ok);
 
 /* io.c */
 void    log_string            ( const char *txt, ... ) __attribute__ ((format (printf, 1, 2)));
 void    bug                   ( const char *txt, ... ) __attribute__ ((format (printf, 1, 2)));
-char   *read_file             ( const char *file );
-char   *fread_line            ( FILE *fp );                 /* pointer        */
-char   *fread_string          ( FILE *fp );                 /* allocated data */
-char   *fread_word            ( FILE *fp );                 /* pointer        */
-int     fread_number          ( FILE *fp );                 /* just an integer*/
-long    fread_long            ( FILE *fp );                 /* a long integer */
+BUFFER *read_file             ( const char *file );
 
 /* strings.c */
+const char *one_arg_safe      ( const char *fStr, char *bStr );
 char   *one_arg               ( char *fStr, char *bStr );
 char   *two_args              ( char *from, char *arg1, char *arg2);
 char   *three_args            ( char *from, char *arg1, char *arg2, char *arg3);

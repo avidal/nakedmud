@@ -12,47 +12,37 @@
 //*****************************************************************************
 
 #include "mud.h"
-#include "exit.h"
-#include "extra_descs.h"
 #include "utils.h"
 #include "handler.h"
-#include "character.h"
+#include "extra_descs.h"
 #include "auxiliary.h"
 #include "storage.h"
-#include "room_reset.h"
+#include "exit.h"
 #include "room.h"
 
 
 
-//*****************************************************************************
-// mandatory modules
-//*****************************************************************************
-#include "scripts/script.h"
-#include "scripts/script_set.h"
-
-
-
-// how many special exits do we expect to have?
-// We should really be using a map instead of a hashtable
-#define SPECIAL_EXIT_BUCKETS     2
-
+// room UIDs (unique IDs) start at a million and go 
+// up by one every time a new room is created
+#define START_ROOM_UID       1000000
+int next_room_uid  =   START_ROOM_UID;
 
 struct room_data {
-  int         vnum;              // what vnum are we?
-
+  int         uid;               // what is our unique room ID number?
   int         terrain;           // what kind of terrain do we have?
   char       *name;              // what is the name of our room?
   BUFFER     *desc;              // our description
 
+  HASHTABLE  *exits;             // a dir:exit mapping
+  NEAR_MAP   *cmd_table;         // a listing for all our room-only commands
   EDESC_SET  *edescs;            // the extra descriptions in the room
-  EXIT_DATA **exits;             // the normal exists
-  HASHTABLE  *special_exits;     // what other special exits do we have?
   BITVECTOR  *bits;              // the bits we have turned on
+  char       *class;             // what prototype do we directly inherit?
+  char       *prototypes;        // what prototypes are we instances of?
 
   LIST       *contents;          // what objects do we contain in the room?
   LIST       *characters;        // who is in our room?
 
-  LIST       *reset;             // what are our reset instructions?
   HASHTABLE  *auxiliary_data;    // data modules have installed in us
 };
 
@@ -63,37 +53,30 @@ struct room_data {
 //
 //*****************************************************************************
 ROOM_DATA *newRoom() {
-  int i;
-
   ROOM_DATA *room = malloc(sizeof(ROOM_DATA));
-  room->vnum = NOWHERE;
 
+  room->uid       = next_room_uid++;
+  room->prototypes= strdup("");
   room->name      = strdup("");
+  room->class     = strdup("");
   room->desc      = newBuffer(1);
-
 
   room->terrain = TERRAIN_INDOORS;
 
-  // create all of the exits
-  room->exits = malloc(sizeof(EXIT_DATA *) * NUM_DIRS);
-  for(i = 0; i < NUM_DIRS; i++)
-    room->exits[i] = NULL;
-
   room->bits           = bitvectorInstanceOf("room_bits");
-  room->special_exits  = newHashtableSize(SPECIAL_EXIT_BUCKETS);
   room->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_ROOM);
 
+  room->exits      = newHashtable();
+  room->cmd_table  = newNearMap();
   room->edescs     = newEdescSet();
   room->contents   = newList();
   room->characters = newList();
-  room->reset      = newList();
 
   return room;
-};
+}
 
 
 void deleteRoom(ROOM_DATA *room) {
-  int i;
   LIST_ITERATOR *cont_i = NULL;
   void         *content = NULL;
 
@@ -117,7 +100,24 @@ void deleteRoom(ROOM_DATA *room) {
   //  deleteListWith(room->characters, extract_mobile);
   deleteList(room->contents);
   deleteList(room->characters);
-  deleteListWith(room->reset, deleteReset);
+
+  // delete all of our exits
+  HASH_ITERATOR *ex_i = newHashIterator(room->exits);
+  const char     *dir = NULL;
+  EXIT_DATA       *ex = NULL;
+  ITERATE_HASH(dir, ex, ex_i)
+    deleteExit(ex);
+  deleteHashIterator(ex_i);
+  deleteHashtable(room->exits);
+
+  // delete all of our commands
+  NEAR_ITERATOR *cmd_i = newNearIterator(room->cmd_table);
+  const char      *key = NULL;
+  CMD_DATA        *cmd = NULL;
+  ITERATE_NEARMAP(key, cmd, cmd_i)
+    deleteCmd(cmd);
+  deleteNearIterator(cmd_i);
+  deleteNearMap(room->cmd_table);
 
   // delete extra descriptions
   if(room->edescs) deleteEdescSet(room->edescs);
@@ -125,92 +125,62 @@ void deleteRoom(ROOM_DATA *room) {
   // delete bits
   if(room->bits) deleteBitvector(room->bits);
 
-  // delete the normal exits
-  for(i = 0; i < NUM_DIRS; i++)
-    if(room->exits[i] != NULL)
-      deleteExit(room->exits[i]);
-  free(room->exits);
-
-  // delete the special exits
-  if(room->special_exits) {
-    HASH_ITERATOR *hash_i = newHashIterator(room->special_exits);
-    EXIT_DATA *exit = NULL;
-
-    for(;(exit=hashIteratorCurrentVal(hash_i)) != NULL;hashIteratorNext(hash_i))
-      deleteExit(exit);
-
-    deleteHashtable(room->special_exits);
-    deleteHashIterator(hash_i);
-  }
-
   // delete strings
-  if(room->name)        free(room->name);
-  if(room->desc)        deleteBuffer(room->desc);
+  if(room->prototypes) free(room->prototypes);
+  if(room->class)      free(room->class);
+  if(room->name)       free(room->name);
+  if(room->desc)       deleteBuffer(room->desc);
   deleteAuxiliaryData(room->auxiliary_data);
 
   free(room);
-};
+}
 
 
 STORAGE_SET *roomStore(ROOM_DATA *room) {
-  STORAGE_SET *set = new_storage_set();
-  store_string(set, "name",    room->name);
-  store_string(set, "desc",    bufferString(room->desc));
-  store_int   (set, "vnum",    room->vnum);
-  store_string(set, "terrain", terrainGetName(room->terrain));
-  store_set   (set, "edescs",  edescSetStore(room->edescs));
+  STORAGE_SET          *set = new_storage_set();
+  STORAGE_SET_LIST *ex_list = new_storage_list();
+  store_string(set, "class",      room->class);
+  store_string(set, "prototypes", room->prototypes);
+  store_string(set, "name",       room->name);
+  store_string(set, "desc",       bufferString(room->desc));
+  store_string(set, "terrain",    terrainGetName(room->terrain));
+  store_set   (set, "edescs",     edescSetStore(room->edescs));
+  store_list  (set, "exits",      ex_list);
 
-  STORAGE_SET_LIST *exits = new_storage_list();
-  store_list(set, "exits", exits);
+  // store all of our exits. We're doing this in an odd way by putting the
+  // direction name on the storage set for the exit. They should probably be
+  // in different storage sets, and nested in another key:val pair storage set.
+  // But this is the way we started doing it, and for the sake of compatibility,
+  // we're going to keep at it...
+  HASH_ITERATOR *ex_i = newHashIterator(room->exits);
+  const char     *dir = NULL;
+  EXIT_DATA       *ex = NULL;
+  ITERATE_HASH(dir, ex, ex_i) {
+    STORAGE_SET *ex_set = exitStore(ex);
+    store_string(ex_set, "direction", dir);
+    storage_list_put(ex_list, ex_set);
+  } deleteHashIterator(ex_i);
 
-  // save all of the normal directions
-  int i;
-  for(i = 0; i < NUM_DIRS; i++) {
-    if(room->exits[i]) {
-      STORAGE_SET *exit = exitStore(room->exits[i]);
-      store_string(exit, "direction", dirGetName(i));
-      storage_list_put(exits, exit);
-    }
-  }
-
-  // and now the special directions
-  int num_special_exits = 0;
-  const char **special_exits = roomGetExitNames(room, &num_special_exits);
-  for(i = 0; i < num_special_exits; i++) {
-    STORAGE_SET *exit = exitStore(roomGetExitSpecial(room, special_exits[i]));
-    store_string(exit, "direction", special_exits[i]);
-    storage_list_put(exits, exit);
-  }
-  if(special_exits) free(special_exits);
-
-  store_list(set, "reset",     gen_store_list(room->reset, resetStore));
-  store_set(set, "auxiliary",  auxiliaryDataStore(room->auxiliary_data));
+  store_set   (set, "auxiliary", auxiliaryDataStore(room->auxiliary_data));
   return set;
 }
 
 
 ROOM_DATA *roomRead(STORAGE_SET *set) {
-  ROOM_DATA *room = newRoom();
-  roomSetVnum(room,     read_int   (set, "vnum"));
-  roomSetName(room,     read_string(set, "name"));
-  roomSetDesc(room,     read_string(set, "desc"));
-  roomSetTerrain(room,  terrainGetNum(read_string(set,"terrain")));
-  roomSetEdescs(room,   edescSetRead(read_set   (set, "edescs")));
-  bitSet(room->bits,    read_string(set, "room_bits"));
+  ROOM_DATA           *room = newRoom();
+  STORAGE_SET_LIST *ex_list = read_list(set, "exits");
+  STORAGE_SET       *ex_set = NULL;
+  roomSetClass(room, read_string(set, "class"));
+  roomSetPrototypes(room, read_string(set, "prototypes"));
+  roomSetName(room,       read_string(set, "name"));
+  roomSetDesc(room,       read_string(set, "desc"));
+  roomSetTerrain(room,    terrainGetNum(read_string(set,"terrain")));
+  roomSetEdescs(room,     edescSetRead(read_set   (set, "edescs")));
+  bitSet(room->bits,      read_string(set, "room_bits"));
 
-  STORAGE_SET_LIST *exits = read_list(set, "exits");
-  STORAGE_SET       *exit = NULL;
-  while( (exit = storage_list_next(exits)) != NULL) {
-    EXIT_DATA   *ex = exitRead(exit);
-    const char *dir = read_string(exit, "direction");
-    if(dirGetNum(dir) != DIR_NONE)
-      roomSetExit(room, dirGetNum(dir), ex);
-    else
-      roomSetExitSpecial(room, dir, ex);
-  }
-
-  deleteList(room->reset, deleteReset);
-  room->reset = gen_read_list(read_list(set, "reset"), resetRead);
+  // parse and add all of our exits
+  while( (ex_set = storage_list_next(ex_list)) != NULL)
+    roomSetExit(room, read_string(ex_set, "direction"), exitRead(ex_set));
 
   deleteAuxiliaryData(room->auxiliary_data);
   room->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
@@ -228,159 +198,164 @@ ROOM_DATA *roomCopy(ROOM_DATA *room) {
 
 
 void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
-  int i, num_spec_exits;
-  const char **spec_exits;
-
   // we just want to copy data ABOUT the room, and not stuff
   // contained in the particular instance (e.g. players, contents)
-
-  roomSetVnum    (to, roomGetVnum(from));
-  roomSetName    (to, roomGetName(from));
-  roomSetDesc    (to, roomGetDesc(from));
-  roomSetTerrain (to, roomGetTerrain(from));
-  bitvectorCopyTo(from->bits, to->bits);
+  roomSetClass     (to, roomGetClass(from));
+  roomSetPrototypes(to, roomGetPrototypes(from));
+  roomSetClass     (to, roomGetClass(from));
+  roomSetName      (to, roomGetName(from));
+  roomSetDesc      (to, roomGetDesc(from));
+  roomSetTerrain   (to, roomGetTerrain(from));
+  bitvectorCopyTo  (from->bits, to->bits);
 
   // set our edescs
   roomSetEdescs(to, edescSetCopy(from->edescs));
 
-  // set our normal exits
-  for(i = 0; i < NUM_DIRS; i++)
-    roomSetExit(to, i, (roomGetExit(from, i)?
-			exitCopy(roomGetExit(from, i)):NULL));
+  // copy all of our exits. Augh, this is ugly. If we're copying from a room to
+  // another room that is in game, we have to put all of the new exits in game
+  // as well, and remove all of the old exits from game. Its sort of hackish to
+  // do it here since the room datastructure should have no concept of in/out
+  // of game, but there's really nowhere else to put this...
+  bool room_in_game = propertyTableIn(room_table, to->uid);
 
+  // first, delete all of our old exits
+  HASH_ITERATOR *ex_i = newHashIterator(to->exits);
+  const char     *dir = NULL;
+  EXIT_DATA       *ex = NULL;
+  ITERATE_HASH(dir, ex, ex_i) {
+    hashRemove(to->exits, dir);
+    if(room_in_game) exit_from_game(ex);
+    deleteExit(ex);
+  } deleteHashIterator(ex_i);
 
-  // free the special exits of the <to> room
-  spec_exits = roomGetExitNames(to, &num_spec_exits);
-  for(i = 0; i < num_spec_exits; i++)
-    roomSetExitSpecial(to, spec_exits[i], NULL);
-  free(spec_exits);
-  deleteHashtable(to->special_exits);
-  to->special_exits = newHashtableSize(SPECIAL_EXIT_BUCKETS);
+  // now, copy all of our new exits
+  ex_i = newHashIterator(from->exits);
+  ITERATE_HASH(dir, ex, ex_i) {
+    roomSetExit(to, dir, exitCopy(ex));
+    if(room_in_game) exit_to_game(roomGetExit(to, dir));
+  } deleteHashIterator(ex_i);
 
+  // delete all of our old commands
+  NEAR_ITERATOR *cmd_i = newNearIterator(to->cmd_table);
+  const char   *abbrev = NULL;
+  CMD_DATA        *cmd = NULL;
+  ITERATE_NEARMAP(abbrev, cmd, cmd_i) {
+    nearMapRemove(to->cmd_table, cmdGetName(cmd));
+    deleteCmd(cmd);
+  } deleteNearIterator(cmd_i);
 
-  // set the special exits of the <to> room
-  spec_exits = roomGetExitNames(from, &num_spec_exits);
-  for(i = 0; i < num_spec_exits; i++)
-    roomSetExitSpecial(to, spec_exits[i], 
-		       exitCopy(roomGetExitSpecial(from, spec_exits[i])));
-  free(spec_exits);
-
+  // now, copy in all of our new commands
+   cmd_i = newNearIterator(from->cmd_table);
+   ITERATE_NEARMAP(abbrev, cmd, cmd_i) {
+     nearMapPut(to->cmd_table, cmdGetName(cmd), abbrev, cmdCopy(cmd));
+   } deleteNearIterator(cmd_i);
   
-  // delete all of our old reset data, and copy over the new stuff
-  RESET_DATA *reset;
-  while( (reset = listPop(to->reset)) != NULL)
-    deleteReset(reset);
-  deleteList(to->reset);
-  to->reset = listCopyWith(from->reset, resetCopy);
-
   // copy all of our auxiliary data
   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
 }
 
-
-void       roomDigExit        (ROOM_DATA *room, int dir, int to) {
-  // we already have an exit in that direction... change the destination
-  if(roomGetExit(room, dir))
-    exitSetTo(roomGetExit(room, dir), to);
-  // create a new exit
-  else {
-    EXIT_DATA *exit = newExit();
-    exitSetTo(exit, to);
-    roomSetExit(room, dir, exit);
-  }
+bool roomIsInstance(ROOM_DATA *room, const char *prototype) {
+  return is_keyword(room->prototypes, prototype, FALSE);
 }
 
-void roomDigExitSpecial (ROOM_DATA *room, const char *dir, int to) {
-  // we already have an exit in that direction ... change the destination
-  if(roomGetExitSpecial(room, dir))
-    exitSetTo(roomGetExitSpecial(room, dir), to);
-  // create a new exit
-  else {
-    EXIT_DATA *exit = newExit();
-    exitSetTo(exit, to);
-    roomSetExitSpecial(room, dir, exit);
-  }
+const char *roomGetPrototypes(ROOM_DATA *room) {
+  return room->prototypes;
 }
 
-bool roomIsResettable(ROOM_DATA *room) {
-  // we're resettable if we have reset commands or init scripts
-  if(listSize(room->reset) > 0)
-    return TRUE;
-  else {
-    LIST *init_scripts = scriptSetList(roomGetScripts(room), SCRIPT_TYPE_INIT);
-    bool    resettable = (listSize(init_scripts) > 0);
-    deleteList(init_scripts);
-    return resettable;
-  }
+void roomAddPrototype(ROOM_DATA *room, const char *prototype) {
+  add_keyword(&room->prototypes, prototype);
 }
 
-void roomReset(ROOM_DATA *room) {
-  resetRunOn(room->reset, room, INITIATOR_ROOM);
-  try_scripts(SCRIPT_TYPE_INIT,
-	      room, SCRIPTOR_ROOM,
-	      NULL, NULL, room, NULL, NULL, 0);
+void roomSetPrototypes(ROOM_DATA *room, const char *prototypes) {
+  if(room->prototypes) free(room->prototypes);
+  room->prototypes = strdupsafe(prototypes);
 }
 
-
-LIST       *roomGetResets      (const ROOM_DATA *room) {
-  return room->reset;
-}
-
-void        roomRemoveReset    (ROOM_DATA *room, RESET_DATA *reset) {
-  listRemove(room->reset, reset);
-}
-
-void        roomAddReset       (ROOM_DATA *room, RESET_DATA *reset) {
-  listPut(room->reset, reset);
-}
 
 
 //*****************************************************************************
-//
 // add and remove functions
-//
 //*****************************************************************************
-void       roomRemoveChar       (ROOM_DATA *room, const CHAR_DATA *ch) {
+void roomRemoveChar(ROOM_DATA *room, const CHAR_DATA *ch) {
   listRemove(room->characters, ch);
-};
+}
 
-void       roomRemoveObj        (ROOM_DATA *room, const OBJ_DATA *obj) {
+void roomRemoveObj(ROOM_DATA *room, const OBJ_DATA *obj) {
   listRemove(room->contents, obj);
-};
+}
 
-void       roomAddChar          (ROOM_DATA *room, CHAR_DATA *ch) {
+void roomAddChar(ROOM_DATA *room, CHAR_DATA *ch) {
   listPut(room->characters, ch);
-};
+}
 
-void       roomAddObj           (ROOM_DATA *room, OBJ_DATA *obj) {
+void roomAddObj(ROOM_DATA *room, OBJ_DATA *obj) {
   listPut(room->contents, obj);
-};
+}
+
 
 
 //*****************************************************************************
-//
+// exit functions
+//*****************************************************************************
+void roomSetExit(ROOM_DATA *room, const char *dir, EXIT_DATA *exit) {
+  hashPut(room->exits, dir, exit);
+}
+
+EXIT_DATA *roomGetExit(ROOM_DATA *room, const char *dir) {
+  return hashGet(room->exits, dir);
+}
+
+EXIT_DATA *roomRemoveExit(ROOM_DATA *room, const char *dir) {
+  return hashRemove(room->exits, dir);
+}
+
+const char *roomGetExitDir(ROOM_DATA *room, EXIT_DATA *exit) {
+  // go through all of our key:val pairs, and see which key matches this exit
+  HASH_ITERATOR *ex_i = newHashIterator(room->exits);
+  const char     *dir = NULL;
+  EXIT_DATA       *ex = NULL;
+  ITERATE_HASH(dir, ex, ex_i) {
+    if(ex == exit) {
+      deleteHashIterator(ex_i);
+      return dir;
+    }
+  } deleteHashIterator(ex_i);
+  return NULL;
+}
+
+LIST *roomGetExitNames(ROOM_DATA *room) {
+  return hashCollect(room->exits);
+}
+
+
+
+//*****************************************************************************
 // get and set functions for rooms
-//
 //*****************************************************************************
+const char *roomGetClass(ROOM_DATA *room) {
+  return room->class;
+}
+
+void roomSetClass(ROOM_DATA *room, const char *prototype) {
+  if(room->class) free(room->class);
+  room->class = strdupsafe(prototype);
+}
+
 LIST       *roomGetContents    (const ROOM_DATA *room) {
   return room->contents;
-};
+}
 
 LIST       *roomGetCharacters  (const ROOM_DATA *room) {
   return room->characters;
-};
-
-int   roomGetVnum        (const ROOM_DATA *room) {
-  return room->vnum;
-};
+}
 
 const char *roomGetName        (const ROOM_DATA *room) {
   return room->name;
-};
+}
 
 const char *roomGetDesc        (const ROOM_DATA *room) {
   return bufferString(room->desc);
-};
+}
 
 BUFFER *roomGetDescBuffer(const ROOM_DATA *room) {
   return room->desc;
@@ -388,51 +363,11 @@ BUFFER *roomGetDescBuffer(const ROOM_DATA *room) {
 
 int         roomGetTerrain     (const ROOM_DATA *room) {
   return room->terrain;
-};
-
-EXIT_DATA  *roomGetExit        (const ROOM_DATA *room, int dir) {
-  return room->exits[dir];
-};
-
-EXIT_DATA  *roomGetExitSpecial (const ROOM_DATA *room, const char *dir) {
-  return hashGet(room->special_exits, dir);
-};
-
-int roomGetExitDir(const ROOM_DATA *room, EXIT_DATA *exit) {
-  int i;
-  for(i = 0; i < NUM_DIRS; i++)
-    if(room->exits[i] == exit)
-      return i;
-  return DIR_NONE;
 }
 
-const char *roomGetExitDirSpecial(const ROOM_DATA *room, EXIT_DATA *exit) {
-  HASH_ITERATOR *ex_i = newHashIterator(room->special_exits);
-  const char  *exname = NULL;
-  EXIT_DATA      *val = NULL;
-  bool       ex_found = FALSE;
-  ITERATE_HASH(exname, val, ex_i) {
-    if(val == exit) {
-      ex_found = TRUE;
-      break;
-    }
-  } deleteHashIterator(ex_i);
-  return (ex_found ? exname : NULL);
+int         roomGetUID         (const ROOM_DATA *room) {
+  return room->uid;
 }
-
-const char      **roomGetExitNames   (const ROOM_DATA *room, int *num) {
-  int i;
-
-  *num = hashSize(room->special_exits);
-  const char **names = malloc(sizeof(char *) * *num);
-  HASH_ITERATOR *hash_i = newHashIterator(room->special_exits);
-
-  for(i = 0; i < *num; i++, hashIteratorNext(hash_i))
-    names[i] = hashIteratorCurrentKey(hash_i);
-  deleteHashIterator(hash_i);
-
-  return names;
-};
 
 EDESC_SET  *roomGetEdescs      (const ROOM_DATA *room) {
   return room->edescs;
@@ -453,47 +388,32 @@ void        roomSetEdescs      (ROOM_DATA *room, EDESC_SET *edescs) {
   room->edescs = edescs;
 }
 
-void        roomSetVnum        (ROOM_DATA *room, int vnum) {
-  room->vnum = vnum;
-};
-
 void        roomSetName        (ROOM_DATA *room, const char *name) {
   if(room->name) free(room->name);
-  room->name = strdup(name ? name : "");
-};
+  room->name = strdupsafe(name);
+}
 
 void        roomSetDesc (ROOM_DATA *room, const char *desc) {
   bufferClear(room->desc);
   bufferCat(room->desc, (desc ? desc : ""));
-};
+}
 
 void        roomSetTerrain     (ROOM_DATA *room, int terrain_type) {
   room->terrain = terrain_type;
-};
-
-void        roomSetExit        (ROOM_DATA *room,int dir, EXIT_DATA *exit){
-  if(room->exits[dir] != NULL)
-    deleteExit(room->exits[dir]);
-  room->exits[dir] = exit;
-};
-
-void roomSetExitSpecial (ROOM_DATA *room,const char *dir, EXIT_DATA *exit) {
-  if(hashIn(room->special_exits, dir))
-    deleteExit(hashRemove(room->special_exits, dir));
-  if(exit)
-    hashPut(room->special_exits, dir, exit);
-};
+}
 
 BITVECTOR *roomGetBits(const ROOM_DATA *room) {
   return room->bits;
 }
 
+NEAR_MAP *roomGetCmdTable(const ROOM_DATA *room) {
+  return room->cmd_table;
+}
+
 
 
 //*****************************************************************************
-//
 // direction stuff
-//
 //*****************************************************************************
 const char *dir_names[NUM_DIRS] = {
   "north",
@@ -515,11 +435,11 @@ const char *dir_abbrevs[NUM_DIRS] = {
 
 const char *dirGetName(int dir) {
   return dir_names[dir];
-};
+}
 
 const char *dirGetAbbrev(int dir) {
   return dir_abbrevs[dir];
-};
+}
 
 int dirGetOpposite(int dir) {
   switch(dir) {
@@ -534,8 +454,8 @@ int dirGetOpposite(int dir) {
   case DIR_SOUTHWEST:    return DIR_NORTHEAST;
   case DIR_NORTHWEST:    return DIR_SOUTHEAST;
   default:               return DIR_NONE;
-  };
-};
+  }
+}
 
 int dirGetNum(const char *dir) {
   int i;
@@ -543,7 +463,7 @@ int dirGetNum(const char *dir) {
     if(!strcasecmp(dir, dir_names[i]))
       return i;
   return DIR_NONE;
-};
+}
 
 int dirGetAbbrevNum(const char *dir) {
   int i;
@@ -551,7 +471,7 @@ int dirGetAbbrevNum(const char *dir) {
     if(!strcasecmp(dir, dir_abbrevs[i]))
       return i;
   return DIR_NONE;
-};
+}
 
 
 //*****************************************************************************
