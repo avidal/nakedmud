@@ -1,0 +1,9 @@
+resets:=
+  type    : 0
+  times   : 3
+  chance  : 100
+  max     : 0
+  room_max: 3
+  arg     : table
+  -
+-
