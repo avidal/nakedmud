@@ -404,11 +404,11 @@ void init_help() {
     help_table[i] = newList();
 
   // add all of our commands
-  add_cmd("help", NULL, cmd_help, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("help", NULL, cmd_help, POS_UNCONSCIOUS, POS_FLYING,
 	  "player", FALSE, FALSE);
-  add_cmd("hlink", NULL, cmd_hlink, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("hlink", NULL, cmd_hlink, POS_UNCONSCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
-  add_cmd("hunlink", NULL, cmd_hunlink, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("hunlink", NULL, cmd_hunlink, POS_UNCONSCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
   add_cmd("hupdate", NULL, cmd_hupdate, POS_SITTING, POS_FLYING,
 	  "builder", FALSE, TRUE);

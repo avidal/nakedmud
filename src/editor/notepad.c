@@ -21,6 +21,8 @@
 //*****************************************************************************
 // mandatory modules
 //*****************************************************************************
+#include "../scripts/scripts.h"
+#include "../scripts/pychar.h"
 #include "../scripts/script_editor.h"
 
 
@@ -90,6 +92,17 @@ void socketSetNotepad(SOCKET_DATA *sock, const char *txt) {
   bufferCat(data->notepad, txt);
 }
 
+PyObject *PyChar_getnotepad(PyObject *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar(self);
+  if(ch != NULL && charGetSocket(ch) != NULL) 
+    return Py_BuildValue("s", 
+			 (charGetSocket(ch) ? 
+			  bufferString(socketGetNotepad(charGetSocket(ch))) :
+			  ""));
+  else           
+    return NULL;
+}
+
 
 
 //*****************************************************************************
@@ -107,4 +120,8 @@ void init_notepad() {
 	  "player", FALSE, TRUE);
   add_cmd("notepad", NULL, cmd_notepad, POS_SITTING, POS_FLYING,
 	  "player", FALSE, TRUE);
+
+  // add our python extensions
+  PyChar_addGetSetter("notepad", PyChar_getnotepad, NULL,
+		      "Returns the character's notepad, if any");
 }

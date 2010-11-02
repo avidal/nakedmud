@@ -7,7 +7,7 @@
 ################################################################################
 from mud import *
 from mudsys import add_cmd
-import mudsys, inform, char
+import mudsys, inform, char, string
 
 
 
@@ -45,7 +45,7 @@ def cmd_pulserate(ch, cmd, arg):
         ch.send("The mud currently has "+mudsys.sys_getval("pulses_per_second")+
                 "pulses per second.")
     else:
-        pulserate = atoi(arg)
+        pulserate = string.atoi(arg)
         if pulserate == 0 or 1000 % pulse != 0:
             ch.send("The number of pulses per second must divide 1000.")
         else:
@@ -77,12 +77,12 @@ def cmd_lockdown(ch, cmd, arg):
         mudsys.sys_setval("lockdown", arg)
 
         # kick out everyone who we've just locked out
-        for ch in Char.char_list():
+        for ch in char.char_list():
             if ch.is_pc and not ch.isInGroup(arg):
                 ch.send("The mud has just been locked down to you.")
                 mudsys.do_save(ch)
                 mudsys.do_disconnect(ch)
-                extract_mob(ch)
+                extract(ch)
 
 def cmd_at(ch, cmd, arg):
     '''Perform a command at another room or person'''
@@ -191,21 +191,21 @@ def cmd_transfer(ch, cmd, arg):
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("shutdow", None, cmd_shutdown_net, "unconcious", "flying", "admin",
+add_cmd("shutdow", None, cmd_shutdown_net, "unconscious", "flying", "admin",
         False, False)
-add_cmd("shutdown", None, cmd_shutdown, "unconcious", "flying", "admin",
+add_cmd("shutdown", None, cmd_shutdown, "unconscious", "flying", "admin",
         False, False)
-add_cmd("copyove", None, cmd_copyover_net, "unconcious", "flying", "admin",
+add_cmd("copyove", None, cmd_copyover_net, "unconscious", "flying", "admin",
         False, False)
-add_cmd("copyover", None, cmd_copyover, "unconcious", "flying", "admin",
+add_cmd("copyover", None, cmd_copyover, "unconscious", "flying", "admin",
         False, False)
-add_cmd("at", None, cmd_at, "unconcious", "flying", "admin",
+add_cmd("at", None, cmd_at, "unconscious", "flying", "admin",
         False, False)
-add_cmd("lockdown", None, cmd_lockdown, "unconcious", "flying", "admin",
+add_cmd("lockdown", None, cmd_lockdown, "unconscious", "flying", "admin",
         False, False)
-add_cmd("pulserate", None, cmd_pulserate, "unconcious", "flying", "admin",
+add_cmd("pulserate", None, cmd_pulserate, "unconscious", "flying", "admin",
         False, False)
-add_cmd("repeat", None, cmd_repeat, "unconcious", "flying", "admin",
+add_cmd("repeat", None, cmd_repeat, "unconscious", "flying", "admin",
         False, False)
 add_cmd("force", None, cmd_force, "sitting", "flying", "admin",
         False, False)

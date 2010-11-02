@@ -1,0 +1,572 @@
+diff -ruN ../nakedmudv3.2/lib/pymodules/cmd_admin.py lib/pymodules/cmd_admin.py
+--- ../nakedmudv3.2/lib/pymodules/cmd_admin.py	Sat Jul  1 20:07:04 2006
++++ lib/pymodules/cmd_admin.py	Sun Jul  9 15:29:16 2006
+@@ -7,7 +7,7 @@
+ ################################################################################
+ from mud import *
+ from mudsys import add_cmd
+-import mudsys, inform, char
++import mudsys, inform, char, string
+ 
+ 
+ 
+@@ -45,7 +45,7 @@
+         ch.send("The mud currently has "+mudsys.sys_getval("pulses_per_second")+
+                 "pulses per second.")
+     else:
+-        pulserate = atoi(arg)
++        pulserate = string.atoi(arg)
+         if pulserate == 0 or 1000 % pulse != 0:
+             ch.send("The number of pulses per second must divide 1000.")
+         else:
+@@ -77,12 +77,12 @@
+         mudsys.sys_setval("lockdown", arg)
+ 
+         # kick out everyone who we've just locked out
+-        for ch in Char.char_list():
++        for ch in char.char_list():
+             if ch.is_pc and not ch.isInGroup(arg):
+                 ch.send("The mud has just been locked down to you.")
+                 mudsys.do_save(ch)
+                 mudsys.do_disconnect(ch)
+-                extract_mob(ch)
++                extract(ch)
+ 
+ def cmd_at(ch, cmd, arg):
+     '''Perform a command at another room or person'''
+@@ -191,21 +191,21 @@
+ ################################################################################
+ # add our commands
+ ################################################################################
+-add_cmd("shutdow", None, cmd_shutdown_net, "unconcious", "flying", "admin",
++add_cmd("shutdow", None, cmd_shutdown_net, "unconscious", "flying", "admin",
+         False, False)
+-add_cmd("shutdown", None, cmd_shutdown, "unconcious", "flying", "admin",
++add_cmd("shutdown", None, cmd_shutdown, "unconscious", "flying", "admin",
+         False, False)
+-add_cmd("copyove", None, cmd_copyover_net, "unconcious", "flying", "admin",
++add_cmd("copyove", None, cmd_copyover_net, "unconscious", "flying", "admin",
+         False, False)
+-add_cmd("copyover", None, cmd_copyover, "unconcious", "flying", "admin",
++add_cmd("copyover", None, cmd_copyover, "unconscious", "flying", "admin",
+         False, False)
+-add_cmd("at", None, cmd_at, "unconcious", "flying", "admin",
++add_cmd("at", None, cmd_at, "unconscious", "flying", "admin",
+         False, False)
+-add_cmd("lockdown", None, cmd_lockdown, "unconcious", "flying", "admin",
++add_cmd("lockdown", None, cmd_lockdown, "unconscious", "flying", "admin",
+         False, False)
+-add_cmd("pulserate", None, cmd_pulserate, "unconcious", "flying", "admin",
++add_cmd("pulserate", None, cmd_pulserate, "unconscious", "flying", "admin",
+         False, False)
+-add_cmd("repeat", None, cmd_repeat, "unconcious", "flying", "admin",
++add_cmd("repeat", None, cmd_repeat, "unconscious", "flying", "admin",
+         False, False)
+ add_cmd("force", None, cmd_force, "sitting", "flying", "admin",
+         False, False)
+diff -ruN ../nakedmudv3.2/lib/pymodules/cmd_comm.py lib/pymodules/cmd_comm.py
+--- ../nakedmudv3.2/lib/pymodules/cmd_comm.py	Sat Jul  1 20:07:04 2006
++++ lib/pymodules/cmd_comm.py	Sun Jul  9 15:29:16 2006
+@@ -148,16 +148,16 @@
+ ################################################################################
+ # add our commands
+ ################################################################################
+-add_cmd("ask",     None, cmd_ask,   "sitting", "flying", "player", False, False)
+-add_cmd("say",     None, cmd_say,   "sitting", "flying", "player", False, False)
+-add_cmd("'",       None, cmd_say,   "sitting", "flying", "player", False, False)
+-add_cmd("tell",    None, cmd_tell,  "sitting", "flying", "player", False, False)
+-add_cmd("chat",    None, cmd_chat,  "sitting", "flying", "player", False, False)
+-add_cmd("gossip",  None, cmd_chat,  "sitting", "flying", "player", False, False)
+-add_cmd("\"",      None, cmd_chat,  "sitting", "flying", "player", False, False)
+-add_cmd("page",    None, cmd_page,  "sitting", "flying", "player", False, False)
+-add_cmd("greet",   None, cmd_greet, "sitting", "flying", "player", False, False)
+-add_cmd("approach",None, cmd_greet, "sitting", "flying", "player", False, False)
+-add_cmd("emote",   None, cmd_emote, "sitting", "flying", "player", False, False)
+-add_cmd("gemote",  None, cmd_gemote,"sitting", "flying", "player", False, False)
+-add_cmd(":",       None, cmd_emote, "sitting", "flying", "player", False, False)
++add_cmd("ask",     None, cmd_ask,   "sitting", "flying", "player", True, False)
++add_cmd("say",     None, cmd_say,   "sitting", "flying", "player", True, False)
++add_cmd("'",       None, cmd_say,   "sitting", "flying", "player", True, False)
++add_cmd("tell",    None, cmd_tell,  "sitting", "flying", "player", True, False)
++add_cmd("chat",    None, cmd_chat,  "sitting", "flying", "player", True, False)
++add_cmd("gossip",  None, cmd_chat,  "sitting", "flying", "player", True, False)
++add_cmd("\"",      None, cmd_chat,  "sitting", "flying", "player", True, False)
++add_cmd("page",    None, cmd_page,  "sitting", "flying", "player", True, False)
++add_cmd("greet",   None, cmd_greet, "sitting", "flying", "player", True, False)
++add_cmd("approach",None, cmd_greet, "sitting", "flying", "player", True, False)
++add_cmd("emote",   None, cmd_emote, "sitting", "flying", "player", True, False)
++add_cmd("gemote",  None, cmd_gemote,"sitting", "flying", "player", True, False)
++add_cmd(":",       None, cmd_emote, "sitting", "flying", "player", True, False)
+diff -ruN ../nakedmudv3.2/lib/pymodules/cmd_misc.py lib/pymodules/cmd_misc.py
+--- ../nakedmudv3.2/lib/pymodules/cmd_misc.py	Sat Jul  1 20:07:04 2006
++++ lib/pymodules/cmd_misc.py	Sun Jul  9 15:29:16 2006
+@@ -59,8 +59,8 @@
+ # add our commands
+ ################################################################################
+ add_cmd("stop",  None, cmd_stop,    "sitting", "flying", "player", True,  False)
+-add_cmd("clear", None, cmd_clear,"unconcious", "flying", "player", True,  False)
++add_cmd("clear", None, cmd_clear,"unconscious", "flying", "player", True,  False)
+ add_cmd("delay", None, cmd_delay,  "sleeping", "flying", "player", True,  False)
+-add_cmd("motd",  None, cmd_motd, "unconcious", "flying", "player", False, False)
++add_cmd("motd",  None, cmd_motd, "unconscious", "flying", "player", False, False)
+ add_cmd("save",  None, cmd_save,   "sleeping", "flying", "player", False, False)
+ add_cmd("quit",  None, cmd_quit,   "sleeping", "flying", "player", False, True)
+diff -ruN ../nakedmudv3.2/lib/pymodules/inform.py lib/pymodules/inform.py
+--- ../nakedmudv3.2/lib/pymodules/inform.py	Sat Jul  1 20:07:04 2006
++++ lib/pymodules/inform.py	Sun Jul  9 15:29:16 2006
+@@ -35,34 +35,6 @@
+     else:
+         return "something"
+ 
+-def look_at_obj(ch, obj):
+-    '''displays the object info the the character'''
+-    ############
+-    # FINISH ME
+-    ############
+-    return
+-
+-def look_at_char(ch, tgt):
+-    '''displays the other character\'s info the the character'''
+-    ############
+-    # FINISH ME
+-    ############
+-    return
+-
+-def look_at_exit(ch, exit):
+-    '''displays the exit info the the character'''
+-    ############
+-    # FINISH ME
+-    ############
+-    return
+-
+-def look_at_room(ch, room):
+-    '''displays the room info the the character'''
+-    ############
+-    # FINISH ME
+-    ############
+-    return
+-
+ def show_equipment(ch, tgt):
+     '''shows ch tgt\'s equipment'''
+     for part in tgt.bodyparts:
+@@ -81,7 +53,7 @@
+     # build character info
+     count = len(char.socket_list())
+     for ch in char.socket_list():
+-        buf = buf+(" %-16s %-20s %40s "%(ch.name,ch.race,ch.user_groups))+"\r\n"
++        buf = buf+(" %-16s %-15s %45s "%(ch.name,ch.race,ch.user_groups))+"\r\n"
+ 
+     conn_end = "s"
+     if count == 1: conn_end = ""
+@@ -97,6 +69,7 @@
+ # hooks
+ ################################################################################
+ def equipment_look_hook(info):
++    '''displays a character\'s equipment when looked at'''
+     tgt, ch = hooks.parse_info(info)
+ 
+     if ch != tgt:
+diff -ruN ../nakedmudv3.2/lib/pymodules/movement.py lib/pymodules/movement.py
+--- ../nakedmudv3.2/lib/pymodules/movement.py	Sat Jul  1 20:07:04 2006
++++ lib/pymodules/movement.py	Sun Jul  9 15:29:16 2006
+@@ -12,7 +12,7 @@
+ 
+ 
+ # a ranking of positions
+-positions     = ["unconcious", "sleeping", "sitting", "standing", "flying"]
++positions     = ["unconscious", "sleeping", "sitting", "standing", "flying"]
+ pos_act       = ["collapse",   "sleep",    "sit",     "stand",    "fly"]
+ 
+ # stuff for handling movement
+@@ -117,7 +117,7 @@
+ 
+ def try_move_mssg(ch, dir):
+     '''Handles all moving of characters from one room to another, through
+-       commands. Attempts a move. If succcessful, returns the exit left through.
++       commands. Attempts a move. If successful, returns the exit left through.
+        Informs people of our moving'''
+     old_room = ch.room
+     ex       = try_move(ch, dir)
+@@ -152,7 +152,7 @@
+ 
+ def try_move(ch, dir):
+     '''Handles all moving of characters from one room to another, through
+-       commands. Attempts a move. If succcessful, returns the exit left
++       commands. Attempts a move. If successful, returns the exit left
+        through.'''
+     ex = ch.room.exit(dir)
+ 
+diff -ruN ../nakedmudv3.2/src/alias/alias.c src/alias/alias.c
+--- ../nakedmudv3.2/src/alias/alias.c	Sat Jul  1 20:06:58 2006
++++ src/alias/alias.c	Sun Jul  9 15:29:08 2006
+@@ -284,7 +284,7 @@
+ 				       aliasAuxDataStore, aliasAuxDataRead));
+ 
+   // allow people to view their aliases
+-  add_cmd("alias", NULL, cmd_alias, POS_UNCONCIOUS, POS_FLYING, 
++  add_cmd("alias", NULL, cmd_alias, POS_UNCONSCIOUS, POS_FLYING, 
+ 	  "player", FALSE, TRUE);
+ }
+ 
+diff -ruN ../nakedmudv3.2/src/character.c src/character.c
+--- ../nakedmudv3.2/src/character.c	Sat Jul  1 20:06:58 2006
++++ src/character.c	Sun Jul  9 15:29:08 2006
+@@ -50,7 +50,7 @@
+ };
+ 
+ const struct pos_data pos_info[NUM_POSITIONS] = {
+-  { "unconcious", "fall unconcious", "falls unconcious" },
++  { "unconscious", "fall unconscious", "falls unconscious" },
+   { "sleeping",   "sleep",           "sleeps"           },
+   { "sitting",    "sit",             "sits"             },
+   { "standing",   "stand",           "stands"           },
+diff -ruN ../nakedmudv3.2/src/character.h src/character.h
+--- ../nakedmudv3.2/src/character.h	Sat Jul  1 20:06:58 2006
++++ src/character.h	Sun Jul  9 15:29:08 2006
+@@ -141,7 +141,7 @@
+ // Positions
+ //*****************************************************************************
+ #define POS_NONE                (-1)
+-#define POS_UNCONCIOUS            0
++#define POS_UNCONSCIOUS            0
+ #define POS_SLEEPING              1
+ #define POS_SITTING               2
+ #define POS_STANDING              3
+diff -ruN ../nakedmudv3.2/src/command.c src/command.c
+--- ../nakedmudv3.2/src/command.c	Sat Jul  1 20:06:58 2006
++++ src/command.c	Sun Jul  9 15:29:08 2006
+@@ -133,8 +133,8 @@
+     return TRUE;
+   else {
+     switch(charGetPos(ch)) {
+-    case POS_UNCONCIOUS:
+-      send_to_char(ch, "You cannot do that while unconcious!\r\n");
++    case POS_UNCONSCIOUS:
++      send_to_char(ch, "You cannot do that while unconscious!\r\n");
+       break;
+     case POS_SLEEPING:
+       send_to_char(ch, "Not while sleeping, you won't!\r\n");
+@@ -167,7 +167,7 @@
+     return TRUE;
+   else {
+     switch(charGetPos(ch)) {
+-    case POS_UNCONCIOUS:
++    case POS_UNCONSCIOUS:
+       send_to_char(ch, "You're still too alive to try that!\r\n");
+       break;
+     case POS_SLEEPING:
+diff -ruN ../nakedmudv3.2/src/editor/notepad.c src/editor/notepad.c
+--- ../nakedmudv3.2/src/editor/notepad.c	Sat Jul  1 20:06:58 2006
++++ src/editor/notepad.c	Sun Jul  9 15:29:07 2006
+@@ -21,6 +21,8 @@
+ //*****************************************************************************
+ // mandatory modules
+ //*****************************************************************************
++#include "../scripts/scripts.h"
++#include "../scripts/pychar.h"
+ #include "../scripts/script_editor.h"
+ 
+ 
+@@ -90,6 +92,17 @@
+   bufferCat(data->notepad, txt);
+ }
+ 
++PyObject *PyChar_getnotepad(PyObject *self, void *closure) {
++  CHAR_DATA *ch = PyChar_AsChar(self);
++  if(ch != NULL && charGetSocket(ch) != NULL) 
++    return Py_BuildValue("s", 
++			 (charGetSocket(ch) ? 
++			  bufferString(socketGetNotepad(charGetSocket(ch))) :
++			  ""));
++  else           
++    return NULL;
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -107,4 +120,8 @@
+ 	  "player", FALSE, TRUE);
+   add_cmd("notepad", NULL, cmd_notepad, POS_SITTING, POS_FLYING,
+ 	  "player", FALSE, TRUE);
++
++  // add our python extensions
++  PyChar_addGetSetter("notepad", PyChar_getnotepad, NULL,
++		      "Returns the character's notepad, if any");
+ }
+diff -ruN ../nakedmudv3.2/src/help/help.c src/help/help.c
+--- ../nakedmudv3.2/src/help/help.c	Sat Jul  1 20:06:58 2006
++++ src/help/help.c	Sun Jul  9 15:29:07 2006
+@@ -404,11 +404,11 @@
+     help_table[i] = newList();
+ 
+   // add all of our commands
+-  add_cmd("help", NULL, cmd_help, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("help", NULL, cmd_help, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "player", FALSE, FALSE);
+-  add_cmd("hlink", NULL, cmd_hlink, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("hlink", NULL, cmd_hlink, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "admin", FALSE, FALSE);
+-  add_cmd("hunlink", NULL, cmd_hunlink, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("hunlink", NULL, cmd_hunlink, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "admin", FALSE, FALSE);
+   add_cmd("hupdate", NULL, cmd_hupdate, POS_SITTING, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+diff -ruN ../nakedmudv3.2/src/interpret.c src/interpret.c
+--- ../nakedmudv3.2/src/interpret.c	Sat Jul  1 20:06:58 2006
++++ src/interpret.c	Sun Jul  9 15:29:08 2006
+@@ -48,17 +48,17 @@
+   // functions to the MUD, they should be added in the init_xxx() function
+   // associated with your module.
+   //***************************************************************************
+-  add_cmd("back",       NULL, cmd_back,     POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("back",       NULL, cmd_back,     POS_UNCONSCIOUS, POS_FLYING,
+ 	  "player", TRUE, FALSE);
+-  add_cmd("commands",   NULL, cmd_commands, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("commands",   NULL, cmd_commands, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "player", TRUE, FALSE);
+-  add_cmd("compress",   NULL, cmd_compress, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("compress",   NULL, cmd_compress, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "player", FALSE, FALSE);
+-  add_cmd("groupcmds",  NULL, cmd_groupcmds,POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("groupcmds",  NULL, cmd_groupcmds,POS_UNCONSCIOUS, POS_FLYING,
+ 	  "player", FALSE, FALSE);
+   add_cmd("look",       "l",  cmd_look,     POS_SITTING,  POS_FLYING,
+ 	  "player", TRUE, FALSE);
+-  add_cmd("more",       NULL, cmd_more,     POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("more",       NULL, cmd_more,     POS_UNCONSCIOUS, POS_FLYING,
+ 	  "player", TRUE, FALSE);
+ }
+ 
+diff -ruN ../nakedmudv3.2/src/log.c src/log.c
+--- ../nakedmudv3.2/src/log.c	Sat Jul  1 20:06:58 2006
++++ src/log.c	Sun Jul  9 15:29:08 2006
+@@ -98,7 +98,7 @@
+     storage_close(set);
+   }
+ 
+-  add_cmd("log", NULL, cmd_log, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("log", NULL, cmd_log, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "admin", FALSE, FALSE);
+ }
+ 
+diff -ruN ../nakedmudv3.2/src/olc2/olc.c src/olc2/olc.c
+--- ../nakedmudv3.2/src/olc2/olc.c	Sat Jul  1 20:06:58 2006
++++ src/olc2/olc.c	Sun Jul  9 15:29:08 2006
+@@ -578,63 +578,63 @@
+   extern COMMAND(cmd_dig);
+   extern COMMAND(cmd_fill);
+   extern COMMAND(cmd_instantiate);
+-  add_cmd("zedit", NULL, cmd_zedit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("zedit", NULL, cmd_zedit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+-  add_cmd("redit", NULL, cmd_redit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("redit", NULL, cmd_redit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+-  add_cmd("resedit", NULL, cmd_resedit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("resedit", NULL, cmd_resedit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+-  add_cmd("medit", NULL, cmd_medit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("medit", NULL, cmd_medit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+-  add_cmd("oedit", NULL, cmd_oedit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("oedit", NULL, cmd_oedit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+-  add_cmd("accedit", NULL, cmd_accedit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("accedit", NULL, cmd_accedit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "admin",   FALSE, TRUE);
+-  add_cmd("pcedit",  NULL, cmd_pcedit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("pcedit",  NULL, cmd_pcedit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "admin",   FALSE, TRUE);
+-  add_cmd("mpedit", NULL, cmd_mpedit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("mpedit", NULL, cmd_mpedit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, TRUE);
+-  add_cmd("opedit", NULL, cmd_opedit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("opedit", NULL, cmd_opedit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, TRUE);
+-  add_cmd("rpedit", NULL, cmd_rpedit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("rpedit", NULL, cmd_rpedit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, TRUE);
+ 
+   add_cmd("dig", NULL, cmd_dig, POS_STANDING, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+   add_cmd("fill", NULL, cmd_fill, POS_STANDING, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+-  add_cmd("instantiate", NULL, cmd_instantiate, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("instantiate", NULL, cmd_instantiate, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+   add_cmd("purge",      NULL, cmd_purge,    POS_SITTING,  POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+   add_cmd("load",       NULL, cmd_load,     POS_SITTING,  POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("rcopy", NULL, cmd_instantiate,   POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("rcopy", NULL, cmd_instantiate,   POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+ 
+-  add_cmd("mlist",      NULL, cmd_mlist,    POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("mlist",      NULL, cmd_mlist,    POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("mdelete",    NULL, cmd_mdelete,  POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("mdelete",    NULL, cmd_mdelete,  POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("mrename",    NULL, cmd_mrename,  POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("mrename",    NULL, cmd_mrename,  POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("olist",      NULL, cmd_olist,    POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("olist",      NULL, cmd_olist,    POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("odelete",    NULL, cmd_odelete,  POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("odelete",    NULL, cmd_odelete,  POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("orename",    NULL, cmd_orename,  POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("orename",    NULL, cmd_orename,  POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("rreload",    NULL, cmd_rreload,  POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("rreload",    NULL, cmd_rreload,  POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("rlist",      NULL, cmd_rlist,    POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("rlist",      NULL, cmd_rlist,    POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("rdelete",    NULL, cmd_rdelete,  POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("rdelete",    NULL, cmd_rdelete,  POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("rrename",    NULL, cmd_rrename,  POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("rrename",    NULL, cmd_rrename,  POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+   add_cmd("zlist",      NULL, cmd_zlist,    POS_SITTING,  POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+-  add_cmd("zreset",     NULL, cmd_zreset,   POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("zreset",     NULL, cmd_zreset,   POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+ }
+ 
+diff -ruN ../nakedmudv3.2/src/scripts/pychar.c src/scripts/pychar.c
+--- ../nakedmudv3.2/src/scripts/pychar.c	Sat Jul  1 20:06:58 2006
++++ src/scripts/pychar.c	Sun Jul  9 15:29:07 2006
+@@ -300,6 +300,8 @@
+     return NULL;
+ }
+ 
++
++
+ //
+ // Standard check to make sure the character exists when
+ // trying to set a value for it. If successful, assign the
+@@ -1406,7 +1408,7 @@
+     LIST_ITERATOR *found_i = newListIterator(found);
+     CHAR_DATA   *one_found = NULL;
+     ITERATE_LIST(one_found, found_i) {
+-      PyList_Append(list, charGetPyForm(one_found));
++      PyList_Append(list, charGetPyFormBorrowed(one_found));
+     } deleteListIterator(found_i);
+     deleteList(found);
+     PyObject *retval = Py_BuildValue("O", list);
+@@ -1463,7 +1465,7 @@
+   LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+   CHAR_DATA       *ch = NULL;
+   ITERATE_LIST(ch, ch_i)
+-    PyList_Append(list, charGetPyForm(ch));
++    PyList_Append(list, charGetPyFormBorrowed(ch));
+   deleteListIterator(ch_i);
+   PyObject *retval = Py_BuildValue("O", list);
+   Py_DECREF(list);
+@@ -1477,7 +1479,7 @@
+   ITERATE_LIST(sock, sock_i) {
+     // only add sockets with attached characters who are in game
+     if(socketGetChar(sock) && charGetRoom(socketGetChar(sock)))
+-      PyList_Append(list, charGetPyForm(socketGetChar(sock)));
++      PyList_Append(list, charGetPyFormBorrowed(socketGetChar(sock)));
+   } deleteListIterator(sock_i);
+   PyObject *retval = Py_BuildValue("O", list);
+   Py_DECREF(list);
+diff -ruN ../nakedmudv3.2/src/scripts/pyplugs.c src/scripts/pyplugs.c
+--- ../nakedmudv3.2/src/scripts/pyplugs.c	Sat Jul  1 20:06:58 2006
++++ src/scripts/pyplugs.c	Sun Jul  9 15:29:07 2006
+@@ -186,7 +186,7 @@
+ //*****************************************************************************
+ void init_pyplugs(void) {
+   init_py_modules();
+-  add_cmd("pyload", NULL, cmd_pyload, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("pyload", NULL, cmd_pyload, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "admin", FALSE, FALSE);
+ }
+ 
+diff -ruN ../nakedmudv3.2/src/scripts/scripts.c src/scripts/scripts.c
+--- ../nakedmudv3.2/src/scripts/scripts.c	Sat Jul  1 20:06:58 2006
++++ src/scripts/scripts.c	Sun Jul  9 15:29:07 2006
+@@ -373,23 +373,23 @@
+ 
+   /*
+   // add new player commands
+-  add_cmd("trun", NULL, cmd_scrun, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("trun", NULL, cmd_scrun, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+   */
+   extern COMMAND(cmd_tedit); // define the command
+-  add_cmd("attach",  NULL, cmd_attach,  POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("attach",  NULL, cmd_attach,  POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, FALSE);
+-  add_cmd("detach",  NULL, cmd_detach,  POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("detach",  NULL, cmd_detach,  POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, FALSE);
+-  add_cmd("tedit",   NULL, cmd_tedit,   POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("tedit",   NULL, cmd_tedit,   POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, TRUE);
+-  add_cmd("tstat",   NULL, cmd_tstat,   POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("tstat",   NULL, cmd_tstat,   POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, FALSE);
+-  add_cmd("tlist",   NULL, cmd_tlist,   POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("tlist",   NULL, cmd_tlist,   POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, FALSE);
+-  add_cmd("tdelete", NULL, cmd_tdelete, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("tdelete", NULL, cmd_tdelete, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter",FALSE, FALSE);
+-  add_cmd("trename", NULL, cmd_trename, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("trename", NULL, cmd_trename, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "scripter", FALSE, FALSE);
+ }
+ 
+diff -ruN ../nakedmudv3.2/src/set_val/set_val.c src/set_val/set_val.c
+--- ../nakedmudv3.2/src/set_val/set_val.c	Sat Jul  1 20:06:58 2006
++++ src/set_val/set_val.c	Sun Jul  9 15:29:07 2006
+@@ -266,9 +266,9 @@
+   add_set("keywords", SET_OBJECT,SET_TYPE_STRING,objSetKeywords,      NULL);
+ 
+   // now, add the admin commands for working with set
+-  add_cmd("set", NULL, cmd_set, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("set", NULL, cmd_set, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "admin", FALSE, FALSE);
+-  add_cmd("setpad", NULL, cmd_set, POS_UNCONCIOUS,POS_FLYING,
++  add_cmd("setpad", NULL, cmd_set, POS_UNCONSCIOUS,POS_FLYING,
+ 	  "admin", FALSE, FALSE);
+ }
+ 
+diff -ruN ../nakedmudv3.2/src/socials/socedit.c src/socials/socedit.c
+--- ../nakedmudv3.2/src/socials/socedit.c	Sat Jul  1 20:06:58 2006
++++ src/socials/socedit.c	Sun Jul  9 15:29:08 2006
+@@ -187,6 +187,6 @@
+ // implementation of socedit.h
+ //*****************************************************************************
+ void init_socedit(void) {
+-  add_cmd("socedit", NULL, cmd_socedit, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("socedit", NULL, cmd_socedit, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, TRUE);
+ }
+diff -ruN ../nakedmudv3.2/src/socials/socials.c src/socials/socials.c
+--- ../nakedmudv3.2/src/socials/socials.c	Sat Jul  1 20:06:58 2006
++++ src/socials/socials.c	Sun Jul  9 15:29:08 2006
+@@ -456,11 +456,11 @@
+   deleteHashIterator(hash_i);
+ 
+   // link/unlink commands for the admins
+-  add_cmd("soclink", NULL, cmd_soclink, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("soclink", NULL, cmd_soclink, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("socunlink", NULL, cmd_socunlink, POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("socunlink", NULL, cmd_socunlink, POS_UNCONSCIOUS, POS_FLYING,
+ 	  "builder", FALSE, FALSE);
+-  add_cmd("socials",   NULL, cmd_socials,   POS_UNCONCIOUS, POS_FLYING,
++  add_cmd("socials",   NULL, cmd_socials,   POS_UNCONSCIOUS, POS_FLYING,
+ 	  "player",  TRUE, FALSE);
+ 
+   // let add_social know it can start saving again

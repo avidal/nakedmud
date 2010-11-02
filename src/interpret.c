@@ -48,17 +48,17 @@ void init_commands() {
   // functions to the MUD, they should be added in the init_xxx() function
   // associated with your module.
   //***************************************************************************
-  add_cmd("back",       NULL, cmd_back,     POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("back",       NULL, cmd_back,     POS_UNCONSCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("commands",   NULL, cmd_commands, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("commands",   NULL, cmd_commands, POS_UNCONSCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("compress",   NULL, cmd_compress, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("compress",   NULL, cmd_compress, POS_UNCONSCIOUS, POS_FLYING,
 	  "player", FALSE, FALSE);
-  add_cmd("groupcmds",  NULL, cmd_groupcmds,POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("groupcmds",  NULL, cmd_groupcmds,POS_UNCONSCIOUS, POS_FLYING,
 	  "player", FALSE, FALSE);
   add_cmd("look",       "l",  cmd_look,     POS_SITTING,  POS_FLYING,
 	  "player", TRUE, FALSE);
-  add_cmd("more",       NULL, cmd_more,     POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("more",       NULL, cmd_more,     POS_UNCONSCIOUS, POS_FLYING,
 	  "player", TRUE, FALSE);
 }
 

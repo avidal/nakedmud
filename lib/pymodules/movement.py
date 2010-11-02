@@ -12,7 +12,7 @@ import inform, hooks
 
 
 # a ranking of positions
-positions     = ["unconcious", "sleeping", "sitting", "standing", "flying"]
+positions     = ["unconscious", "sleeping", "sitting", "standing", "flying"]
 pos_act       = ["collapse",   "sleep",    "sit",     "stand",    "fly"]
 
 # stuff for handling movement
@@ -117,7 +117,7 @@ def dir_index(dir):
 
 def try_move_mssg(ch, dir):
     '''Handles all moving of characters from one room to another, through
-       commands. Attempts a move. If succcessful, returns the exit left through.
+       commands. Attempts a move. If successful, returns the exit left through.
        Informs people of our moving'''
     old_room = ch.room
     ex       = try_move(ch, dir)
@@ -152,7 +152,7 @@ def try_move_mssg(ch, dir):
 
 def try_move(ch, dir):
     '''Handles all moving of characters from one room to another, through
-       commands. Attempts a move. If succcessful, returns the exit left
+       commands. Attempts a move. If successful, returns the exit left
        through.'''
     ex = ch.room.exit(dir)
 

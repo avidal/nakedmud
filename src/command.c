@@ -133,8 +133,8 @@ bool min_pos_ok(CHAR_DATA *ch, int minpos) {
     return TRUE;
   else {
     switch(charGetPos(ch)) {
-    case POS_UNCONCIOUS:
-      send_to_char(ch, "You cannot do that while unconcious!\r\n");
+    case POS_UNCONSCIOUS:
+      send_to_char(ch, "You cannot do that while unconscious!\r\n");
       break;
     case POS_SLEEPING:
       send_to_char(ch, "Not while sleeping, you won't!\r\n");
@@ -167,7 +167,7 @@ bool max_pos_ok(CHAR_DATA *ch, int minpos) {
     return TRUE;
   else {
     switch(charGetPos(ch)) {
-    case POS_UNCONCIOUS:
+    case POS_UNCONSCIOUS:
       send_to_char(ch, "You're still too alive to try that!\r\n");
       break;
     case POS_SLEEPING:

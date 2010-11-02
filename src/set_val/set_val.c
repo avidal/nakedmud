@@ -266,9 +266,9 @@ void init_set() {
   add_set("keywords", SET_OBJECT,SET_TYPE_STRING,objSetKeywords,      NULL);
 
   // now, add the admin commands for working with set
-  add_cmd("set", NULL, cmd_set, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("set", NULL, cmd_set, POS_UNCONSCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
-  add_cmd("setpad", NULL, cmd_set, POS_UNCONCIOUS,POS_FLYING,
+  add_cmd("setpad", NULL, cmd_set, POS_UNCONSCIOUS,POS_FLYING,
 	  "admin", FALSE, FALSE);
 }
 

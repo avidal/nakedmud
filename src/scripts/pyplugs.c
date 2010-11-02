@@ -186,7 +186,7 @@ void init_py_modules() {
 //*****************************************************************************
 void init_pyplugs(void) {
   init_py_modules();
-  add_cmd("pyload", NULL, cmd_pyload, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("pyload", NULL, cmd_pyload, POS_UNCONSCIOUS, POS_FLYING,
 	  "admin", FALSE, FALSE);
 }
 

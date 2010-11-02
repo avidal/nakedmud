@@ -456,11 +456,11 @@ void init_socials() {
   deleteHashIterator(hash_i);
 
   // link/unlink commands for the admins
-  add_cmd("soclink", NULL, cmd_soclink, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("soclink", NULL, cmd_soclink, POS_UNCONSCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
-  add_cmd("socunlink", NULL, cmd_socunlink, POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("socunlink", NULL, cmd_socunlink, POS_UNCONSCIOUS, POS_FLYING,
 	  "builder", FALSE, FALSE);
-  add_cmd("socials",   NULL, cmd_socials,   POS_UNCONCIOUS, POS_FLYING,
+  add_cmd("socials",   NULL, cmd_socials,   POS_UNCONSCIOUS, POS_FLYING,
 	  "player",  TRUE, FALSE);
 
   // let add_social know it can start saving again

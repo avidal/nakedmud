@@ -300,6 +300,8 @@ PyObject *PyChar_getusergroups(PyChar *self, void *closure) {
     return NULL;
 }
 
+
+
 //
 // Standard check to make sure the character exists when
 // trying to set a value for it. If successful, assign the
@@ -1406,7 +1408,7 @@ PyObject *PyChar_find_char_key(PyObject *self, PyObject *args) {
     LIST_ITERATOR *found_i = newListIterator(found);
     CHAR_DATA   *one_found = NULL;
     ITERATE_LIST(one_found, found_i) {
-      PyList_Append(list, charGetPyForm(one_found));
+      PyList_Append(list, charGetPyFormBorrowed(one_found));
     } deleteListIterator(found_i);
     deleteList(found);
     PyObject *retval = Py_BuildValue("O", list);
@@ -1463,7 +1465,7 @@ PyObject *PyChar_all_chars(PyObject *self) {
   LIST_ITERATOR *ch_i = newListIterator(mobile_list);
   CHAR_DATA       *ch = NULL;
   ITERATE_LIST(ch, ch_i)
-    PyList_Append(list, charGetPyForm(ch));
+    PyList_Append(list, charGetPyFormBorrowed(ch));
   deleteListIterator(ch_i);
   PyObject *retval = Py_BuildValue("O", list);
   Py_DECREF(list);
@@ -1477,7 +1479,7 @@ PyObject *PyChar_all_sockets(PyObject *self) {
   ITERATE_LIST(sock, sock_i) {
     // only add sockets with attached characters who are in game
     if(socketGetChar(sock) && charGetRoom(socketGetChar(sock)))
-      PyList_Append(list, charGetPyForm(socketGetChar(sock)));
+      PyList_Append(list, charGetPyFormBorrowed(socketGetChar(sock)));
   } deleteListIterator(sock_i);
   PyObject *retval = Py_BuildValue("O", list);
   Py_DECREF(list);

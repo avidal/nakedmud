@@ -35,34 +35,6 @@ def see_exit_as(ch, ex):
     else:
         return "something"
 
-def look_at_obj(ch, obj):
-    '''displays the object info the the character'''
-    ############
-    # FINISH ME
-    ############
-    return
-
-def look_at_char(ch, tgt):
-    '''displays the other character\'s info the the character'''
-    ############
-    # FINISH ME
-    ############
-    return
-
-def look_at_exit(ch, exit):
-    '''displays the exit info the the character'''
-    ############
-    # FINISH ME
-    ############
-    return
-
-def look_at_room(ch, room):
-    '''displays the room info the the character'''
-    ############
-    # FINISH ME
-    ############
-    return
-
 def show_equipment(ch, tgt):
     '''shows ch tgt\'s equipment'''
     for part in tgt.bodyparts:
@@ -97,6 +69,7 @@ def build_who():
 # hooks
 ################################################################################
 def equipment_look_hook(info):
+    '''displays a character\'s equipment when looked at'''
     tgt, ch = hooks.parse_info(info)
 
     if ch != tgt:

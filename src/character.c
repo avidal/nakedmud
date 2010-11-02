@@ -50,7 +50,7 @@ struct pos_data {
 };
 
 const struct pos_data pos_info[NUM_POSITIONS] = {
-  { "unconcious", "fall unconcious", "falls unconcious" },
+  { "unconscious", "fall unconscious", "falls unconscious" },
   { "sleeping",   "sleep",           "sleeps"           },
   { "sitting",    "sit",             "sits"             },
   { "standing",   "stand",           "stands"           },

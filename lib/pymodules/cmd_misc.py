@@ -59,8 +59,8 @@ def cmd_quit(ch, cmd, arg):
 # add our commands
 ################################################################################
 add_cmd("stop",  None, cmd_stop,    "sitting", "flying", "player", True,  False)
-add_cmd("clear", None, cmd_clear,"unconcious", "flying", "player", True,  False)
+add_cmd("clear", None, cmd_clear,"unconscious", "flying", "player", True,  False)
 add_cmd("delay", None, cmd_delay,  "sleeping", "flying", "player", True,  False)
-add_cmd("motd",  None, cmd_motd, "unconcious", "flying", "player", False, False)
+add_cmd("motd",  None, cmd_motd, "unconscious", "flying", "player", False, False)
 add_cmd("save",  None, cmd_save,   "sleeping", "flying", "player", False, False)
 add_cmd("quit",  None, cmd_quit,   "sleeping", "flying", "player", False, True)

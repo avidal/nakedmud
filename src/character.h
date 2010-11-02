@@ -141,7 +141,7 @@ int  sexGetNum(const char *sex);
 // Positions
 //*****************************************************************************
 #define POS_NONE                (-1)
-#define POS_UNCONCIOUS            0
+#define POS_UNCONSCIOUS            0
 #define POS_SLEEPING              1
 #define POS_SITTING               2
 #define POS_STANDING              3
