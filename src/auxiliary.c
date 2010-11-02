@@ -90,12 +90,9 @@ newAuxiliaryData(bitvector_t aux_type) {
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
 
-  while( (name = hashIteratorCurrentKey(hash_i)) != NULL) {
-    funcs = hashIteratorCurrentVal(hash_i);
-    hashIteratorNext(hash_i);
+  ITERATE_HASH(name, funcs, hash_i)
     if(IS_SET(funcs->aux_type, aux_type))
       hashPut(data, name, funcs->new());
-  }
   deleteHashIterator(hash_i);
   return data;
 }
@@ -107,12 +104,9 @@ auxiliaryEnsureDataComplete(HASHTABLE *data, bitvector_t aux_type) {
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
 
-  while( (name = hashIteratorCurrentKey(hash_i)) != NULL) {
-    funcs = hashIteratorCurrentVal(hash_i);
-    hashIteratorNext(hash_i);
+  ITERATE_HASH(name, funcs, hash_i) 
     if(IS_SET(funcs->aux_type, aux_type) && !hashGet(data, name))
       hashPut(data, name, funcs->new());
-  }
   deleteHashIterator(hash_i);
 }
 
@@ -125,9 +119,7 @@ deleteAuxiliaryData(HASHTABLE *data) {
   void            *entry  = NULL;
   const char      *name   = NULL;
 
-  while( (name = hashIteratorCurrentKey(hash_i)) != NULL) {
-    entry = hashIteratorCurrentVal(hash_i);
-    hashIteratorNext(hash_i);
+  ITERATE_HASH(name, entry, hash_i) {
     funcs = auxiliariesGetFuncs(name);
     funcs->delete(entry);
   }
@@ -144,9 +136,7 @@ auxiliaryDataStore(HASHTABLE *data) {
   void            *entry  = NULL;
   const char      *name   = NULL;
 
-  while( (name = hashIteratorCurrentKey(hash_i)) != NULL) {
-    entry = hashIteratorCurrentVal(hash_i);
-    hashIteratorNext(hash_i);
+  ITERATE_HASH(name, entry, hash_i) {
     funcs = auxiliariesGetFuncs(name);
     store_set(set, name, funcs->store(entry));
   }
@@ -162,9 +152,7 @@ auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type) {
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
 
-  while( (name = hashIteratorCurrentKey(hash_i)) != NULL) {
-    funcs = hashIteratorCurrentVal(hash_i);
-    hashIteratorNext(hash_i);
+  ITERATE_HASH(name, funcs, hash_i) {
     if(!IS_SET(funcs->aux_type, aux_type))
       continue;
     hashPut(data, name, funcs->read(read_set(set, name)));
@@ -184,9 +172,7 @@ auxiliaryDataCopyTo(HASHTABLE *from, HASHTABLE *to) {
   // first, delete all of the old data
   if(hashSize(to) > 0) {
     hash_i = newHashIterator(to);
-    while( (name = hashIteratorCurrentKey(hash_i)) != NULL) {
-      entry = hashIteratorCurrentVal(hash_i);
-      hashIteratorNext(hash_i);
+    ITERATE_HASH(name, entry, hash_i) {
       funcs = auxiliariesGetFuncs(name);
       funcs->delete(entry);
     }
@@ -196,9 +182,7 @@ auxiliaryDataCopyTo(HASHTABLE *from, HASHTABLE *to) {
   // now, copy in all of the new data
   if(hashSize(from) > 0) {
     hash_i = newHashIterator(from);
-    while( (name = hashIteratorCurrentKey(hash_i)) != NULL) {
-      entry = hashIteratorCurrentVal(hash_i);
-      hashIteratorNext(hash_i);
+    ITERATE_HASH(name, entry, hash_i) {
       funcs = auxiliariesGetFuncs(name);
       hashPut(to, name, funcs->copy(entry));
     }

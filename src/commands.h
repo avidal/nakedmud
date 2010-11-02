@@ -17,6 +17,8 @@ COMMAND(cmd_linkdead);
 COMMAND(cmd_wizhelp);
 COMMAND(cmd_invis);
 COMMAND(cmd_visible);
+COMMAND(cmd_repeat);
+COMMAND(cmd_at);
 
 
 /* builder.c */
@@ -31,6 +33,7 @@ COMMAND(cmd_mlist);
 COMMAND(cmd_olist);
 COMMAND(cmd_dlist);
 COMMAND(cmd_zlist);
+COMMAND(cmd_buildwalk);
 
 
 /* cmd_manip.c */
@@ -54,6 +57,7 @@ COMMAND(cmd_say);
 COMMAND(cmd_chat);
 COMMAND(cmd_emote);
 COMMAND(cmd_gemote);
+COMMAND(cmd_page);
 
 
 /* cmd_misc.c */
@@ -63,11 +67,9 @@ COMMAND(cmd_quit);
 COMMAND(cmd_save);
 COMMAND(cmd_commands);
 COMMAND(cmd_compress);
-COMMAND(cmd_tog_prf);
 COMMAND(cmd_more);
 COMMAND(cmd_back);
 COMMAND(cmd_stop);
-COMMAND(cmd_write);
 
 
 /* inform.c */

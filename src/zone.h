@@ -92,13 +92,13 @@ WORLD_DATA *zoneGetWorld(ZONE_DATA *zone);
 const char *zoneGetName(ZONE_DATA *zone);
 const char *zoneGetDesc(ZONE_DATA *zone);
 const char *zoneGetEditors(ZONE_DATA *zone);
-char      **zoneGetDescPtr(ZONE_DATA *zone);
+BUFFER     *zoneGetDescBuffer(ZONE_DATA *zone);
 bool        canEditZone(ZONE_DATA *zone, CHAR_DATA *ch);
 ROOM_DATA  *zoneGetRoom(ZONE_DATA *zone, room_vnum room);
 CHAR_DATA   *zoneGetMob(ZONE_DATA *zone, mob_vnum room);
 OBJ_DATA   *zoneGetObj(ZONE_DATA *zone, obj_vnum obj);
 SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, script_vnum script);
-DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, dialog_vnum script);
+DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, dialog_vnum dialog);
 void        *zoneGetAuxiliaryData(const ZONE_DATA *zone, char *name);
 
 void zoneSetVnum(ZONE_DATA *zone, zone_vnum vnum);
@@ -108,7 +108,7 @@ void zoneSetPulseTimer(ZONE_DATA *zone, int timer);
 void zoneSetPulse(ZONE_DATA *zone, int pulse_left);
 void zoneSetWorld(ZONE_DATA *zone, WORLD_DATA *world);
 void zoneSetName(ZONE_DATA *zone, const char *name);
-void zoneSetDescription(ZONE_DATA *zone, const char *description);
+void zoneSetDesc(ZONE_DATA *zone, const char *description);
 void zoneSetEditors(ZONE_DATA *zone, const char *names);
 //*****************************************************************************
 //

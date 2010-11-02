@@ -27,10 +27,12 @@
 #include "action.h"
 
 
-// optional modules
-#ifdef MODULE_SCRIPTS
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
 #include "scripts/script.h"
-#endif
+
 
 
 /*
@@ -51,9 +53,22 @@ bool check_name(const char *name)
   return TRUE;
 }
 
+
+void  add_extract_obj_func (void (* func)(OBJ_DATA *)) {
+  listQueue(extract_obj_funcs, func);
+}
+
+void  add_extract_mob_func (void (* func)(CHAR_DATA *)) {
+  listQueue(extract_mob_funcs, func);
+}
+
 void extract_obj(OBJ_DATA *obj) {
-  // make sure there's no events going that involve us
-  interrupt_events_involving(obj);
+  // go through all of our extraction functions
+  LIST_ITERATOR *ex_i = newListIterator(extract_obj_funcs);
+  void (* ex_func)(OBJ_DATA *) = NULL;
+  ITERATE_LIST(ex_func, ex_i)
+    ex_func(obj);
+  deleteListIterator(ex_i);
 
   // make sure we're not attached to anything
   CHAR_DATA *sitter = NULL;
@@ -81,14 +96,12 @@ void extract_obj(OBJ_DATA *obj) {
 
 
 void extract_mobile(CHAR_DATA *ch) {
-  // interrupt actions and events associated with us
-#ifdef MODULE_FACULTY
-  interrupt_action(ch, FACULTY_ALL);
-  clear_faculties(ch);
-#else
-  interrupt_action(ch, 1);
-#endif
-  interrupt_events_involving(ch);
+  // go through all of our extraction functions
+  LIST_ITERATOR *ex_i = newListIterator(extract_mob_funcs);
+  void (* ex_func)(CHAR_DATA *) = NULL;
+  ITERATE_LIST(ex_func, ex_i)
+    ex_func(ch);
+  deleteListIterator(ex_i);
 
   // unequip everything the character is wearing
   // and send it to inventory
@@ -129,9 +142,7 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
     send_to_char(dMob, "{yYou say, '%s'{n\r\n", txt);
     message(dMob, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR, other_buf);
     try_dialog_all(dMob, roomGetCharacters(charGetRoom(dMob)), txt);
-#ifdef MODULE_SCRIPTS
     try_speech_script(dMob, NULL, txt);
-#endif
     break;
   }
 
@@ -153,7 +164,7 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
 /*
  * load the world and its inhabitants, as well as other misc game data
  */
-void load_muddata(bool fCopyOver) {  
+void load_muddata() {  
   gameworld = worldLoad(WORLD_PATH);
   if(gameworld == NULL) {
     log_string("ERROR: Could not boot game world.");
@@ -162,10 +173,6 @@ void load_muddata(bool fCopyOver) {
 
   greeting = read_file("../lib/txt/greeting");
   motd     = read_file("../lib/txt/motd");
-
-  /* copyover */
-  if (fCopyOver)
-    copyover_recover();
 }
 
 
@@ -219,76 +226,6 @@ bool try_enter_game(CHAR_DATA *ch) {
     return FALSE;
   }
 }
-
-
-/* Recover from a copyover - load players */
-void copyover_recover()
-{     
-  CHAR_DATA *dMob;
-  SOCKET_DATA *dsock;
-  FILE *fp;
-  char name [100];
-  char host[MAX_BUFFER];
-  int desc;
-      
-  log_string("Copyover recovery initiated");
-   
-  if ((fp = fopen(COPYOVER_FILE, "r")) == NULL)
-  {  
-    log_string("Copyover file not found. Exitting.");
-    exit (1);
-  }
-      
-  /* In case something crashes - doesn't prevent reading */
-  unlink(COPYOVER_FILE);
-    
-  for (;;)
-  {  
-    fscanf(fp, "%d %s %s\n", &desc, name, host);
-    if (desc == -1)
-      break;
-
-    dsock = malloc(sizeof(*dsock));
-    clear_socket(dsock, desc);
-  
-    dsock->hostname     =  strdup(host);
-    listPut(socket_list, dsock);
- 
-    /* load player data */
-    if ((dMob = load_player(name)) != NULL)
-    {
-      /* attach to socket */
-      charSetSocket(dMob, dsock);
-      dsock->player    =  dMob;
-
-      // try putting the character into the game
-      // close the socket if we fail.
-      try_enter_game(dMob);
-    }
-    else /* ah bugger */
-    {
-      close_socket(dsock, FALSE);
-      continue;
-    }
-   
-    /* Write something, and check if it goes error-free */
-    if (!text_to_socket(dsock, "\n\r <*>  And before you know it, everything has changed  <*>\n\r"))
-    { 
-      close_socket(dsock, FALSE);
-      continue;
-    }
-  
-    /* make sure the socket can be used */
-    dsock->bust_prompt    =  TRUE;
-    dsock->lookup_status  =  TSTATE_DONE;
-    dsock->state          =  STATE_PLAYING;
-
-    /* negotiate compression */
-    text_to_buffer(dsock, (char *) compress_will2);
-    text_to_buffer(dsock, (char *) compress_will);
-  }
-  fclose(fp);
-}     
 
 CHAR_DATA *check_reconnect(const char *player)
 {
@@ -675,6 +612,42 @@ int count_letters(const char *string, const char ch, const int strlen) {
 
   return n;
 }
+
+//
+// counts how many times word occurs in string. Assumes strlen(word) >= 1
+//
+int count_occurences(const char *string, const char *word) {
+  int count = 0, i = 0, word_len = strlen(word);
+  for(; string[i] != '\0'; i++) {
+    if(!strncmp(string, word, word_len)) {
+      count++;
+      i += word_len - 1;
+    }
+  }
+  return count;
+}
+
+//
+// return a pointer to the start of the line num (lines are ended with \n's).
+// return NULL if the line does not exist
+//
+char *line_start(char *string, int line) {
+  // skip forward to the appropriate line
+  int i, count = 1;
+
+  // are we looking for the start?
+  if(line == 1) return string;
+
+  for(i = 0; string[i] != '\0'; i++) {
+    if(string[i] == '\n')
+      count++;
+    if(count == line)
+      return string+i+1;
+  }
+
+  return NULL;
+}
+
 
 //
 // trim trailing and leading whitespace
@@ -1301,8 +1274,13 @@ bool has_obj(CHAR_DATA *ch, int vnum) {
 }
 
 
+void show_prompt(SOCKET_DATA *socket) {
+  text_to_buffer(socket, custom_prompt(socketGetChar(socket)));
+}
+
 const char *custom_prompt(CHAR_DATA *ch) {
   static char prompt[MAX_BUFFER];
-  sprintf(prompt, "\r\nprompt> ");
+  *prompt = '\0';
+  strcat(prompt, "\r\nprompt> ");    
   return prompt;
 }

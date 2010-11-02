@@ -16,24 +16,30 @@
 
 
 //*****************************************************************************
-//
-// if you've installed a new module, you  need to put a define in here to let
+// if you've installed a newmodule, you  need to put a define in here to let
 // the rest of the MUD know that you've installed the module.
-//
 //*****************************************************************************
-#define MODULE_OLC
-#define MODULE_TIME
+
+// mandatory modules. These are modules that the NakedMud core REQUIRES to run.
+// They have simply been made modules for organizational ease.
+#define MODULE_ITEMS
+#define MODULE_OLC2
 #define MODULE_SCRIPTS
-#define MODULE_ALIAS
 #define MODULE_CHAR_VARS
+#define MODULE_SET_VAL
+#define MODULE_EDITOR
+
+// here is where your optional modules will go
+#define MODULE_ALIAS
 #define MODULE_SOCIALS
 #define MODULE_HELP
+#define MODULE_TIME
 
 
 
 //*****************************************************************************
 //
-// To avoid having to write some bulky structure names, we've typedefed a
+// To avoid having to write some bulky structure names, we've typedef'd a
 // bunch of shortforms for commonly used datatypes. If you make a new datatype
 // that is used lots, put a typedef for it in here.
 //
@@ -41,22 +47,9 @@
 typedef struct socket_data                SOCKET_DATA;
 typedef struct char_data                  CHAR_DATA;  
 typedef struct lookup_data                LOOKUP_DATA;
-typedef struct list                       LIST;
-typedef struct list_iterator              LIST_ITERATOR;
-typedef struct hashtable                  HASHTABLE;
-typedef struct hashtable_iterator         HASH_ITERATOR;
-typedef struct hashmap                    HASHMAP;
-typedef struct map_iterator               MAP_ITERATOR;
-typedef struct set_data                   SET;
-typedef struct set_iterator               SET_ITERATOR;
 typedef struct datatable                  DATATABLE;
 typedef struct storage_set                STORAGE_SET;
 typedef struct storage_set_list           STORAGE_SET_LIST;
-
-typedef struct property_table             PROPERTY_TABLE;
-typedef struct property_table_iterator    PROPERTY_TABLE_ITERATOR;
-
-typedef struct buffer_type                BUFFER;
 
 typedef struct script_set_data            SCRIPT_SET;
 typedef struct edesc_data                 EDESC_DATA;
@@ -73,7 +66,6 @@ typedef struct object_data                OBJ_DATA;
 typedef struct shop_data                  SHOP_DATA;
 typedef struct body_data                  BODY_DATA;
 typedef struct reset_data                 RESET_DATA;
-typedef struct olc_data                   OLC_DATA;
 
 typedef int                               shop_vnum;
 typedef int                               room_vnum;
@@ -98,16 +90,17 @@ typedef  unsigned char     byte;
 // the typedefs.
 #include "property_table.h"
 #include "list.h"
-#include "hashmap.h"
+#include "map.h"
 #include "hashtable.h"
 #include "set.h"
+#include "buffer.h"
+#include "bitvector.h"
 
 
 
-
-/************************
- * Standard definitions *
- ************************/
+//*****************************************************************************
+// Standard definitions
+//*****************************************************************************
 
 /* define TRUE and FALSE */
 #ifndef FALSE
@@ -132,7 +125,7 @@ typedef  unsigned char     byte;
 #define MAX_SCRIPT         16384                  /* max length of a script */
 #define MAX_OUTPUT         8192                   /* well shoot me if it isn't enough   */
 #define FILE_TERMINATOR    "EOF"                  /* end of file marker                 */
-#define COPYOVER_FILE      "../txt/copyover.dat"  /* tempfile to store copyover data    */
+#define COPYOVER_FILE      "../.copyover.dat"     /* tempfile to store copyover data    */
 #define EXE_FILE           "../src/NakedMud"      /* the name of the mud binary         */
 #define DEFAULT_PORT       4000                   /* the default port we run on */
 
@@ -141,20 +134,6 @@ typedef  unsigned char     byte;
 // thread as well) then keep this on. Otherwise, comment out
 // this line
 //#define MUD_THREADABLE
-
-/* Connection States */
-#define STATE_CLOSED           0  /* should always be the last state
-                                     The above comment is incorrect. GH */
-#define STATE_PLAYING          1
-#define STATE_OLC              2
-#define STATE_TEXT_EDITOR      3 
-#define STATE_NEW_NAME         4
-#define STATE_NEW_PASSWORD     5
-#define STATE_VERIFY_PASSWORD  6
-#define STATE_ASK_PASSWORD     7
-#define STATE_ASK_SEX          8
-#define STATE_ASK_RACE         9
-
 
 /* Thread States */
 #define TSTATE_LOOKUP          0  /* Socket is in host_lookup        */
@@ -188,17 +167,13 @@ typedef  unsigned char     byte;
 
 #define WORLD_PATH     "../lib/world"
 
-/******************************
- * End of standard definitons *
- ******************************/
 
 
+//*****************************************************************************
+// New structures
+//*****************************************************************************
 
-/******************************
- * New structures             *
- ******************************/
-
-/* the actual structures */
+// required for looking up a socket's IP in a new thread
 struct lookup_data
 {
   SOCKET_DATA       * dsock;   /* the socket we wish to do a hostlookup on */
@@ -206,6 +181,10 @@ struct lookup_data
 };
 
 
+
+//*****************************************************************************
+// core functions for working with new commands
+//*****************************************************************************
 #define CMD_PTR(name)      void (* name)(CHAR_DATA *ch, const char *cmd, \
 					 int subcmd, char *arg)
 #define COMMAND(name)      void name(CHAR_DATA *ch, const char *cmd, \
@@ -216,32 +195,20 @@ void remove_cmd   (const char *cmd);
 void add_cmd      (const char *cmd, const char *sort_by, void *func, 
 	           int subcmd, int min_pos, int max_pos,
 	           int min_level, bool mob_ok, bool interrupts);
-void remove_cmd   (const char *cmd);
-
-
-struct buffer_type
-{
-  char   * data;        /* The data                      */
-  int      len;         /* The current len of the buffer */
-  int      size;        /* The allocated size of data    */
-};
-
-/******************************
- * End of new structures      *
- ******************************/
+bool cmd_exists   (const char *cmd);
 
 
 
-/***************************
- * Global Variables        *
- ***************************/
-
+//*****************************************************************************
+// Global Variables
+//*****************************************************************************
 extern  LIST           *object_list;
 extern  PROPERTY_TABLE *obj_table;      /* same contents as object_list, but
 					   arranged by uid (unique ID)        */
 extern  LIST           *socket_list;
-extern  LIST           *socket_free;
 extern  LIST           *mobile_list;
+extern  LIST           *extract_obj_funcs; // functions called on obj extraction
+extern  LIST           *extract_mob_funcs; // functions called on mob extraction
 extern  PROPERTY_TABLE *mob_table;      /* same contents as mobile_list, but
 					   arranged by uid (unique ID)        */
 extern  const struct    typCmd tabCmd[];/* the command table                  */
@@ -254,16 +221,11 @@ extern  time_t          current_time;   /* let's cut down on calls to time()  */
 
 extern WORLD_DATA    *   gameworld;     // the world of the game
 
-/*************************** 
- * End of Global Variables *
- ***************************/
 
 
-
-/***********************
- *    MCCP support     *
- ***********************/
-
+//*****************************************************************************
+// MCCP support
+//*****************************************************************************
 extern const unsigned char compress_will[];
 extern const unsigned char compress_will2[];
 
@@ -271,19 +233,11 @@ extern const unsigned char compress_will2[];
 #define TELOPT_COMPRESS2      86
 #define COMPRESS_BUF_SIZE   8192
 
-/***********************
- * End of MCCP support *
- ***********************/
 
 
-
-/***********************************
- * Prototype function declerations *
- ***********************************/
-
-#define  buffer_new(size)             __buffer_new     ( size)
-#define  buffer_strcat(buffer,text)   __buffer_strcat  ( buffer, text )
-
+//*****************************************************************************
+// Prototype function declerations
+//*****************************************************************************
 char  *crypt                  ( const char *key, const char *salt );
 
 
@@ -294,7 +248,6 @@ void  handle_cmd_input        ( SOCKET_DATA *dsock, char *arg );
 // Some command scripts may want to re-force a character to
 // perform the command. In that case, scripts_ok can be
 // set to FALSE so that the command script doesn't re-run
-//
 void  do_cmd                  ( CHAR_DATA *ch, char *arg, 
 				bool scripts_ok, bool aliases_ok);
 
@@ -310,18 +263,12 @@ long    fread_long            ( FILE *fp );                 /* a long integer */
 
 /* strings.c */
 char   *one_arg               ( char *fStr, char *bStr );
+char   *two_args              ( char *from, char *arg1, char *arg2);
 void    arg_num               ( const char *from, char *to, int num); 
 bool    compares              ( const char *aStr, const char *bStr );
 bool    is_prefix             ( const char *aStr, const char *bStr );
 char   *capitalize            ( char *txt );
 char   *strfind               (char *txt, char *sub);
-BUFFER *__buffer_new          ( int size );
-void    __buffer_strcat       ( BUFFER *buffer, const char *text );
-void    buffer_free           ( BUFFER *buffer );
-void    buffer_clear          ( BUFFER *buffer );
-int     bprintf               ( BUFFER *buffer, char *fmt, ... ) __attribute__ ((format (printf, 2, 3)));
-const char *buffer_string     ( BUFFER *buffer );
-void    buffer_format         ( BUFFER *buffer, bool indent );
 
 /* mccp.c */
 bool  compressStart     ( SOCKET_DATA *dsock, unsigned char teleopt );
@@ -337,10 +284,5 @@ int next_char_uid();
 void  page_string           ( SOCKET_DATA *dsock, const char *string);
 void  page_continue         ( SOCKET_DATA *dsock);
 void  page_back             ( SOCKET_DATA *dsock);
-
-
-/*******************************
- * End of prototype declartion *
- *******************************/
 
 #endif  /* MUD_H */

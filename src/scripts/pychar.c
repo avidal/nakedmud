@@ -15,7 +15,6 @@
 #include "../room.h"
 #include "../character.h"
 #include "../object.h"
-#include "../items.h"
 #include "../races.h"
 #include "../handler.h"
 #include "../utils.h"
@@ -25,10 +24,12 @@
 #include "pyroom.h"
 #include "pyobj.h"
 
-// optional modules
-#ifdef MODULE_CHAR_VARS
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
 #include "../char_vars/char_vars.h"
-#endif
+#include "../items/items.h"
 
 
 typedef struct {
@@ -115,6 +116,32 @@ PyChar_send(PyChar *self, PyObject *value) {
 
 
 //
+// Send a newline-tagged message to everyone around the character
+//
+static PyObject *
+PyChar_sendaround(PyChar *self, PyObject *value) {
+  char *mssg = NULL;
+  if (!PyArg_ParseTuple(value, "s", &mssg)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Characters may only be sent strings");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+  if(ch) {
+    send_around_char(ch, FALSE, "%s\r\n", mssg);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+                    "Tried to send message to nonexistant character, %d.", 
+		    self->uid);
+    return NULL;
+  }
+}
+
+
+//
 // make the character perform an action
 //
 static PyObject *
@@ -141,7 +168,6 @@ PyChar_act(PyChar *self, PyObject *value) {
 }
 
 
-#ifdef MODULE_CHAR_VARS
 //
 // Get the value of a variable stored on the character
 //
@@ -213,21 +239,20 @@ PyChar_setvar(PyChar *self, PyObject *args) {
     return NULL;
   }
 }
-#endif
 
 
 
 static PyMethodDef PyChar_methods[] = {
     {"send", (PyCFunction)PyChar_send, METH_VARARGS,
      "send a message to the character." },
+    {"sendaround", (PyCFunction)PyChar_sendaround, METH_VARARGS,
+     "send a message to everyone around a character."},
     {"act", (PyCFunction)PyChar_act, METH_VARARGS,
      "make the character perform an action." },
-#ifdef MODULE_CHAR_VARS
     {"getvar", (PyCFunction)PyChar_getvar, METH_VARARGS,
      "get the value of a special variable the character has."},
     {"setvar", (PyCFunction)PyChar_setvar, METH_VARARGS,
      "set the value of a special variable."},
-#endif
     {NULL}  /* Sentinel */
 };
 
@@ -470,7 +495,7 @@ PyChar_seton(PyChar *self, PyObject *value, void *closure) {
 		   charGetName(ch));
       return -1;
     }
-    else if(objGetType(obj) == ITEM_FURNITURE) {
+    else if(objIsType(obj, "furniture")) {
       if(charGetFurniture(ch))
 	char_from_furniture(ch);
       char_to_furniture(ch, obj);

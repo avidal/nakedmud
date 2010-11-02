@@ -23,9 +23,12 @@
 #include "room.h"
 
 
-#ifdef MODULE_SCRIPTS
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
 #include "scripts/script.h"
-#endif
+
 
 
 // how many special exits do we expect to have?
@@ -38,7 +41,7 @@ struct room_data {
 
   int         terrain;           // what kind of terrain do we have?
   char       *name;              // what is the name of our room?
-  char       *desc;              // our description
+  BUFFER     *desc;              // our description
 
   EDESC_SET  *edescs;            // the extra descriptions in the room
   EXIT_DATA **exits;             // the normal exists
@@ -64,7 +67,7 @@ ROOM_DATA *newRoom() {
   room->vnum = NOWHERE;
 
   room->name      = strdup("");
-  room->desc      = strdup("");
+  room->desc      = newBuffer(1);
 
 
   room->terrain = TERRAIN_INDOORS;
@@ -117,7 +120,7 @@ void deleteRoom(ROOM_DATA *room) {
 
   // delete strings
   if(room->name)        free(room->name);
-  if(room->desc)        free(room->desc);
+  if(room->desc)        deleteBuffer(room->desc);
   deleteAuxiliaryData(room->auxiliary_data);
 
   free(room);
@@ -127,7 +130,7 @@ void deleteRoom(ROOM_DATA *room) {
 STORAGE_SET *roomStore(ROOM_DATA *room) {
   STORAGE_SET *set = new_storage_set();
   store_string(set, "name",    room->name);
-  store_string(set, "desc",    room->desc);
+  store_string(set, "desc",    bufferString(room->desc));
   store_int   (set, "vnum",    room->vnum);
   store_int   (set, "terrain", room->terrain);
   store_set   (set, "edescs",  edescSetStore(room->edescs));
@@ -212,7 +215,7 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
   roomSetTerrain (to, roomGetTerrain(from));
 
   // set our edescs
-  roomSetEdescs(to, copyEdescSet(from->edescs));
+  roomSetEdescs(to, edescSetCopy(from->edescs));
 
   // set our normal exits
   for(i = 0; i < NUM_DIRS; i++)
@@ -275,11 +278,9 @@ void roomDigExitSpecial (ROOM_DATA *room, const char *dir, room_vnum to) {
 
 void roomReset(ROOM_DATA *room) {
   resetRunOn(room->reset, room, INITIATOR_ROOM);
-#ifdef MODULE_SCRIPTS
   try_scripts(SCRIPT_TYPE_INIT,
 	      room, SCRIPTOR_ROOM,
 	      NULL, NULL, room, NULL, NULL, 0);
-#endif
 }
 
 
@@ -340,12 +341,12 @@ const char *roomGetName        (const ROOM_DATA *room) {
 };
 
 const char *roomGetDesc        (const ROOM_DATA *room) {
-  return room->desc;
+  return bufferString(room->desc);
 };
 
-char      **roomGetDescPtr     (ROOM_DATA *room) {
-  return &(room->desc);
-};
+BUFFER *roomGetDescBuffer(const ROOM_DATA *room) {
+  return room->desc;
+}
 
 int         roomGetTerrain     (const ROOM_DATA *room) {
   return room->terrain;
@@ -378,8 +379,8 @@ EDESC_SET  *roomGetEdescs      (const ROOM_DATA *room) {
 }
 
 const char *roomGetEdesc       (const ROOM_DATA *room, const char *keyword) {
-  EDESC_DATA *edesc = getEdesc(room->edescs, keyword);
-  if(edesc) return getEdescDescription(edesc);
+  EDESC_DATA *edesc = edescSetGet(room->edescs, keyword);
+  if(edesc) return edescSetGetDesc(edesc);
   else return NULL;
 }
 
@@ -402,8 +403,8 @@ void        roomSetName        (ROOM_DATA *room, const char *name) {
 };
 
 void        roomSetDesc (ROOM_DATA *room, const char *desc) {
-  if(room->desc) free(room->desc);
-  room->desc = strdup(desc ? desc : "");
+  bufferClear(room->desc);
+  bufferCat(room->desc, (desc ? desc : ""));
 };
 
 void        roomSetTerrain     (ROOM_DATA *room, int terrain_type) {

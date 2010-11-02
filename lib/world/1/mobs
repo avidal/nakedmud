@@ -15,24 +15,24 @@ list:=
   race      : human
   dialog    : 100
   auxiliary :-
-    stat_data        :-
-      health          : 5
-      curr_health     : 5
-      power           : 5
-      curr_power      : 0
-      awareness       : 5
-      curr_awareness  : 0
-      courage         : 5
-      curr_courage    : 0
-      control         : 5
-      curr_control    : 0
-      speed           : 5
-      curr_speed      : 0
-      personality     : 5
-      curr_personality: 0
+    combat_state_data:-
+      health      : 100
+      curr_health : 100
+      power       : 100
+      curr_power  : 100
+      control     : 100
+      curr_control: 100
+      defense     : 100
+      curr_defense: 100
+      agility     : 100
+      curr_agility: 100
+      wits        : 100
+      curr_wits   : 100
       -
     script_aux_data  :-
       scripts:=
+        vnum: 195
+        -
         vnum: 150
         -
         vnum: 140
@@ -54,21 +54,19 @@ list:=
   race      : human
   dialog    : 101
   auxiliary :-
-    stat_data        :-
-      health          : 5
-      curr_health     : 5
-      power           : 5
-      curr_power      : 0
-      awareness       : 5
-      curr_awareness  : 0
-      courage         : 5
-      curr_courage    : 0
-      control         : 5
-      curr_control    : 0
-      speed           : 5
-      curr_speed      : 0
-      personality     : 5
-      curr_personality: 0
+    combat_state_data:-
+      health      : 100
+      curr_health : 100
+      power       : 100
+      curr_power  : 100
+      control     : 100
+      curr_control: 100
+      defense     : 100
+      curr_defense: 100
+      agility     : 100
+      curr_agility: 100
+      wits        : 100
+      curr_wits   : 100
       -
     script_aux_data  :-
       scripts:=
@@ -93,21 +91,19 @@ list:=
   race      : human
   dialog    : 102
   auxiliary :-
-    stat_data        :-
-      health          : 5
-      curr_health     : 5
-      power           : 5
-      curr_power      : 0
-      awareness       : 5
-      curr_awareness  : 0
-      courage         : 5
-      curr_courage    : 0
-      control         : 5
-      curr_control    : 0
-      speed           : 5
-      curr_speed      : 0
-      personality     : 5
-      curr_personality: 0
+    combat_state_data:-
+      health      : 100
+      curr_health : 100
+      power       : 100
+      curr_power  : 100
+      control     : 100
+      curr_control: 100
+      defense     : 100
+      curr_defense: 100
+      agility     : 100
+      curr_agility: 100
+      wits        : 100
+      curr_wits   : 100
       -
     -
   -
@@ -128,21 +124,19 @@ list:=
   race      : human
   dialog    : -1
   auxiliary :-
-    stat_data        :-
-      health          : 5
-      curr_health     : 5
-      power           : 5
-      curr_power      : 0
-      awareness       : 5
-      curr_awareness  : 0
-      courage         : 5
-      curr_courage    : 0
-      control         : 5
-      curr_control    : 0
-      speed           : 5
-      curr_speed      : 0
-      personality     : 5
-      curr_personality: 0
+    combat_state_data:-
+      health      : 100
+      curr_health : 100
+      power       : 100
+      curr_power  : 100
+      control     : 100
+      curr_control: 100
+      defense     : 100
+      curr_defense: 100
+      agility     : 100
+      curr_agility: 100
+      wits        : 100
+      curr_wits   : 100
       -
     -
   -

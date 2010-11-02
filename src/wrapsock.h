@@ -55,7 +55,9 @@ extern int optreset; /* not used here */
 
 /* Defines */
 /* defined before the right type get a chance to be defined */
+#ifndef socklen_t
 #define socklen_t unsigned int
+#endif
 /* port to handle all requests */
 #define SERV_PORT1 9877 
 /* port to handle numeric requests */

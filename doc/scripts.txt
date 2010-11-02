@@ -50,6 +50,11 @@ ch.send('message')
 example: ch.send('hello, world!')
 Send a character a text message.
 
+SENDING MESSAGES
+ch.sendaround('message')
+example: ch.send('hello world to everyone around me!')
+Send a text message to everyone in the same room as ch, but not ch
+
 PERFORMING ACTIONS
 ch.act('command')
 example: ch.act('say hello, world!')
@@ -74,10 +79,10 @@ Load a new mobile to the specified target. The first value is the mob's vnum
 and the second is what you would like to load the mob to. "to" can be a room,
 a room vnum, or a piece of furniture.
 
-COUNTING OCCURANCES OF MOBILES
+COUNTING OCCURENCES OF MOBILES
 count_mob(vnum/name, where = entire game)
 exmaple: room_pcs = count_mobs(-1, 100)
-Count the occurances of the number of mobs that are in the scope of where. Where
+Count the occurences of the number of mobs that are in the scope of where. Where
 can be either a room, a room vnum, or a piece of furniture. if where is not
 provided (e.g. count_mobs('jim')) then all characters in the entire game are
 looked over for matches. Either a mob vnum can be used, or the mob's name. If
@@ -112,7 +117,7 @@ equip the item to the first open, viable slots.
 COUNTING OBJECTS
 count_objs(vnum/name, where = entire game)
 exmaple: inv_items = count_objs(141, ch)
-Count the occurances of the number of objects that are in the scope of where. 
+Count the occurences of the number of objects that are in the scope of where. 
 Where can be a room, a room vnum, a container, or a character. If where is not
 provided (e.g. count_objs('table')) then all objects in the entire game are
 looked over for matches. Either a obj vnum can be used, or the objects's name. 
@@ -130,6 +135,11 @@ The following variables are accessable on Python rooms:
 
 
 The following functions are available for use with Python mud objects:
+SENDING MESSAGES TO CHARACTERS
+room.send('message')
+example: room.send('Hello to everyone in this room!')
+Sends a message to everyone that is in the room
+
 CLOSING DOORS
 room.close('direction')
 example: room.close('north')

@@ -19,8 +19,17 @@
 #include "object.h"
 #include "exit.h"
 #include "handler.h"
-#include "items.h"
 #include "room_reset.h"
+
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "items/items.h"
+#include "items/container.h"
+#include "items/furniture.h"
+
 
 
 struct reset_data {
@@ -336,7 +345,7 @@ bool try_reset_load_mobile(RESET_DATA *reset, void *initiator, int initiator_typ
     char_to_room(mob, initiator);
   // to a seat
   else if(initiator_type == INITIATOR_ON_OBJ) {
-    if(objGetType(initiator) != ITEM_FURNITURE || objGetRoom(initiator)==NULL) {
+    if(!objIsType(initiator, "furniture") || objGetRoom(initiator)==NULL) {
       extract_mobile(mob);
       return FALSE;
     }
@@ -526,7 +535,7 @@ bool try_reset_opening(RESET_DATA *reset, void *initiator, int initiator_type,
     return TRUE;
   }
   else if(initiator_type == INITIATOR_THEN_OBJ) {
-    if(objGetType(initiator) != ITEM_CONTAINER)
+    if(!objIsType(initiator, "container"))
       return FALSE;
     containerSetLocked(initiator, locked);
     containerSetClosed(initiator, closed);

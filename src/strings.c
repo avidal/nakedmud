@@ -87,6 +87,9 @@ char *one_arg(char *fStr, char *bStr)
   return fStr;
 }
 
+char *two_args(char *from, char *arg1, char *arg2) {
+  return one_arg(one_arg(from, arg1), arg2);
+}
 
 //
 // pull out the argument of the specified number
@@ -154,104 +157,4 @@ char *strfind(char *txt, char *sub)
   }
 
   return NULL;
-}
-
-/*  
- * Create a new buffer.
- */
-BUFFER *__buffer_new(int size)
-{
-  BUFFER *buffer;
-    
-  buffer = malloc(sizeof(BUFFER));
-  buffer->size = size;
-  buffer->data = malloc(size); *(buffer->data) = '\0';
-  buffer->len = 0;
-  return buffer;
-}
-
-/*
- * Add a string to a buffer. Expand if necessary
- */
-void __buffer_strcat(BUFFER *buffer, const char *text)  
-{
-  int new_size;
-  int text_len;
-  char *new_data;
- 
-  /* Adding NULL string ? */
-  if (!text)
-    return;
-
-  text_len = strlen(text);
-    
-  /* Adding empty string ? */ 
-  if (text_len == 0)
-    return;
-
-  /* Will the combined len of the added text and the current text exceed our buffer? */
-  if ((text_len + buffer->len + 1) > buffer->size)
-  { 
-    new_size = buffer->size + text_len + 1;
-   
-    /* Allocate the new buffer */
-    new_data = malloc(new_size);
-  
-    /* Copy the current buffer to the new buffer */
-    memcpy(new_data, buffer->data, buffer->len);
-    free(buffer->data);
-    buffer->data = new_data;  
-    buffer->size = new_size;
-  }
-  memcpy(buffer->data + buffer->len, text, text_len);
-  buffer->len += text_len;
-  buffer->data[buffer->len] = '\0';
-}
-
-/* free a buffer */
-void buffer_free(BUFFER *buffer)
-{
-  /* Free data */
-  free(buffer->data);
- 
-  /* Free buffer */
-  free(buffer);
-}
-
-/* Clear a buffer's contents, but do not deallocate anything */
-void buffer_clear(BUFFER *buffer)
-{
-  buffer->len = 0;  
-  *buffer->data = '\0';
-}
-
-/* print stuff, append to buffer. safe. */
-int bprintf(BUFFER *buffer, char *fmt, ...)
-{  
-  char buf[MAX_BUFFER];
-  va_list va;
-  int res;
-    
-  va_start(va, fmt);
-  res = vsnprintf(buf, MAX_BUFFER, fmt, va);
-  va_end(va);
-    
-  if (res >= MAX_BUFFER - 1)  
-  {
-    buf[0] = '\0';
-    bug("Overflow when printing string %s", fmt);
-  }
-  else
-    buffer_strcat(buffer, buf);
-   
-  return res;
-}
-
-/* return a pointer to the buffer data */
-const char *buffer_string(BUFFER *buffer) {
-  return buffer->data;
-}
-
-void buffer_format(BUFFER *buffer, bool indent) {
-  format_string(&buffer->data, 80, buffer->size, indent);
 }

@@ -18,16 +18,30 @@
 #include "utils.h"
 #include "body.h"
 #include "races.h"
-#include "items.h"
 #include "handler.h"
 #include "socket.h"
 #include "inform.h"
 #include "log.h"
 
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "items/items.h"
+#include "items/portal.h"
+#include "items/container.h"
+#include "items/furniture.h"
+
+
+
+//*****************************************************************************
 // optional module headers
+//*****************************************************************************
 #ifdef MODULE_TIME
 #include "time/mudtime.h"
 #endif
+
 
 
 //*****************************************************************************
@@ -46,7 +60,7 @@ void list_one_furniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
   char *chars = print_list(can_see, charGetName, charGetMultiName);
   if(*chars) send_to_char(ch, "%s %s %s %s%s.\r\n",
 			  chars, (listSize(can_see) == 1 ? "is" : "are"),
-			  (objGetSubtype(furniture) == FURNITURE_AT ?"at":"on"),
+			  (furnitureGetType(furniture)==FURNITURE_AT?"at":"on"),
 			  objGetName(furniture),
 			  (charGetFurniture(ch) == furniture ?" with you": ""));
   // everyone was invisible to us... we should still show the furniture though
@@ -136,7 +150,7 @@ void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj) {
   free(new_desc);
 
   // list container-related stuff
-  if(objGetType(obj) == ITEM_CONTAINER) {
+  if(objIsType(obj, "container")) {
     send_to_char(ch, "{g%s is %s%s.\r\n",
 		 objGetName(obj), 
 		 (containerIsClosed(obj) ? "closed" : "opened"),
@@ -156,7 +170,7 @@ void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj) {
   }
 
   // list furniture-related stuff
-  else if(objGetType(obj) == ITEM_FURNITURE) {
+  else if(objIsType(obj, "furniture")) {
     int num_sitters = listSize(objGetUsers(obj));
 
     send_to_char(ch, "\r\n");
@@ -169,7 +183,7 @@ void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj) {
       char *chars = print_list(can_see, charGetName, charGetMultiName);
       if(*chars) send_to_char(ch, "{g%s %s %s %s%s.\r\n",
 			      chars, (listSize(can_see) == 1 ? "is" : "are"),
-			      (objGetSubtype(obj) == FURNITURE_AT ? "at":"on"),
+			      (furnitureGetType(obj)==FURNITURE_AT ? "at":"on"),
 			      objGetName(obj),
 			      (charGetFurniture(ch) == obj ? " with you" : ""));
       deleteList(can_see);
@@ -353,10 +367,11 @@ void send_outdoors(const char *format, ...) {
 
 
 void text_to_char(CHAR_DATA *ch, const char *txt) {
-  if (txt && *txt && charGetSocket(ch) && 
-      socketGetState(charGetSocket(ch)) == STATE_PLAYING) {
+  //  if (txt && *txt && charGetSocket(ch) && 
+  //      socketGetState(charGetSocket(ch)) == STATE_PLAYING) {
+  if(txt && *txt && charGetSocket(ch)) {
     text_to_buffer(charGetSocket(ch), txt);
-    charGetSocket(ch)->bust_prompt = TRUE;
+    socketBustPrompt(charGetSocket(ch));
   }
 
   // if it's a PC or we are not in game, then
@@ -495,18 +510,18 @@ COMMAND(cmd_look) {
     // is it an extra description?
     else if(found_type == FOUND_EDESC) {
       // get the set it belongs to
-      EDESC_SET *set = getEdescSet(found);
+      EDESC_SET *set = edescGetSet(found);
       // if it belongs to a set, highlight keywords
       if(set) {
 	char *new_edesc = tagEdescs(set,
-				    getEdescDescription(found),
+				    edescSetGetDesc(found),
 				    "{c", "{g");
 	send_to_char(ch, "{g%s", new_edesc);
 	free(new_edesc);
       }
       // otherwise, just show the plain desc
       else
-	send_to_char(ch, "{g%s", getEdescDescription(found));
+	send_to_char(ch, "{g%s", edescSetGetDesc(found));
     }
 
     // is it an item?
@@ -516,18 +531,19 @@ COMMAND(cmd_look) {
     // is it something inside of an object?
     else if(found_type == FOUND_IN_OBJ) {
       // show the destination we're peering at
-      if(objGetType(found) == ITEM_PORTAL) {
-	ROOM_DATA *dest = worldGetRoom(gameworld, objGetVal(found, 0));
+      if(objIsType(found, "portal")) {
+	ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(found));
 	if(dest) {
-	  send_to_char(ch, "You peer inside the portal.\r\n");
+	  send_to_char(ch, "You peer inside %s.\r\n", see_obj_as(ch, found));
 	  look_at_room(ch, dest);
 	}
 	else
 	  send_to_char(ch, 
-		       "The portal is murky, and you cannot "
-		       "make out anything on the other side.\r\n");
+		       "%s is murky, and you cannot "
+		       "make out anything on the other side.\r\n",
+		       see_obj_as(ch, found));
       }
-      else if(objGetType(found) != ITEM_CONTAINER)
+      else if(!objIsType(found, "container"))
 	send_to_char(ch, "%s is not a container or portal.\r\n",
 		     objGetName(found));
       else if(containerIsClosed(found))
@@ -597,7 +613,7 @@ COMMAND(cmd_who)
 {
   CHAR_DATA *plr;
   SOCKET_DATA *dsock;
-  BUFFER *buf = buffer_new(MAX_BUFFER);
+  BUFFER *buf = newBuffer(MAX_BUFFER);
   LIST_ITERATOR *sock_i = newListIterator(socket_list);
   int socket_count = 0, playing_count = 0;
 
@@ -608,22 +624,22 @@ COMMAND(cmd_who)
 
   ITERATE_LIST(dsock, sock_i) {
     socket_count++;
-    if (dsock->state != STATE_PLAYING) continue;
-    if ((plr = dsock->player) == NULL) continue;
+    //    if (dsock->state != STATE_PLAYING) continue;
+    if ((plr = socketGetChar(dsock)) == NULL) continue;
     playing_count++;
     bprintf(buf, "{y%-8s %-3s  {g)  {c%-12s {b%26s\r\n", 
 	    (charGetLevel(plr) == LEVEL_PLAYER ? "player" :
 	     (charGetLevel(plr) == LEVEL_BUILDER  ? "builder" :
 	      (charGetLevel(plr) == LEVEL_SCRIPTER    ? "scripter" : "admin"))),
 	    raceGetAbbrev(charGetRace(plr)),
-	    charGetName(plr), dsock->hostname);
+	    charGetName(plr), socketGetHostname(dsock));
   }
 
   bprintf(buf, "\r\n{g%d character%s connected. %d playing.\r\n",
 	  socket_count, (socket_count == 1 ? "" : "s"), playing_count);
-  page_string(charGetSocket(ch), buf->data);
+  page_string(charGetSocket(ch), bufferString(buf));
   //  send_to_char(ch, buf->data);
-  buffer_free(buf);
+  deleteBuffer(buf);
   deleteListIterator(sock_i);
 }
 
@@ -738,8 +754,9 @@ void send_message(CHAR_DATA *to,
       case '$':
 	buf[j] = '$';
 	j++;
+	break;
       default:
-	// do nothing ...
+	// do nothing
 	break;
       }
     }

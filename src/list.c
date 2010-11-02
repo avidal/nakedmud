@@ -21,21 +21,21 @@
 #define TRUE    !(FALSE)
 #endif
 
-struct list_node {
+typedef struct list_node {
   void *elem;              // the data we contain
   struct list_node *next;  // the next node in the list
   char removed;            // has the item been removed from the list? 
                            // char == bool
-};
+} LIST_NODE;
 
 struct list_iterator {
   struct list      *L;     // the list we're iterating over
-  struct list_node *curr;  // the current element we're iterating on
+  LIST_NODE *curr;         // the current element we're iterating on
 };
 
 struct list {
-  struct list_node *head;  // first element in the list
-  struct list_node *tail;  // last element in the list
+  LIST_NODE *head;         // first element in the list
+  LIST_NODE *tail;         // last element in the list
   int size;                // how many elements are in the list?
   int iterators;           // how many iterators are going over us?
   int remove_pending;      // do we have to do a remove when the iterators die?
@@ -45,7 +45,7 @@ struct list {
 //
 // Delete a list node, and all nodes attached to it
 //
-void deleteListNode(struct list_node *N) {
+void deleteListNode(LIST_NODE *N) {
   if(N->next) deleteListNode(N->next);
   free(N);
 };
@@ -53,7 +53,7 @@ void deleteListNode(struct list_node *N) {
 //
 // delete the list node, plus it's element using the supplied function
 //
-void deleteListNodeWith(struct list_node *N, void (*delete_func)(void *)) {
+void deleteListNodeWith(LIST_NODE *N, void (*delete_func)(void *)) {
   if(N->next) deleteListNodeWith(N->next, delete_func);
   // we only want to delete elements that are actually in the list
   if(!N->removed)
@@ -64,8 +64,8 @@ void deleteListNodeWith(struct list_node *N, void (*delete_func)(void *)) {
 //
 // Create a new list node containing the given element
 //
-struct list_node *newListNode(void *elem) {
-  struct list_node *N = malloc(sizeof(struct list_node));
+LIST_NODE *newListNode(void *elem) {
+  LIST_NODE *N = malloc(sizeof(LIST_NODE));
   N->elem    = elem;
   N->next    = NULL;
   N->removed = FALSE;
@@ -77,10 +77,10 @@ struct list_node *newListNode(void *elem) {
 // take out all of the nodes that have been flagged as "removed"
 // from the list.
 //
-void listCleanRemoved(struct list *L) {
+void listCleanRemoved(LIST *L) {
   // go through and kill all of the elements we removed if removes are pending
   if(L->remove_pending) {
-    struct list_node *node = L->head;
+    LIST_NODE *node = L->head;
 
     // while our head is a removed element, 
     // pop it off and delete the list node
@@ -96,7 +96,7 @@ void listCleanRemoved(struct list *L) {
       while(node->next != NULL) {
 	// is our next element to be removed?
 	if(node->next->removed) {
-	  struct list_node *removed = node->next;
+	  LIST_NODE *removed = node->next;
 	  node->next = removed->next;
 	  removed->next = NULL;
 	  deleteListNode(removed);
@@ -125,8 +125,8 @@ void listCleanRemoved(struct list *L) {
 // List interface functions. Documentation in list.h
 //
 //*****************************************************************************
-struct list *newList() {
-  struct list *L    = malloc(sizeof(struct list));
+LIST *newList() {
+  LIST *L    = malloc(sizeof(LIST));
   L->head           = NULL;
   L->tail           = NULL;
   L->size           = 0;
@@ -136,21 +136,21 @@ struct list *newList() {
 };
 
 
-void deleteList(struct list *L) {
+void deleteList(LIST *L) {
   if(L->head) deleteListNode(L->head);
   free(L);
 };
 
-void deleteListWith(struct list *L, void *func) {
+void deleteListWith(LIST *L, void *func) {
   if(L->head) deleteListNodeWith(L->head, func);
   free(L);
 }
 
-void listPut(struct list *L, void *elem) {
+void listPut(LIST *L, void *elem) {
   if(listIn(L, elem))
     return;
 
-  struct list_node *N = newListNode(elem);
+  LIST_NODE *N = newListNode(elem);
   N->next = L->head;
   L->head = N;
   L->size++;
@@ -159,11 +159,11 @@ void listPut(struct list *L, void *elem) {
 };
 
 
-void listQueue(struct list *L, void *elem) {
+void listQueue(LIST *L, void *elem) {
   if(listIn(L, elem))
     return;
 
-  struct list_node *N = newListNode(elem);
+  LIST_NODE *N = newListNode(elem);
 
   if(L->head == NULL) {
     L->head = N;
@@ -177,18 +177,18 @@ void listQueue(struct list *L, void *elem) {
 }
 
 
-void *listPop(struct list *L) {
+void *listPop(LIST *L) {
   return listRemoveNum(L, 0);
 };
 
 
-void listPush(struct list *L, void *elem) {
+void listPush(LIST *L, void *elem) {
   listPut(L, elem);
 };
 
 
-int listIn(struct list *L, const void *elem) {
-  struct list_node *N = L->head;
+int listIn(LIST *L, const void *elem) {
+  LIST_NODE *N = L->head;
 
   while(N != NULL) {
     if(!N->removed && N->elem == elem)
@@ -200,8 +200,8 @@ int listIn(struct list *L, const void *elem) {
 };
 
 
-int listRemove(struct list *L, const void *elem) {
-  struct list_node *N = L->head;
+int listRemove(LIST *L, const void *elem) {
+  LIST_NODE *N = L->head;
 
   // we don't have any contents
   if(N == NULL)
@@ -241,7 +241,7 @@ int listRemove(struct list *L, const void *elem) {
 	else {
 	  if(N->next == L->tail)
 	    L->tail = N;
-	  struct list_node *tmp = N->next;
+	  LIST_NODE *tmp = N->next;
 	  N->next = tmp->next;
 	  tmp->next = NULL;
 	  deleteListNode(tmp);
@@ -256,18 +256,18 @@ int listRemove(struct list *L, const void *elem) {
   return FALSE;
 };
 
-void *listRemoveNum(struct list *L, int num) {
+void *listRemoveNum(LIST *L, int num) {
   void *elem = listGet(L, num);
   if(elem) listRemove(L, elem);
   return elem;
 }
 
-int listSize(struct list *L) {
+int listSize(LIST *L) {
   return L->size;
 }
 
-void *listGet(struct list *L, int num) {
-  struct list_node *node = L->head;
+void *listGet(LIST *L, int num) {
+  LIST_NODE *node = L->head;
   int i;
 
   // move up to our first non-removed node
@@ -283,21 +283,21 @@ void *listGet(struct list *L, int num) {
   return (node ? node->elem : NULL);
 }
 
-void *listHead(struct list *L) {
+void *listHead(LIST *L) {
   return L->head;
 }
 
-void *listTail(struct list *L) {
+void *listTail(LIST *L) {
   return L->tail;
 }
 
-int isListEmpty(struct list *L) {
+int isListEmpty(LIST *L) {
   return (L->size == 0);
 }
 
-void *listGetWith(struct list *L, const void *cmpto, void *func) {
+void *listGetWith(LIST *L, const void *cmpto, void *func) {
   int (* comparator)(const void *, const void *) = func;
-  struct list_node *node = L->head;
+  LIST_NODE *node = L->head;
 
   for(node = L->head; node != NULL; node = node->next) {
     if(node->removed)
@@ -308,9 +308,9 @@ void *listGetWith(struct list *L, const void *cmpto, void *func) {
   return NULL;
 }
 
-void *listRemoveWith(struct list *L, const void *cmpto, void *func) {
+void *listRemoveWith(LIST *L, const void *cmpto, void *func) {
   int (* comparator)(const void *, const void *) = func;
-  struct list_node *N = L->head;
+  LIST_NODE *N = L->head;
 
   // we don't have any contents
   if(N == NULL)
@@ -353,7 +353,7 @@ void *listRemoveWith(struct list *L, const void *cmpto, void *func) {
 	  void *elem = N->next->elem;
 	  if(N->next == L->tail)
 	    L->tail = N;
-	  struct list_node *tmp = N->next;
+	  LIST_NODE *tmp = N->next;
 	  N->next = tmp->next;
 	  tmp->next = NULL;
 	  deleteListNode(tmp);
@@ -369,9 +369,9 @@ void *listRemoveWith(struct list *L, const void *cmpto, void *func) {
 }
 
 
-void listPutWith(struct list *L, void *elem, void *func) {
+void listPutWith(LIST *L, void *elem, void *func) {
   int (* comparator)(const void *, const void *) = func;
-  struct list_node *N = L->head;
+  LIST_NODE *N = L->head;
 
   // we don't have any contents, or we're lower than the
   // first list content then just put it at the start
@@ -386,7 +386,7 @@ void listPutWith(struct list *L, void *elem, void *func) {
 	int val = comparator(elem, N->next->elem);
 	// we're less than or equal to it... sneak in
 	if(val <= 0) {
-	  struct list_node *new_node = newListNode(elem);
+	  LIST_NODE *new_node = newListNode(elem);
 	  new_node->next = N->next;
 	  N->next = new_node;
 	  L->size++;
@@ -403,10 +403,10 @@ void listPutWith(struct list *L, void *elem, void *func) {
 }
 
 
-void listSortWith(struct list *L, void *func) {
+void listSortWith(LIST *L, void *func) {
   // make a new list, and just pop our elements
   // into it while we still have 'em
-  struct list *new_list = newList();
+  LIST *new_list = newList();
 
   while(listSize(L) > 0)
     listPutWith(new_list, listPop(L), func);
@@ -423,11 +423,11 @@ void listSortWith(struct list *L, void *func) {
 }
 
 
-struct list *listCopyWith(struct list *L, void *func) {
+LIST *listCopyWith(LIST *L, void *func) {
   void *(* copy_func)(void *) = func;
-  struct list *newlist = newList();
+  LIST *newlist = newList();
 
-  struct list_node *N = NULL;
+  LIST_NODE *N = NULL;
   for(N = L->head; N; N = N->next) {
     if(N->removed) continue;
     listQueue(newlist, copy_func(N->elem));
@@ -442,15 +442,15 @@ struct list *listCopyWith(struct list *L, void *func) {
 // The functions for the list iterator interface. Documentation is in list.h
 //
 //*****************************************************************************
-struct list_iterator *newListIterator(struct list *L) {
-  struct list_iterator *I = malloc(sizeof(struct list_iterator));
+LIST_ITERATOR *newListIterator(LIST *L) {
+  LIST_ITERATOR *I = malloc(sizeof(LIST_ITERATOR));
   I->L    = L;
   I->curr = I->L->head;
   L->iterators++;
   return I;
 };
 
-void deleteListIterator(struct list_iterator *I) {
+void deleteListIterator(LIST_ITERATOR *I) {
   I->L->iterators--;
   // if we're at 0 iterators, clean the list of all removed elements
   if(I->L->iterators == 0)
@@ -458,7 +458,7 @@ void deleteListIterator(struct list_iterator *I) {
   free(I);
 };
 
-void *listIteratorNext(struct list_iterator *I) {
+void *listIteratorNext(LIST_ITERATOR *I) {
   if(I->curr)
     I->curr = I->curr->next;
 
@@ -471,7 +471,7 @@ void *listIteratorNext(struct list_iterator *I) {
 
 // hmmm... we should really kill this function. 
 // Just let 'em create a new iterator
-void listIteratorReset(struct list_iterator *I) {
+void listIteratorReset(LIST_ITERATOR *I) {
   // if we're the only iterator, take this opportunity to clean the list
   if(I->L->iterators == 1)
     listCleanRemoved(I->L);
@@ -479,7 +479,7 @@ void listIteratorReset(struct list_iterator *I) {
   I->curr = I->L->head;
 };
 
-void *listIteratorCurrent(struct list_iterator *I) {
+void *listIteratorCurrent(LIST_ITERATOR *I) {
   // hmmm... what if we're on a removed node?
   while(I->curr && I->curr->removed)
     I->curr = I->curr->next;

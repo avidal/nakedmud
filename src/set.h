@@ -8,12 +8,14 @@
 //
 //*****************************************************************************
 
-struct set_data  *newSet(int buckets);
-void           deleteSet(struct set_data *set);
-void              setPut(struct set_data *set, void *elem);
-void           setRemove(struct set_data *set, void *elem);
-int                setIn(struct set_data *set, void *elem);
+typedef struct set_data                   SET;
+typedef struct set_iterator               SET_ITERATOR;
 
+SET  *newSet   (int buckets);
+void  deleteSet(SET *set);
+void  setPut   (SET *set, void *elem);
+void  setRemove(SET *set, void *elem);
+int   setIn    (SET *set, void *elem);
 
 
 //*****************************************************************************
@@ -25,10 +27,10 @@ int                setIn(struct set_data *set, void *elem);
 //
 //*****************************************************************************
 
-struct set_iterator *newSetIterator(struct set_data *S);
-void              deleteSetIterator(struct set_iterator *I);
-void               setIteratorReset(struct set_iterator *I);
-void               *setIteratorNext(struct set_iterator *I);
-void            *setIteratorCurrent(struct set_iterator *I);
+SET_ITERATOR *newSetIterator    (SET *S);
+void          deleteSetIterator (SET_ITERATOR *I);
+void          setIteratorReset  (SET_ITERATOR *I);
+void         *setIteratorNext   (SET_ITERATOR *I);
+void         *setIteratorCurrent(SET_ITERATOR *I);
 
 #endif // SET_H

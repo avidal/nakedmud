@@ -34,29 +34,6 @@ COMMAND(cmd_stop) {
 
 
 //
-// Various preference bits that can be turned on and off
-//
-COMMAND(cmd_tog_prf) {
-  switch(subcmd) {
-  case PRF_MAPWALK:
-    charToggleBit(ch, BITFIELD_PRFS, PRF_MAPWALK);
-    send_to_char(ch, "Mapwalk %s.\r\n",
-		 (charIsBitSet(ch, BITFIELD_PRFS, PRF_MAPWALK) ? "on":"off"));
-    break;
-  case PRF_BUILDWALK:
-    charToggleBit(ch, BITFIELD_PRFS, PRF_BUILDWALK);
-    send_to_char(ch, "Buildwalk %s.\r\n", 
-		 (charIsBitSet(ch, BITFIELD_PRFS, PRF_BUILDWALK) ? "on":"off"));
-    break;
-
-  default:
-    log_string("ERROR: attempted to toggle prf with subcmd %d on %s, but "
-	       "subcmd does not exit!", subcmd, charGetName(ch));
-  }
-}
-
-
-//
 // clear the screen
 //
 COMMAND(cmd_clear) {
@@ -83,8 +60,8 @@ COMMAND(cmd_quit)
   //
   if(charGetSocket(ch)) {
     SOCKET_DATA *sock = charGetSocket(ch);
-    sock->player = NULL;
     charSetSocket(ch, NULL);
+    socketSetChar(sock, NULL);
     close_socket(sock, FALSE);
   }
 
@@ -99,34 +76,6 @@ COMMAND(cmd_save)
 {
   save_player(ch);
   text_to_char(ch, "Saved.\r\n");
-}
-
-
-//
-// compress output
-//
-COMMAND(cmd_compress)
-{
-  /* no socket, no compression */
-  if (!charGetSocket(ch))
-    return;
-
-  /* enable compression */
-  if (!charGetSocket(ch)->out_compress)
-  {
-    text_to_char(ch, "Trying compression.\n\r");
-    text_to_buffer(charGetSocket(ch), (char *) compress_will2);
-    text_to_buffer(charGetSocket(ch), (char *) compress_will);
-  }
-  else /* disable compression */
-  {
-    if (!compressEnd(charGetSocket(ch), charGetSocket(ch)->compressing, FALSE))
-    {
-      text_to_char(ch, "Failed.\n\r");
-      return;
-    }
-    text_to_char(ch, "Compression disabled.\n\r");
-  }
 }
 
 
@@ -169,9 +118,14 @@ COMMAND(cmd_delay) {
 //
 // An entrypoint into the character's notepad
 //
+/*
 COMMAND(cmd_write) {
   if(!charGetSocket(ch))
     send_to_char(ch, "You cannot use notepad if you have no socket.\r\n");
-  else
-    start_notepad(charGetSocket(ch), "", MAX_BUFFER, EDITOR_MODE_NORMAL);
+  else {
+    send_around_char(ch, TRUE, "%s pulls out a notepad and begins writing.", 
+		     charGetName(ch));
+    start_notepad(charGetSocket(ch), "");
+  }
 }
+*/

@@ -9,8 +9,6 @@
 //*****************************************************************************
 
 
-#include "text_editor.h"
-
 
 //*****************************************************************************
 //
@@ -59,6 +57,7 @@ const char *see_obj_as  (CHAR_DATA *ch, OBJ_DATA  *target);
 bool  try_dialog          (CHAR_DATA *ch, CHAR_DATA *listener,const char *mssg);
 void  try_dialog_all      (CHAR_DATA *ch, LIST *listeners, const char *mssg);
 
+void     show_prompt(SOCKET_DATA *socket);
 const char *custom_prompt (CHAR_DATA *ch);
 
 //*****************************************************************************
@@ -101,11 +100,13 @@ char *tag_keywords        (const char *keywords, const char *string,
 void format_string        (char **ptr_string, int max_width, 
 		          unsigned int maxlen, bool indent);
 int  count_letters        (const char *string, const char ch, const int strlen);
+int  count_occurences     (const char *string, const char *word);
+char *line_start          (char *string, int line);
 int  fgetline             (FILE *file, char *p, int maxlen);
 void center_string        (char *buf, const char *string, int linelen, 
 			   int buflen, bool border);
-
-
+int next_space_in         (char *string);
+int next_letter_in        (const char *string, char marker);
 
 
 //*****************************************************************************
@@ -113,13 +114,17 @@ void center_string        (char *buf, const char *string, int linelen,
 // utilities for game functioning
 //
 //*****************************************************************************
-char *get_time             ( void );
 void  extract_obj          ( OBJ_DATA *obj);
 void  extract_mobile       ( CHAR_DATA *ch );
+
+// Make sure a certain procedure is called when we are extracting an npc/char
+void  add_extract_obj_func ( void (* func)(OBJ_DATA *));
+void  add_extract_mob_func ( void (* func)(CHAR_DATA *));
+
+char *get_time             ( void );
 bool  check_name           ( const char *name );
 void  communicate          ( CHAR_DATA *dMob, char *txt, int range );
-void  load_muddata         ( bool fCopyOver );
-void  copyover_recover     ( void );
+void  load_muddata         ( void );
 CHAR_DATA  *check_reconnect( const char *player );
 
 // iterate across all the elements in a list

@@ -9,23 +9,26 @@
 //
 //*****************************************************************************
 
-struct hashtable *newHashtable(int num_buckets);
-void  deleteHashtable(struct hashtable *table);
-
-int   hashPut    (struct hashtable *table, const char *key, void *val);
-void *hashGet    (struct hashtable *table, const char *key);
-void *hashRemove (struct hashtable *table, const char *key);
-int   hashIn     (struct hashtable *table, const char *key);
-int   hashSize   (struct hashtable *table);
+typedef struct hashtable                  HASHTABLE;
+typedef struct hashtable_iterator         HASH_ITERATOR;
 
 
-struct hashtable_iterator *newHashIterator(struct hashtable *table);
-void        deleteHashIterator     (struct hashtable_iterator *I);
+HASHTABLE *newHashtable(int num_buckets);
+void  deleteHashtable(HASHTABLE *table);
 
-void        hashIteratorReset      (struct hashtable_iterator *I);
-void        hashIteratorNext       (struct hashtable_iterator *I);
-const char *hashIteratorCurrentKey (struct hashtable_iterator *I);
-void       *hashIteratorCurrentVal (struct hashtable_iterator *I);
+int   hashPut    (HASHTABLE *table, const char *key, void *val);
+void *hashGet    (HASHTABLE *table, const char *key);
+void *hashRemove (HASHTABLE *table, const char *key);
+int   hashIn     (HASHTABLE *table, const char *key);
+int   hashSize   (HASHTABLE *table);
+
+HASH_ITERATOR *newHashIterator     (HASHTABLE *table);
+void        deleteHashIterator     (HASH_ITERATOR *I);
+
+void        hashIteratorReset      (HASH_ITERATOR *I);
+void        hashIteratorNext       (HASH_ITERATOR *I);
+const char *hashIteratorCurrentKey (HASH_ITERATOR *I);
+void       *hashIteratorCurrentVal (HASH_ITERATOR *I);
 
 
 #endif // __HASHTABLE_H

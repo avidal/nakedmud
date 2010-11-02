@@ -17,14 +17,14 @@
 struct dialog_data {
   int   vnum;      // what vnum are we in the world?
   char *name;      // the name of this dialog (e.g. generic citizen dialog)
-  char *greet;     // what do we say when someone approaches/greets us?
+  BUFFER *greet;   // what do we say when someone approaches/greets us?
   LIST *responses; // what kind of topics do we talk about?
 };
 
 
 struct response_data {
   char *keywords;      // what triggers the talking?
-  char *message;       // what is the response?
+  BUFFER *message;     // what is the response?
   DIALOG_DATA *dialog; // which dialog do we belong to?
 };
 
@@ -33,30 +33,33 @@ struct response_data {
 //*****************************************************************************
 //
 // response stuff
-//
+
 //*****************************************************************************
-RESPONSE_DATA *newResponse(const char *keywords, const char *message) {
+RESPONSE_DATA *newResponse(void) {
   RESPONSE_DATA *response = malloc(sizeof(RESPONSE_DATA));
-  response->keywords = strdup(keywords ? keywords : "");
-  response->message  = strdup(message  ? message  : "");
+  response->keywords = strdup("");
+  response->message  = newBuffer(1);
   response->dialog = NULL;
   return response;
 }
 
 void deleteResponse(RESPONSE_DATA *response) {
   if(response->keywords) free(response->keywords);
-  if(response->message)  free(response->message);
+  if(response->message)  deleteBuffer(response->message);
   free(response);
 }
 
 RESPONSE_DATA *responseRead(STORAGE_SET *set) {
-  return newResponse(read_string(set, "keywords"), read_string(set, "message"));
+  RESPONSE_DATA *response = newResponse();
+  responseSetKeywords(response, read_string(set, "keywords"));
+  responseSetMessage (response, read_string(set, "message"));
+  return response;
 }
 
 STORAGE_SET *responseStore(RESPONSE_DATA *data) {
   STORAGE_SET *set = new_storage_set();
   store_string(set, "keywords", data->keywords);
-  store_string(set, "message",  data->message);
+  store_string(set, "message",  bufferString(data->message));
   return set;
 }
 
@@ -66,7 +69,8 @@ void responseCopyTo(RESPONSE_DATA *from, RESPONSE_DATA *to) {
 }
 
 RESPONSE_DATA *responseCopy(RESPONSE_DATA *response) {
-  RESPONSE_DATA *newresp = newResponse(response->keywords, response->message);
+  RESPONSE_DATA *newresp = newResponse();
+  responseCopyTo(response, newresp);
   return newresp;
 }
 
@@ -88,8 +92,8 @@ void responseSetKeywords(RESPONSE_DATA *response, const char *keywords) {
 }
 
 void responseSetMessage(RESPONSE_DATA *response, const char *message) {
-  if(response->message) free(response->message);
-  response->message = strdup(message ? message : "");
+  bufferClear(response->message);
+  bufferCat(response->message, message);
 }
 
 const char *responseGetKeywords(RESPONSE_DATA *response) {
@@ -97,9 +101,12 @@ const char *responseGetKeywords(RESPONSE_DATA *response) {
 }
 
 const char *responseGetMessage(RESPONSE_DATA *response) {
-  return response->message;
+  return bufferString(response->message);
 }
 
+BUFFER *responseGetMessageBuffer(RESPONSE_DATA *response) {
+  return response->message;
+}
 
 
 
@@ -111,8 +118,8 @@ const char *responseGetMessage(RESPONSE_DATA *response) {
 DIALOG_DATA *newDialog() {
   DIALOG_DATA *dialog = malloc(sizeof(DIALOG_DATA));
   dialog->responses = newList();
+  dialog->greet = newBuffer(1);
   dialog->name  = strdup("");
-  dialog->greet = strdup("");
   dialog->vnum  = NOTHING;
   return dialog;
 }
@@ -121,8 +128,8 @@ void deleteDialog(DIALOG_DATA *dialog) {
   RESPONSE_DATA *response = NULL;
   while( (response = listPop(dialog->responses)) != NULL)
     deleteResponse(response);
+  if(dialog->greet) deleteBuffer(dialog->greet);
   if(dialog->name)  free(dialog->name);
-  if(dialog->greet) free(dialog->greet);
   free(dialog);
 }
 
@@ -130,7 +137,7 @@ STORAGE_SET *dialogStore(DIALOG_DATA *dialog) {
   STORAGE_SET *set = new_storage_set();
   store_int   (set, "vnum",     dialog->vnum);
   store_string(set, "name",     dialog->name);
-  store_string(set, "greet",    dialog->greet);
+  store_string(set, "greet",    bufferString(dialog->greet));
   store_list(set, "responses", gen_store_list(dialog->responses,responseStore));
   return set;
 }
@@ -167,11 +174,10 @@ void dialogCopyTo(DIALOG_DATA *from, DIALOG_DATA *to) {
   deleteListIterator(resp_i);
 
   // now the name and greet
+  bufferClear(to->greet);
+  bufferCat(to->greet, bufferString(from->greet));
   if(to->name) free(to->name);
-  if(to->greet) free(to->greet);
-
   to->name  = strdup(from->name ? from->name : "");
-  to->greet = strdup(from->greet ? from->greet : "");
   to->vnum  = from->vnum;
 }
 
@@ -217,7 +223,6 @@ RESPONSE_DATA *dialogGetResponse(DIALOG_DATA *dialog, const char *keyword) {
   ITERATE_LIST(response, resp_i)
     if(responseIsKeyword(response, keyword))
       break;
-  
   deleteListIterator(resp_i);
   return response;
 }
@@ -238,13 +243,17 @@ int dialogGetSize(DIALOG_DATA *dialog) {
   return listSize(dialog->responses);
 }
 
-const char *dialogGetGreet(DIALOG_DATA *dialog) {
+BUFFER *dialogGetGreetBuffer(DIALOG_DATA *dialog) {
   return dialog->greet;
 }
 
+const char *dialogGetGreet(DIALOG_DATA *dialog) {
+  return bufferString(dialog->greet);
+}
+
 void dialogSetGreet(DIALOG_DATA *dialog, const char *greet) {
-  if(dialog->greet) free(dialog->greet);
-  dialog->greet = strdup(greet ? greet : "");
+  bufferClear(dialog->greet);
+  bufferCat(dialog->greet, (greet ? greet : ""));
 }
 
 void dialogSetVnum(DIALOG_DATA *dialog, dialog_vnum vnum) {

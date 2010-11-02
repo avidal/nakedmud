@@ -16,10 +16,12 @@
 #include "dialog.h"
 
 
-// option modules
-#ifdef MODULE_SCRIPTS
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
 #include "scripts/script.h"
-#endif
+
 
 
 //
@@ -31,7 +33,6 @@
 //   examples:
 //     ask bob about cats           ask bob about the topic, "cats"
 //     ask jim can I have a salad?  ask jim if you can have a salad
-//
 COMMAND(cmd_ask)
 {
   if(!arg || !*arg)
@@ -69,9 +70,7 @@ COMMAND(cmd_ask)
 	send_to_char(ch, "{wYou ask %s%s, '%s'{n\r\n", 
 		     charGetName(tgt), (ask_about ? " about" : ""), arg);
 
-#ifdef MODULE_SCRIPTS
 	try_speech_script(ch, tgt, arg);
-#endif	
 
 	// see if the NPC has something to say in return
 	if(!try_dialog(ch, tgt, arg))
@@ -273,5 +272,28 @@ COMMAND(cmd_gemote) {
       sprintf(buf, "{bGLOBAL:{c $n %s", arg);
 
     message(ch, NULL, NULL, NULL, FALSE, TO_WORLD, buf);
+  }
+}
+
+
+//
+// Send a message to another character, and also make it beep
+//
+COMMAND(cmd_page) {
+  CHAR_DATA *tgt = NULL;
+  char name[SMALL_BUFFER];
+  arg = one_arg(arg, name);
+
+  if(!*name)
+    send_to_char(ch, "Page whom?\r\n");
+  else if( (tgt = generic_find(ch, name, FIND_TYPE_CHAR, 
+			       FIND_SCOPE_ALL | FIND_SCOPE_VISIBLE,
+			       FALSE, NULL)) == NULL)
+    send_to_char(ch, "Who were you looking for?\r\n");
+  else if(ch == tgt)
+    send_to_char(ch, "What did you want to let yourself know?\r\n");
+  else {
+    send_to_char(ch,  "\007\007You page %s.\r\n", see_char_as(ch, tgt));
+    send_to_char(tgt, "\007\007*%s* %s\r\n", see_char_as(tgt, ch), arg);
   }
 }

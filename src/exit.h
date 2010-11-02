@@ -65,8 +65,7 @@ const char *exitGetKeywords    (const EXIT_DATA *exit);
 const char *exitGetDesc        (const EXIT_DATA *exit);
 const char *exitGetSpecLeave   (const EXIT_DATA *exit);
 const char *exitGetSpecEnter   (const EXIT_DATA *exit);
-// for editing exit descriptions in the text editor
-char      **exitGetDescPtr     (EXIT_DATA *exit);
+BUFFER     *exitGetDescBuffer  (const EXIT_DATA *exit);
 
 void        exitSetClosable    (EXIT_DATA *exit, bool closable);
 void        exitSetClosed      (EXIT_DATA *exit, bool closed);
@@ -77,7 +76,7 @@ void        exitSetPickLev     (EXIT_DATA *exit, int pick_lev);
 void        exitSetTo          (EXIT_DATA *exit, room_vnum room);
 void        exitSetName        (EXIT_DATA *exit, const char *name);
 void        exitSetKeywords    (EXIT_DATA *exit, const char *keywords);
-void        exitSetDescription (EXIT_DATA *exit, const char *desc);
+void        exitSetDesc        (EXIT_DATA *exit, const char *desc);
 void        exitSetSpecLeave   (EXIT_DATA *exit, const char *leave);
 void        exitSetSpecEnter   (EXIT_DATA *exit, const char *enter);
 

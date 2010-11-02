@@ -19,11 +19,13 @@
 
 
 #define TIME_FILE   "../lib/misc/time"  // where do we keep time data?
-#define TIME_UPDATE_DELAY    5 MINUTES  // how long is an in-game hour?
+#define TIME_UPDATE_DELAY   1 MUD_HOUR  // how long is an in-game hour?
 #define HOURS_PER_DAY               24  // how many hours are in a day?
 #define NUM_MONTHS                   4  // how many months are in a year?
 #define DAYS_PER_WEEK                3  // how many days are in a week?
 #define USE_AMPM                  TRUE  // do we use the am/pm system?
+
+COMMAND(cmd_time);                      // a player command for seeing the time
 
 
 struct month_data {
@@ -71,26 +73,25 @@ int curr_year         = 0; // what year is it?
 //
 //*****************************************************************************
 typedef struct time_aux_data {
-  char *night_desc;        // our description at night time
+  BUFFER *night_desc;        // our description at night time
 } TIME_AUX_DATA;
 
 TIME_AUX_DATA *
 newTimeAuxData() {
   TIME_AUX_DATA *data = malloc(sizeof(TIME_AUX_DATA));
-  data->night_desc = strdup("");
+  data->night_desc = newBuffer(1);
   return data;
 }
 
 void
 deleteTimeAuxData(TIME_AUX_DATA *data) {
-  if(data->night_desc) free(data->night_desc);
+  if(data->night_desc) deleteBuffer(data->night_desc);
   free(data);
 }
 
 void
 timeAuxDataCopyTo(TIME_AUX_DATA *from, TIME_AUX_DATA *to) {
-  if(to->night_desc) free(to->night_desc);
-  to->night_desc = strdup(from->night_desc ? from->night_desc : "");
+  bufferCopyTo(from->night_desc, to->night_desc);
 }
 
 TIME_AUX_DATA *
@@ -102,32 +103,31 @@ timeAuxDataCopy(TIME_AUX_DATA *data) {
 
 STORAGE_SET *timeAuxDataStore(TIME_AUX_DATA *data) {
   STORAGE_SET *set = new_storage_set();
-  store_string(set, "night_desc", data->night_desc);
+  store_string(set, "night_desc", bufferString(data->night_desc));
   return set;
 }
 
 TIME_AUX_DATA *timeAuxDataRead(STORAGE_SET *set) {
-  TIME_AUX_DATA *data = malloc(sizeof(TIME_AUX_DATA));
-  data->night_desc = strdup(read_string(set, "night_desc"));
+  TIME_AUX_DATA *data = newTimeAuxData();
+  bufferCat(data->night_desc, read_string(set, "night_desc"));
   return data;
 }
 
 const char *roomGetNightDesc(ROOM_DATA *room) {
   TIME_AUX_DATA *data = roomGetAuxiliaryData(room, "time_aux_data");
-  return data->night_desc;
+  return bufferString(data->night_desc);
 }
 
-char **roomGetNightDescPtr(ROOM_DATA *room) {
+BUFFER *roomGetNightDescBuffer(ROOM_DATA *room) {
   TIME_AUX_DATA *data = roomGetAuxiliaryData(room, "time_aux_data");
-  return &(data->night_desc);
+  return data->night_desc;
 }
 
 void roomSetNightDesc(ROOM_DATA *room, const char *desc) {
   TIME_AUX_DATA *data = roomGetAuxiliaryData(room, "time_aux_data");
-  if(data->night_desc) free(data->night_desc);
-  data->night_desc = strdup(desc ? desc : "");
+  bufferClear(data->night_desc);
+  bufferCat(data->night_desc, (desc ? desc : ""));
 }
-
 
 
 //*****************************************************************************

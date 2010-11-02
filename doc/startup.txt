@@ -1,6 +1,6 @@
 Startup should be pretty easy. To compile, simply go into the src directory and
 type "make". Everything should compile automagically. From here, to start, you
-simply type ./NakedMud <port> & If you do not supply a port, the MUD will
+simply type ./NakedMud [port] & If you do not supply a port, the MUD will
 start up on port 4000 by default.
 
 If you're having troubles compiling when it gets to the scripts, you will want

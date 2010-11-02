@@ -24,9 +24,13 @@
 #include "storage.h"
 #include "world.h"
 
-#ifdef MODULE_SCRIPTS
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
 #include "scripts/script.h"
-#endif
+
 
 
 // the number of rooms we would expect, in different sized worlds
@@ -117,11 +121,9 @@ OBJ_DATA *worldRemoveObjVnum(WORLD_DATA *world, obj_vnum vnum) {
   return worldRemoveVnum(world, zoneRemoveObj, vnum);
 };
 
-#ifdef MODULE_SCRIPTS
 SCRIPT_DATA *worldRemoveScriptVnum(WORLD_DATA *world, script_vnum vnum) {
   return worldRemoveVnum(world, zoneRemoveScript, vnum);
 };
-#endif
 
 DIALOG_DATA *worldRemoveDialogVnum(WORLD_DATA *world, dialog_vnum vnum) {
   return worldRemoveVnum(world, zoneRemoveDialog, vnum);
@@ -139,11 +141,9 @@ bool worldRemoveObj(WORLD_DATA *world, OBJ_DATA *obj) {
   return (worldRemoveObjVnum(world, objGetVnum(obj)) != NULL);
 };
 
-#ifdef MODULE_SCRIPTS
 bool worldRemoveScript(WORLD_DATA *world, SCRIPT_DATA *script) {
   return (worldRemoveScriptVnum(world, scriptGetVnum(script)) != NULL);
 };
-#endif
 
 bool worldRemoveDialog(WORLD_DATA *world, DIALOG_DATA *dialog) {
   return (worldRemoveDialogVnum(world, dialogGetVnum(dialog)) != NULL);
@@ -329,11 +329,9 @@ OBJ_DATA  *worldGetObj(WORLD_DATA *world, obj_vnum vnum) {
   return worldGet(world, zoneGetObj, vnum);
 };
 
-#ifdef MODULE_SCRIPTS
 SCRIPT_DATA  *worldGetScript(WORLD_DATA *world, script_vnum vnum) {
   return worldGet(world, zoneGetScript, vnum);
 };
-#endif
 
 DIALOG_DATA  *worldGetDialog(WORLD_DATA *world, dialog_vnum vnum) {
   return worldGet(world, zoneGetDialog, vnum);
@@ -395,11 +393,9 @@ void worldPutObj(WORLD_DATA *world, OBJ_DATA *obj) {
   worldPut(world, zoneAddObj, obj, objGetVnum(obj));
 };
 
-#ifdef MODULE_SCRIPTS
 void worldPutScript(WORLD_DATA *world, SCRIPT_DATA *script) {
   worldPut(world, zoneAddScript, script, scriptGetVnum(script));
 };
-#endif
 
 void worldPutDialog(WORLD_DATA *world, DIALOG_DATA *dialog) {
   worldPut(world, zoneAddDialog, dialog, dialogGetVnum(dialog));

@@ -18,15 +18,17 @@
 #include "dialog.h"
 #include "zone.h"
 
-#ifdef MODULE_SCRIPTS
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
 #include "scripts/script.h"
-#endif
 
 
 struct zone_data {
-  char *name;
-  char *desc;
-  char *editors;
+  char   *name;
+  char   *editors;
+  BUFFER *desc;
 
   WORLD_DATA     *world;
   PROPERTY_TABLE *rooms;
@@ -49,7 +51,7 @@ struct zone_data {
 ZONE_DATA *newZone(zone_vnum vnum, room_vnum min, room_vnum max) {
   ZONE_DATA *zone = malloc(sizeof(ZONE_DATA));
   zone->name    = strdup("");
-  zone->desc    = strdup("");
+  zone->desc    = newBuffer(1);
   zone->editors = strdup("");
   zone->vnum    = vnum;
   zone->min     = min;
@@ -61,9 +63,7 @@ ZONE_DATA *newZone(zone_vnum vnum, room_vnum min, room_vnum max) {
   zone->world = NULL;
   // maximum of about 5 rooms/bucket
   zone->rooms      = newPropertyTable(roomGetVnum,   1 + (max-min)/5);
-#ifdef MODULE_SCRIPTS
   zone->scripts    = newPropertyTable(scriptGetVnum, 1 + (max-min)/5);  
-#endif
   zone->dialogs    = newPropertyTable(dialogGetVnum, 1 + (max-min)/5);
   zone->mob_protos = newPropertyTable(charGetVnum,    1 + (max-min)/5);
   zone->obj_protos = newPropertyTable(objGetVnum,    1 + (max-min)/5);
@@ -81,7 +81,7 @@ ZONE_DATA *zoneCopy(ZONE_DATA *zone) {
 
 void zoneCopyTo(ZONE_DATA *from, ZONE_DATA *to) {
   zoneSetName(to, zoneGetName(from));
-  zoneSetDescription(to, zoneGetDesc(from));
+  zoneSetDesc(to, zoneGetDesc(from));
   zoneSetEditors(to, zoneGetEditors(from));
   to->vnum = from->vnum;
   to->min  = from->min;
@@ -93,7 +93,7 @@ void zoneCopyTo(ZONE_DATA *from, ZONE_DATA *to) {
 
 void deleteZone(ZONE_DATA *zone){ 
   if(zone->name)    free(zone->name);
-  if(zone->desc)    free(zone->desc);
+  if(zone->desc)    deleteBuffer(zone->desc);
   if(zone->editors) free(zone->editors);
 
   deletePropertyTable(zone->rooms);
@@ -165,7 +165,7 @@ ZONE_DATA *zoneLoad(const char *dirpath) {
   zone->max         = read_int(set, "max");
   zone->pulse_timer = read_int(set, "pulse_timer");
   zoneSetName(zone,   read_string(set, "name"));
-  zoneSetDescription(zone,   read_string(set, "desc"));
+  zoneSetDesc(zone,   read_string(set, "desc"));
   zoneSetEditors(zone,read_string(set, "editors"));
 
   deleteAuxiliaryData(zone->auxiliary_data);
@@ -195,12 +195,10 @@ ZONE_DATA *zoneLoad(const char *dirpath) {
   zoneReadData(zone, set, zoneAddDialog, dialogRead);
   storage_close(set);
 
-#ifdef MODULE_SCRIPTS
   sprintf(fname, "%s/scripts", dirpath);
   set = storage_read(fname);
   zoneReadData(zone, set, zoneAddScript, scriptRead);
   storage_close(set);
-#endif
   return zone;
 }
 
@@ -244,7 +242,7 @@ bool zoneSave(ZONE_DATA *zone, const char *dirpath) {
   store_int   (set, "max",         zone->max);
   store_int   (set, "pulse_timer", zone->pulse_timer);
   store_string(set, "name",        zone->name);
-  store_string(set, "desc",        zone->desc);
+  store_string(set, "desc",        bufferString(zone->desc));
   store_string(set, "editors",     zone->editors);
   store_set   (set, "auxiliary",   auxiliaryDataStore(zone->auxiliary_data));
   storage_write(set, fname);
@@ -266,11 +264,9 @@ bool zoneSave(ZONE_DATA *zone, const char *dirpath) {
   sprintf(fname, "%s/dialogs", dirpath);
   storage_write(set, fname);
 
-#ifdef MODULE_SCRIPTS
   set = zoneStoreData(zone, zoneGetScript, scriptStore);
   sprintf(fname, "%s/scripts", dirpath);
   storage_write(set, fname);
-#endif
 
   return TRUE;
 }
@@ -314,11 +310,9 @@ void zoneAddObj(ZONE_DATA *zone, OBJ_DATA *obj) {
   zoneAdd(zone, zone->obj_protos, "object", obj, objGetVnum(obj));
 }
 
-#ifdef MODULE_SCRIPTS
 void zoneAddScript(ZONE_DATA *zone, SCRIPT_DATA *script) {
   zoneAdd(zone, zone->scripts, "script", script, scriptGetVnum(script));
 }
-#endif
 
 void zoneAddDialog(ZONE_DATA *zone, DIALOG_DATA *dialog) {
   zoneAdd(zone, zone->dialogs, "dialog", dialog, dialogGetVnum(dialog));
@@ -351,11 +345,9 @@ OBJ_DATA *zoneRemoveObj(ZONE_DATA *zone, obj_vnum obj){
   return zoneRemove(zone, zone->obj_protos, "obj", obj);
 }
 
-#ifdef MODULE_SCRIPTS
 SCRIPT_DATA *zoneRemoveScript(ZONE_DATA *zone, script_vnum script) { 
   return zoneRemove(zone, zone->scripts, "script", script);
 }
-#endif
 
 DIALOG_DATA *zoneRemoveDialog(ZONE_DATA *zone, dialog_vnum dialog) { 
   return zoneRemove(zone, zone->dialogs, "dialog", dialog);
@@ -415,15 +407,15 @@ const char *zoneGetName(ZONE_DATA *zone) {
 }
 
 const char *zoneGetDesc(ZONE_DATA *zone) { 
-  return zone->desc;
+  return bufferString(zone->desc);
 }
 
 const char *zoneGetEditors(ZONE_DATA *zone) {
   return zone->editors;
 }
 
-char **zoneGetDescPtr(ZONE_DATA *zone) {
-  return &(zone->desc);
+BUFFER *zoneGetDescBuffer(ZONE_DATA *zone) {
+  return zone->desc;
 }
 
 //
@@ -453,11 +445,9 @@ OBJ_DATA *zoneGetObj(ZONE_DATA *zone, obj_vnum obj) {
   return zoneGet(zone, zone->obj_protos, "obj", obj);
 }
 
-#ifdef MODULE_SCRIPTS
 SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, script_vnum script) {
   return zoneGet(zone, zone->scripts, "script", script);
 };
-#endif
 
 DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, dialog_vnum dialog) {
   return zoneGet(zone, zone->dialogs, "dialog", dialog);
@@ -495,9 +485,9 @@ void zoneSetName(ZONE_DATA *zone, const char *name) {
   zone->name = (name ? strdup(name) : strdup("\0"));
 }
 
-void zoneSetDescription(ZONE_DATA *zone, const char *description) { 
-  if(zone->desc) free(zone->desc);
-  zone->desc = (description ? strdup(description) : strdup("\0"));
+void zoneSetDesc(ZONE_DATA *zone, const char *desc) { 
+  bufferClear(zone->desc);
+  bufferCat(zone->desc, desc);
 }
 
 void zoneSetEditors(ZONE_DATA *zone, const char *names) {

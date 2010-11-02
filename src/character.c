@@ -91,7 +91,6 @@ int poscmp(int pos1, int pos2) {
 struct char_data {
   // data for PCs only
   char                 * password;
-  bitvector_t            prfs;  
   room_vnum              loadroom;
   int                    imm_invis;
 
@@ -105,7 +104,7 @@ struct char_data {
   SOCKET_DATA          * socket;
   ROOM_DATA            * room;
   OBJ_DATA             * furniture;
-  char                 * desc;
+  BUFFER               * desc;
   char                 * name;
   int                    level;
   int                    sex;
@@ -113,6 +112,7 @@ struct char_data {
 
   LIST                 * inventory;
   HASHTABLE            * auxiliary_data;
+  BITVECTOR            * prfs;
 
   // data for NPCs only
   dialog_vnum            dialog;
@@ -129,7 +129,6 @@ CHAR_DATA *newChar() {
   bzero(ch, sizeof(*ch));
 
   ch->password      = strdup("");
-  ch->prfs          = 0;
   ch->imm_invis     = 0;
 
   ch->loadroom      = NOWHERE;
@@ -140,7 +139,7 @@ CHAR_DATA *newChar() {
   ch->room          = NULL;
   ch->furniture     = NULL;
   ch->socket        = NULL;
-  ch->desc          = strdup("");
+  ch->desc          = newBuffer(1);
   ch->name          = strdup("");
   ch->level         = LEVEL_PLAYER;
   ch->sex           = SEX_NEUTRAL;
@@ -153,6 +152,7 @@ CHAR_DATA *newChar() {
   ch->multi_name    = strdup("");
   ch->dialog        = NOTHING;
   ch->vnum          = NOBODY;
+  ch->prfs          = bitvectorInstanceOf("char_prfs");
 
   ch->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_CHAR);
 
@@ -179,28 +179,6 @@ void charSetMultiRdesc(CHAR_DATA *ch, const char *multi_rdesc) {
 void charSetMultiName(CHAR_DATA *ch, const char *multi_name) {
   if(ch->multi_name) free(ch->multi_name);
   ch->multi_name =   strdup(multi_name ? multi_name : "");
-}
-
-void         charSetBit       ( CHAR_DATA *ch, int field, int bit) {
-  if(field == BITFIELD_PRFS)
-    SET_BIT(ch->prfs, (1 << bit));
-}
-
-void         charRemoveBit    ( CHAR_DATA *ch, int field, int bit) {
-  if(field == BITFIELD_PRFS)
-    REMOVE_BIT(ch->prfs, (1 << bit));
-}
-
-void         charToggleBit    ( CHAR_DATA *ch, int field, int bit) {
-  if(field == BITFIELD_PRFS)
-    TOGGLE_BIT(ch->prfs, (1 << bit));
-}
-
-bool         charIsBitSet     ( CHAR_DATA *ch, int field, int bit) {
-  if(field == BITFIELD_PRFS && IS_SET(ch->prfs, (1 << bit)))
-    return TRUE;
-
-  return FALSE;
 }
 
 bool charIsNPC( CHAR_DATA *ch) {
@@ -241,11 +219,11 @@ const char  *charGetPassword  ( CHAR_DATA *ch) {
 };
 
 const char  *charGetDesc      ( CHAR_DATA *ch) {
-  return ch->desc;
+  return bufferString(ch->desc);
 }
 
-char       **charGetDescPtr   ( CHAR_DATA *ch) {
-  return &(ch->desc);
+BUFFER      *charGetDescBuffer( CHAR_DATA *ch) {
+  return ch->desc;
 }
 
 const char  *charGetRdesc     ( CHAR_DATA *ch) {
@@ -273,13 +251,6 @@ int         charGetPos        ( CHAR_DATA *ch) {
   return ch->position;
 };
 
-bitvector_t  charGetBits      ( CHAR_DATA *ch, int field) {
-  if(field == BITFIELD_PRFS)
-    return ch->prfs;
-
-  return 0;
-}
-
 BODY_DATA   *charGetBody      ( CHAR_DATA *ch) {
   return ch->body;
 }
@@ -306,6 +277,10 @@ OBJ_DATA *charGetFurniture(CHAR_DATA *ch) {
 
 int charGetImmInvis(CHAR_DATA *ch) {
   return ch->imm_invis;
+}
+
+BITVECTOR *charGetPrfs(CHAR_DATA *ch) {
+  return ch->prfs;
 }
 
 void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket) {
@@ -339,8 +314,8 @@ void         charSetPos       ( CHAR_DATA *ch, int pos) {
 };
 
 void         charSetDesc      ( CHAR_DATA *ch, const char *desc) {
-  if(ch->desc) free(ch->desc);
-  ch->desc = strdup(desc ? desc : "");
+  bufferClear(ch->desc);
+  bufferCat(ch->desc, (desc ? desc : ""));
 };
 
 void         charSetBody      ( CHAR_DATA *ch, BODY_DATA *body) {
@@ -398,11 +373,12 @@ void deleteChar( CHAR_DATA *mob) {
 
   if(mob->password)    free(mob->password);
   if(mob->name)        free(mob->name);
-  if(mob->desc)        free(mob->desc);
+  if(mob->desc)        deleteBuffer(mob->desc);
   if(mob->rdesc)       free(mob->rdesc);
   if(mob->multi_rdesc) free(mob->multi_rdesc);
   if(mob->multi_name)  free(mob->multi_name);
   if(mob->keywords)    free(mob->keywords);
+  if(mob->prfs)        deleteBitvector(mob->prfs);
   deleteAuxiliaryData(mob->auxiliary_data);
 
   free(mob);
@@ -423,6 +399,7 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
   charSetSex(mob,          read_int   (set, "sex"));
   charSetRace(mob,         read_string(set, "race"));
   charSetPassword(mob,     read_string(set, "password"));
+  bitSet(mob->prfs,        read_string(set, "prfs"));
 
   // read in PC data
   if(*charGetPassword(mob)) {
@@ -430,7 +407,6 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
     charSetUID(mob,        read_int   (set, "uid"));
     charSetLoadroom(mob,   read_int   (set, "loadroom"));
     charSetPos(mob,        read_int   (set, "position"));
-    mob->prfs = parse_bits(read_string(set, "prfs"));
   }
   // and NPC data
   else
@@ -459,18 +435,18 @@ STORAGE_SET *charStore(CHAR_DATA *mob) {
   store_string(set, "name",       mob->name);
   store_string(set, "keywords",   mob->keywords);
   store_string(set, "rdesc",      mob->rdesc);
-  store_string(set, "desc",       mob->desc);
+  store_string(set, "desc",       bufferString(mob->desc));
   store_string(set, "multirdesc", mob->multi_rdesc);
   store_string(set, "multiname",  mob->multi_name);
   store_int   (set, "level",      mob->level);
   store_int   (set, "sex",        mob->sex);
   store_string(set, "race",       mob->race);
+  store_string(set, "prfs",       bitvectorGetBits(mob->prfs));
 
   // PC-only data
   if(!charIsNPC(mob)) {
     store_int   (set, "imm_invis",  mob->imm_invis);
     store_int   (set, "position",   mob->position);
-    store_string(set, "prfs",       write_bits(mob->prfs));
     store_string(set, "password",   mob->password);
     store_int   (set, "uid",        mob->uid);
     store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)));
@@ -500,6 +476,7 @@ void charCopyTo( CHAR_DATA *from, CHAR_DATA *to) {
   charSetRace       (to, charGetRace(from));
   charSetBody       (to, bodyCopy(charGetBody(from)));
   charSetImmInvis   (to, charGetImmInvis(from));
+  bitvectorCopyTo   (from->prfs, to->prfs);
 
   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
 }

@@ -114,6 +114,11 @@ void init_events() {
   // add our proof of concept command
   add_cmd("devent", NULL, cmd_devent, 0, POS_SLEEPING, POS_FLYING,
 	  LEVEL_ADMIN, TRUE, FALSE);
+
+  // make sure all events involving the object/char are cancelled when
+  // either is extracted from the game
+  add_extract_obj_func((void (*)(OBJ_DATA *)) interrupt_events_involving);
+  add_extract_mob_func((void (*)(CHAR_DATA *))interrupt_events_involving);
 }
 
 void interrupt_event(EVENT_DATA *event) {

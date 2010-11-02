@@ -11,9 +11,7 @@
 //*****************************************************************************
 
 
-
-
-RESPONSE_DATA *newResponse       (const char *keywords, const char *message);
+RESPONSE_DATA *newResponse       (void);
 void           deleteResponse    (RESPONSE_DATA *response);
 
 void           responseCopyTo    (RESPONSE_DATA *from, RESPONSE_DATA *to);
@@ -28,6 +26,7 @@ void         responseSetMessage (RESPONSE_DATA *response, const char *message);
 
 const char   *responseGetKeywords(RESPONSE_DATA *response);
 const char   *responseGetMessage (RESPONSE_DATA *response);
+BUFFER       *responseGetMessageBuffer(RESPONSE_DATA *response);
 
 DIALOG_DATA   *newDialog         ();
 void           deleteDialog      (DIALOG_DATA *dialog);
@@ -48,6 +47,7 @@ RESPONSE_DATA *dialogGetResponse (DIALOG_DATA *dialog, const char *keyword);
 RESPONSE_DATA *dialogGetNum      (DIALOG_DATA *dialog, int entry_num);
 int            dialogGetSize     (DIALOG_DATA *dialog);
 
+BUFFER        *dialogGetGreetBuffer(DIALOG_DATA *dialog);
 const char    *dialogGetGreet    (DIALOG_DATA *dialog);
 void           dialogSetGreet    (DIALOG_DATA *dialog, const char *greet);
 

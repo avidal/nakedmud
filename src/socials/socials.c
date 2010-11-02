@@ -16,6 +16,7 @@
 #include "../inform.h"
 #include "../character.h"
 
+#include "socedit.h"
 #include "socials.h"
 
 
@@ -458,7 +459,7 @@ void init_socials() {
   SOCIAL_DATA     *data = NULL;
 
   ITERATE_HASH(cmd, data, hash_i)
-    add_cmd(cmd, NULL, cmd_social, 0, POS_STANDING, POS_STANDING,
+    add_cmd(cmd, NULL, cmd_social, 0, data->min_pos, data->max_pos, 
 	    LEVEL_PLAYER, TRUE, FALSE);
   deleteHashIterator(hash_i);
 
@@ -472,6 +473,8 @@ void init_socials() {
 
   // let add_social know it can start saving again
   in_social_init = FALSE;
+
+  init_socedit();
 }
 
 

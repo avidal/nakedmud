@@ -49,6 +49,10 @@ void  send_to_char          (CHAR_DATA *ch, const char *format, ...)
 __attribute__ ((format (printf, 2, 3)));
 void  send_to_list          (LIST *list, const char *format, ...) 
 __attribute__ ((format (printf, 2, 3)));
+void send_around_char(CHAR_DATA *ch, bool hide_nosee, const char *format, ...) 
+__attribute__ ((format (printf, 3, 4)));
+void send_to_level(int level, const char *format, ...) 
+__attribute__ ((format (printf, 2, 3)));
 
 
 //*****************************************************************************
@@ -66,9 +70,8 @@ const char  *charGetMultiRdesc( CHAR_DATA *ch);
 const char  *charGetMultiName ( CHAR_DATA *ch);
 int          charGetLevel     ( CHAR_DATA *ch);
 int          charGetSex       ( CHAR_DATA *ch);
-bitvector_t  charGetBits      ( CHAR_DATA *ch, int field);
 // for editing with the text editor
-char       **charGetDescPtr   ( CHAR_DATA *ch);
+BUFFER      *charGetDescBuffer( CHAR_DATA *ch);
 LIST        *charGetInventory ( CHAR_DATA *ch);
 BODY_DATA   *charGetBody      ( CHAR_DATA *ch);
 const char  *charGetRace      ( CHAR_DATA *ch);
@@ -78,6 +81,8 @@ OBJ_DATA    *charGetFurniture ( CHAR_DATA *ch);
 int          charGetPos       ( CHAR_DATA *ch);
 void        *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name);
 int          charGetImmInvis  ( CHAR_DATA *ch);
+BITVECTOR   *charGetPrfs      ( CHAR_DATA *ch);
+
 
 void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket);
 void         charSetRoom      ( CHAR_DATA *ch, ROOM_DATA *room);
@@ -111,25 +116,6 @@ const char  *charGetKeywords   (CHAR_DATA *ch);
 void         charSetVnum       (CHAR_DATA *ch, mob_vnum vnum);
 void         charSetDialog     (CHAR_DATA *ch, dialog_vnum vnum);
 void         charSetKeywords   (CHAR_DATA *ch, const char *keywords);
-
-
-
-//*****************************************************************************
-//
-// Bitfields and their bits
-//
-//*****************************************************************************
-void         charToggleBit    ( CHAR_DATA *ch, int field, int bit);
-void         charSetBit       ( CHAR_DATA *ch, int field, int bit);
-void         charRemoveBit    ( CHAR_DATA *ch, int field, int bit);
-bool         charIsBitSet     ( CHAR_DATA *ch, int field, int bit);
-
-// hmmm... we should really replace bitvectors with something a bit
-// more amenable to extention by modules. Perhaps use char_vars?
-#define BITFIELD_PRFS             0
-
-#define PRF_BUILDWALK             0    // (1 << 0)
-#define PRF_MAPWALK               1    // (1 << 1)
 
 
 

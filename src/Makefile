@@ -13,8 +13,12 @@
 # compiler to use
 CC = gcc
 
-# the modules we have installed
-MODULES := time alias char_vars socials olc scripts help
+# the modules we have installed -- mandatory modules go here
+MODULES := char_vars set_val olc2 editor items scripts
+
+# optional modules go on this line
+MODULES += time socials alias help
+
 
 # flags to use during compilation
 C_FLAGS := -Wall -g -ggdb -O2
@@ -22,20 +26,22 @@ C_FLAGS := -Wall -g -ggdb -O2
 # extra libraries if required
 LIBS    := -lz -lpthread -lcrypt
 
+
 # each module will add to this from its module.mk file
 SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c movement.c \
 	   action.c mccp.c save.c socket.c io.c strings.c event.c \
 	   \
 	   cmd_comm.c cmd_manip.c cmd_misc.c cmd_admin.c cmd_builder.c \
 	   \
-	   text_editor.c races.c \
+	   races.c \
 	   \
-	   items.c log.c auxiliary.c \
+	   log.c auxiliary.c login.c \
 	   \
 	   world.c character.c room.c exit.c extra_descs.c object.c body.c \
 	   zone.c dialog.c room_reset.c \
 	   \
-	   list.c property_table.c hashtable.c hashmap.c storage.c set.c
+	   list.c property_table.c hashtable.c map.c storage.c set.c \
+	   buffer.c bitvector.c
 
 
 # include the description for each module. These will add to SRC
@@ -48,9 +54,7 @@ O_FILES := $(patsubst %.c,%.o, $(filter %.c, $(SRC)))
 
 
 ################################################################################
-#
 # make commands
-#
 ################################################################################
 all: $(O_FILES)
 	$(CC) -o NakedMud $(O_FILES) $(LIBS)
@@ -62,12 +66,6 @@ all: $(O_FILES)
 # say where the .o files need to go
 .c.o: all
 	$(CC) -c $(C_FLAGS) -o $(patsubst %.c,%.o, $<) $<
-#	$(CC) -c $(C_FLAGS) $<
-
-
-# make dependancies for all of the files
-depend:
-	$(CC) -MM $(filter %.c, $(SRC)) > .depend
 
 # clear all of the .o files and all of the save files that emacs makes
 clean:
@@ -77,4 +75,9 @@ clean:
 	rm -f *~
 	rm -f */*~
 
-include .depend
+# include all of our dependencies
+include $(patsubst %.c,%.d, $(SRC))
+
+# calculate all of our dependencies
+%.d: %.c
+	./depend.sh $(patsubst %.d,%.c, $@) > $@

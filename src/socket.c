@@ -11,18 +11,58 @@
 /* including main header file */
 #include "mud.h"
 #include "character.h"
+#include "save.h"
 #include "utils.h"
 #include "socket.h"
+#include "auxiliary.h"
 
-#ifdef MODULE_OLC
-#include "olc/olc.h"
-#endif
 
+//
+// Here it is... the big ol' datastructure for sockets. Yum.
+//
+struct socket_data {
+  CHAR_DATA     * player;
+  char          * hostname;
+  char            inbuf[MAX_INPUT_LEN];
+  char            outbuf[MAX_OUTPUT];
+  char            next_command[MAX_BUFFER];
+  bool            cmd_read;
+  bool            bust_prompt;
+  bool            closed;
+  sh_int          lookup_status;
+  sh_int          control;
+  sh_int          top_output;
+
+  char          * page_string;   // the string that has been paged to us
+  int             curr_page;     // the current page we're on
+  int             tot_pages;     // the total number of pages the string has
+  
+  BUFFER        * text_editor;   // where we do our actual work
+  char         ** text_pointer;  // where the work will go to
+
+  LIST          * input_handlers;// a stack of our input handlers and prompts
+
+  unsigned char   compressing;                 /* MCCP support */
+  z_stream      * out_compress;                /* MCCP support */
+  unsigned char * out_compress_buf;            /* MCCP support */
+
+  HASHTABLE     * auxiliary;     // auxiliary data installed by other modules
+};
+
+
+//
+// contains an input handler and the socket prompt in one structure, so they
+// can be stored together in the socket_data
+//
+typedef struct input_handler_data {
+  void (* handler)(SOCKET_DATA *, char *);
+  void (*  prompt)(SOCKET_DATA *);
+} IH_PAIR;
 
 
 /* global variables */
 fd_set        fSet;             /* the socket list for polling       */
-
+fd_set        rFd;
 
 /* mccp support */
 const unsigned char compress_will   [] = { IAC, WILL, TELOPT_COMPRESS,  '\0' };
@@ -86,25 +126,16 @@ bool new_socket(int sock)
   pthread_attr_init(&attr);   
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
-  /*
-   * allocate some memory for a new socket if
-   * there is no free socket in the free_list
-   */
-  if( (sock_new = listPop(socket_free)) == NULL) {
-    if ((sock_new = malloc(sizeof(*sock_new))) == NULL)
-    {
-      bug("New_socket: Cannot allocate memory for socket.");
-      abort();
-    }
-    bzero(sock_new, sizeof(*sock_new));    
-  }
-
+  /* create and clear the socket */
+  sock_new = malloc(sizeof(*sock_new));
+  bzero(sock_new, sizeof(*sock_new));
 
   /* attach the new connection to the socket list */
   FD_SET(sock, &fSet);
 
   /* clear out the socket */
   clear_socket(sock_new, sock);
+  sock_new->closed = FALSE;
 
   /* set the socket as non-blocking */
   ioctl(sock, FIONBIO, &argp);
@@ -199,7 +230,8 @@ void close_socket(SOCKET_DATA *dsock, bool reconnect)
   }
 
   /* set the closed state */
-  dsock->state = STATE_CLOSED;
+  dsock->closed = TRUE;
+  //  dsock->state = STATE_CLOSED;
 }
 
 
@@ -391,12 +423,6 @@ void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
     return;
   }
 
-  // always start with a leading space if we don't need to bust a prompt
-  if(dsock->state == STATE_PLAYING && dsock->bust_prompt == FALSE) {
-    dsock->outbuf[0] = '\r';
-    dsock->outbuf[1] = '\n';
-    dsock->top_output = 2;
-  }
 
   while (*txt != '\0' && i++ < length)
   {
@@ -549,7 +575,13 @@ void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
   /* check to see if the socket can accept that much data */
   if (dsock->top_output + iPtr >= MAX_OUTPUT)
   {
-    bug("Text_to_buffer: ouput overflow on %s.", dsock->hostname);
+    //
+    // what happens if the buffer overflow is on an immortal who can see the
+    // logs? We get tossed into an infinite loop... this really isn't too big
+    // of a deal to have to report. Let's just leave it out.
+    //   - Geoff, Mar 22/05
+    //
+    //    bug("Text_to_buffer: ouput overflow on %s.", dsock->hostname);
     return;
   }
 
@@ -640,23 +672,18 @@ void next_cmd_from_buffer(SOCKET_DATA *dsock)
 
 bool flush_output(SOCKET_DATA *dsock)
 {
-  /* nothing to send */
-  if (dsock->top_output <= 0 && 
-      !((dsock->bust_prompt && 
-	 (dsock->state == STATE_PLAYING || dsock->state == STATE_TEXT_EDITOR))))
+  void (* prompt_func)(SOCKET_DATA *) = ((IH_PAIR *)listGet(dsock->input_handlers, 0))->prompt;
+
+  // quit if we have no output and don't need/can't have a prompt
+  if(dsock->top_output <= 0 && (!dsock->bust_prompt || !prompt_func))
     return TRUE;
 
-  /* bust a prompt */
-  if (dsock->state == STATE_PLAYING && dsock->bust_prompt) {
-    text_to_buffer(dsock, custom_prompt(dsock->player));
-    dsock->bust_prompt = FALSE;
-  }
-  else if(dsock->state == STATE_TEXT_EDITOR && dsock->bust_prompt) {
-    text_to_buffer(dsock, "] ");
+  if(dsock->bust_prompt && prompt_func) {
+    prompt_func(dsock);
     dsock->bust_prompt = FALSE;
   }
 
-  /* reset the top pointer */
+  // reset the top pointer
   dsock->top_output = 0;
 
   /*
@@ -666,7 +693,7 @@ bool flush_output(SOCKET_DATA *dsock)
   if (!text_to_socket(dsock, dsock->outbuf))
     return FALSE;
 
-  /* Success */
+  // Success
   return TRUE;
 }
 
@@ -682,29 +709,34 @@ bool flush_output(SOCKET_DATA *dsock)
 // getting their addresses, etc...)
 //
 //*****************************************************************************
+void deleteSocket(SOCKET_DATA *sock) {
+  if(sock->hostname)       free(sock->hostname);
+  if(sock->page_string)    free(sock->page_string);
+  if(sock->text_editor)    deleteBuffer(sock->text_editor);
+  if(sock->input_handlers) deleteListWith(sock->input_handlers, free);
+  if(sock->auxiliary)      deleteAuxiliaryData(sock->auxiliary);
+  free(sock);
+}
 
 void clear_socket(SOCKET_DATA *sock_new, int sock)
 {
-  if(sock_new->page_string) free(sock_new->page_string);
-  if(sock_new->text_editor) buffer_free(sock_new->text_editor);
-  if(sock_new->notepad)     free(sock_new->notepad);
+  if(sock_new->page_string)    free(sock_new->page_string);
+  if(sock_new->text_editor)    deleteBuffer(sock_new->text_editor);
+  if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, free);
+  if(sock_new->auxiliary)      deleteAuxiliaryData(sock_new->auxiliary);
 
   bzero(sock_new, sizeof(*sock_new));
-  sock_new->control        =  sock;
-  sock_new->state          =  STATE_NEW_NAME;
-  sock_new->lookup_status  =  TSTATE_LOOKUP;
-  sock_new->player         =  NULL;
-  sock_new->top_output     =  0;
+  sock_new->auxiliary = newAuxiliaryData(AUXILIARY_TYPE_SOCKET);
+  sock_new->input_handlers = newList();
+  socketPushInputHandler(sock_new, handle_new_connections, NULL);
+  sock_new->control        = sock;
+  sock_new->lookup_status  = TSTATE_LOOKUP;
+  sock_new->player         = NULL;
+  sock_new->top_output     = 0;
 
-  sock_new->text_editor    = NULL;
+  sock_new->text_editor    = newBuffer(MAX_BUFFER);
   sock_new->text_pointer   = NULL;
-  sock_new->notepad        = NULL;
-  sock_new->in_text_edit   = FALSE;
-  sock_new->max_text_len   = 0;
-
-#ifdef MODULE_OLC
-  socketSetOLC(sock_new, NULL);
-#endif
+  //  sock_new->in_text_edit   = FALSE;
 }
 
 
@@ -736,6 +768,7 @@ void *lookup_address(void *arg)
 
   /* and kill the thread */
   pthread_exit(0);
+  return NULL;
 }
 
 
@@ -754,14 +787,127 @@ void recycle_sockets()
     /* close the socket */
     close(dsock->control);
 
-    /* free the memory */
-    free(dsock->hostname);
-
     /* stop compression */
     compressEnd(dsock, dsock->compressing, TRUE);
 
-    /* put the socket in the free_list */
-    listPut(socket_free, dsock);
+    /* delete the socket from memory */
+    deleteSocket(dsock);
+  }
+  deleteListIterator(sock_i);
+}
+
+
+/* reset all of the sockets' control values */
+void reconnect_copyover_sockets() {
+  LIST_ITERATOR *sock_i = newListIterator(socket_list);
+  SOCKET_DATA     *sock = NULL; 
+  ITERATE_LIST(sock, sock_i)
+    FD_SET(sock->control, &fSet);
+  deleteListIterator(sock_i);
+}
+
+
+/* Recover from a copyover - load players */
+void copyover_recover()
+{     
+  CHAR_DATA *dMob;
+  SOCKET_DATA *dsock;
+  FILE *fp;
+  char name [100];
+  char host[MAX_BUFFER];
+  int desc;
+      
+  log_string("Copyover recovery initiated");
+   
+  if ((fp = fopen(COPYOVER_FILE, "r")) == NULL) {  
+    log_string("Copyover file not found. Exitting.");
+    exit (1);
+  }
+      
+  /* In case something crashes - doesn't prevent reading */
+  unlink(COPYOVER_FILE);
+    
+  for (;;) {  
+    fscanf(fp, "%d %s %s\n", &desc, name, host);
+    if (desc == -1)
+      break;
+
+    dsock = malloc(sizeof(*dsock));
+    clear_socket(dsock, desc);
+
+    dsock->hostname = strdup(host);
+    listPut(socket_list, dsock);
+ 
+    /* load player data */
+    if ((dMob = load_player(name)) != NULL)
+    {
+      /* attach to socket */
+      charSetSocket(dMob, dsock);
+      socketSetChar(dsock, dMob);
+
+      // try putting the character into the game
+      // close the socket if we fail.
+      try_enter_game(dMob);
+    }
+    else /* ah bugger */
+    {
+      close_socket(dsock, FALSE);
+      continue;
+    }
+   
+    /* Write something, and check if it goes error-free */
+    if (!text_to_socket(dsock, "\n\r <*>  And before you know it, everything has changed  <*>\n\r"))
+    { 
+      close_socket(dsock, FALSE);
+      continue;
+    }
+  
+    /* make sure the socket can be used */
+    dsock->bust_prompt    =  TRUE;
+    dsock->lookup_status  =  TSTATE_DONE;
+    socketReplaceInputHandler(dsock, handle_cmd_input, show_prompt);
+
+    /* negotiate compression */
+    text_to_buffer(dsock, (char *) compress_will2);
+    text_to_buffer(dsock, (char *) compress_will);
+  }
+  fclose(fp);
+
+  // now, set all of the sockets' control to the new fSet
+  reconnect_copyover_sockets();
+}     
+
+void socket_handler() {
+  LIST_ITERATOR *sock_i = newListIterator(socket_list);
+  SOCKET_DATA     *sock = NULL; 
+
+  ITERATE_LIST(sock, sock_i) {
+    /*
+     * Close sockects we are unable to read from, or if we have no handler
+     * to take in input
+     */
+    if ((FD_ISSET(sock->control, &rFd) && !read_from_socket(sock)) ||
+	socketGetInputHandler(sock) == NULL) {
+      close_socket(sock, FALSE);
+      continue;
+    }
+
+    /* Ok, check for a new command */
+    next_cmd_from_buffer(sock);
+    
+    /* Is there a new command pending ? */
+    if (sock->cmd_read) {
+      socketGetInputHandler(sock)(sock, sock->next_command);
+      sock->next_command[0] = '\0';
+      sock->cmd_read = FALSE;
+    }
+    
+    /* if the player quits or get's disconnected */
+    if(sock->closed) continue;
+    
+    /* Send all new data to the socket and close it if any errors occour */
+    if (!flush_output(sock))
+      close_socket(sock, FALSE);
   }
   deleteListIterator(sock_i);
 }
@@ -855,35 +1001,330 @@ void  page_continue(SOCKET_DATA *dsock) {
   */
 }
 
+void do_copyover(CHAR_DATA *ch) {
+
+  FILE *fp;
+  SOCKET_DATA *dsock;
+  char buf[100];
+  char control_buf[20];
+  char port_buf[20];
+  LIST_ITERATOR *sock_i = newListIterator(socket_list);
+
+  if ((fp = fopen(COPYOVER_FILE, "w+")) == NULL)
+  {
+    text_to_char(ch, "Copyover file not writeable, aborted.\n\r");
+    return;
+  }
+
+  sprintf(buf, "\n\r <*>            The world starts spinning             <*>\n\r");
+
+  /* For each playing descriptor, save its state */
+  ITERATE_LIST(dsock, sock_i) {
+    compressEnd(dsock, dsock->compressing, FALSE);
+    if (!socketGetChar(dsock) || !charGetRoom(socketGetChar(dsock))) {
+      //(dsock->state != STATE_PLAYING) {
+      text_to_socket(dsock, "\r\nSorry, we are rebooting. Come back in a few minutes.\r\n");
+      close_socket(dsock, FALSE);
+    }
+    else {
+      fprintf(fp, "%d %s %s\n",
+	      dsock->control, charGetName(dsock->player), dsock->hostname);
+      /* save the player */
+      save_player(dsock->player);
+      text_to_socket(dsock, buf);
+    }
+  }
+  deleteListIterator(sock_i);
+  
+  fprintf (fp, "-1\n");
+  fclose (fp);
+
+
+  /* close any pending sockets */
+  recycle_sockets();
+  
+  /* exec - descriptors are inherited */
+  sprintf(control_buf, "%d", control);
+  sprintf(port_buf, "%d", mudport);
+  execl(EXE_FILE, "NakedMud", "-copyover", control_buf, port_buf, NULL);
+
+  /* Failed - sucessful exec will not return */
+  text_to_char(ch, "Copyover FAILED!\n\r");
+}
+
 
 //*****************************************************************************
 //
 // get and set functions
 //
 //*****************************************************************************
-sh_int socketGetState       ( SOCKET_DATA *dsock) {
-  return dsock->state;
-}
-
 CHAR_DATA *socketGetChar     ( SOCKET_DATA *dsock) {
   return dsock->player;
-}
-
-#ifdef MODULE_OLC
-OLC_DATA *socketGetOLC      ( SOCKET_DATA *dsock) {
-  return dsock->olc;
-}
-
-void socketSetOLC           ( SOCKET_DATA *dsock, OLC_DATA *olc) {
-  if(dsock->olc) deleteOLC(dsock->olc);
-  dsock->olc = olc;
-}
-#endif
-
-void socketSetState         ( SOCKET_DATA *dsock, sh_int state) {
-  dsock->state = state;
 }
 
 void       socketSetChar     ( SOCKET_DATA *dsock, CHAR_DATA *ch) {
   dsock->player = ch;
 }
+
+char **socketGetTextPointer   ( SOCKET_DATA *sock) {
+  return sock->text_pointer;
+}
+
+void socketSetTextPointer (SOCKET_DATA *sock, char **ptr) {
+  sock->text_pointer = ptr;
+}
+
+BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock) {
+  return sock->text_editor;
+}
+
+void socketPushInputHandler  ( SOCKET_DATA *socket, 
+			       void handler(SOCKET_DATA *socket, char *input),
+			       void prompt (SOCKET_DATA *socket)) {
+  IH_PAIR *pair = malloc(sizeof(IH_PAIR));
+  pair->handler = handler;
+  pair->prompt  = prompt;
+  listPush(socket->input_handlers, pair);
+}
+
+void socketPopInputHandler   ( SOCKET_DATA *socket) {
+  IH_PAIR *pair = listPop(socket->input_handlers);
+  free(pair);
+}
+
+void socketReplaceInputHandler( SOCKET_DATA *socket,
+				void handler(SOCKET_DATA *socket, char *input),
+				void prompt (SOCKET_DATA *socket)) {
+  socketPopInputHandler(socket);
+  socketPushInputHandler(socket, handler, prompt);
+}
+
+void (*socketGetInputHandler ( SOCKET_DATA *socket))(SOCKET_DATA *, char *) {
+  return ((IH_PAIR *)listGet(socket->input_handlers, 0))->handler;
+}
+
+void socketShowPrompt( SOCKET_DATA *sock) {
+  ((IH_PAIR *)listGet(sock->input_handlers, 0))->prompt(sock);
+}
+
+void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name) {
+  return hashGet(sock->auxiliary, name);
+}
+
+const char *socketGetHostname(SOCKET_DATA *sock) {
+  return sock->hostname;
+}
+
+sh_int socketGetDNSLookupStatus(SOCKET_DATA *sock) {
+  return sock->lookup_status;
+}
+
+void socketBustPrompt(SOCKET_DATA *sock) {
+  sock->bust_prompt = TRUE;
+}
+
+
+
+
+//*****************************************************************************
+//
+// MCCP SUPPORT IS BELOW THIS LINE. NOTHING BUT MCCP SUPPORT SHOULD GO BELOW
+// THIS LINE.
+//
+//*****************************************************************************
+/*
+ * mccp.c - support functions for the Mud Client Compression Protocol
+ *
+ * see http://www.randomly.org/projects/MCCP/
+ *
+ * Copyright (c) 1999, Oliver Jowett <oliver@randomly.org>
+ *
+ * This code may be freely distributed and used if this copyright
+ * notice is retained intact.
+ */
+/*
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include "mud.h"
+#include "socket.h"
+#include "utils.h"
+*/
+
+/* local functions */
+bool  processCompressed       ( SOCKET_DATA *dsock );
+
+const unsigned char enable_compress  [] = { IAC, SB, TELOPT_COMPRESS, WILL, SE, 0 };
+const unsigned char enable_compress2 [] = { IAC, SB, TELOPT_COMPRESS2, IAC, SE, 0 };
+
+/*
+ * Memory management - zlib uses these hooks to allocate and free memory
+ * it needs
+ */
+void *zlib_alloc(void *opaque, unsigned int items, unsigned int size)
+{
+  return calloc(items, size);
+}
+
+void zlib_free(void *opaque, void *address)
+{
+  free(address);
+}
+
+/*
+ * Begin compressing data on `desc'
+ */
+bool compressStart(SOCKET_DATA *dsock, unsigned char teleopt)
+{
+  z_stream *s;
+
+  /* already compressing */
+  if (dsock->out_compress)
+    return TRUE;
+
+  /* allocate and init stream, buffer */
+  s = (z_stream *) malloc(sizeof(*s));
+  dsock->out_compress_buf = (unsigned char *) malloc(COMPRESS_BUF_SIZE);
+
+  s->next_in    =  NULL;
+  s->avail_in   =  0;
+  s->next_out   =  dsock->out_compress_buf;
+  s->avail_out  =  COMPRESS_BUF_SIZE;
+  s->zalloc     =  zlib_alloc;
+  s->zfree      =  zlib_free;
+  s->opaque     =  NULL;
+
+  if (deflateInit(s, 9) != Z_OK)
+  {
+    free(dsock->out_compress_buf);
+    free(s);
+    return FALSE;
+  }
+
+  /* version 1 or 2 support */
+  if (teleopt == TELOPT_COMPRESS)
+    text_to_socket(dsock, (char *) enable_compress);
+  else if (teleopt == TELOPT_COMPRESS2)
+    text_to_socket(dsock, (char *) enable_compress2);
+  else
+  {
+    bug("Bad teleoption %d passed", teleopt);
+    free(dsock->out_compress_buf);
+    free(s);
+    return FALSE;
+  }
+
+  /* now we're compressing */
+  dsock->compressing = teleopt;
+  dsock->out_compress = s;
+
+  /* success */
+  return TRUE;
+}
+
+/* Cleanly shut down compression on `desc' */
+bool compressEnd(SOCKET_DATA *dsock, unsigned char teleopt, bool forced)
+{
+  unsigned char dummy[1];
+
+  if (!dsock->out_compress)
+    return TRUE;
+
+  if (dsock->compressing != teleopt)
+    return FALSE;
+
+  dsock->out_compress->avail_in = 0;
+  dsock->out_compress->next_in = dummy;
+  dsock->top_output = 0;
+
+  /* No terminating signature is needed - receiver will get Z_STREAM_END */
+  if (deflate(dsock->out_compress, Z_FINISH) != Z_STREAM_END && !forced)
+    return FALSE;
+
+  /* try to send any residual data */
+  if (!processCompressed(dsock) && !forced)
+    return FALSE;
+
+  /* reset compression values */
+  deflateEnd(dsock->out_compress);
+  free(dsock->out_compress_buf);
+  free(dsock->out_compress);
+  dsock->compressing      = 0;
+  dsock->out_compress     = NULL;
+  dsock->out_compress_buf = NULL;
+
+  /* success */
+  return TRUE;
+}
+
+/* Try to send any pending compressed-but-not-sent data in `desc' */
+bool processCompressed(SOCKET_DATA *dsock)
+{
+  int iStart, nBlock, nWrite, len;
+
+  if (!dsock->out_compress)
+    return TRUE;
+    
+  len = dsock->out_compress->next_out - dsock->out_compress_buf;
+  if (len > 0)
+  {
+    for (iStart = 0; iStart < len; iStart += nWrite)
+    {
+      nBlock = UMIN (len - iStart, 4096);
+      if ((nWrite = write(dsock->control, dsock->out_compress_buf + iStart, nBlock)) < 0)
+      {
+        if (errno == EAGAIN/* || errno == ENOSR*/)
+          break;
+
+        /* write error */
+        return FALSE;
+      }
+      if (nWrite <= 0)
+        break;
+    }
+
+    if (iStart)
+    {
+      if (iStart < len)
+        memmove(dsock->out_compress_buf, dsock->out_compress_buf+iStart, len - iStart);
+
+      dsock->out_compress->next_out = dsock->out_compress_buf + len - iStart;
+    }
+  }
+
+  /* success */
+  return TRUE;
+}
+
+
+//
+// compress output
+//
+COMMAND(cmd_compress)
+{
+  /* no socket, no compression */
+  if (!charGetSocket(ch))
+    return;
+
+  /* enable compression */
+  if (!charGetSocket(ch)->out_compress) {
+    text_to_char(ch, "Trying compression.\n\r");
+    text_to_buffer(charGetSocket(ch), (char *) compress_will2);
+    text_to_buffer(charGetSocket(ch), (char *) compress_will);
+  }
+  else /* disable compression */ {
+    if (!compressEnd(charGetSocket(ch), charGetSocket(ch)->compressing, FALSE)){
+      text_to_char(ch, "Failed.\n\r");
+      return;
+    }
+    text_to_char(ch, "Compression disabled.\n\r");
+  }
+}
+//*****************************************************************************
+//
+// IF YOU ARE PUTTING ANYTHING BELOW THIS LINE, YOU ARE PUTTING IT IN THE WRONG
+// PLACE!! ALL SOCKET-RELATED STUFF SHOULD GO UP ABOVE THE MCCP SUPPORT STUFF!
+//
+//*****************************************************************************

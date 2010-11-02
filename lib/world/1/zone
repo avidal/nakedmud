@@ -7,12 +7,4 @@ desc       :~
      The ambition of this zone is to act as a repository for "proofs of 
   concept".  Hopefully, there will be enough examples in this zone to act as a 
 editors    : Alister
-auxiliary  :-
-  zone_map_data :-
-    zone_display_map: 0
-    -
-  autopilot_data:-
-    autopilot_on: 0
-    -
-  -
 -

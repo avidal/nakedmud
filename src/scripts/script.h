@@ -164,7 +164,7 @@ int         scriptGetNumArg(SCRIPT_DATA *script);
 const char *scriptGetArgs(SCRIPT_DATA *script);
 const char *scriptGetName(SCRIPT_DATA *script);
 const char *scriptGetCode(SCRIPT_DATA *script);
-char      **scriptGetCodePtr(SCRIPT_DATA *script); // for text editing in olc
+BUFFER     *scriptGetCodeBuffer(SCRIPT_DATA *script);
 
 void scriptSetVnum(SCRIPT_DATA *script, script_vnum vnum);
 void scriptSetType(SCRIPT_DATA *script, int type);
@@ -185,6 +185,22 @@ void        objSetScripts(OBJ_DATA *obj, SCRIPT_SET *scripts);
 SCRIPT_SET *charGetScripts(const CHAR_DATA *mob);
 void        charSetScripts(CHAR_DATA *mob, SCRIPT_SET *scripts);
 
+
+//
+// If OLC2 is installed, we'll want to be able to edit which scripts are
+// on mobiles, objects, rooms, etc... that's what ssedit is for. scedit is
+// used internally by CMD_SCEDIT to start up an online editor for scripts
+//
+#ifdef MODULE_OLC2
+void ssedit_menu   (SOCKET_DATA *sock, SCRIPT_SET *set);
+int  ssedit_chooser(SOCKET_DATA *sock, SCRIPT_SET *set, char option);
+bool ssedit_parser (SOCKET_DATA *sock, SCRIPT_SET *set, int choice, 
+		    const char *arg);
+void scedit_menu   (SOCKET_DATA *sock, SCRIPT_DATA *script);
+int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, char option);
+bool scedit_parser (SOCKET_DATA *sock, SCRIPT_DATA *script, int choice, 
+		    const char *arg);
+#endif // MODULE_OLC2
 
 
 

@@ -14,12 +14,20 @@
 #include "commands.h"
 #include "action.h"
 
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "scripts/script.h"
+
+
+
+//*****************************************************************************
 // optional modules
+//*****************************************************************************
 #ifdef MODULE_FACULTY
 #include "faculty/faculty.h"
-#endif
-#ifdef MODULE_SCRIPTS
-#include "scripts/script.h"
 #endif
 #ifdef MODULE_ALIAS
 #include "alias/alias.h"
@@ -87,13 +95,18 @@ void init_commands() {
 	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("ask",        NULL, cmd_ask,      0, POS_SITTING,  POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd("at",         NULL, cmd_at,       0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, TRUE, FALSE);
 
   // B
   add_cmd("back",       NULL, cmd_back,     0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd("buildwalk",  NULL, cmd_buildwalk, 0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
+  /*
   add_cmd("buildwalk",  NULL, cmd_tog_prf,  PRF_BUILDWALK, 
 	  POS_UNCONCIOUS, POS_FLYING, LEVEL_BUILDER, FALSE, FALSE);
-
+  */
 
   // C
   add_cmd("chat",       NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
@@ -120,8 +133,6 @@ void init_commands() {
 	  LEVEL_PLAYER, TRUE, TRUE );
 
   // E
-  add_cmd("enter",      NULL, cmd_enter,    0, POS_STANDING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("emote",      NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd(":",          NULL, cmd_emote,    0, POS_SITTING,  POS_FLYING,
@@ -149,10 +160,6 @@ void init_commands() {
   add_cmd("goto",       NULL, cmd_goto,     0, POS_STANDING, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, TRUE );
 
-  // H
-  //  add_cmd("help",       NULL, cmd_help,     0, POS_UNCONCIOUS, POS_FLYING,
-  //	  LEVEL_PLAYER, TRUE, FALSE);
-
   // I
   add_cmd("inventory",  NULL, cmd_inventory,0, POS_SITTING,  POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
@@ -172,8 +179,6 @@ void init_commands() {
 	  LEVEL_ADMIN, FALSE, FALSE);
 
   // M
-  add_cmd("mapwalk",    NULL, cmd_tog_prf,  PRF_MAPWALK,
-	  POS_UNCONCIOUS, POS_FLYING, LEVEL_PLAYER, FALSE, FALSE);
   add_cmd("mlist",      NULL, cmd_mlist,    0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("more",       NULL, cmd_more,     0, POS_UNCONCIOUS, POS_FLYING,
@@ -186,8 +191,10 @@ void init_commands() {
 	  LEVEL_PLAYER, TRUE, TRUE );
 
   // P
-  add_cmd("put",        NULL, cmd_put,      0, POS_SITTING,  POS_FLYING,
+  add_cmd("put",        "p", cmd_put,       0, POS_SITTING,  POS_FLYING,
 	  LEVEL_PLAYER, TRUE,  TRUE );
+  add_cmd("page",       NULL, cmd_page,     0, POS_SITTING,  POS_FLYING,
+	  LEVEL_BUILDER, TRUE, FALSE);
   add_cmd("purge",      NULL, cmd_purge,    0, POS_SITTING,  POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
   
@@ -200,6 +207,8 @@ void init_commands() {
 	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("rlist",      NULL, cmd_rlist,    0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
+  add_cmd("repeat",     NULL, cmd_repeat,   0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_ADMIN, FALSE, FALSE);
 
   // S
   add_cmd("say",        NULL, cmd_say,      0, POS_SITTING,  POS_FLYING,
@@ -218,13 +227,11 @@ void init_commands() {
 	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("stop",       NULL, cmd_stop,     0, POS_SITTING, POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
-#ifdef MODULE_SCRIPTS
   // really, we -should- put this in the scripts module, but there are some
   // very nice functions in builder.c that cmd_sclist uses to print scripts,
   // which wouldn't be accessable from outside of builder.c
   add_cmd("sclist",     NULL, cmd_sclist,   0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
-#endif
 
   // T
   add_cmd("take",       NULL, cmd_get,      0, POS_SITTING,  POS_FLYING,
@@ -253,8 +260,6 @@ void init_commands() {
 	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("worn",       NULL, cmd_equipment,0, POS_SITTING,  POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
-  add_cmd("write",      NULL, cmd_write,    0, POS_SITTING, POS_FLYING,
-	  LEVEL_PLAYER, TRUE, TRUE);
 
   // Z
   add_cmd("zlist",      NULL, cmd_zlist,    0, POS_SITTING,  POS_FLYING,
@@ -299,6 +304,13 @@ CMD_DATA *find_cmd(const char *cmd, bool abbrev_ok) {
 }
 
 //
+// return TRUE if the command already exists.
+//
+bool cmd_exists(const char *cmd) {
+  return (find_cmd(cmd, FALSE) != NULL);
+}
+
+//
 // remove (and delete) a command
 //
 void remove_cmd(const char *cmd) {
@@ -335,7 +347,7 @@ void add_cmd(const char *cmd, const char *sort_by,
 
 // show the character all of the commands he or she can perform
 void show_commands(CHAR_DATA *ch, int min_lev, int max_lev) {
-  BUFFER *buf = buffer_new(MAX_BUFFER);
+  BUFFER *buf = newBuffer(MAX_BUFFER);
   int i, col = 0;
 
   // go over all of our buckets
@@ -348,14 +360,14 @@ void show_commands(CHAR_DATA *ch, int min_lev, int max_lev) {
 	continue;
       bprintf(buf, "%-20.20s", cmd->cmd_name);
       if (!(++col % 4))
-	bprintf(buf, "\r\n");      
+	bufferCat(buf, "\r\n");
     }
     deleteListIterator(buck_i);
   }
 
   if (col % 4) bprintf(buf, "\r\n");
-  text_to_char(ch, buf->data);
-  buffer_free(buf);
+  text_to_char(ch, bufferString(buf));
+  deleteBuffer(buf);
 }
 
 
@@ -433,7 +445,7 @@ bool max_pos_ok(CHAR_DATA *ch, int minpos) {
 
 void handle_cmd_input(SOCKET_DATA *dsock, char *arg) {
   CHAR_DATA *ch;
-  if ((ch = dsock->player) == NULL)
+  if ((ch = socketGetChar(dsock)) == NULL)
     return;
   do_cmd(ch, arg, TRUE, TRUE);
 }
@@ -480,10 +492,8 @@ void do_cmd(CHAR_DATA *ch, char *arg, bool scripts_ok, bool aliases_ok)  {
 
   // if we've got a command script, and we're not supposed
   // to follow through with our normal command, return out
-#ifdef MODULE_SCRIPTS
   if(scripts_ok && try_command_script(ch, command, arg))
     return;
-#endif
 
 
   // iterate over the commands that would be in our 

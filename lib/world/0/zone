@@ -5,12 +5,4 @@ pulse_timer: -1
 name       : The null zone
 desc       :~
      This zone has no purpose and should be taken out when the MUD is first 
-auxiliary  :-
-  zone_map_data :-
-    zone_display_map: 0
-    -
-  autopilot_data:-
-    autopilot_on: 0
-    -
-  -
 -

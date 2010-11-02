@@ -16,19 +16,22 @@
 #include "object.h"
 #include "utils.h"
 #include "body.h"
-#include "items.h"
 #include "inform.h"
 
-// optional modules
-#ifdef MODULE_SCRIPTS
-#include "scripts/script.h"
-#endif
 
 
 //*****************************************************************************
-//
+// mandatory modules
+//*****************************************************************************
+#include "scripts/script.h"
+#include "items/items.h"
+#include "items/container.h"
+#include "items/worn.h"
+
+
+
+//*****************************************************************************
 // obj/char from/to functions
-//
 //*****************************************************************************
 void obj_from_char(OBJ_DATA *obj) {
   if(objGetCarrier(obj)) {
@@ -178,7 +181,7 @@ void char_to_furniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
 //
 //*****************************************************************************
 void do_get(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
-  if(objIsBitSet(obj, BITFIELD_OBJ, OBJ_NOTAKE))
+  if(bitIsOneSet(objGetBits(obj), "notake"))
     send_to_char(ch, "You cannot take %s.\r\n", objGetName(obj));
   else if(container) {
     send_to_char(ch, "You get %s from %s.\r\n", 
@@ -199,21 +202,22 @@ void do_get(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
 
 void do_put(CHAR_DATA *ch, OBJ_DATA *obj, OBJ_DATA *container) {
   if(containerIsClosed(container))
-    send_to_char(ch, "%s is closed. Open it first.\r\n", objGetName(container));
+    send_to_char(ch, "%s is closed. Open it first.\r\n", 
+		 see_obj_as(ch, container));
   else if(obj == container)
     send_to_char(ch, "You cannot put %s into itself.\r\n", objGetName(obj));
   // make sure we have enough room
   else if(objGetWeight(obj) > 
-	  (objGetCapacity(container) - 
+	  (containerGetCapacity(container) - 
 	   objGetWeight(container) + objGetWeightRaw(container)))
     send_to_char(ch, "There is not enough room in %s for %s.\r\n", 
-		 objGetName(container), objGetName(obj));
+		 see_obj_as(ch, container), see_obj_as(ch, obj));
   // do the move
   else {
     obj_from_char(obj);
     obj_to_obj(obj, container);
     send_to_char(ch, "You put %s into %s.\r\n", 
-		 objGetName(obj), objGetName(container));
+		 see_obj_as(ch, obj), see_obj_as(ch, container));
     message(ch, NULL, obj, container, TRUE, TO_ROOM | TO_NOTCHAR,
 	    "$n puts $o into $O.");
   }
@@ -230,7 +234,6 @@ void do_give(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
   obj_from_char(obj);
   obj_to_char(obj, recv);
 
-#ifdef MODULE_SCRIPTS  
   // object give
   try_scripts(SCRIPT_TYPE_GIVE,
 	      obj, SCRIPTOR_OBJ,
@@ -240,7 +243,6 @@ void do_give(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
   try_scripts(SCRIPT_TYPE_GIVE,
 	      recv, SCRIPTOR_CHAR,
 	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
-#endif
 }
 
 
@@ -249,7 +251,6 @@ void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
   obj_from_char(obj);
   obj_to_room(obj, charGetRoom(ch));
 
-#ifdef MODULE_SCRIPTS  
   // check for triggers
   try_scripts(SCRIPT_TYPE_DROP,
 	      charGetRoom(ch), SCRIPTOR_ROOM,
@@ -257,12 +258,11 @@ void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
   try_scripts(SCRIPT_TYPE_DROP,
 	      obj, SCRIPTOR_OBJ,
 	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
-#endif
 }
 
 
 void do_wear(CHAR_DATA *ch, OBJ_DATA *obj, const char *where) {
-  if(objGetType(obj) != ITEM_WORN)
+  if(objIsType(obj, "worn"))
     send_to_char(ch, "You cannot wear %s!\r\n", objGetName(obj));
   else {
     obj_from_char(obj);
@@ -294,7 +294,7 @@ void do_remove(CHAR_DATA *ch, OBJ_DATA *obj) {
 //*****************************************************************************
 
 bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *poslist) {
-  if(objGetType(obj) != ITEM_WORN/* && objGetType(obj) != ITEM_WEAPON*/)
+  if(!objIsType(obj, "worn"))
     return FALSE;
 
   bool success       = FALSE;
@@ -306,7 +306,7 @@ bool try_equip(CHAR_DATA *ch, OBJ_DATA *obj, const char *poslist) {
   // see where we _want_ to equip to
   if(poslist && *poslist)
     wanted = list_postypes(charGetBody(ch), poslist);
-  needed = wornGetPositions(objGetSubtype(obj));
+  needed = wornGetPositions(obj);
 
   // just equip to the first free slots
   if(!wanted)
@@ -534,7 +534,7 @@ void *find_on_obj(CHAR_DATA *looker,
     if(count && at_count == 1) {
       if(found_type)
 	*found_type = FOUND_EDESC;
-      return getEdesc(objGetEdescs(on), at);
+      return edescSetGet(objGetEdescs(on), at);
     }
     else
       at_count--;
@@ -870,7 +870,7 @@ void *find_one(CHAR_DATA *looker,
     if(count && at_count == 1) {
       if(found_type)
 	*found_type = FOUND_EDESC;
-      return getEdesc(roomGetEdescs(charGetRoom(looker)), at);
+      return edescSetGet(roomGetEdescs(charGetRoom(looker)), at);
     }
     else
 	at_count--;

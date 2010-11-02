@@ -33,8 +33,12 @@
 #include "character.h"
 #include "action.h"
 
+#ifdef MODULE_FACULTY
+#include "faculty/faculty.h"
+#endif
+
 typedef struct action_data ACTION_DATA;
-HASHMAP *actors = NULL;
+MAP *actors = NULL;
 
 struct action_data {
   void (*  on_complete)(void *ch, void *data, bitvector_t where, char *arg);
@@ -98,6 +102,14 @@ void run_action(void *ch, ACTION_DATA *action) {
 }
 
 
+// used to kill all of a character's actions on death
+void stop_all_actions(CHAR_DATA *ch) {
+#ifdef MODULE_FACULTY
+  interrupt_action(ch, FACULTY_ALL);
+#else
+  interrupt_action(ch, 1);  
+#endif
+}
 
 
 //*****************************************************************************
@@ -107,11 +119,14 @@ void run_action(void *ch, ACTION_DATA *action) {
 //*****************************************************************************
 void init_actions() {
   // use the standard pointer hasher and comparator
-  actors = newHashmap(NULL, NULL, 50);
+  actors = newMap(NULL, NULL, 50);
 
   // add in our example delayed action
   add_cmd("dsay", NULL, cmd_dsay, 0, POS_SITTING, POS_FLYING, 
 	  LEVEL_ADMIN, TRUE, FALSE);
+
+  // make sure the character does not continue actions after being extracted
+  add_extract_mob_func(stop_all_actions);
 }
 
 bool is_acting(void *ch, bitvector_t where) {

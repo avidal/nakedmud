@@ -18,6 +18,7 @@
 #define AUXILIARY_TYPE_ROOM      (1 << 1)
 #define AUXILIARY_TYPE_OBJ       (1 << 2)
 #define AUXILIARY_TYPE_ZONE      (1 << 3)
+#define AUXILIARY_TYPE_SOCKET    (1 << 4)
 
 
 //

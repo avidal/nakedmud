@@ -81,6 +81,32 @@ PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
 //*****************************************************************************
 
 //
+// Send a newline-tagged message to everyone in the room
+//
+static PyObject *
+PyRoom_send(PyRoom *self, PyObject *value) {
+  char *mssg = NULL;
+  if (!PyArg_ParseTuple(value, "s", &mssg)) {
+    PyErr_Format(PyExc_TypeError, 
+                    "Characters may only be sent strings");
+    return NULL;
+  }
+
+  ROOM_DATA *room = worldGetRoom(gameworld, self->vnum);
+  if(room) {
+    send_to_list(roomGetCharacters(room), "%s\r\n", mssg);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+                    "Tried to send message to nonexistant room, %d.", 
+		    self->vnum);
+    return NULL;
+  }
+}
+
+
+//
 // close a door in the specified direction
 //
 static PyObject *
@@ -309,6 +335,8 @@ static PyMethodDef PyRoom_methods[] = {
      "lock a door in the specified direction, closing it if it is open." },
     {"unlock", (PyCFunction)PyRoom_unlock, METH_VARARGS,
      "unlocks the door in the specified direction." },
+    {"send", (PyCFunction)PyRoom_send, METH_VARARGS,
+     "send a message to everyone in the room."},
     {NULL}  /* Sentinel */
 };
 

@@ -20,21 +20,23 @@
 #include "inform.h"
 #include "utils.h"
 #include "races.h"
-#include "items.h"
 #include "dialog.h"
 
-// optional modules
-#ifdef MODULE_SCRIPTS
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
 #include "scripts/script.h"
 #include "scripts/script_set.h"
-#endif
+#include "items/items.h"
+
 
 
 //
 // Try to dig a special exit in a specific direction. Unlike cmd_dig,
 // specdig does not link the room we're digging to, back to us, since
 // we can't really figure out what the opposite direction is
-//
 void try_specdig(CHAR_DATA *ch, const char *dir, room_vnum to) {
   if(roomGetExitSpecial(charGetRoom(ch), dir))
     send_to_char(ch, "You must fill in the %s exit before you dig a new exit.\r\n", dir);
@@ -52,7 +54,6 @@ void try_specdig(CHAR_DATA *ch, const char *dir, room_vnum to) {
 // Try to fill in a special exit in a specific direction. Unlike cmd_dig,
 // specdig does not fill in the exit on the other side, since we can't
 // really figure out what the opposite direction is.
-//
 void try_specfill(CHAR_DATA *ch, const char *dir) {
   if(!roomGetExitSpecial(charGetRoom(ch), dir))
     send_to_char(ch, "There doesn't seem to be an exit in that direction.\r\n");
@@ -193,12 +194,10 @@ COMMAND(cmd_load) {
 	char_to_game(mob);
 	char_to_room(mob, charGetRoom(ch));
 
-#ifdef MODULE_SCRIPTS
 	// check for initialization scripts
 	try_scripts(SCRIPT_TYPE_INIT,
 		    mob, SCRIPTOR_CHAR,
 		    NULL, NULL, charGetRoom(mob), NULL, NULL, 0);
-#endif
       }
     }
 
@@ -212,12 +211,10 @@ COMMAND(cmd_load) {
 	obj_to_game(obj);
 	obj_to_char(obj, ch);
 
-#ifdef MODULE_SCRIPTS
 	// check for initialization scripts
 	try_scripts(SCRIPT_TYPE_INIT,
 		    obj, SCRIPTOR_OBJ,
 		    ch, NULL, charGetRoom(ch), NULL, NULL, 0);
-#endif
       }
     }
   }
@@ -319,25 +316,44 @@ COMMAND(cmd_zreset) {
 }
 
 
+//
+// toggle buildwalking on and off
+//
+COMMAND(cmd_buildwalk) {
+  bitToggle(charGetPrfs(ch), "buildwalk");
+  send_to_char(ch, "Buildwalk %s.\r\n",
+	       (bitIsOneSet(charGetPrfs(ch), "buildwalk") ? "on":"off"));
+}
+
+
 //*****************************************************************************
 //
 // Functions for listing different types of data (zones, mobs, objs, etc...)
 //
 //*****************************************************************************
+const char *charGetListType(CHAR_DATA *ch) {
+  return charGetRace(ch);
+}
+
+const char *roomGetListType(ROOM_DATA *room) {
+  return terrainGetName(roomGetTerrain(room));
+}
+
+const char *scriptGetListType(SCRIPT_DATA *script) {
+  return scriptTypeName(scriptGetType(script));
+}
+
 
 //
 // Generic xxxlist for builders. If the thing to list doesn't have any types
-// (e.g. dialogs) then typer and type_namer can both be NULL
-//
+// (e.g. dialogs) then type_namer can be NULL.
 void do_list(CHAR_DATA *ch, 
-	     void *getter, void *namer, 
-	     void *typer,  void *type_namer, 
-	     const char *datatype, char *arg) {
-  int (* type_func)(void *)              = typer;
-  const char *(* type_naming_func)(int)  = type_namer;
-  const char *(* naming_func)(void *)    = namer;
-  void *(* get_func)(void *, int)        = getter;
-  ZONE_DATA *zone                        = NULL;
+	     void *getter, void *namer, void *type_namer, 
+	     const char *datatype, const char *arg) {
+  const char *(* type_naming_func)(void *)  = type_namer;
+  const char *(* naming_func)(void *)       = namer;
+  void *(* get_func)(void *, int)           = getter;
+  ZONE_DATA *zone                           = NULL;
   
   if(!arg || !*arg)
     zone = worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch)));
@@ -351,44 +367,35 @@ void do_list(CHAR_DATA *ch,
     send_to_char(ch,
 " {wVnum  Name                                                                %s\r\n"
 "{b-------------------------------------------------------------------------------{n\r\n",
-		 ((type_func == NULL || type_naming_func == NULL) ? "" : "Type")
-		 );
+		 (type_naming_func == NULL ? "" : "Type"));
     for(vnum = zoneGetMinBound(zone); vnum <= zoneGetMaxBound(zone); vnum++) {
       void *data = get_func(zone, vnum);
       if(data != NULL)
 	send_to_char(ch, "{y[{c%4d{y] {c%-50s{w%22s{n\r\n", 
 		     vnum, naming_func(data), 
-		     ((type_func == NULL || type_naming_func == NULL) ? "" :
-		      type_naming_func(type_func(data))));
+		     (type_naming_func == NULL ? "" : type_naming_func(data)));
     }
   }
 }
 
-
-#ifdef MODULE_SCRIPTS
 COMMAND(cmd_sclist) {
-  do_list(ch, zoneGetScript, scriptGetName, scriptGetType, scriptTypeName,
-	  "scripts", arg);
+  do_list(ch, zoneGetScript, scriptGetName, scriptGetListType, "scripts", arg);
 }
-#endif
 
 COMMAND(cmd_rlist) {
-  do_list(ch, zoneGetRoom, roomGetName, roomGetTerrain, terrainGetName,
-	  "rooms", arg);
+  do_list(ch, zoneGetRoom, roomGetName, roomGetListType, "rooms", arg);
 }
 
 COMMAND(cmd_mlist) {
-  //  do_list(ch, zoneGetMob, charGetName, charGetRace, raceGetName,
-  //	  "mobs", arg);
+  do_list(ch, zoneGetMob, charGetName, charGetListType, "mobs", arg);
 }
 
 COMMAND(cmd_olist) {
-  do_list(ch, zoneGetObj, objGetName, objGetType, itemGetType,
-	  "objects", arg);
+  do_list(ch, zoneGetObj, objGetName, objGetTypes, "objs", arg);
 }
 
 COMMAND(cmd_dlist) {
-  do_list(ch, zoneGetDialog, dialogGetName, NULL, NULL, "dialogs", arg);
+  do_list(ch, zoneGetDialog, dialogGetName, NULL, "dialogs", arg);
 }
 
 int zone_comparator(ZONE_DATA *zone1, ZONE_DATA *zone2) {

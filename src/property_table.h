@@ -18,6 +18,10 @@
 //
 //*****************************************************************************
 
+typedef struct property_table             PROPERTY_TABLE;
+typedef struct property_table_iterator    PROPERTY_TABLE_ITERATOR;
+
+
 //
 // Create a new property table with the specified number of buckets
 // (more buckets = faster lookup, but more memory). The key function must

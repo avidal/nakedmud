@@ -118,8 +118,7 @@ room_vnum   roomGetVnum        (const ROOM_DATA *room);
 const char *roomGetName        (const ROOM_DATA *room);
 const char *roomGetDesc        (const ROOM_DATA *room);
 int         roomGetTerrain     (const ROOM_DATA *room);
- // used for editing room descs with the text editor
-char      **roomGetDescPtr     (ROOM_DATA *room);
+BUFFER     *roomGetDescBuffer  (const ROOM_DATA *room);
 
 EXIT_DATA  *roomGetExit         (const ROOM_DATA *room, int dir);
 EXIT_DATA  *roomGetExitSpecial  (const ROOM_DATA *room, const char *dir);

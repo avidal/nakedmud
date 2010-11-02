@@ -75,8 +75,8 @@ list:=
   narg: 0
   name: Crowd Cheering
   code:~
-    # When someone gets on stage, the crod starts cheering, adding a
-    # bit of flavor.
+    # Whensomeone gets on stage, the crowd starts cheering, adding a
+    # bit of flavor to this special exit
     ch.send("{yAs you get up on stage, you hear hoots and hollers from below. It looks like the crowd is waiting you to start performing.")
   -
   vnum: 140
@@ -161,6 +161,21 @@ list:=
     
     if obj != None and ch.on == None and obj.vnum == 130:
       me.act("delay 1 say what can I get for you? If you'd like to know what we have on tap, please ask")
+  -
+  vnum: 195
+  type: 1
+  narg: 0
+  name: How to exit a script
+  args: hello
+  code:~
+    # At times, you will want to exit a script prematurely. This example script
+    # Shows you how it is done.
+    
+    # only trigger the script for PCs
+    if ch.is_npc:
+      exit()
+    else:
+      me.act("say Hello, " + ch.name)
   -
   vnum: 196
   type: 1

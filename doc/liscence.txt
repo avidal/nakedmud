@@ -1,8 +1,8 @@
-NakedMud version 0.1 is public domain; it is free to use for any purpose you
-would like to use it for, without restriction from the creator, Geoff Hollis. 
-By using it, or any pieces of the code, you agree to absolve responsibility 
-from the creator, Geoff Hollis, and take full responsibility for anything 
-NakedMud or pieces of the NakedMud code may cause to happen.
+NakedMud version 2.0 is free to use for any purpose you would like to use it 
+for, without restriction from the creator, Geoff Hollis. By using it, or any 
+pieces of the code, you agree to absolve responsibility from the creator, Geoff
+Hollis, and take full responsibility for anything NakedMud or pieces of the 
+NakedMud code may cause to happen.
 
 Since NakedMud was based on SocketMud by Brian Graversen, I ask that you follow
 Brian's requests as per giving credit to Erwin Andreasen for the snippets he

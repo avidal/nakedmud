@@ -19,6 +19,15 @@ socials:=
   min_pos      : standing
   max_pos      : standing
   -
+  cmds         : ponder
+  to_char_notgt: You sink deeply into your thoughts.
+  to_room_notgt: $n sinks deeply into $s thoughts.
+  to_char_tgt  : You ponder the plight of $N.
+  to_vict_tgt  : $n looks to be deep in thought at $e stares at you.
+  to_room_tgt  : $n looks deep in thought as $e stares at $N.
+  min_pos      : sitting
+  max_pos      : flying
+  -
   cmds         : snicker
   to_char_notgt: You snicker softly.
   to_room_notgt: $n snickers softly.

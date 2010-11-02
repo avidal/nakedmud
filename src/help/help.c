@@ -13,6 +13,8 @@
 #include "../character.h"
 #include "../socket.h"
 
+#include "../editor/editor.h"
+
 #include "help.h"
 
 
@@ -329,8 +331,9 @@ COMMAND(cmd_hedit) {
     if(*ptr == '_') *ptr = ' ';
 
   HELP_DATA *data = get_help_data(arg, FALSE);
-  start_notepad(charGetSocket(ch), (data ? data->info : ""), 
-		MAX_BUFFER, EDITOR_MODE_NORMAL);
+
+  socketSetNotepad(charGetSocket(ch), (data ? data->info : ""));
+  socketStartNotepad(charGetSocket(ch));
 }
 
 
@@ -342,8 +345,7 @@ COMMAND(cmd_hupdate) {
     send_to_char(ch, "Which helpfile were you trying to update?\r\n");
     return;
   }
-  if(!charGetSocket(ch) || !charGetSocket(ch)->notepad || 
-     !*charGetSocket(ch)->notepad) {
+  if(!charGetSocket(ch) || !*socketGetNotepad(charGetSocket(ch))) {
     send_to_char(ch, "You have nothing in your notepad! Try writing something.\r\n");
     return;
   }
@@ -354,7 +356,7 @@ COMMAND(cmd_hupdate) {
   for(ptr = arg; *ptr; ptr++)
     if(*ptr == '_') *ptr = ' ';
 
-  update_help(charGetName(ch), arg, charGetSocket(ch)->notepad);
+  update_help(charGetName(ch), arg, socketGetNotepad(charGetSocket(ch)));
 }
 
 

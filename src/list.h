@@ -13,10 +13,13 @@
 //
 //*****************************************************************************
 
+typedef struct list                       LIST;
+typedef struct list_iterator              LIST_ITERATOR;
+
 //
 // Create a new list
 //
-struct list *newList();
+LIST *newList();
 
 
 //
@@ -30,87 +33,87 @@ void deleteList();
 // that is passed in. The function should take one argument, and should be
 // compatible with the type of data in the list
 //
-void deleteListWith(struct list *L, void *func);
+void deleteListWith(LIST *L, void *func);
 
 
 //
 // Add an element to the list
 //
-void listPut(struct list *L, void *elem);
+void listPut(LIST *L, void *elem);
 
 
 //
 // Add an element to the end of the list
 //
-void listQueue(struct list *L, void *elem);
+void listQueue(LIST *L, void *elem);
 
 
 //
 // Return true if the element is in the list. False otherwise
 //
-int listIn(struct list *L, const void *elem);
+int listIn(LIST *L, const void *elem);
 
 
 //
 // Remove all instances of the elem from the list. Return
 // true if successful, and false otherwise.
 //
-int listRemove(struct list *L, const void *elem);
+int listRemove(LIST *L, const void *elem);
 
 
 //
 // Remove the element in the list at the specified place,
 // and return it
 //
-void *listRemoveNum(struct list *L, int num);
+void *listRemoveNum(LIST *L, int num);
 
 
 //
 // remove the first element in the list, and return it
 //
-void *listPop(struct list *L);
+void *listPop(LIST *L);
 
 
 //
 // add the item to the head of the list
 //
-void listPush(struct list *L, void *elem);
+void listPush(LIST *L, void *elem);
 
 
 //
 // How many elements does the list have?
 //
-int listSize(struct list *L);
+int listSize(LIST *L);
 
 //
 // Is the list empty?
 //
-int isListEmpty(struct list *L);
+int isListEmpty(LIST *L);
 
 
 //
 // get the element with the specific number
 //
-void *listGet(struct list *L, int num);
+void *listGet(LIST *L, int num);
 
 
 //
 // Return the head of the list
 //
-void *listHead(struct list *L);
+void *listHead(LIST *L);
 
 
 //
 // Return the tail of the list
 //
-void *listTail(struct list *L);
+void *listTail(LIST *L);
 
 
 //
 // Put the element in the list in an ascending order, based on
 // what the comparator, func, tells us is the order.
 //
-void listPutWith(struct list *L, void *elem, void *func);
+void listPutWith(LIST *L, void *elem, void *func);
 
 
 //
@@ -119,7 +122,7 @@ void listPutWith(struct list *L, void *elem, void *func);
 // only take one argument. cmpto must be the thing we are compared against
 // in func.
 //
-void *listGetWith(struct list *L, const void *cmpto, void *func);
+void *listGetWith(LIST *L, const void *cmpto, void *func);
 
 
 //
@@ -127,7 +130,7 @@ void *listGetWith(struct list *L, const void *cmpto, void *func);
 // TRUE if the item was found and removed. FALSE other wise. Cmpto must
 // be the thing we are compared against in func.
 //
-void *listRemoveWith(struct list *L, const void *cmpto, void *func);
+void *listRemoveWith(LIST *L, const void *cmpto, void *func);
 
 
 //
@@ -135,45 +138,45 @@ void *listRemoveWith(struct list *L, const void *cmpto, void *func);
 // Func takes two arguments, and returns 0 if the two match. -1 is returned
 // if the first is less than the second, and 1 otherwise.
 //
-void listSortWith(struct list *L, void *func);
+void listSortWith(LIST *L, void *func);
 
 
 //
 // Make a copy of the list. func is a function that takes one argument (the
 // data that is in the list) and returns a copy of that data.
 //
-struct list *listCopyWith(struct list *L, void *func);
+LIST *listCopyWith(LIST *L, void *func);
 
 
 //
 // Create an iterator to go over the list
 //
-struct list_iterator *newListIterator(struct list *L);
+LIST_ITERATOR *newListIterator(LIST *L);
 
 
 //
 // Delete the list iterator (but not the contents)
 //
-void deleteListIterator(struct list_iterator *I);
+void deleteListIterator(LIST_ITERATOR *I);
 
 
 //
 // Point the list iterator back at the head of the list
 //
-void listIteratorReset(struct list_iterator *I);
+void listIteratorReset(LIST_ITERATOR *I);
 
 
 //
 // Skip to the next element in the list. Return the next element
 // if one exists, and NULL otherwise.
 //
-void *listIteratorNext(struct list_iterator *I);
+void *listIteratorNext(LIST_ITERATOR *I);
 
 
 //
 // return a pointer to the current list element
 //
-void *listIteratorCurrent(struct list_iterator *I);
+void *listIteratorCurrent(LIST_ITERATOR *I);
 
 
 #endif // __LIST_H

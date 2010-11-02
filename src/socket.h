@@ -1,6 +1,5 @@
-#ifndef __SOCKET_H
-#define __SOCKET_H
-
+#ifndef SOCKET_H
+#define SOCKET_H
 //*****************************************************************************
 //
 // socket.h
@@ -9,51 +8,13 @@
 //
 //*****************************************************************************
 
-
-
-/* I'd be much happier of we hid this datastructure in a
-   separate file at some point */
-struct socket_data
-{
-  CHAR_DATA     * player;
-  char          * hostname;
-  char            inbuf[MAX_INPUT_LEN];
-  char            outbuf[MAX_OUTPUT];
-  char            next_command[MAX_BUFFER];
-  bool            cmd_read;
-  bool            bust_prompt;
-  sh_int          lookup_status;
-  sh_int          state;
-  sh_int          control;
-  sh_int          top_output;
-
-  char          * page_string;   // the string that has been paged to us
-  int             curr_page;     // the current page we're on
-  int             tot_pages;     // the total number of pages the string has
-  
-  bool            in_text_edit;  // are we doing text editing?
-  BUFFER        * text_editor;   // where we do our actual work
-  char         ** text_pointer;  // where the work will go to
-  char          * notepad;       // a buffer for writing messages of any type
-  int             max_text_len;  // the max length we are allowed
-  int             editor_mode;   // what mode are we running the editor under?
-  int             indent;        // how far do we indent (script editing)
-  sh_int          old_state;     // the state we were in before text editing
-
-  unsigned char   compressing;                 /* MCCP support */
-  z_stream      * out_compress;                /* MCCP support */
-  unsigned char * out_compress_buf;            /* MCCP support */
-
-#ifdef MODULE_OLC
-  OLC_DATA      * olc;
-#endif
-};
-
-
 int   init_socket           ( void );
 bool  new_socket            ( int sock );
 void  close_socket          ( SOCKET_DATA *dsock, bool reconnect );
 bool  read_from_socket      ( SOCKET_DATA *dsock );
+void  socket_handler        ( void );
+void  copyover_recover      ( void );
+void  do_copyover           ( CHAR_DATA *ch);
 
 /* sends the output directly */
 bool  text_to_socket        ( SOCKET_DATA *dsock, const char *txt );
@@ -61,7 +22,6 @@ void  send_to_socket        ( SOCKET_DATA *dsock, const char *format, ...) __att
 
 /* buffers the output        */
 void  text_to_buffer        ( SOCKET_DATA *dsock, const char *txt );
-
 void  next_cmd_from_buffer  ( SOCKET_DATA *dsock );
 bool  flush_output          ( SOCKET_DATA *dsock );
 void  handle_new_connections( SOCKET_DATA *dsock, char *arg );
@@ -75,17 +35,26 @@ void *lookup_address        ( void *arg );
 // set and get functions
 //
 //*****************************************************************************
-#ifdef MODULE_OLC
-OLC_DATA  *socketGetOLC      ( SOCKET_DATA *dsock);
-#endif
-sh_int     socketGetState    ( SOCKET_DATA *dsock);
-CHAR_DATA *socketGetChar     ( SOCKET_DATA *dsock);
+sh_int socketGetDNSLookupStatus( SOCKET_DATA *sock);
 
-#ifdef MODULE_OLC
-void       socketSetOLC      ( SOCKET_DATA *dsock, OLC_DATA *olc);
-#endif
-void       socketSetState    ( SOCKET_DATA *dsock, sh_int state);
+CHAR_DATA *socketGetChar     ( SOCKET_DATA *dsock);
 void       socketSetChar     ( SOCKET_DATA *dsock, CHAR_DATA *ch);
 
+void socketPushInputHandler   ( SOCKET_DATA *socket, 
+			        void handler(SOCKET_DATA *socket, char *input),
+				void prompt (SOCKET_DATA *socket));
+void socketReplaceInputHandler( SOCKET_DATA *socket,
+				void handler(SOCKET_DATA *socket, char *input),
+				void prompt (SOCKET_DATA *socket));
+void socketPopInputHandler    ( SOCKET_DATA *socket);
+void (*socketGetInputHandler  ( SOCKET_DATA *socket))(SOCKET_DATA *, char *);
+void socketShowPrompt         ( SOCKET_DATA *sock);
+void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name);
+const char *socketGetHostname ( SOCKET_DATA *sock);
+BUFFER *socketGetTextEditor   ( SOCKET_DATA *sock);
+char **socketGetTextPointer   ( SOCKET_DATA *sock);
+void socketSetTextPointer     ( SOCKET_DATA *sock, char **ptr);
 
-#endif // __SOCKET_H
+void socketBustPrompt         ( SOCKET_DATA *sock);
+
+#endif // SOCKET_H

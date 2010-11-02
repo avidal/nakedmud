@@ -9,8 +9,6 @@
 //*****************************************************************************
 
 
-
-
 //
 // Create a new world from the path. The path is the directory the world
 // data is stored in.
@@ -64,6 +62,8 @@ WORLD_DATA *worldLoad(const char *dirpath);
 //
 void worldPulse(WORLD_DATA *world);
 void worldForceReset(WORLD_DATA *world);
+
+
 
 //*****************************************************************************
 //

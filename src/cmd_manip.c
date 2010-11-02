@@ -13,12 +13,19 @@
 #include "handler.h"
 #include "inform.h"
 #include "character.h"
-#include "items.h"
 #include "exit.h"
 #include "world.h"
 #include "room.h"
 #include "extra_descs.h"
 #include "object.h"
+
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "items/items.h"
+#include "items/container.h"
 
 
 
@@ -67,7 +74,7 @@ COMMAND(cmd_lock) {
   }
 
   else if(found && found_type == FOUND_OBJ) {
-    if(objGetType(found) != ITEM_CONTAINER)
+    if(!objIsType(found, "container"))
       send_to_char(ch, "%s is not a container.\r\n", objGetName(found));
     else if(!containerIsClosed(found))
       send_to_char(ch, "%s must be closed first.\r\n", objGetName(found));
@@ -125,7 +132,7 @@ COMMAND(cmd_unlock) {
   }
 
   else if(found && found_type == FOUND_OBJ) {
-    if(objGetType(found) != ITEM_CONTAINER)
+    if(!objIsType(found, "container"))
       send_to_char(ch, "%s is not a container.\r\n", objGetName(found));
     else if(!containerIsLocked(found))
       send_to_char(ch, "%s is not locked.\r\n", objGetName(found));
@@ -186,7 +193,7 @@ COMMAND(cmd_put) {
   }
 
   // make sure we have a container
-  if(objGetType(cont) != ITEM_CONTAINER) {
+  if(!objIsType(cont, "container")) {
     send_to_char(ch, "%s is not a container.\r\n", objGetName(cont));
     return;
   }
@@ -253,7 +260,7 @@ COMMAND(cmd_open) {
   // open a container
   else if(found && found_type == FOUND_OBJ) {
     // make sure it's a container and it can be opened
-    if(objGetType(found) != ITEM_CONTAINER || !containerIsClosable(found))
+    if(!objIsType(found, "container") || !containerIsClosable(found))
       send_to_char(ch, "But it cannot be opened!\r\n");
     else if(!containerIsClosed(found))
       send_to_char(ch, "It is already opened.\r\n");
@@ -315,7 +322,7 @@ COMMAND(cmd_close) {
   // close a container
   else if(found && found_type == FOUND_OBJ) {
     // make sure it's a container and it can be closed
-    if(objGetType(found) != ITEM_CONTAINER || !containerIsClosable(found))
+    if(!objIsType(found, "container") || !containerIsClosable(found))
       send_to_char(ch, "But it cannot even be closed!\r\n");
     else if(containerIsClosed(found))
       send_to_char(ch, "It is already closed.\r\n");
@@ -361,7 +368,7 @@ COMMAND(cmd_get) {
       send_to_char(ch, "Get what from what?\r\n");
       return;
     }
-    else if(objGetType(cont) != ITEM_CONTAINER) {
+    else if(!objIsType(cont, "container")) {
       send_to_char(ch, "%s is not a container.\r\n", objGetName(cont));
       return;
     }

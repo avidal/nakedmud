@@ -16,13 +16,17 @@
 #include "handler.h"
 #include "inform.h"
 #include "utils.h"
-#include "items.h"
 #include "object.h"
 
-// optional modules
-#ifdef MODULE_SCRIPTS
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
 #include "scripts/script.h"
-#endif
+#include "items/items.h"
+#include "items/furniture.h"
+
 
 
 bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
@@ -114,7 +118,7 @@ bool try_move(CHAR_DATA *ch, int dir, const char *specdir) {
 
   if(exit == NULL || !can_see_exit(ch, exit)) {
     // see if we can buildwalk a new room
-    if(charIsBitSet(ch, BITFIELD_PRFS, PRF_BUILDWALK))
+    if(bitIsOneSet(charGetPrfs(ch), "buildwalk"))
       return try_buildwalk(ch, dir);
     else
       send_to_char(ch, "Alas, there is no exit in that direction.\r\n");
@@ -122,7 +126,6 @@ bool try_move(CHAR_DATA *ch, int dir, const char *specdir) {
   }
 
   else {
-#ifdef MODULE_SCRIPTS
     ROOM_DATA *old_room = charGetRoom(ch);
     bool success = try_exit(ch, exit, dir);
     if(success) {
@@ -132,9 +135,6 @@ bool try_move(CHAR_DATA *ch, int dir, const char *specdir) {
 			   (dir != DIR_NONE ? dirGetName(dir) : specdir));
     }
     return success;
-#else
-    return try_exit(ch, exit, dir);
-#endif
   }
 }
 
@@ -150,55 +150,6 @@ COMMAND(cmd_move) {
   };
 
   try_move(ch, subcmd, NULL);
-};
-
-
-//
-// cmd_enter is used to go through portals
-//   usage: enter [object]
-//
-//   examples:
-//     enter portal         enter the thing called "portal" in your room
-//
-COMMAND(cmd_enter) {
-  if(!arg || !*arg)
-    send_to_char(ch, "What did you want to enter?\r\n");
-  else {
-    int found_type = FOUND_NONE;
-    void *found = generic_find(ch, arg,
-			       FIND_TYPE_OBJ | FIND_TYPE_EXIT,
-			       FIND_SCOPE_IMMEDIATE,
-			       FALSE, &found_type);
-
-    // we're trying to enter a portal
-    if(found && found_type == FOUND_OBJ) {
-      if(objGetType(found) != ITEM_PORTAL)
-	send_to_char(ch, "You can only enter portals.\r\n");
-      else {
-	ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDestination(found));
-	if(!dest)
-	  send_to_char(ch, 
-		       "You go to enter the portal, "
-		       "but dark forces prevent you!\r\n");
-	else {
-	  send_to_char(ch, "You step through %s.\r\n", objGetName(found));
-	  message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-		  "$n steps through $o.");
-	  char_from_room(ch);
-	  char_to_room(ch, dest);
-	  look_at_room(ch, dest);
-	  message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
-		  "$n arrives after travelling through $o.");
-	}
-      }
-    }
-
-    // we're trying to enter an exit
-    else if(found && found_type == FOUND_EXIT)
-      try_exit(ch, found, DIR_NONE);
-    else
-      send_to_char(ch, "What were you trying to enter?\r\n");
-  }
 }
 
 
@@ -235,12 +186,12 @@ bool try_use_furniture(CHAR_DATA *ch, char *arg, int pos) {
   
   if(furniture == NULL)
     send_to_char(ch, "Where did you want to %s?\r\n", posGetActionSelf(pos));
-  else if(objGetType(furniture) != ITEM_FURNITURE)
+  else if(!objIsType(furniture, "furniture"))
     send_to_char(ch, "But that's not furniture!\r\n");
   // make sure we found something we might be able to sit on
   else if(charGetFurniture(ch) == furniture)
     send_to_char(ch, "You're already %s %s.\r\n",
-		 (objGetSubtype(furniture) == FURNITURE_ON ? "on" : "at"),
+		 (furnitureGetType(furniture) == FURNITURE_ON ? "on" : "at"),
 		 objGetName(furniture));
 
   else if(furnitureGetCapacity(furniture) <= listSize(objGetUsers(furniture)))
@@ -260,12 +211,12 @@ bool try_use_furniture(CHAR_DATA *ch, char *arg, int pos) {
     char other_buf[SMALL_BUFFER];
     sprintf(other_buf, "$n %s %s $o.",	
 	    posGetActionOther(pos),
-	    (objGetSubtype(furniture) == FURNITURE_ON ? "on" : "at"));
+	    (furnitureGetType(furniture) == FURNITURE_ON ? "on" : "at"));
     message(ch, NULL, furniture, NULL, TRUE, TO_ROOM | TO_NOTCHAR, other_buf);
 
     send_to_char(ch, "You %s %s %s.\r\n",
 		 posGetActionSelf(pos),
-		 (objGetSubtype(furniture) == FURNITURE_ON ? "on" : "at"),
+		 (furnitureGetType(furniture) == FURNITURE_ON ? "on" : "at"),
 		 objGetName(furniture));
 
     // now sit down on the new thing

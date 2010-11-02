@@ -14,7 +14,6 @@
 #include "mud.h"
 #include "extra_descs.h"
 #include "utils.h"
-#include "items.h"
 #include "body.h"
 #include "handler.h"
 #include "storage.h"
@@ -29,20 +28,16 @@ int next_obj_uid = 1000000;
 
 struct object_data {
   obj_vnum vnum;                 // our number for builders
-  int type, subtype;             // e.g. clothing/shirt
-  int         uid;               // our unique identifier
-  bitvector_t bits;              // bits that have to do with our current state
-  double      weight;            // how much do we weigh, minus contents
-  double      capacity;          // how much weight can we hold?
-
-  int values[NUM_OBJ_VALUES];    // special values used by items.h
+  int      uid;                  // our unique identifier
+  double   weight;               // how much do we weigh, minus contents
   
   char *name;                    // our name - e.g. "a shirt"
   char *keywords;                // words to reference us by
   char *rdesc;                   // our room description
-  char *desc;                    // the description when we are looked at
   char *multi_name;              // our name when more than 1 appears
   char *multi_rdesc;             // our rdesc when more than 1 appears
+  BUFFER *desc;                  // the description when we are looked at
+  BITVECTOR *bits;               // the object bits we have turned on
 
   // only one of these should be set at a time
   OBJ_DATA  *container;          // the thing we are in
@@ -65,18 +60,15 @@ OBJ_DATA *newObj() {
   obj->uid            = next_obj_uid++;
   obj->vnum           = NOTHING;
 
-  obj->type           = ITEM_OTHER;
-  obj->subtype        = 0;
-  obj->bits           = 0;
   obj->weight         = 0.1;
-  obj->capacity       = 0;
 
+  obj->bits           = bitvectorInstanceOf("obj_bits");
   obj->name           = strdup("");
   obj->keywords       = strdup("");
   obj->rdesc          = strdup("");
-  obj->desc           = strdup("");
   obj->multi_name     = strdup("");
   obj->multi_rdesc    = strdup("");
+  obj->desc           = newBuffer(1);
 
   obj->contents       = newList();
   obj->users          = newList();
@@ -98,10 +90,10 @@ void deleteObj(OBJ_DATA *obj) {
   if(obj->name)       free(obj->name);
   if(obj->keywords)   free(obj->keywords);
   if(obj->rdesc)      free(obj->rdesc);
-  if(obj->desc)       free(obj->desc);
+  if(obj->desc)       deleteBuffer(obj->desc);
   if(obj->multi_name) free(obj->multi_name);
   if(obj->multi_rdesc)free(obj->multi_rdesc);
-
+  if(obj->bits)     deleteBitvector(obj->bits);
   if(obj->edescs)   deleteEdescSet(obj->edescs);
   deleteAuxiliaryData(obj->auxiliary_data);
 
@@ -110,25 +102,17 @@ void deleteObj(OBJ_DATA *obj) {
 
 
 OBJ_DATA *objRead(STORAGE_SET *set) {
-  OBJ_DATA *obj = newObj(NOTHING);
+  OBJ_DATA *obj = newObj();
   objSetVnum(obj,               read_int(set, "vnum"));
-  objSetType(obj,               read_int(set, "type"));
-  objSetSubtype(obj,            read_int(set, "subtype"));
-  objSetVal(obj, 0,             read_int(set, "value 0"));
-  objSetVal(obj, 1,             read_int(set, "value 1"));
-  objSetVal(obj, 2,             read_int(set, "value 2"));
-  objSetVal(obj, 3,             read_int(set, "value 3"));
-  objSetVal(obj, 4,             read_int(set, "value 4"));
   objSetWeightRaw(obj,       read_double(set, "weight"));
-  objSetCapacity(obj,        read_double(set, "capacity"));
   objSetName(obj,            read_string(set, "name"));
   objSetKeywords(obj,        read_string(set, "keywords"));
   objSetRdesc(obj,           read_string(set, "rdesc"));
   objSetDesc(obj,            read_string(set, "desc"));
   objSetMultiName(obj,       read_string(set, "multiname"));
   objSetMultiRdesc(obj,      read_string(set, "multirdesc"));
-  obj->bits =     parse_bits(read_string(set, "bits"));
   objSetEdescs(obj,   edescSetRead(read_set(set, "edescs")));
+  bitSet(obj->bits,read_string(set, "obj_bits"));
   deleteAuxiliaryData(obj->auxiliary_data);
   obj->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
 					  AUXILIARY_TYPE_OBJ);
@@ -149,37 +133,23 @@ OBJ_DATA *objRead(STORAGE_SET *set) {
 STORAGE_SET *objStore(OBJ_DATA *obj) {
   STORAGE_SET *set = new_storage_set();
   store_int   (set, "vnum",      obj->vnum);
-  store_int   (set, "type",      obj->type);
-  store_int   (set, "subtype",   obj->subtype);
-  store_int   (set, "value 0",   objGetVal(obj, 0));
-  store_int   (set, "value 1",   objGetVal(obj, 1));
-  store_int   (set, "value 2",   objGetVal(obj, 2));
-  store_int   (set, "value 3",   objGetVal(obj, 3));
-  store_int   (set, "value 4",   objGetVal(obj, 4));
   store_double(set, "weight",    obj->weight);
-  store_double(set, "capacity",  obj->capacity);
   store_string(set, "name",      obj->name);
   store_string(set, "keywords",  obj->keywords);
   store_string(set, "rdesc",     obj->rdesc);
-  store_string(set, "desc",      obj->desc);
+  store_string(set, "desc",      bufferString(obj->desc));
   store_string(set, "multiname", obj->multi_name);
   store_string(set, "multirdesc",obj->multi_rdesc);
-  store_string(set, "bits",      write_bits(obj->bits));
   store_set   (set, "edescs",    edescSetStore(obj->edescs));
+  store_string(set, "obj_bits",  bitvectorGetBits(obj->bits));
   store_set   (set, "auxiliary", auxiliaryDataStore(obj->auxiliary_data));
   store_list  (set, "contents",  gen_store_list(obj->contents, objStore));
+
   return set;
 }
 
 
 void objCopyTo(OBJ_DATA *from, OBJ_DATA *to) {
-  int i;
-  for(i = 0; i < NUM_OBJ_VALUES; i++)
-    objSetVal(to, i, objGetVal(from, i));
-
-  to->bits = from->bits;
-
-  objSetCapacity  (to, objGetCapacity(from));
   objSetWeightRaw (to, objGetWeightRaw(from));
   objSetVnum      (to, objGetVnum(from));
   objSetName      (to, objGetName(from));
@@ -188,19 +158,16 @@ void objCopyTo(OBJ_DATA *from, OBJ_DATA *to) {
   objSetDesc      (to, objGetDesc(from));
   objSetMultiName (to, objGetMultiName(from));
   objSetMultiRdesc(to, objGetMultiRdesc(from));
-  objSetType     (to, objGetType(from));
-  objSetSubtype  (to, objGetSubtype(from));
-  copyEdescSetTo (objGetEdescs(from), objGetEdescs(to));
+  edescSetCopyTo  (objGetEdescs(from), objGetEdescs(to));
+  bitvectorCopyTo (from->bits, to->bits);
   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
 }
-
 
 OBJ_DATA *objCopy(OBJ_DATA *obj) {
   OBJ_DATA *newobj = newObj();
   objCopyTo(obj, newobj);
   return newobj;
 }
-
 
 bool objIsName(OBJ_DATA *obj, const char *name) {
   return is_keyword(obj->keywords, name, TRUE);
@@ -211,10 +178,10 @@ void objAddChar(OBJ_DATA *obj, CHAR_DATA *ch) {
   listPut(obj->users, ch);
 }
 
-
 void objRemoveChar(OBJ_DATA *obj, CHAR_DATA *ch) {
   listRemove(obj->users, ch);
 }
+
 
 
 //*****************************************************************************
@@ -234,18 +201,6 @@ obj_vnum objGetVnum(OBJ_DATA *obj) {
   return obj->vnum;
 }
 
-int objGetVal(OBJ_DATA *obj, int num) {
-  return obj->values[num];
-}
-
-int objGetType(OBJ_DATA *obj) {
-  return obj->type;
-}
-
-int objGetSubtype(OBJ_DATA *obj) {
-  return obj->subtype;
-}
-
 const char *objGetName(OBJ_DATA *obj) {
   return obj->name;
 }
@@ -259,19 +214,19 @@ const char  *objGetRdesc   (OBJ_DATA *obj) {
 }
 
 const char  *objGetDesc    (OBJ_DATA *obj) {
-  return obj->desc;
+  return bufferString(obj->desc);
 }
 
 const char  *objGetMultiName(OBJ_DATA *obj) {
   return obj->multi_name;
 }
 
-const char  *objGetMultiRdesc(OBJ_DATA *obj) {
-  return obj->multi_rdesc;
+BUFFER *objGetDescBuffer(OBJ_DATA *obj) {
+  return obj->desc;
 }
 
-char **objGetDescPtr(OBJ_DATA *obj) {
-  return &(obj->desc);
+const char  *objGetMultiRdesc(OBJ_DATA *obj) {
+  return obj->multi_rdesc;
 }
 
 EDESC_SET *objGetEdescs(OBJ_DATA *obj) {
@@ -279,8 +234,8 @@ EDESC_SET *objGetEdescs(OBJ_DATA *obj) {
 }
 
 const char *objGetEdesc(OBJ_DATA *obj, const char *keyword) {
-  EDESC_DATA *edesc = getEdesc(obj->edescs, keyword);
-  if(edesc) return getEdescDescription(edesc);
+  EDESC_DATA *edesc = edescSetGet(obj->edescs, keyword);
+  if(edesc) return edescSetGetDesc(edesc);
   else return NULL;
 }
 
@@ -304,10 +259,6 @@ int objGetUID(OBJ_DATA *obj) {
   return obj->uid;
 }
 
-double objGetCapacity(OBJ_DATA *obj) {
-  return obj->capacity;
-}
-
 double objGetWeightRaw(OBJ_DATA *obj) {
   return obj->weight;
 }
@@ -325,29 +276,16 @@ double objGetWeight(OBJ_DATA *obj) {
   return tot_weight;
 }
 
+BITVECTOR *objGetBits(OBJ_DATA *obj) {
+  return obj->bits;
+}
+
 void *objGetAuxiliaryData(const OBJ_DATA *obj, const char *name) {
   return hashGet(obj->auxiliary_data, name);
 }
 
 void objSetVnum(OBJ_DATA *obj, obj_vnum vnum) {
   obj->vnum = vnum;
-}
-
-void objSetVal(OBJ_DATA *obj, int num, int val) {
-  obj->values[num] = val;
-}
-
-void objSetType(OBJ_DATA *obj, int type) {
-  obj->type = type;
-}
-
-void objSetSubtype(OBJ_DATA *obj, int subtype) {
-  obj->subtype = subtype;
-}
-
-void objSetName(OBJ_DATA *obj, const char *name) {
-  if(obj->name) free(obj->name);
-  obj->name = strdup(name ? name : "");
 }
 
 void objSetKeywords(OBJ_DATA *obj, const char *keywords) {
@@ -360,9 +298,14 @@ void objSetRdesc(OBJ_DATA *obj, const char *rdesc) {
   obj->rdesc = strdup(rdesc ? rdesc : "");
 }
 
+void objSetName(OBJ_DATA *obj, const char *name) {
+  if(obj->name) free(obj->name);
+  obj->name = strdup(name ? name : "");
+}
+
 void objSetDesc(OBJ_DATA *obj, const char *desc) {
-  if(obj->desc) free(obj->desc);
-  obj->desc = strdup(desc ? desc : "");
+  bufferClear(obj->desc);
+  bufferCat(obj->desc, (desc ? desc : ""));
 }
 
 void objSetMultiName(OBJ_DATA *obj, const char *multi_name) {
@@ -396,56 +339,6 @@ void objSetRoom(OBJ_DATA *obj, ROOM_DATA *room) {
   obj->room = room;
 }
 
-void objSetCapacity(OBJ_DATA *obj, double capacity) {
-  obj->capacity = capacity;
-}
-
 void objSetWeightRaw(OBJ_DATA *obj, double weight) {
   obj->weight = weight;
-}
-
-
-
-//*****************************************************************************
-//
-// object bits
-//
-//*****************************************************************************
-
-const char *obj_bits[NUM_OBJ_BITS] = {
-  "notake"
-};
-
-const char  *objBitGetName    (int field, int bit) {
-  if(field == BITFIELD_OBJ)
-    return obj_bits[bit];
-  return NULL;
-}
-
-void         objSetBit       ( OBJ_DATA *obj, int field, int bit) {
-  if(field == BITFIELD_OBJ)
-    SET_BIT(obj->bits, (1 << bit));
-}
-
-void         objRemoveBit    ( OBJ_DATA *obj, int field, int bit) {
-  if(field == BITFIELD_OBJ)
-    REMOVE_BIT(obj->bits, (1 << bit));
-}
-
-void         objToggleBit    ( OBJ_DATA *obj, int field, int bit) {
-  if(field == BITFIELD_OBJ)
-    TOGGLE_BIT(obj->bits, (1 << bit));
-}
-
-bool         objIsBitSet     ( OBJ_DATA *obj, int field, int bit) {
-  if(field == BITFIELD_OBJ && IS_SET(obj->bits, (1 << bit)))
-    return TRUE;
-  return FALSE;
-}
-
-void         objPrintBits   ( OBJ_DATA *obj, int field, char *buf) {
-  if(field == BITFIELD_OBJ)
-    print_bits(obj->bits, obj_bits, buf);
-  else
-    *buf = '\0';
 }

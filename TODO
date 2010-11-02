@@ -1,32 +1,41 @@
 GEOFF'S TO DO LIST
++-- CONSIDERATIONS FOR THE FUTURE
+  * vnums: do we even need them? Objects and NPCs: inheritance, like OOP?
+
 +-- KNOWN BUGS
   * moving via tracking will not trigger enter/exit scripts
 
-
 +-- NOT COMPLETE
-  * spellchecking in the text editor
-  * Redo OLC so that if a module uses OLC, it can add the relevant functions
-    from its own module.
-  * Devise something to replace bitvectors that is a bit more amenable to
-    keeping things modular.
-  * condense normal and special exits in rooms
-  * soft-code chat channels
-  * random dungeon generator
-  * mounts and vehicles
-  * being able to stream music would be cool...
-  * clean up and document resedit in the olc module
-  * shops (for mobiles and players)
-  * customized prompts
-  * DOCUMENT DOCUMENT DOCUMENT!! Most of the major headers need full
-    documentation still.
-  * character positions and changing of positions is a bit of a hack.
-    it could really do with some cleaning up. Move their defines to mud.h
-    too, so that modules wanting to add new commands don't need to include
-    character.h
-  * Mysty's Dialog
-    * Betta
-    * Oren
+ +-- HIGH PRIORITY
+   * bedit -> bitvector edit
+   * create an insert function for the script editor that kills carraige returns
+   * redo sets to be in a tree form rather than a table form
+   * redo hashtables so that they will auto-enlarge themselves
+   * Rewrite the character creation input handling stuff; it's kludgy
+   * character positions and changing of positions is a bit of a hack.
+     it could really do with some cleaning up. Move their defines to mud.h
+     too, so that modules wanting to add new commands don't need to include
+     character.h
+   * condense normal and special exits in rooms
+   * clean up everything related to sockets... the entire socket.c file is a
+     mess. Emphasis on the MCCP stuff (put it in its own file), and the text
+     editing stuff (it's a hack...).
 
+ +-- LOW PRIORITY
+   * Mysty's Dialog
+     * Betta
+     * Oren
+   * make tracking use BFS instead of DFS
+   * Bulletin board/forum system
+   * soft-code chat channels
+   * spellchecking in the text editor
+   * mounts and vehicles
+   * shops (for mobiles and players)
+   * customized prompts
+   * DOCUMENT DOCUMENT DOCUMENT!! Most of the major headers need full
+     documentation still.
+   * random dungeon generator
+   * being able to stream music would be cool...
 
 +-- NEEDS EXTRA WORK
   * write helpfiles, create a better helpfile system, and do hedit
@@ -36,6 +45,4 @@ GEOFF'S TO DO LIST
   * debug dialogs. Also have a new addition, STORY for temporally extended
     responses
 
-
 +-- NEEDS DEBUGGING
-  * text editor

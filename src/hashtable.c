@@ -8,24 +8,25 @@
 //*****************************************************************************
 
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 #include "list.h"
 #include "hashtable.h"
 
 struct hashtable_iterator {
   int curr_bucket;
-  struct hashtable *table;
-  struct list_iterator *bucket_i;
+  HASHTABLE *table;
+  LIST_ITERATOR *bucket_i;
 };
 
-struct hashtable_entry {
+typedef struct hashtable_entry {
   char *key;
   void *val;
-};
+} HASH_ENTRY;
 
 struct hashtable {
   int num_buckets;
-  struct list **buckets;
+  LIST **buckets;
 };
 
 
@@ -38,7 +39,7 @@ int hash(const char *key) {
 
   for (i = 0; i < len; i++) {
     base *= BASE;
-    hvalue += key[i] * base;
+    hvalue += tolower(key[i]) * base;
   }
 
   return (hvalue < 0 ? hvalue * -1 : hvalue);
@@ -48,17 +49,17 @@ int hash(const char *key) {
 //
 // an internal form of hashGet that returns the entire entry (key and val)
 //
-struct hashtable_entry *hashGetEntry(struct hashtable *table, const char *key){
+HASH_ENTRY *hashGetEntry(HASHTABLE *table, const char *key){
   int bucket = hash(key) % table->num_buckets;
 
   if(table->buckets[bucket] == NULL)
     return NULL;
   else {
-    struct list_iterator *list_i = newListIterator(table->buckets[bucket]);
-    struct hashtable_entry *elem = NULL;
+    LIST_ITERATOR *list_i = newListIterator(table->buckets[bucket]);
+    HASH_ENTRY *elem = NULL;
 
     for(;(elem = listIteratorCurrent(list_i)) != NULL; listIteratorNext(list_i))
-      if(!strcmp(key, elem->key))
+      if(!strcasecmp(key, elem->key))
 	break;
     deleteListIterator(list_i);
 
@@ -66,14 +67,14 @@ struct hashtable_entry *hashGetEntry(struct hashtable *table, const char *key){
   }
 }
 
-struct hashtable_entry *newHashtableEntry(const char *key, void *val) {
-  struct hashtable_entry *entry = malloc(sizeof(struct hashtable_entry));
+HASH_ENTRY *newHashtableEntry(const char *key, void *val) {
+  HASH_ENTRY *entry = malloc(sizeof(HASH_ENTRY));
   entry->key = strdup(key);
   entry->val = val;
   return entry;
 }
 
-void deleteHashtableEntry(struct hashtable_entry *entry) {
+void deleteHashtableEntry(HASH_ENTRY *entry) {
   if(entry->key) free(entry->key);
   free(entry);
 }
@@ -85,22 +86,22 @@ void deleteHashtableEntry(struct hashtable_entry *entry) {
 // documentation in hashtable.h
 //
 //*****************************************************************************
-struct hashtable *newHashtable(int num_buckets) {
+HASHTABLE *newHashtable(int num_buckets) {
   int i;
-  struct hashtable *table = malloc(sizeof(struct hashtable));
+  HASHTABLE *table = malloc(sizeof(HASHTABLE));
   table->num_buckets = num_buckets;
-  table->buckets = malloc(sizeof(struct list *) * num_buckets);
+  table->buckets = malloc(sizeof(LIST *) * num_buckets);
   for(i = 0; i < num_buckets; i++)
     table->buckets[i] = NULL;
   return table;
 }
 
-void  deleteHashtable(struct hashtable *table) {
+void  deleteHashtable(HASHTABLE *table) {
   int i;
   for(i = 0; i < table->num_buckets; i++) {
     if(table->buckets[i]) {
-      struct hashtable_entry *entry = NULL;
-      while((entry=(struct hashtable_entry *)listPop(table->buckets[i])) !=NULL)
+      HASH_ENTRY *entry = NULL;
+      while((entry=(HASH_ENTRY *)listPop(table->buckets[i])) !=NULL)
 	deleteHashtableEntry(entry);
       deleteList(table->buckets[i]);
     }
@@ -110,8 +111,8 @@ void  deleteHashtable(struct hashtable *table) {
   free(table);
 }
 
-int  hashPut    (struct hashtable *table, const char *key, void *val) {
-  struct hashtable_entry *elem = hashGetEntry(table, key);
+int  hashPut    (HASHTABLE *table, const char *key, void *val) {
+  HASH_ENTRY *elem = hashGetEntry(table, key);
 
   // if it's already in, update the value
   if(elem) {
@@ -125,31 +126,31 @@ int  hashPut    (struct hashtable *table, const char *key, void *val) {
     if(table->buckets[bucket] == NULL)
       table->buckets[bucket] = newList();
 
-    struct hashtable_entry *entry = newHashtableEntry(key, val);
+    HASH_ENTRY *entry = newHashtableEntry(key, val);
     listPut(table->buckets[bucket], entry);
     return 1;
   }
 }
 
-void *hashGet    (struct hashtable *table, const char *key) {
-  struct hashtable_entry *elem = hashGetEntry(table, key);
+void *hashGet    (HASHTABLE *table, const char *key) {
+  HASH_ENTRY *elem = hashGetEntry(table, key);
   if(elem != NULL)
     return elem->val;
   else
     return NULL;
 }
 
-void *hashRemove (struct hashtable *table, const char *key) {
+void *hashRemove (HASHTABLE *table, const char *key) {
   int bucket = hash(key) % table->num_buckets;
 
   if(table->buckets[bucket] == NULL)
     return NULL;
   else {
-    struct list_iterator *list_i = newListIterator(table->buckets[bucket]);
-    struct hashtable_entry *elem = NULL;
+    LIST_ITERATOR *list_i = newListIterator(table->buckets[bucket]);
+    HASH_ENTRY *elem = NULL;
 
     for(;(elem = listIteratorCurrent(list_i)) != NULL; listIteratorNext(list_i))
-      if(!strcmp(key, elem->key))
+      if(!strcasecmp(key, elem->key))
 	break;
     deleteListIterator(list_i);
 
@@ -164,11 +165,29 @@ void *hashRemove (struct hashtable *table, const char *key) {
   }
 }
 
-int   hashIn     (struct hashtable *table, const char *key) {
-  return (hashGet(table, key) != NULL);
+int   hashIn     (HASHTABLE *table, const char *key) {
+  int bucket = hash(key) % table->num_buckets;
+
+  if(table->buckets[bucket] == NULL)
+    return 0;
+  else {
+    int found  = 0;
+    LIST_ITERATOR *list_i = newListIterator(table->buckets[bucket]);
+    HASH_ENTRY *elem = NULL;
+
+    for(;(elem = listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i)){
+      if(!strcasecmp(key, elem->key)) {
+	found = 1;
+	break;
+      }
+    }
+    deleteListIterator(list_i);
+
+    return found;
+  }
 }
 
-int   hashSize   (struct hashtable *table) {
+int   hashSize   (HASHTABLE *table) {
   int i;
   int size = 0;
 
@@ -186,8 +205,8 @@ int   hashSize   (struct hashtable *table) {
 // documentation in hashtable.h
 //
 //*****************************************************************************
-struct hashtable_iterator *newHashIterator(struct hashtable *table) {
-  struct hashtable_iterator *I = malloc(sizeof(struct hashtable_iterator));
+HASH_ITERATOR *newHashIterator(HASHTABLE *table) {
+  HASH_ITERATOR *I = malloc(sizeof(HASH_ITERATOR));
   I->table = table;
   I->bucket_i = NULL;
   hashIteratorReset(I);
@@ -195,12 +214,12 @@ struct hashtable_iterator *newHashIterator(struct hashtable *table) {
   return I;
 }
 
-void        deleteHashIterator     (struct hashtable_iterator *I) {
+void        deleteHashIterator     (HASH_ITERATOR *I) {
   if(I->bucket_i) deleteListIterator(I->bucket_i);
   free(I);
 }
 
-void        hashIteratorReset      (struct hashtable_iterator *I) {
+void        hashIteratorReset      (HASH_ITERATOR *I) {
   int i;
 
   if(I->bucket_i) deleteListIterator(I->bucket_i);
@@ -219,7 +238,7 @@ void        hashIteratorReset      (struct hashtable_iterator *I) {
 }
 
 
-void        hashIteratorNext       (struct hashtable_iterator *I) {
+void        hashIteratorNext       (HASH_ITERATOR *I) {
   // no elements in the hashtable
   if(I->bucket_i == NULL) 
     return;
@@ -240,12 +259,11 @@ void        hashIteratorNext       (struct hashtable_iterator *I) {
 }
 
 
-const char *hashIteratorCurrentKey (struct hashtable_iterator *I) {
+const char *hashIteratorCurrentKey (HASH_ITERATOR *I) {
   if(!I->bucket_i) 
     return NULL;
   else {
-    struct hashtable_entry *entry = ((struct hashtable_entry *)
-				     listIteratorCurrent(I->bucket_i));
+    HASH_ENTRY *entry = ((HASH_ENTRY *) listIteratorCurrent(I->bucket_i));
     if(entry)
       return entry->key;
     else
@@ -254,12 +272,11 @@ const char *hashIteratorCurrentKey (struct hashtable_iterator *I) {
 }
 
 
-void       *hashIteratorCurrentVal (struct hashtable_iterator *I) {
+void       *hashIteratorCurrentVal (HASH_ITERATOR *I) {
   if(!I->bucket_i) 
     return NULL;
   else {
-    struct hashtable_entry *entry = ((struct hashtable_entry *)
-				     listIteratorCurrent(I->bucket_i));
+    HASH_ENTRY *entry = ((HASH_ENTRY *) listIteratorCurrent(I->bucket_i));
     if(entry)
       return entry->val;
     else

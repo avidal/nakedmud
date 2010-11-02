@@ -10,6 +10,10 @@
 // script stuff
 #include <Python.h>
 #include <structmember.h>
+#include <compile.h>
+#include <eval.h>
+#include <node.h>
+//PyAPI_FUNC(PyObject *) PyEval_EvalCode(PyCodeObject *, PyObject *, PyObject *);
 
 // mud stuff
 #include "../mud.h"
@@ -27,6 +31,11 @@
 #include "pyroom.h"
 #include "pyobj.h"
 #include "pymud.h"
+
+// online editor stuff
+#include "../editor/editor.h"
+#include "script_editor.h"
+#include "../olc2/olc.h"
 
 
 
@@ -144,7 +153,7 @@ struct script_data {
   char       *name;
   char       *args;
   int      num_arg;
-  char       *code;
+  BUFFER     *code;
 };
 
 const char *script_type_info[NUM_SCRIPTS] = {
@@ -171,27 +180,27 @@ SCRIPT_DATA *newScript() {
   script->num_arg = 0;
   script->name    = strdup("");
   script->args    = strdup("");
-  script->code    = strdup("");
+  script->code    = newBuffer(1);
   return script;
 }
 
 void         deleteScript(SCRIPT_DATA *script) {
   if(script->name) free(script->name);
   if(script->args) free(script->args);
-  if(script->code) free(script->code);
+  if(script->code) deleteBuffer(script->code);
   free(script);
 }
 
 SCRIPT_DATA *scriptRead(STORAGE_SET *set) {
-  SCRIPT_DATA *script = malloc(sizeof(SCRIPT_DATA));
-  script->vnum    = read_int(set, "vnum");
-  script->type    = read_int(set, "type");
-  script->num_arg = read_int(set, "narg");
-  script->name    = strdup(read_string(set, "name"));
-  script->args    = strdup(read_string(set, "args"));
-  script->code    = strdup(read_string(set, "code"));
+  SCRIPT_DATA *script = newScript();
+  scriptSetVnum(script, read_int(set, "vnum"));
+  scriptSetType(script, read_int(set, "type"));
+  scriptSetNumArg(script, read_int(set, "narg"));
+  scriptSetName(script, read_string(set, "name"));
+  scriptSetArgs(script, read_string(set, "args"));
+  scriptSetCode(script, read_string(set, "code"));
   // python chokes on carraige returns. Strip 'em
-  format_script(&script->code, MAX_SCRIPT);
+  bufferReplace(script->code, "\r", "", TRUE);
   return script;
 }
 
@@ -202,7 +211,7 @@ STORAGE_SET *scriptStore(SCRIPT_DATA *script) {
   store_int   (set, "narg", script->num_arg);
   store_string(set, "name", script->name);
   store_string(set, "args", script->args);
-  store_string(set, "code", script->code);
+  store_string(set, "code", bufferString(script->code));
   return set;
 }
 
@@ -216,11 +225,10 @@ SCRIPT_DATA *scriptCopy(SCRIPT_DATA *script) {
 void         scriptCopyTo(SCRIPT_DATA *from, SCRIPT_DATA *to) {
   if(to->name) free(to->name);
   if(to->args) free(to->args);
-  if(to->code) free(to->code);
 
   to->name = strdup(from->name ? from->name : "");
   to->args = strdup(from->args ? from->args : "");
-  to->code = strdup(from->code ? from->code : "");
+  bufferCopyTo(from->code, to->code);
   
   to->vnum    = from->vnum;
   to->type    = from->type;
@@ -248,11 +256,11 @@ const char *scriptGetName(SCRIPT_DATA *script) {
 }
 
 const char *scriptGetCode(SCRIPT_DATA *script) {
-  return script->code;
+  return bufferString(script->code);
 }
 
-char      **scriptGetCodePtr(SCRIPT_DATA *script) {
-  return &(script->code);
+BUFFER *scriptGetCodeBuffer(SCRIPT_DATA *script) {
+  return script->code;
 }
 
 void scriptSetVnum(SCRIPT_DATA *script, script_vnum vnum) {
@@ -278,8 +286,8 @@ void scriptSetName(SCRIPT_DATA *script, const char *name) {
 }
 
 void scriptSetCode(SCRIPT_DATA *script, const char *code) {
-  if(script->code) free(script->code);
-  script->code = strdup(code ? code : "");
+  bufferClear(script->code);
+  bufferCat(script->code, code);
 }
 
 
@@ -295,24 +303,134 @@ void scriptSetCode(SCRIPT_DATA *script, const char *code) {
 // eachother, we could get tossed into an infinite loop. He suggested a
 // check for loop depth before each script is run. If we are deeper than
 // some maximum depth, do not run the script.
-// 
 #define MAX_LOOP_DEPTH   30
 int script_loop_depth   = 0;
 
 
 //
-// Toss a script into Python and let it run
+// Python makes it overly complicated (IMO) to get traceback information when
+// running in C. I spent some time hunting around, and came across a lovely
+// site that provided me with this function for getting a traceback of an error.
+// The site that provided this piece of code to me is located here:
+//   http://stompstompstomp.com/weblog/technical/2004-03-29
+char* getPythonTraceback()
+{
+    // Python equivilant:
+    // import traceback, sys
+    // return "".join(traceback.format_exception(sys.exc_type, 
+    //    sys.exc_value, sys.exc_traceback))
+
+    PyObject *type, *value, *traceback;
+    PyObject *tracebackModule;
+    char *chrRetval;
+
+    PyErr_Fetch(&type, &value, &traceback);
+
+    tracebackModule = PyImport_ImportModule("traceback");
+    if (tracebackModule != NULL)
+    {
+        PyObject *tbList, *emptyString, *strRetval;
+
+        tbList = PyObject_CallMethod(
+            tracebackModule, 
+            "format_exception", 
+            "OOO",
+            type,
+            value == NULL ? Py_None : value,
+            traceback == NULL ? Py_None : traceback);
+
+        emptyString = PyString_FromString("");
+        strRetval = PyObject_CallMethod(emptyString, "join", 
+            "O", tbList);
+
+        chrRetval = strdup(PyString_AsString(strRetval));
+
+        Py_DECREF(tbList);
+        Py_DECREF(emptyString);
+        Py_DECREF(strRetval);
+        Py_DECREF(tracebackModule);
+    }
+    else
+    {
+        chrRetval = strdup("Unable to import traceback module.");
+    }
+
+    Py_DECREF(type);
+    Py_XDECREF(value);
+    Py_XDECREF(traceback);
+
+    return chrRetval;
+}
+
+
 //
-void start_script(char *script) {
-  script_loop_depth++;
-  // we exited with an error! Log it
-  if(script_loop_depth <= MAX_LOOP_DEPTH && PyRun_SimpleString(script) < 0) {
-    // hmmmm... there's gotta be a way we can get 
-    // the termination messages generated from running
-    log_string("script terminated with an error:\r\n"
-	       "%s\r\n", script);
+// Return a new dictionary with all the basic modules imported
+PyObject *newScriptDict() {
+  PyObject* dict = PyDict_New();
+  
+  // Check for __builtins__...
+  if (PyDict_GetItemString(dict, "__builtins__") == NULL) {
+    // Hm... no __builtins__ eh?
+    PyObject* builtinMod = PyImport_ImportModule("__builtin__");
+    if (builtinMod == NULL || 
+	PyDict_SetItemString(dict, "__builtins__", builtinMod) != 0) {
+      Py_DECREF(dict);
+      Py_XDECREF(dict);
+      // error handling
+      return NULL;
+    }
+    Py_DECREF(builtinMod);
   }
-  script_loop_depth--;
+
+  PyObject *sys = PyImport_ImportModule("sys");
+  if(sys != NULL) {
+    PyObject *exit = PyDict_GetItemString(PyModule_GetDict(sys), "exit");
+    if(exit != NULL)
+      PyDict_SetItemString(dict, "exit", exit);
+    Py_DECREF(sys);
+  }
+  
+  // merge all of the mud module contents with our current dict
+  PyObject *mudmod = PyImport_ImportModule("mud");
+  PyDict_Update(dict, PyModule_GetDict(mudmod));
+  Py_DECREF(mudmod);
+  mudmod = PyImport_ImportModule("char");
+  PyDict_Update(dict, PyModule_GetDict(mudmod));
+  Py_DECREF(mudmod);
+  mudmod = PyImport_ImportModule("room");
+  PyDict_Update(dict, PyModule_GetDict(mudmod));
+  Py_DECREF(mudmod);
+  mudmod = PyImport_ImportModule("obj");
+  PyDict_Update(dict, PyModule_GetDict(mudmod));
+  Py_DECREF(mudmod);
+
+  return dict;
+}
+
+
+//
+// Decrement the reference count of the dictionary
+void deleteScriptDict(PyObject *dict) {
+  Py_DECREF(dict);
+}
+
+
+//
+// Toss a script into Python and let it run
+void start_script(PyObject *dict, const char *script) {
+  if(script_loop_depth < MAX_LOOP_DEPTH) {
+    script_loop_depth++;
+    PyObject* compileRetval = PyRun_String(script, Py_file_input, dict, dict);
+    script_loop_depth--;
+    // we threw an error and it wasn't an intentional
+    // system exit error. Now print the backtrace
+    if(compileRetval == NULL && PyErr_Occurred() != PyExc_SystemExit) {
+      char *tb = getPythonTraceback();
+      log_string("script terminated with an error:\r\n%s\r\n"
+		 "\r\nTraceback is:\r\n%s\r\n", script, tb);
+      free(tb);
+    }
+  }
 }
 
 
@@ -334,6 +452,12 @@ void init_scripts() {
 				       newScriptAuxData, deleteScriptAuxData,
 				       scriptAuxDataCopyTo, scriptAuxDataCopy,
 				       scriptAuxDataStore, scriptAuxDataRead));
+
+  extern COMMAND(cmd_scedit); // define the command
+  add_cmd("scedit", NULL, cmd_scedit, 0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_SCRIPTER, FALSE, TRUE);
+
+  init_script_editor();
 }
 
 
@@ -345,44 +469,54 @@ void finalize_scripts() {
 void run_script(const char *script, void *me, int me_type,
 		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room, 
 		const char *cmd, const char *arg, int narg) {
-  static char buf[MAX_SCRIPT];
-  *buf = '\0';
-  int i = 0;
+  PyObject *dict = newScriptDict();
+  // now, import all of our command and argument variables
+  if(cmd) {
+    PyObject *pycmd = PyString_FromString(cmd);
+    PyDict_SetItemString(dict, "cmd", pycmd);
+    Py_DECREF(pycmd);
+  }
+  if(arg) {
+    PyObject *pyarg = PyString_FromString(arg);
+    PyDict_SetItemString(dict, "arg", pyarg);
+    Py_DECREF(pyarg);
+  }
+  if(TRUE) {
+    PyObject *pynarg = PyInt_FromLong(narg);
+    PyDict_SetItemString(dict, "narg", pynarg);
+    Py_DECREF(pynarg);
+  }
 
-  // cat all of the headers
-  i += snprintf(buf+i, MAX_SCRIPT - i - 1, "from mud import *\n");
-  i += snprintf(buf+i, MAX_SCRIPT - i - 1, "from char import *\n");
-  i += snprintf(buf+i, MAX_SCRIPT - i - 1, "from room import *\n");
-  i += snprintf(buf+i, MAX_SCRIPT - i - 1, "from obj import *\n");
-
-  // print the different variables
-  i += snprintf(buf+i, MAX_SCRIPT - i - 1, "cmd = '%s'\n", (cmd ? cmd : ""));
-  i += snprintf(buf+i, MAX_SCRIPT - i - 1, "arg = '%s'\n", (arg ? arg : ""));
-  i += snprintf(buf+i, MAX_SCRIPT - i - 1, "narg = %d\n", narg);
-
-  // print me
-  if(me_type == SCRIPTOR_CHAR)
-    i += snprintf(buf+i, MAX_SCRIPT - i - 1, "me = Char(%d)\n", charGetUID(me));
-  else if(me_type == SCRIPTOR_OBJ)
-    i += snprintf(buf+i, MAX_SCRIPT - i - 1, "me = Obj(%d)\n", objGetUID(me));
-  else if(me_type == SCRIPTOR_ROOM)
-    i += snprintf(buf+i, MAX_SCRIPT - i - 1, "me = Room(%d)\n",roomGetVnum(me));
-
-  // print all of the other things involved
-  if(ch)
-    i += snprintf(buf+i, MAX_SCRIPT - i - 1, "ch = Char(%d)\n", charGetUID(ch));
-  if(obj)
-    i += snprintf(buf+i, MAX_SCRIPT - i - 1, "obj = Obj(%d)\n", objGetUID(obj));
-  if(room)
-    i += snprintf(buf+i, MAX_SCRIPT - i - 1, "room = Room(%d)\n", roomGetVnum(room));
-  if(exit)
-    ;
-
-  // cat the code
-  i += snprintf(buf+i, MAX_SCRIPT - i - 1, "%s", script);
+  // now import everyone who is involved
+  if(me) {
+    PyObject *pyme = NULL;
+    switch(me_type) {
+    case SCRIPTOR_CHAR:  pyme = newPyChar(me); break;
+    case SCRIPTOR_OBJ:   pyme = newPyObj(me);  break;
+    case SCRIPTOR_ROOM:  pyme = newPyRoom(me); break;
+    }
+    PyDict_SetItemString(dict, "me", pyme);
+    Py_DECREF(pyme);
+  }
+  if(ch) {
+    PyObject *pych = newPyChar(ch);
+    PyDict_SetItemString(dict, "ch", pych);
+    Py_DECREF(pych);
+  }
+  if(room) {
+    PyObject *pyroom = newPyRoom(room);
+    PyDict_SetItemString(dict, "room", pyroom);
+    Py_DECREF(pyroom);
+  }    
+  if(obj) {
+    PyObject *pyobj = newPyObj(obj);
+    PyDict_SetItemString(dict, "obj", pyobj);
+    Py_DECREF(pyobj);
+  }    
 
   // start the script
-  start_script(buf);
+  start_script(dict, script);
+  deleteScriptDict(dict);
 }
 
 

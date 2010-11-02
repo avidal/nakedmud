@@ -1,0 +1,242 @@
+//*****************************************************************************
+//
+// worn.c
+//
+// handles all of the functioning of wearable items. Perhaps this could
+// eventually be extended to include armors? I think, perhaps, one of the 
+// weirdest things about (most) DIKUs is that worn items and armors are two
+// different item types; really, wearable items are just armors that provide
+// no armor class. Fusing the two item types into one might be a much more
+// fruitful route to take. Or perhaps another route would be to just make 
+// another item type called "armor" that only functions if the item is also of
+// type "worn"; it calculates armor class/protection/whatnot based on the type
+// of worn item the item is.
+//
+// that said, I'm not going to do it. Well, not for NakedMud anyways; I don't
+// want to burden other developers with my conception of what a good way to do
+// armor class is. Therefore, if you agree with me, I leave the exercise up to
+// you :)
+//
+//*****************************************************************************
+
+#include "../mud.h"
+#include "../utils.h"
+#include "../storage.h"
+#include "../character.h"
+#include "../socket.h"
+#include "../room.h"
+#include "../world.h"
+#include "../inform.h"
+#include "../handler.h"
+
+#include "../olc2/olc.h"
+#include "iedit.h"
+#include "items.h"
+#include "worn.h"
+
+
+
+//*****************************************************************************
+// local functions, variables, datastructures, and defines
+//*****************************************************************************
+
+// how big of a table will we need to hold all of the worn data we might have?
+// optimally, this should be about 120% bigger than the number of worn types
+// that we have.
+#define WORN_TABLE_SIZE     50
+
+HASHTABLE *worn_table = NULL;
+
+typedef struct worn_entry {
+  char *type;
+  char *positions;
+} WORN_ENTRY;  
+
+WORN_ENTRY *newWornEntry(const char *type, const char *positions) {
+  WORN_ENTRY *entry = malloc(sizeof(WORN_ENTRY));
+  entry->type      = strdup(type ? type : "");
+  entry->positions = strdup(positions ? positions : "");
+  return entry;
+}
+
+void deleteWornEntry(WORN_ENTRY *entry) {
+  if(entry->positions) free(entry->positions);
+  if(entry->type)      free(entry->type);
+  free(entry);
+}
+
+const char *wornTypeGetPositions(const char *type) {
+  WORN_ENTRY *entry = hashGet(worn_table, type);
+  return (entry ? entry->positions : "");
+}
+
+
+
+//*****************************************************************************
+// item data for worns
+//*****************************************************************************
+typedef struct worn_data {
+  char *type;
+} WORN_DATA;
+
+WORN_DATA *newWornData() {
+  WORN_DATA *data = malloc(sizeof(WORN_DATA));
+  data->type      = strdup("");
+  return data;
+}
+
+void deleteWornData(WORN_DATA *data) {
+  if(data->type) free(data->type);
+  free(data);
+}
+
+void wornDataCopyTo(WORN_DATA *from, WORN_DATA *to) {
+  if(to->type) free(to->type);
+  to->type = strdup(from->type ? from->type : "");
+}
+
+WORN_DATA *wornDataCopy(WORN_DATA *data) {
+  WORN_DATA *new_data = newWornData();
+  wornDataCopyTo(data, new_data);
+  return new_data;
+}
+
+STORAGE_SET *wornDataStore(WORN_DATA *data) {
+  STORAGE_SET *set = new_storage_set();
+  store_string(set, "type", data->type);
+  return set;
+}
+
+WORN_DATA *wornDataRead(STORAGE_SET *set) {
+  WORN_DATA *data = newWornData();
+  data->type = strdup(read_string(set, "type"));
+  return data;
+}
+
+
+
+//*****************************************************************************
+// functions for interacting with worns
+//*****************************************************************************
+const char *wornGetType(OBJ_DATA *obj) {
+  WORN_DATA *data = objGetTypeData(obj, "worn");
+  return data->type;
+}
+
+const char *wornGetPositions(OBJ_DATA *obj) {
+  WORN_DATA *data = objGetTypeData(obj, "worn");
+  return wornTypeGetPositions(data->type);
+}
+
+void wornSetType(OBJ_DATA *obj, const char *type) {
+  WORN_DATA *data = objGetTypeData(obj, "worn");
+  if(data->type) free(data->type);
+  data->type = strdup(type ? type : "");
+}
+
+
+
+//*****************************************************************************
+// worn olc
+//*****************************************************************************
+#define IEDIT_WORN_TYPE     1
+
+void iedit_worn_show_types(SOCKET_DATA *sock) {
+  // we want to display them all by alphabetical order
+  LIST *types = newList();
+
+  HASH_ITERATOR *hash_i = newHashIterator(worn_table);
+  const char       *key = NULL;
+  WORN_ENTRY       *val = NULL;
+
+  // collect all of the types
+  ITERATE_HASH(key, val, hash_i)
+    listPutWith(types, strdup(key), strcasecmp);
+  deleteHashIterator(hash_i);
+
+  // display all of the types
+  LIST_ITERATOR *type_i = newListIterator(types);
+  int col = 0;
+
+  text_to_buffer(sock, "{wEditable item types:\r\n");
+  ITERATE_LIST(key, type_i) {
+    send_to_socket(sock, "  %-14s%s",
+		   key, ((col != 0 && col % 3 == 0) ? "\r\n": "   "));
+    col++;
+  }
+  deleteListIterator(type_i);
+  deleteListWith(types, free);
+  if(col % 3 != 0) text_to_buffer(sock, "\r\n");
+}
+
+
+//
+// the resedit olc needs these declared
+void iedit_worn_menu   (SOCKET_DATA *sock, WORN_DATA *data) {
+  send_to_socket(sock, 
+		 "{g1) type     : {c%s\r\n"
+		 "{g   equips to: {c%s\r\n",
+		 data->type, wornTypeGetPositions(data->type));
+}
+
+int  iedit_worn_chooser(SOCKET_DATA *sock, WORN_DATA *data, char option) {
+  switch(toupper(option)) {
+  case '1':
+    iedit_worn_show_types(sock);
+    text_to_buffer(sock, "enter choice: ");
+    return IEDIT_WORN_TYPE;
+  default:
+    return MENU_CHOICE_INVALID;
+  }
+}
+
+bool iedit_worn_parser (SOCKET_DATA *sock, WORN_DATA *data, int choice, 
+			  const char *arg) {
+  switch(choice) {
+  case IEDIT_WORN_TYPE:
+    if(!hashIn(worn_table, arg))
+      return FALSE;
+    if(data->type) free(data->type);
+    data->type = strdup(arg);
+    return TRUE;
+  default:
+    return FALSE;
+  }
+}
+
+
+
+//*****************************************************************************
+// install the worn item type
+//*****************************************************************************
+void worn_add_type(const char *type, const char *required_positions) {
+  WORN_ENTRY *entry = NULL;
+
+  // make sure we don't currently have an entry
+  if((entry = hashRemove(worn_table, type)) != NULL)
+    deleteWornEntry(entry);
+  hashPut(worn_table, type, newWornEntry(type, required_positions));
+}
+
+
+//
+// this will need to be called by init_items() in items/items.c
+void init_worn(void) {
+  worn_table = newHashtable(WORN_TABLE_SIZE);
+  item_add_type("worn", 
+		newWornData, deleteWornData,
+		wornDataCopyTo, wornDataCopy, 
+		wornDataStore, wornDataRead);
+
+  // set up the worn OLC too
+  item_add_olc("worn", iedit_worn_menu, iedit_worn_chooser, iedit_worn_parser);
+
+  // add in our basic worn types
+  worn_add_type("shirt",                        "torso");
+  worn_add_type("gloves",       "left hand, right hand");
+  worn_add_type("left glove",               "left hand");
+  worn_add_type("right glove",             "right hand");
+  worn_add_type("earrings",                  "ear, ear");
+  worn_add_type("earring",                        "ear");
+  worn_add_type("ring",                        "finger");
+}

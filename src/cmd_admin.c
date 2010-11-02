@@ -29,6 +29,81 @@ COMMAND(cmd_shutdown) {
 
 
 //
+// Perform a command multiple times
+//
+COMMAND(cmd_repeat) {
+  if(!arg || !*arg) {
+    send_to_char(ch, "What did you want to repeat, and how many times?\r\n");
+    return;
+  }
+
+  // how many times should we repeat?
+  char rep_buf[SMALL_BUFFER];
+  arg = one_arg(arg, rep_buf);
+  int  repeats = atoi(rep_buf);
+
+  // no command to delay
+  if(!*arg)
+    send_to_char(ch, "What command did you want to repeat?\r\n");
+  else if(repeats < 1)
+    send_to_char(ch, "You can only repeat commands a positive amounts of time.\r\n");
+  else {
+    int i;
+    // now, do the repeating
+    for(i = 0; i < repeats; i++)
+      do_cmd(ch, arg, TRUE, TRUE);
+  }
+}
+
+
+//
+// Perform a command at another room or person
+//
+COMMAND(cmd_at) {
+  if(!arg || !*arg) {
+    send_to_char(ch, "Do what where?\r\n");
+    return;
+  }
+
+  // how many times should we repeat?
+  char where[SMALL_BUFFER];
+  arg = one_arg(arg, where);
+
+  // no command to delay
+  if(!*arg)
+    send_to_char(ch, "What were you trying to do, and where?\r\n");
+  else {
+    // first, are we trying to do this at a room vnum?
+    ROOM_DATA *room = NULL;
+
+    // are we looking for a vnum?
+    if(isdigit(*where))
+      room = worldGetRoom(gameworld, atoi(where));
+
+    // no room? Maybe its the name of someone
+    if(room == NULL) {
+      CHAR_DATA *tgt = generic_find(ch, where, FIND_TYPE_CHAR,
+				    FIND_SCOPE_ALL | FIND_SCOPE_VISIBLE,
+				    FALSE, NULL);
+      if(tgt != NULL)
+	room = charGetRoom(tgt);
+    }
+
+    if(room == NULL)
+      send_to_char(ch, "Where were you trying to do that?\r\n");
+    else {
+      ROOM_DATA *old_room = charGetRoom(ch);
+      char_from_room(ch);
+      char_to_room(ch, room);
+      do_cmd(ch, arg, TRUE, TRUE);
+      char_from_room(ch);
+      char_to_room(ch, old_room);
+    }
+  }
+}
+
+
+//
 // Go to a specific room, object, or character in the game. Rooms are referenced
 // by vnum. Everything else is referenced by name.
 //   usage: goto [thing]
@@ -122,53 +197,7 @@ COMMAND(cmd_transfer) {
 // Perform a copyover
 //
 COMMAND(cmd_copyover) { 
-  FILE *fp;
-  SOCKET_DATA *dsock;
-  char buf[100];
-  char control_buf[20];
-  char port_buf[20];
-  LIST_ITERATOR *sock_i = newListIterator(socket_list);
-  
-  if ((fp = fopen(COPYOVER_FILE, "w")) == NULL)
-  {
-    text_to_char(ch, "Copyover file not writeable, aborted.\n\r");
-    return;
-  }
-
-  sprintf(buf, "\n\r <*>            The world starts spinning             <*>\n\r");
-
-  /* For each playing descriptor, save its state */
-  //  for (dsock = dsock_list; dsock ; dsock = dsock_next)
-  ITERATE_LIST(dsock, sock_i) {
-    compressEnd(dsock, dsock->compressing, FALSE);
-    if (dsock->state != STATE_PLAYING) {
-      text_to_socket(dsock, "\r\nSorry, we are rebooting. Come back in a few minutes.\r\n");
-      close_socket(dsock, FALSE);
-    }
-    else {
-      fprintf(fp, "%d %s %s\n",
-	      dsock->control, charGetName(dsock->player), dsock->hostname);
-      /* save the player */
-      save_player(dsock->player);
-      text_to_socket(dsock, buf);
-    }
-  }
-  deleteListIterator(sock_i);
-  
-  fprintf (fp, "-1\n");
-  fclose (fp);
-
-
-  /* close any pending sockets */
-  recycle_sockets();
-  
-  /* exec - descriptors are inherited */
-  sprintf(control_buf, "%d", control);
-  sprintf(port_buf, "%d", mudport);
-  execl(EXE_FILE, "NakedMud", "-copyover", control_buf, port_buf, NULL);
-
-  /* Failed - sucessful exec will not return */
-  text_to_char(ch, "Copyover FAILED!\n\r");
+  do_copyover(ch);
 }
 
 

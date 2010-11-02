@@ -11,14 +11,14 @@
 #include "set.h"
 
 struct set_data {
-  int       num_buckets;
-  struct list **buckets;
+  int    num_buckets;
+  LIST **buckets;
 };
 
 struct set_iterator {
   int                curr_bucket; // the bucket number we're currently on
   struct set_data           *set; // the set we're iterating over
-  struct list_iterator *bucket_i; // the iterator for our current bucket
+  LIST_ITERATOR *bucket_i;        // the iterator for our current bucket
 };
 
 
@@ -43,11 +43,11 @@ int set_elem_bucket(void *elem, int num_buckets) {
 // implementation of set.h
 //
 //*****************************************************************************
-struct set_data *newSet(int num_buckets) {
+SET *newSet(int num_buckets) {
   int i;
 
-  struct set_data *set = malloc(sizeof(struct set_data));
-  set->buckets = malloc(sizeof(struct list *) * num_buckets);
+  SET *set = malloc(sizeof(SET));
+  set->buckets = malloc(sizeof(LIST *) * num_buckets);
 
   // all NULL until they actually get a content
   for(i = 0; i < num_buckets; i++)
@@ -58,7 +58,7 @@ struct set_data *newSet(int num_buckets) {
 };
 
 
-void deleteSet(struct set_data *set) {
+void deleteSet(SET *set) {
   int i;
 
   for(i = 0; i < set->num_buckets; i++)
@@ -70,7 +70,7 @@ void deleteSet(struct set_data *set) {
 };
 
 
-void setPut(struct set_data *set, void *elem) {
+void setPut(SET *set, void *elem) {
   // find out what bucket we belong to
   int hash_bucket = set_elem_bucket(elem, set->num_buckets);
 
@@ -82,7 +82,7 @@ void setPut(struct set_data *set, void *elem) {
 };
 
 
-void setRemove(struct set_data *set, void *elem) {
+void setRemove(SET *set, void *elem) {
   // find out what bucket we belong to
   int hash_bucket = set_elem_bucket(elem, set->num_buckets);
 
@@ -92,7 +92,7 @@ void setRemove(struct set_data *set, void *elem) {
 };
 
 
-int setIn(struct set_data *set, void *elem) {
+int setIn(SET *set, void *elem) {
   // find out what bucket we belong to
   int hash_bucket = set_elem_bucket(elem, set->num_buckets);
 
@@ -111,8 +111,8 @@ int setIn(struct set_data *set, void *elem) {
 // this lets us do so.
 //
 //*****************************************************************************
-struct set_iterator *newSetIterator(struct set_data *S) {
-  struct set_iterator *I = malloc(sizeof(struct set_iterator));
+SET_ITERATOR *newSetIterator(SET *S) {
+  SET_ITERATOR *I = malloc(sizeof(SET_ITERATOR));
 
   I->set = S;
   I->curr_bucket = 0;
@@ -123,13 +123,13 @@ struct set_iterator *newSetIterator(struct set_data *S) {
 }
 
 
-void deleteSetIterator(struct set_iterator *I) {
+void deleteSetIterator(SET_ITERATOR *I) {
   if(I->bucket_i) deleteListIterator(I->bucket_i);
   free(I);
 }
 
 
-void setIteratorReset(struct set_iterator *I) {
+void setIteratorReset(SET_ITERATOR *I) {
   int i;
 
   if(I->bucket_i) 
@@ -151,7 +151,7 @@ void setIteratorReset(struct set_iterator *I) {
 }
 
 
-void *setIteratorNext(struct set_iterator *I) {
+void *setIteratorNext(SET_ITERATOR *I) {
   // we have no iterator ... we have no elements left to iterate over!
   if(I->bucket_i == NULL)
     return NULL;
@@ -186,7 +186,7 @@ void *setIteratorNext(struct set_iterator *I) {
 }
 
 
-void *setIteratorCurrent(struct set_iterator *I) {
+void *setIteratorCurrent(SET_ITERATOR *I) {
   // we have no elements!
   if(I->bucket_i == NULL)
     return NULL;

@@ -19,7 +19,7 @@
 struct exit_data {
   char *name;              // what is the name of our door for descriptions?
   char *keywords;          // what keywords can the door be referenced by?
-  char *description;       // what does a person see when they look at us?
+  BUFFER *desc;            // what does a person see when they look at us?
 
   char *spec_enter;        // the message when we enter from this exit
   char *spec_leave;        // the message when we leave through this exit
@@ -40,43 +40,43 @@ EXIT_DATA *newExit() {
   EXIT_DATA *exit = malloc(sizeof(EXIT_DATA));
   exit->name        = strdup("");
   exit->keywords    = strdup("");
-  exit->description = strdup("");
   exit->spec_enter  = strdup("");
   exit->spec_leave  = strdup("");
-  exit->key    = NOTHING;
-  exit->to     = NOWHERE;
-  exit->hide_lev = 0;
-  exit->pick_lev = 0;
-  exit->status   = 0;
-  exit->closable = FALSE;
+  exit->desc        = newBuffer(1);
+  exit->key         = NOTHING;
+  exit->to          = NOWHERE;
+  exit->hide_lev    = 0;
+  exit->pick_lev    = 0;
+  exit->status      = 0;
+  exit->closable    = FALSE;
   return exit;
 };
 
 
 void deleteExit(EXIT_DATA *exit) {
   if(exit->name)        free(exit->name);
-  if(exit->description) free(exit->description);
   if(exit->spec_enter)  free(exit->spec_enter);
   if(exit->spec_leave)  free(exit->spec_leave);
   if(exit->keywords)    free(exit->keywords);
+  if(exit->desc)        deleteBuffer(exit->desc);
 
   free(exit);
 };
 
 
 void exitCopyTo(const EXIT_DATA *from, EXIT_DATA *to) {
-  exitSetName       (to, exitGetName(from));
-  exitSetKeywords   (to, exitGetKeywords(from));
-  exitSetDescription(to, exitGetDesc(from));
-  exitSetTo         (to, exitGetTo(from));
-  exitSetPickLev    (to, exitGetPickLev(from));
-  exitSetHidden     (to, exitGetHidden(from));
-  exitSetKey        (to, exitGetKey(from));
-  exitSetLocked     (to, exitIsLocked(from));
-  exitSetClosed     (to, exitIsClosed(from));
-  exitSetClosable   (to, exitIsClosable(from));
-  exitSetSpecEnter  (to, exitGetSpecEnter(from));
-  exitSetSpecLeave  (to, exitGetSpecLeave(from));
+  exitSetName     (to, exitGetName(from));
+  exitSetKeywords (to, exitGetKeywords(from));
+  exitSetDesc     (to, exitGetDesc(from));
+  exitSetTo       (to, exitGetTo(from));
+  exitSetPickLev  (to, exitGetPickLev(from));
+  exitSetHidden   (to, exitGetHidden(from));
+  exitSetKey      (to, exitGetKey(from));
+  exitSetLocked   (to, exitIsLocked(from));
+  exitSetClosed   (to, exitIsClosed(from));
+  exitSetClosable (to, exitIsClosable(from));
+  exitSetSpecEnter(to, exitGetSpecEnter(from));
+  exitSetSpecLeave(to, exitGetSpecLeave(from));
 }
 
 
@@ -88,16 +88,16 @@ EXIT_DATA *exitCopy(const EXIT_DATA *exit) {
 
 EXIT_DATA *exitRead(STORAGE_SET *set) {
   EXIT_DATA *exit = newExit();
-  exitSetName(exit,        read_string(set, "name"));
-  exitSetKeywords(exit,    read_string(set, "keywords"));
-  exitSetDescription(exit, read_string(set, "desc"));
-  exitSetSpecEnter(exit,   read_string(set, "enter"));
-  exitSetSpecLeave(exit,   read_string(set, "leave"));
-  exitSetTo(exit,          read_int   (set, "to"));
-  exitSetKey(exit,         read_int   (set, "key"));
-  exitSetHidden(exit,      read_int   (set, "hide_level"));
-  exitSetPickLev(exit,     read_int   (set, "pick_level"));
-  exitSetClosable(exit,    read_int   (set, "closable"));
+  exitSetName(exit,      read_string(set, "name"));
+  exitSetKeywords(exit,  read_string(set, "keywords"));
+  exitSetDesc(exit,      read_string(set, "desc"));
+  exitSetSpecEnter(exit, read_string(set, "enter"));
+  exitSetSpecLeave(exit, read_string(set, "leave"));
+  exitSetTo(exit,        read_int   (set, "to"));
+  exitSetKey(exit,       read_int   (set, "key"));
+  exitSetHidden(exit,    read_int   (set, "hide_level"));
+  exitSetPickLev(exit,   read_int   (set, "pick_level"));
+  exitSetClosable(exit,  read_int   (set, "closable"));
   return exit;
 }
 
@@ -105,7 +105,7 @@ STORAGE_SET *exitStore(EXIT_DATA *exit) {
   STORAGE_SET *set = new_storage_set();
   store_string(set, "name",       exit->name);
   store_string(set, "keywords",   exit->keywords);
-  store_string(set, "desc",       exit->description);
+  store_string(set, "desc",       bufferString(exit->desc));
   store_string(set, "enter",      exit->spec_enter);
   store_string(set, "leave",      exit->spec_leave);
   store_int   (set, "to",         exit->to);
@@ -166,7 +166,7 @@ const char *exitGetKeywords(const EXIT_DATA *exit) {
 };
 
 const char *exitGetDesc(const EXIT_DATA *exit) {
-  return exit->description;
+  return bufferString(exit->desc);
 };
 
 const char *exitGetSpecEnter(const EXIT_DATA *exit) {
@@ -177,9 +177,9 @@ const char *exitGetSpecLeave(const EXIT_DATA *exit) {
   return exit->spec_leave;
 };
 
-char      **exitGetDescPtr(EXIT_DATA *exit) {
-  return &(exit->description);
-};
+BUFFER *exitGetDescBuffer(const EXIT_DATA *exit) {
+  return exit->desc;
+}
 
 void        exitSetClosable(EXIT_DATA *exit, bool closable) {
   exit->closable = (closable != 0);
@@ -223,10 +223,9 @@ void        exitSetKeywords(EXIT_DATA *exit, const char *keywords) {
   else               exit->keywords = strdup("");
 };
 
-void        exitSetDescription(EXIT_DATA *exit, const char *desc) {
-  if(exit->description) free(exit->description);
-  if(desc)              exit->description = strdup(desc);
-  else                  exit->description = strdup("");
+void        exitSetDesc(EXIT_DATA *exit, const char *desc) {
+  bufferClear(exit->desc);
+  bufferCat(exit->desc, (desc ? desc : ""));
 };
 
 void        exitSetSpecEnter(EXIT_DATA *exit, const char *enter) {
