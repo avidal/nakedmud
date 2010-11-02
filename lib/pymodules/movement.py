@@ -70,7 +70,7 @@ def try_change_pos(ch, pos):
         return True
 
 def cmd_sit(ch, cmd, arg):
-    '''attempts to sit'''
+    '''If standing, attempts to sit instead.'''
     try:
         obj, = parse_args(ch, True, cmd, arg, "| [on] obj.room")
     except: return
@@ -83,7 +83,7 @@ def cmd_sit(ch, cmd, arg):
         ch.send("You cannot sit on " + inform.see_obj_as(ch, obj) + ".")
 
 def cmd_sleep(ch, cmd, arg):
-    '''attempts to sleep'''
+    '''If awake, attempts to lay down and sleep.'''
     try:
         obj, = parse_args(ch, True, cmd, arg, "| [on] obj.room")
     except: return
@@ -96,11 +96,11 @@ def cmd_sleep(ch, cmd, arg):
         ch.send("You cannot sleep on " + inform.see_obj_as(ch, obj) + ".")
 
 def cmd_stand(ch, cmd, arg):
-    '''attempts to stand'''
+    '''If sitting, attempts to stand. If flying, attempts to land.'''
     try_change_pos(ch, "standing")
 
 def cmd_wake(ch, cmd, arg):
-    '''attempts to wake up'''
+    '''If sleeping, attempts to wake up and sit.'''
     message(ch,None,None,None,True, "to_char", "You stop sleeping and sit up.")
     message(ch,None,None,None,True, "to_room", "$n stops sleeping and sits up.")
     ch.pos = "sitting"
@@ -182,8 +182,10 @@ def try_move(ch, dir):
     return ex
 
 def cmd_move(ch, cmd, arg):
-    '''cmd_move is the basic entry to all of the movement utilities. See
-       try_move() in movement.py'''
+    '''A basic movement command, relocating you to another room in the
+       specified direction.'''
+    # cmd_move is the basic entry to all of the movement utilities.
+    # See try_move() in movement.py
     try_move_mssg(ch, cmd)
 
 

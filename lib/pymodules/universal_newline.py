@@ -42,8 +42,10 @@ def universal_newline_hook(info):
 ################################################################################
 # initializing and unloading our hooks
 ################################################################################
-hooks.add("process_outbound_text", universal_newline_hook)
+hooks.add("process_outbound_text",   universal_newline_hook)
+hooks.add("process_outbound_prompt", universal_newline_hook)
 
 def __unload__():
-    '''detaches our colour module from the game'''
-    hooks.remove("process_outbound_text", universal_newline_hook)
+    '''detaches our newline module from the game'''
+    hooks.remove("process_outbound_text",   universal_newline_hook)
+    hooks.remove("process_outbound_prompt", universal_newline_hook)

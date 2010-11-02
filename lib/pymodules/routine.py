@@ -166,10 +166,10 @@ def routine_event(owner, data, arg):
 def cmd_routine(ch, cmd, arg):
     '''Appends a routine onto a character. The second argument needs to be an
        evaluable list statement. Put it in parentheses to avoid being cut off
-       as spaces, since parse treats it as a single word
-
-       e.g., routine man "[\'say hi\', (3, \'say I am a little teapot\')]" True
-
+       as spaces, since parse treats it as a single word. Example: 
+    
+         > routine man "[\'say hi\', (3, \'say I am a little teapot\')]" True
+    
        this will say hi after the default delay, and I am a little teapot after
        a delay of 3. It will then loop through this process indefinitely.
        Alternatively, these commands can be replaced with function calls.

@@ -13,14 +13,13 @@ import inform, hooks
 
 
 def cmd_ask(ch, cmd, arg):
-    '''cmd_ask is used to pose a question to another character. Mostly, this is
-       intended to be used to carry on dialogs with NPCs. Ask has a local range
-       (i.e. you can only ask people in the same room as you questions)
-       usage: ask <person> [about] <question>
+    '''Usage: ask <person> [about] <question>
 
-       examples:
-         ask bob about cats           ask bob about the topic, "cats"
-         ask jim can I have a salad?  ask jim if you can have a salad'''
+       This command is used to pose a question to another character. Mostly,
+       this is intended to be used to carry on dialogs with NPCs. Ask has a
+       local range (i.e. you can only ask questions to people in the same room
+       as you.
+       '''
     try:
         tgt, question = parse_args(ch, True, cmd, arg,
                                    "ch.room.noself [about] string")
@@ -36,13 +35,11 @@ def cmd_ask(ch, cmd, arg):
     hooks.run("ask", hooks.build_info("ch ch str", (ch, tgt, question)))
 
 def cmd_tell(ch, cmd, arg):
-    '''cmd_tell sends a message to another character. Primarily intended for
-       player-player communication. Players can tell other players things even
-       if they are not in the same room.
-       usage: tell <person> <mesage>
-       
-       examples:
-         tell luke I am your father'''
+    '''Usage: tell <person> <message>
+
+       This command sends a message to another character. Primarily intended
+       for player-to-player communication. Players can tell other players
+       things even if they are not in the same room.'''
     try:
         tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string")
     except: return
@@ -54,11 +51,10 @@ def cmd_tell(ch, cmd, arg):
             "{rYou tell $N, '" + mssg + "'{n")
 
 def cmd_chat(ch, cmd, arg):
-    '''cmd_chat sends a message to all of the players currently logged on.
-       usage: chat <message>
+    '''Usage: chat <message>
 
-       example:
-         chat hello, world!'''
+       This command will send a message to all players currently logged on.
+       '''
     if arg == '':
         ch.send("Chat what?")
     else:
@@ -69,12 +65,10 @@ def cmd_chat(ch, cmd, arg):
                 "{yyou chat, '" + arg + "'{n")
 
 def cmd_say(ch, cmd, arg):
-    '''cmd_say sends a message to everyone in the same room as you. Say, like
-       ask, can trigger NPC dialogs.
-       usage: say <message>
+    '''Usage: say <message>
 
-       example:
-         say hello, room!'''
+      This command will send a message to everyone in the same room as you. Say,
+      like ask, can trigger NPC dialogs.'''
     if arg == '':
         ch.send("Say what?")
     else:
@@ -88,12 +82,10 @@ def cmd_say(ch, cmd, arg):
         hooks.run("say", hooks.build_info("ch str", (ch, arg)))
 
 def cmd_greet(ch, cmd, arg):
-    '''NPCs with dialogs will often have something to say when you
-       greet/approach then. cmd_greet is a way to get them talking.
-       usage: greet <person>
+    '''Usage: greet <person>
 
-       examples:
-         greet mayor'''
+       NPCs with dialogs will often have something to say when you greet or
+       approach then. Greeting an NPC is a way to get them talking.'''
     try:
         tgt, = parse_args(ch, True, cmd, arg, "ch.room.noself")
     except: return
@@ -106,16 +98,18 @@ def cmd_greet(ch, cmd, arg):
     hooks.run("greet", hooks.build_info("ch ch", (ch, tgt)))
 
 def cmd_emote(ch, cmd, arg):
-    '''Send a special text message to the room you are in. The message is
-       preceded by your name, unless you put a $n somewhere in the text, in
-       which case the $n is replaced by your name.
-       usage: emote <message>
+    '''Usage: emote <text>
 
-       examples:
-         emote does a little dance.
-         emote A gunshot sounds, and $n is laying on the ground, dead.'''
+       Send a special text message to the room you are in. The message is
+       preceded by your name, unless you put a $n somewhere in the text, in
+       which case the $n is replaced by your name. For example:
+
+       > emote A gunshot sounds, and $n is laying on the ground, dead.
+
+       Would show a message to everyone in the room saying that you are dead
+       to a gunshot.'''
     if arg == '':
-        ch.send(ch, "Emote we must, but emote what?")
+        ch.send("Emote we must, but emote what?")
     else:
         # see if a $n is within the argument ... if there is, let the person
         # put his or her name where it's wanted. Otherwise, tag it onto the
@@ -125,9 +119,10 @@ def cmd_emote(ch, cmd, arg):
         message(ch, None, None, None, False, "to_room, to_char", arg)
 
 def cmd_gemote(ch, cmd, arg):
-    '''cmd_gemote is similar to emote, but it sends a global message'''
+    '''Gemote is similar to emote, except that it sends a mud-wide message
+       instead of a room-specific message.'''
     if arg == '':
-        ch.send(ch, "Gemote we must, but gemote what?")
+        ch.send("Gemote we must, but gemote what?")
     else:
         # same as emote, but global
         if arg.find("$n") == -1:
@@ -136,7 +131,12 @@ def cmd_gemote(ch, cmd, arg):
                 "{bGLOBAL:{c " + arg + "{n")
 
 def cmd_page(ch, cmd, arg):
-    '''Send a message to another character, and also make it beep'''
+    '''Usage: page <person> <message>
+
+       Paging a person will send them a message, as well as making a beeping
+       sound on their computer to get their attention. Page can be used on
+       anyone in the mud, regardless if you are in the same room as them or not.
+       '''
     try:
         tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string")
     except: return

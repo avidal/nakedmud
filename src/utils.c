@@ -532,6 +532,21 @@ int next_space_in(const char *string) {
   return -1; // none found
 }
 
+//
+// If we're at the beginning of a new paragraph, return where the new paragraph
+// starts. Otherwise, return our current position (index)
+int is_paragraph_marker(const char *string, int index) {
+  int nl_count = 0;
+  int i = 0;
+  for(i = index; isspace(string[i]); i++) {
+    if(string[i] == '\n')
+      nl_count++;
+  }
+  if(nl_count > 1)
+    return i;
+  else
+    return index;
+}
 
 //
 // just a generic function for hashing a string. This could be 

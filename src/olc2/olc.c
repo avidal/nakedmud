@@ -31,8 +31,8 @@
 //*****************************************************************************
 // optional modules
 //*****************************************************************************
-#ifdef MODULE_HELP
-#include "../help/help.h"
+#ifdef MODULE_HELP2
+#include "../help2/help.h"
 #endif
 
 
@@ -125,7 +125,7 @@ void olc_menu(SOCKET_DATA *sock) {
   if(olc->cmd == MENU_NOCHOICE) {
     text_to_buffer(sock, CLEAR_SCREEN);
     olc->menu(sock, olc->working_copy);
-#ifdef MODULE_HELP
+#ifdef MODULE_HELP2
     text_to_buffer(sock, "\r\n{gEnter choice, ? [topic] for help, or Q to quit: ");
 #else
     text_to_buffer(sock, "\r\n{gEnter choice, or Q to quit: ");
@@ -184,7 +184,7 @@ void olc_handler(SOCKET_DATA *sock, char *arg) {
     // the change went alright. Re-display the menu
     if(olc->parser(sock, olc->working_copy, olc->cmd, arg)) {
       olc->cmd = MENU_NOCHOICE;
-      olc_menu(sock);
+      //olc_menu(sock);
     }
     else
       text_to_buffer(sock, "Invalid choice!\r\nTry again: ");
@@ -220,15 +220,25 @@ void olc_handler(SOCKET_DATA *sock, char *arg) {
       }
       break;
 
-#ifdef MODULE_HELP
+#ifdef MODULE_HELP2
     case '?': {
       while(*arg == '?' || isspace(*arg))
 	arg++;
-      BUFFER *buf = build_help(arg);
-      if(buf == NULL)
-	text_to_buffer(sock, "No help available.\r\nTry again: ");
-      // we've (tried to) switched handlers... no menu display
+      // we have a prompt; don't redisplay our menu
+      HELP_DATA *data = get_help(arg, TRUE);
+      if(data == NULL) {
+	send_to_socket(sock, "No help available.\r\nTry again: ");
+	olc->cmd = MENU_CHOICE_INVALID;
+      }
+      else if(*helpGetUserGroups(data) && socketGetChar(sock) &&
+	      !bitIsOneSet(charGetUserGroups(socketGetChar(sock)),
+			   helpGetUserGroups(data))) {
+	send_to_socket(sock, "You may not view that help file.\r\nTry again: ");
+	olc->cmd = MENU_CHOICE_INVALID;
+      }
       else {
+	// we've (tried to) switched handlers... no menu display
+	BUFFER *buf = build_help(arg);
 	olc->cmd = MENU_NOCHOICE;
 	start_reader(sock, bufferString(buf));
 	deleteBuffer(buf);
@@ -241,7 +251,7 @@ void olc_handler(SOCKET_DATA *sock, char *arg) {
       int cmd = olc->chooser(sock, olc->working_copy, arg);
       // the menu choice we entered wasn't a valid one. redisplay the menu
       if(cmd == MENU_CHOICE_INVALID)
-	olc_menu(sock);
+	;//olc_menu(sock);
       // the menu choice was acceptable. Note this in our data
       else if(cmd > MENU_NOCHOICE)
 	olc->cmd = cmd;
@@ -339,9 +349,9 @@ COMMAND(cmd_purge) {
 	    "$n raises $s arms, and white flames engulf the entire room.");
 
     // purge all the objects. 
-    ITERATE_LIST(obj, list_i)
+    ITERATE_LIST(obj, list_i) {
       extract_obj(obj);
-    deleteListIterator(list_i);
+    } deleteListIterator(list_i);
 
     // and now all of the non-characters
     list_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
@@ -349,8 +359,7 @@ COMMAND(cmd_purge) {
       if(vict == ch || !charIsNPC(vict)) 
 	continue;
       extract_mobile(vict);
-    }
-    deleteListIterator(list_i);
+    } deleteListIterator(list_i);
   }
 
   // purge characters
@@ -592,7 +601,6 @@ void init_olc2() {
 
   add_cmd("dig",     NULL, cmd_dig,     "builder", TRUE);
   add_cmd("fill",    NULL, cmd_fill,    "builder", TRUE);
-  add_cmd("instantiate", NULL, cmd_instantiate, "builder", TRUE);
   add_cmd("purge",   NULL, cmd_purge,   "builder", FALSE);
   add_cmd("load",    NULL, cmd_load,    "builder", FALSE);
   add_cmd("rcopy",   NULL, cmd_instantiate,"builder", TRUE);

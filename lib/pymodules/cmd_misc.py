@@ -12,14 +12,15 @@ import event, mudsys
 
 
 def cmd_stop(ch, cmd, arg):
-    '''stop performing the character\'s current action'''
+    '''If you are currently performing an action (for example, a delayed
+       command), make an attempt to stop performing that action.'''
     if not ch.isActing():
         ch.send("But you're not currently performing an action!\r\n")
     else:
         ch.interrupt()
 
 def cmd_clear(ch, cmd, arg):
-    '''clear the screen'''
+    '''This command will clear your display screen.'''
     ch.send_raw("\033[H\033[J")
 
 def event_delayed_cmd(ch, filler, cmd):
@@ -27,7 +28,15 @@ def event_delayed_cmd(ch, filler, cmd):
     ch.act(cmd, True)
 
 def cmd_delay(ch, cmd, arg):
-    '''Perform a command, but delay its execution by a couple seconds'''
+    '''Usage: delay <seconds> <command>
+
+       Allows the user to prepare a command to be executed in the future. For
+       example:
+
+       > delay 2 say hello, world!
+
+       Will make you say \'hello, world!\' two seconds after entering the
+       delayed command.'''
     try:
         secs, to_delay = parse_args(ch, True, cmd, arg, "double string")
     except: return
@@ -39,16 +48,17 @@ def cmd_delay(ch, cmd, arg):
         event.start_event(ch, secs, event_delayed_cmd, None, to_delay)
 
 def cmd_motd(ch, cmd, arg):
-    '''Displays the MOTD to the character'''
+    '''This command will display to you the mud\'s message of the day.'''
     ch.page(get_motd())
 
 def cmd_save(ch, cmd, arg):
-    '''save the character'''
+    '''Attempt to save your character and all recent changes made to it, to
+       disk. This automatically happens when logging out.'''
     mudsys.do_save(ch)
     ch.send("Saved.")
 
 def cmd_quit(ch, cmd, arg):
-    '''quit the game'''
+    '''Attempts to save and log out of the game.'''
     log_string(ch.name + " has left the game.")
     mudsys.do_save(ch)
     mudsys.do_quit(ch)

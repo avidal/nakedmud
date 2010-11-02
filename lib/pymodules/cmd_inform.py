@@ -17,7 +17,7 @@ import utils
 # utility functions
 ################################################################################
 def cmd_inventory(ch, cmd, arg):
-    '''displays the character inventory to himself'''
+    '''Lists all of the items currently carried in your inventory.'''
     if len(ch.inv) == 0:
         ch.send("You are not carrying anything.")
     else:
@@ -27,12 +27,12 @@ def cmd_inventory(ch, cmd, arg):
 
 
 def cmd_equipment(ch, cmd, arg):
-    '''displays a character\'s equipment to himself'''
+    '''Displays all of the equipment you are currently wearing.'''
     ch.send("You are wearing:")
     show_equipment(ch, ch)
 
 def cmd_who(ch, cmd, arg):
-    '''lists who is all online to the character'''
+    '''List all of the players currently online.'''
     ch.page(build_who())
     
 def cmd_look(ch, cmd, arg):

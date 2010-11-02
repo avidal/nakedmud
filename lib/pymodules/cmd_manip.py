@@ -30,7 +30,20 @@ def do_give(ch, recv, obj):
     hooks.run("give", hooks.build_info("ch ch obj", (ch, recv, obj)))
 
 def cmd_give(ch, cmd, arg):
-    '''the give command'''
+    '''Usage: give <object> [to] <person>
+
+       Attempts to transfer an object from your inventory to the specified
+       person. You can give multiple objects at a time by using the all.
+       prefix. For example:
+
+       > give all.cookie george
+
+       Would give all of the cookies in your inventory to George. If you only
+       want to give him the raisin cookie, which also happens to be the third
+       cookie in your inventory, you can use a numeric prefix instead of
+       the all prefix. For example:
+
+       > give 3.cookie george'''
     try:
         to_give, multi, recv = parse_args(ch, True, cmd, arg,
                                           "[the] obj.inv.multiple " +
@@ -80,14 +93,11 @@ def try_get_from(ch, cont, arg):
                 do_get(ch, obj, cont)
 
 def cmd_get(ch, cmd, arg):
-    '''cmd_get is used to move objects from containers or the room to your
-       inventory.
-       usage: get <object> <from>
+    '''Usage: get [the] <item> [[from] <other item>]
 
-       examples:
-         get sword            get a sword from the room
-         get 2.cupcake bag    get the second cupcake from your bag
-         get all.coin         get all of the coins on the ground'''
+       Attempts to move an object from the room to your inventory. If an
+       addition argument is supplied, the command assumes it is a container and
+       instead tries to move an object from the container to your inventory.'''
     try:
         arg, cont = parse_args(ch, True, cmd, arg,
                                "[the] word | [from] obj.room.inv.eq")
@@ -119,13 +129,9 @@ def do_drop(ch, obj):
     hooks.run("drop", hooks.build_info("ch obj", (ch, obj)))
 
 def cmd_drop(ch, cmd, arg):
-    '''cmd_drop is used to transfer an object in your inventory to the ground
-       usage: drop <item>
-   
-       examples:
-         drop bag          drop a bag you have
-         drop all.bread    drop all of the bread you are carrying
-         drop 2.cupcake    drop the second cupcake in your posession'''
+    '''Usage: drop <item>
+
+       Attempts to move an object from your inventory to the ground.'''
     try:
         found, multi = parse_args(ch, True, cmd, arg, "[the] obj.inv.multiple")
     except: return
@@ -153,13 +159,22 @@ def do_remove(ch, obj):
         hooks.run("remove", hooks.build_info("ch obj", (ch, obj)))
 
 def cmd_remove(ch, cmd, arg):
-    '''cmd_remove is used to unequip items on your body to your inventory
-       usage: remove <item>
+    '''Usage: remove <item | all>
 
-       examples:
-         remove mask             remove the mask you are wearing
-         remove all.ring         remove all the rings you have on
-         remove 2.ring           remove the 2nd ring you have equipped'''
+       Attempts to remove an item you have equipped. If you would like to
+       remove everything you are wearing, you may instead specify \'all\'
+       instead of a specific item. If you would like to remove all of a certain
+       type of object (for instance, rings) you can use an all. prefix. For
+       example:
+
+       > remove all.ring
+
+       This command will remove everything you are wearing with the \'ring\'
+       keyword. If you would instead like to remove, say, the second thing you
+       are wearing with the \'ring\' keyword, you can supply a numeric prefix.
+       For example:
+
+       > remove 2.ring'''
     try:
         found, multi = parse_args(ch, True, cmd, arg, "[the] obj.eq.multiple")
     except: return
@@ -183,15 +198,19 @@ def do_wear(ch, obj, where):
         message(ch, None, obj, None, True, "to_char", "You could not equip $o.")
 
 def cmd_wear(ch, cmd, arg):
-    '''cmd_wear is used to equip wearable items in your inventory to your body
-       usage: wear [object] [where]
+    '''Usage: wear <item> [where]
 
-       examples:
-         wear shirt                            equip a shirt
-         wear all.ring                         wear all of the rings in your 
-                                               inventory
-         wear gloves left hand, right hand     wear the gloves on your left and
-                                               right hands'''
+       Attempts to equip an item from your inventory. If you would like to
+       equip it to a non-default location, you can supply where on your body
+       you would like to wear it. For example, if you would like to equip a
+       torch, but in your offhand instead of your mainhand:
+
+       > wear torch offhand
+
+       If an item covers multiple locations on your body, you can specify where
+       all you would like to equip the item as a comma-separated list:
+
+       > wear gloves left hand, right hand'''
     try:
         found, multi, where = parse_args(ch, True, cmd, arg,
                                          "[the] obj.inv.multiple | [on] string")
@@ -219,15 +238,11 @@ def do_put(ch, obj, cont):
         message(ch, None, obj, cont, True, "to_room", "$n puts $o in $O.")
 
 def cmd_put(ch, cmd, arg):
-    '''put one thing into another. The thing you wish to put must be in
-       your inventory. The container must be in your immediate visible range
-       (room, inventory, body)
+    '''Usage: put [the] <item> [in the] <container>
 
-       usage: put [the] <thing> [in the] <container>
-
-       examples:
-         put coin bag             put a coin into the bag
-         put all.shirt closet     put all of the shirts in the closet'''
+       Attempts to move an object from your inventory into a specified
+       container. The container must be in the room, in your inventory, or
+       worn.'''
     try:
         found, multi, cont = parse_args(ch, True, cmd, arg,
                                         "[the] obj.inv.multiple " +
@@ -291,14 +306,9 @@ def try_manip_other_exit(room, ex, closed, locked):
             ex.dest.send(name + " unlocks from the other side.")
 
 def cmd_lock(ch, cmd, arg):
-    '''try to lock an exit or container. The container can be anything in our
-       immediate visible range (room, inventory, body). do_lock automatically
-       checks if we have the key on us.
+    '''Usage: lock <direction | door | container>
 
-       examples:
-         lock door                lock a door in the room
-         lock south               lock the south exit
-         lock 2.chest             lock the 2nd chest in our visible range'''
+       Attempts to lock a specified door, direction, or container.'''
     try:
         found, type = parse_args(ch, True, cmd, arg,
                                  "[the] {obj.room.inv.eq exit }")
@@ -342,7 +352,9 @@ def cmd_lock(ch, cmd, arg):
             obj.container_is_locked = True
 
 def cmd_unlock(ch, cmd, arg):
-    '''the opposite of lock'''
+    '''Usage: unlock <door | direction | container>
+
+       Attempts to unlock the specified door, direction, or container.'''
     try:
         found, type = parse_args(ch, True,cmd,arg, "[the] {obj.room.inv exit }")
     except: return
@@ -386,16 +398,9 @@ def cmd_unlock(ch, cmd, arg):
             obj.container_is_locked = False
 
 def cmd_open(ch, cmd, arg):
-    '''attempt to open a door or container. The container must be in our
-       immediate visible range (room, inventory, body).
+    '''Usage: open [the] <direction | door | container>
 
-       usage: open [the] <thing>
-
-       examples:
-         open door               open a door
-         open 2.bag              open your second bag
-         open east               open the east exit
-         open backpack on self   open a backpack you are wearing'''
+       Attempts to open the speficied door, direction, or container.'''
     try:
         found, type = parse_args(ch, True,cmd,arg, "[the] {obj.room.inv exit }")
     except: return
@@ -436,14 +441,9 @@ def cmd_open(ch, cmd, arg):
             hooks.run("open_obj", hooks.build_info("ch obj", (ch, obj)))
 
 def cmd_close(ch, cmd, arg):
-    '''cmd_close is used to close containers and exits.
-       usage: open <thing>
+    '''Usage: close <direction | door | container>
 
-       examples:
-         close door               close a door
-         close 2.bag              close your second bag
-         close east               close the east exit
-         close backpack on self   close a backpack you are wearing'''
+       Attempts to close the specified door, direction, or container.'''
     try:
         found, type = parse_args(ch, True,cmd,arg, "[the] {obj.room.inv exit }")
     except: return

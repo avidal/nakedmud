@@ -123,6 +123,7 @@ void center_string        (char *buf, const char *string, int linelen,
 			   int buflen, bool border);
 int next_space_in         (const char *string);
 int next_letter_in        (const char *string, char marker);
+int is_paragraph_marker   (const char *string, int index);
 int string_hash           (const char *key);
 bool endswith             (const char *string, const char *end);
 bool startswith           (const char *string, const char *start);

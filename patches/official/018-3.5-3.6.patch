@@ -1,0 +1,2340 @@
+Binary files ../nakedmudv3.5/lib/pymodules/.DS_Store and lib/pymodules/.DS_Store differ
+diff -ruN ../nakedmudv3.5/lib/pymodules/cmd_admin.py lib/pymodules/cmd_admin.py
+--- ../nakedmudv3.5/lib/pymodules/cmd_admin.py	2007-10-15 19:39:49.000000000 -0400
++++ lib/pymodules/cmd_admin.py	2008-05-31 00:18:11.000000000 -0400
+@@ -12,23 +12,29 @@
+ 
+ 
+ def cmd_shutdown(ch, cmd, arg):
+-    '''boom! shut the mud down'''
++    '''Shuts the mud down.'''
+     mudsys.do_shutdown()
+ 
+ def cmd_shutdown_net(ch, cmd, arg):
+-    '''a trap to make sure we spell shutdown out completely'''
++    '''A trap to make sure we spell shutdown out completely.'''
+     ch.send("You must spell out shutdown completely!")
+ 
+ def cmd_copyover(ch, cmd, arg):
+-    '''restart the mud, but keep all sockets attached'''
++    '''Restarts the mud, and keep all sockets connected.'''
+     mudsys.do_copyover()
+ 
+ def cmd_copyover_net(ch, cmd, arg):
+-    '''a trap to make sure we spell copyover out completely'''
++    '''A trap to make sure we spell copyover out completely.'''
+     ch.send("You must spell out copyover completely!")
+ 
+ def cmd_repeat(ch, cmd, arg):
+-    '''performs the same command multiple times'''
++    '''Usage: repeat <times> <command>
++
++       Attempts to perform a single command multiple times. For example, one
++       may want to load 20 copies of an item:
++
++         > repeat 20 load obj beer@drinks
++       '''
+     try:
+         times, arg = parse_args(ch, True, cmd, arg, "int string")
+     except: return
+@@ -40,7 +46,10 @@
+             ch.act(arg, True)
+ 
+ def cmd_pulserate(ch, cmd, arg):
+-    '''changes the number of pulses the mud experiences each second'''
++    '''Usage: pulserate <pulses>
++    
++      Changes the number of pulses the mud experiences each second. The mud
++      makes one loop through the main game handler each pulse.'''
+     if arg == '':
+         ch.send("The mud currently has "+mudsys.sys_getval("pulses_per_second")+
+                 "pulses per second.")
+@@ -54,8 +63,11 @@
+                     pulserate)
+ 
+ def cmd_lockdown(ch, cmd, arg):
+-    '''Locks the game for anyone not a member of one of the user groups
+-       we specify.'''
++    '''Usage: lockdown [allowed groups | off]
++
++       Locks the game for anyone not a member of one of the user groups
++       specified. No argument will list all the user groups locked out of the
++       mud. The off argument will remove all lockdowns.'''
+     if arg == '':
+         lockdown = mudsys.sys_getval("lockdown")
+         if lockdown == '':
+@@ -85,7 +97,10 @@
+                 extract(ch)
+ 
+ def cmd_at(ch, cmd, arg):
+-    '''Perform a command at another room or person'''
++    '''Usage: at <person | place> <command>
++
++       Perform a command at another room or person while never leaving your
++       current room.'''
+     try:
+         found, type, arg = parse_args(ch, True, cmd, arg,
+                                       "{ room ch.world.noself } string")
+@@ -115,7 +130,9 @@
+         vict.act(cmd, False)
+ 
+ def cmd_force(ch, cmd, arg):
+-    '''force someone to execute a command'''
++    '''Usage: force <person> <action>
++    
++       Attempts to make the specified perform a command of your choosing.'''
+     try:
+         found, multi, arg = parse_args(ch, True, cmd, arg,
+                                        "ch.world.noself.multiple string")
+@@ -128,13 +145,11 @@
+             try_force(ch, vict, arg)
+ 
+ def cmd_goto(ch, cmd, arg):
+-    '''Go to a specific room, object, or character in the game. Rooms are
+-       referenced by vnum. Everything else is referenced by name.
+-       usage: goto <thing>
+-       
+-       examples:
+-         goto room@zone       go to room in zone
+-         goto jim             go to an object/person named jim'''
++    '''Usage: goto <person | place | thing>
++
++       Transfer yourself to a specified room, object, or person in game. Rooms
++       are referenced by their zone key.
++       '''
+     try:
+         found, type = parse_args(ch, True, cmd, arg, "{ room ch.world.noself }")
+     except: return
+@@ -167,9 +182,11 @@
+                 "$n arrives in a puff of smoke.")
+ 
+ def cmd_transfer(ch, cmd, arg):
+-    '''The opposite of goto. Instead of moving to a specified location, it
+-       takes the target to the user.
+-       usage: transfer <player> [[to] room]'''
++    '''Usage: transfer <person> [[to] room]
++
++       The opposite of goto. Instead of moving to a specified location, it
++       takes the target to the user. If an additional argument is supplied,
++       instead transfers the target to the specifie room.'''
+     try:
+         found, multi, dest = parse_args(ch, True, cmd, arg,
+                                         "ch.world.multiple.noself | [to] room")
+@@ -191,14 +208,14 @@
+ ################################################################################
+ # add our commands
+ ################################################################################
+-add_cmd("shutdow",  None, cmd_shutdown_net, "admin", False)
+-add_cmd("shutdown", None, cmd_shutdown,     "admin", False)
+-add_cmd("copyove",  None, cmd_copyover_net, "admin", False)
+-add_cmd("copyover", None, cmd_copyover,     "admin", False)
+-add_cmd("at",       None, cmd_at,           "admin", False)
+-add_cmd("lockdown", None, cmd_lockdown,     "admin", False)
+-add_cmd("pulserate",None, cmd_pulserate,    "admin", False)
+-add_cmd("repeat",   None, cmd_repeat,       "admin", False)
+-add_cmd("force",    None, cmd_force,        "admin", False)
+-add_cmd("goto",     None, cmd_goto,         "admin", False)
+-add_cmd("transfer", None, cmd_transfer,     "admin", False)
++add_cmd("shutdow",  None, cmd_shutdown_net, "admin",   False)
++add_cmd("shutdown", None, cmd_shutdown,     "admin",   False)
++add_cmd("copyove",  None, cmd_copyover_net, "admin",   False)
++add_cmd("copyover", None, cmd_copyover,     "admin",   False)
++add_cmd("at",       None, cmd_at,           "admin",   False)
++add_cmd("lockdown", None, cmd_lockdown,     "admin",   False)
++add_cmd("pulserate",None, cmd_pulserate,    "admin",   False)
++add_cmd("repeat",   None, cmd_repeat,       "admin",   False)
++add_cmd("force",    None, cmd_force,        "admin",   False)
++add_cmd("goto",     None, cmd_goto,         "builder", False)
++add_cmd("transfer", None, cmd_transfer,     "builder", False)
+diff -ruN ../nakedmudv3.5/lib/pymodules/cmd_comm.py lib/pymodules/cmd_comm.py
+--- ../nakedmudv3.5/lib/pymodules/cmd_comm.py	2007-10-15 19:39:49.000000000 -0400
++++ lib/pymodules/cmd_comm.py	2008-05-31 00:18:11.000000000 -0400
+@@ -13,14 +13,13 @@
+ 
+ 
+ def cmd_ask(ch, cmd, arg):
+-    '''cmd_ask is used to pose a question to another character. Mostly, this is
+-       intended to be used to carry on dialogs with NPCs. Ask has a local range
+-       (i.e. you can only ask people in the same room as you questions)
+-       usage: ask <person> [about] <question>
+-
+-       examples:
+-         ask bob about cats           ask bob about the topic, "cats"
+-         ask jim can I have a salad?  ask jim if you can have a salad'''
++    '''Usage: ask <person> [about] <question>
++
++       This command is used to pose a question to another character. Mostly,
++       this is intended to be used to carry on dialogs with NPCs. Ask has a
++       local range (i.e. you can only ask questions to people in the same room
++       as you.
++       '''
+     try:
+         tgt, question = parse_args(ch, True, cmd, arg,
+                                    "ch.room.noself [about] string")
+@@ -36,13 +35,11 @@
+     hooks.run("ask", hooks.build_info("ch ch str", (ch, tgt, question)))
+ 
+ def cmd_tell(ch, cmd, arg):
+-    '''cmd_tell sends a message to another character. Primarily intended for
+-       player-player communication. Players can tell other players things even
+-       if they are not in the same room.
+-       usage: tell <person> <mesage>
+-       
+-       examples:
+-         tell luke I am your father'''
++    '''Usage: tell <person> <message>
++
++       This command sends a message to another character. Primarily intended
++       for player-to-player communication. Players can tell other players
++       things even if they are not in the same room.'''
+     try:
+         tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string")
+     except: return
+@@ -54,11 +51,10 @@
+             "{rYou tell $N, '" + mssg + "'{n")
+ 
+ def cmd_chat(ch, cmd, arg):
+-    '''cmd_chat sends a message to all of the players currently logged on.
+-       usage: chat <message>
++    '''Usage: chat <message>
+ 
+-       example:
+-         chat hello, world!'''
++       This command will send a message to all players currently logged on.
++       '''
+     if arg == '':
+         ch.send("Chat what?")
+     else:
+@@ -69,12 +65,10 @@
+                 "{yyou chat, '" + arg + "'{n")
+ 
+ def cmd_say(ch, cmd, arg):
+-    '''cmd_say sends a message to everyone in the same room as you. Say, like
+-       ask, can trigger NPC dialogs.
+-       usage: say <message>
++    '''Usage: say <message>
+ 
+-       example:
+-         say hello, room!'''
++      This command will send a message to everyone in the same room as you. Say,
++      like ask, can trigger NPC dialogs.'''
+     if arg == '':
+         ch.send("Say what?")
+     else:
+@@ -88,12 +82,10 @@
+         hooks.run("say", hooks.build_info("ch str", (ch, arg)))
+ 
+ def cmd_greet(ch, cmd, arg):
+-    '''NPCs with dialogs will often have something to say when you
+-       greet/approach then. cmd_greet is a way to get them talking.
+-       usage: greet <person>
++    '''Usage: greet <person>
+ 
+-       examples:
+-         greet mayor'''
++       NPCs with dialogs will often have something to say when you greet or
++       approach then. Greeting an NPC is a way to get them talking.'''
+     try:
+         tgt, = parse_args(ch, True, cmd, arg, "ch.room.noself")
+     except: return
+@@ -106,16 +98,18 @@
+     hooks.run("greet", hooks.build_info("ch ch", (ch, tgt)))
+ 
+ def cmd_emote(ch, cmd, arg):
+-    '''Send a special text message to the room you are in. The message is
++    '''Usage: emote <text>
++
++       Send a special text message to the room you are in. The message is
+        preceded by your name, unless you put a $n somewhere in the text, in
+-       which case the $n is replaced by your name.
+-       usage: emote <message>
++       which case the $n is replaced by your name. For example:
+ 
+-       examples:
+-         emote does a little dance.
+-         emote A gunshot sounds, and $n is laying on the ground, dead.'''
++       > emote A gunshot sounds, and $n is laying on the ground, dead.
++
++       Would show a message to everyone in the room saying that you are dead
++       to a gunshot.'''
+     if arg == '':
+-        ch.send(ch, "Emote we must, but emote what?")
++        ch.send("Emote we must, but emote what?")
+     else:
+         # see if a $n is within the argument ... if there is, let the person
+         # put his or her name where it's wanted. Otherwise, tag it onto the
+@@ -125,9 +119,10 @@
+         message(ch, None, None, None, False, "to_room, to_char", arg)
+ 
+ def cmd_gemote(ch, cmd, arg):
+-    '''cmd_gemote is similar to emote, but it sends a global message'''
++    '''Gemote is similar to emote, except that it sends a mud-wide message
++       instead of a room-specific message.'''
+     if arg == '':
+-        ch.send(ch, "Gemote we must, but gemote what?")
++        ch.send("Gemote we must, but gemote what?")
+     else:
+         # same as emote, but global
+         if arg.find("$n") == -1:
+@@ -136,7 +131,12 @@
+                 "{bGLOBAL:{c " + arg + "{n")
+ 
+ def cmd_page(ch, cmd, arg):
+-    '''Send a message to another character, and also make it beep'''
++    '''Usage: page <person> <message>
++
++       Paging a person will send them a message, as well as making a beeping
++       sound on their computer to get their attention. Page can be used on
++       anyone in the mud, regardless if you are in the same room as them or not.
++       '''
+     try:
+         tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string")
+     except: return
+diff -ruN ../nakedmudv3.5/lib/pymodules/cmd_inform.py lib/pymodules/cmd_inform.py
+--- ../nakedmudv3.5/lib/pymodules/cmd_inform.py	2007-10-15 19:39:49.000000000 -0400
++++ lib/pymodules/cmd_inform.py	2008-05-31 00:18:11.000000000 -0400
+@@ -17,7 +17,7 @@
+ # utility functions
+ ################################################################################
+ def cmd_inventory(ch, cmd, arg):
+-    '''displays the character inventory to himself'''
++    '''Lists all of the items currently carried in your inventory.'''
+     if len(ch.inv) == 0:
+         ch.send("You are not carrying anything.")
+     else:
+@@ -27,12 +27,12 @@
+ 
+ 
+ def cmd_equipment(ch, cmd, arg):
+-    '''displays a character\'s equipment to himself'''
++    '''Displays all of the equipment you are currently wearing.'''
+     ch.send("You are wearing:")
+     show_equipment(ch, ch)
+ 
+ def cmd_who(ch, cmd, arg):
+-    '''lists who is all online to the character'''
++    '''List all of the players currently online.'''
+     ch.page(build_who())
+     
+ def cmd_look(ch, cmd, arg):
+diff -ruN ../nakedmudv3.5/lib/pymodules/cmd_manip.py lib/pymodules/cmd_manip.py
+--- ../nakedmudv3.5/lib/pymodules/cmd_manip.py	2007-10-15 19:39:49.000000000 -0400
++++ lib/pymodules/cmd_manip.py	2008-05-31 00:18:11.000000000 -0400
+@@ -30,7 +30,20 @@
+     hooks.run("give", hooks.build_info("ch ch obj", (ch, recv, obj)))
+ 
+ def cmd_give(ch, cmd, arg):
+-    '''the give command'''
++    '''Usage: give <object> [to] <person>
++
++       Attempts to transfer an object from your inventory to the specified
++       person. You can give multiple objects at a time by using the all.
++       prefix. For example:
++
++       > give all.cookie george
++
++       Would give all of the cookies in your inventory to George. If you only
++       want to give him the raisin cookie, which also happens to be the third
++       cookie in your inventory, you can use a numeric prefix instead of
++       the all prefix. For example:
++
++       > give 3.cookie george'''
+     try:
+         to_give, multi, recv = parse_args(ch, True, cmd, arg,
+                                           "[the] obj.inv.multiple " +
+@@ -80,14 +93,11 @@
+                 do_get(ch, obj, cont)
+ 
+ def cmd_get(ch, cmd, arg):
+-    '''cmd_get is used to move objects from containers or the room to your
+-       inventory.
+-       usage: get <object> <from>
+-
+-       examples:
+-         get sword            get a sword from the room
+-         get 2.cupcake bag    get the second cupcake from your bag
+-         get all.coin         get all of the coins on the ground'''
++    '''Usage: get [the] <item> [[from] <other item>]
++
++       Attempts to move an object from the room to your inventory. If an
++       addition argument is supplied, the command assumes it is a container and
++       instead tries to move an object from the container to your inventory.'''
+     try:
+         arg, cont = parse_args(ch, True, cmd, arg,
+                                "[the] word | [from] obj.room.inv.eq")
+@@ -119,13 +129,9 @@
+     hooks.run("drop", hooks.build_info("ch obj", (ch, obj)))
+ 
+ def cmd_drop(ch, cmd, arg):
+-    '''cmd_drop is used to transfer an object in your inventory to the ground
+-       usage: drop <item>
+-   
+-       examples:
+-         drop bag          drop a bag you have
+-         drop all.bread    drop all of the bread you are carrying
+-         drop 2.cupcake    drop the second cupcake in your posession'''
++    '''Usage: drop <item>
++
++       Attempts to move an object from your inventory to the ground.'''
+     try:
+         found, multi = parse_args(ch, True, cmd, arg, "[the] obj.inv.multiple")
+     except: return
+@@ -153,13 +159,22 @@
+         hooks.run("remove", hooks.build_info("ch obj", (ch, obj)))
+ 
+ def cmd_remove(ch, cmd, arg):
+-    '''cmd_remove is used to unequip items on your body to your inventory
+-       usage: remove <item>
++    '''Usage: remove <item | all>
++
++       Attempts to remove an item you have equipped. If you would like to
++       remove everything you are wearing, you may instead specify \'all\'
++       instead of a specific item. If you would like to remove all of a certain
++       type of object (for instance, rings) you can use an all. prefix. For
++       example:
++
++       > remove all.ring
++
++       This command will remove everything you are wearing with the \'ring\'
++       keyword. If you would instead like to remove, say, the second thing you
++       are wearing with the \'ring\' keyword, you can supply a numeric prefix.
++       For example:
+ 
+-       examples:
+-         remove mask             remove the mask you are wearing
+-         remove all.ring         remove all the rings you have on
+-         remove 2.ring           remove the 2nd ring you have equipped'''
++       > remove 2.ring'''
+     try:
+         found, multi = parse_args(ch, True, cmd, arg, "[the] obj.eq.multiple")
+     except: return
+@@ -183,15 +198,19 @@
+         message(ch, None, obj, None, True, "to_char", "You could not equip $o.")
+ 
+ def cmd_wear(ch, cmd, arg):
+-    '''cmd_wear is used to equip wearable items in your inventory to your body
+-       usage: wear [object] [where]
++    '''Usage: wear <item> [where]
+ 
+-       examples:
+-         wear shirt                            equip a shirt
+-         wear all.ring                         wear all of the rings in your 
+-                                               inventory
+-         wear gloves left hand, right hand     wear the gloves on your left and
+-                                               right hands'''
++       Attempts to equip an item from your inventory. If you would like to
++       equip it to a non-default location, you can supply where on your body
++       you would like to wear it. For example, if you would like to equip a
++       torch, but in your offhand instead of your mainhand:
++
++       > wear torch offhand
++
++       If an item covers multiple locations on your body, you can specify where
++       all you would like to equip the item as a comma-separated list:
++
++       > wear gloves left hand, right hand'''
+     try:
+         found, multi, where = parse_args(ch, True, cmd, arg,
+                                          "[the] obj.inv.multiple | [on] string")
+@@ -219,15 +238,11 @@
+         message(ch, None, obj, cont, True, "to_room", "$n puts $o in $O.")
+ 
+ def cmd_put(ch, cmd, arg):
+-    '''put one thing into another. The thing you wish to put must be in
+-       your inventory. The container must be in your immediate visible range
+-       (room, inventory, body)
+-
+-       usage: put [the] <thing> [in the] <container>
+-
+-       examples:
+-         put coin bag             put a coin into the bag
+-         put all.shirt closet     put all of the shirts in the closet'''
++    '''Usage: put [the] <item> [in the] <container>
++
++       Attempts to move an object from your inventory into a specified
++       container. The container must be in the room, in your inventory, or
++       worn.'''
+     try:
+         found, multi, cont = parse_args(ch, True, cmd, arg,
+                                         "[the] obj.inv.multiple " +
+@@ -291,14 +306,9 @@
+             ex.dest.send(name + " unlocks from the other side.")
+ 
+ def cmd_lock(ch, cmd, arg):
+-    '''try to lock an exit or container. The container can be anything in our
+-       immediate visible range (room, inventory, body). do_lock automatically
+-       checks if we have the key on us.
+-
+-       examples:
+-         lock door                lock a door in the room
+-         lock south               lock the south exit
+-         lock 2.chest             lock the 2nd chest in our visible range'''
++    '''Usage: lock <direction | door | container>
++
++       Attempts to lock a specified door, direction, or container.'''
+     try:
+         found, type = parse_args(ch, True, cmd, arg,
+                                  "[the] {obj.room.inv.eq exit }")
+@@ -342,7 +352,9 @@
+             obj.container_is_locked = True
+ 
+ def cmd_unlock(ch, cmd, arg):
+-    '''the opposite of lock'''
++    '''Usage: unlock <door | direction | container>
++
++       Attempts to unlock the specified door, direction, or container.'''
+     try:
+         found, type = parse_args(ch, True,cmd,arg, "[the] {obj.room.inv exit }")
+     except: return
+@@ -386,16 +398,9 @@
+             obj.container_is_locked = False
+ 
+ def cmd_open(ch, cmd, arg):
+-    '''attempt to open a door or container. The container must be in our
+-       immediate visible range (room, inventory, body).
+-
+-       usage: open [the] <thing>
++    '''Usage: open [the] <direction | door | container>
+ 
+-       examples:
+-         open door               open a door
+-         open 2.bag              open your second bag
+-         open east               open the east exit
+-         open backpack on self   open a backpack you are wearing'''
++       Attempts to open the speficied door, direction, or container.'''
+     try:
+         found, type = parse_args(ch, True,cmd,arg, "[the] {obj.room.inv exit }")
+     except: return
+@@ -436,14 +441,9 @@
+             hooks.run("open_obj", hooks.build_info("ch obj", (ch, obj)))
+ 
+ def cmd_close(ch, cmd, arg):
+-    '''cmd_close is used to close containers and exits.
+-       usage: open <thing>
++    '''Usage: close <direction | door | container>
+ 
+-       examples:
+-         close door               close a door
+-         close 2.bag              close your second bag
+-         close east               close the east exit
+-         close backpack on self   close a backpack you are wearing'''
++       Attempts to close the specified door, direction, or container.'''
+     try:
+         found, type = parse_args(ch, True,cmd,arg, "[the] {obj.room.inv exit }")
+     except: return
+diff -ruN ../nakedmudv3.5/lib/pymodules/cmd_misc.py lib/pymodules/cmd_misc.py
+--- ../nakedmudv3.5/lib/pymodules/cmd_misc.py	2007-10-15 19:39:49.000000000 -0400
++++ lib/pymodules/cmd_misc.py	2008-05-31 00:18:11.000000000 -0400
+@@ -12,14 +12,15 @@
+ 
+ 
+ def cmd_stop(ch, cmd, arg):
+-    '''stop performing the character\'s current action'''
++    '''If you are currently performing an action (for example, a delayed
++       command), make an attempt to stop performing that action.'''
+     if not ch.isActing():
+         ch.send("But you're not currently performing an action!\r\n")
+     else:
+         ch.interrupt()
+ 
+ def cmd_clear(ch, cmd, arg):
+-    '''clear the screen'''
++    '''This command will clear your display screen.'''
+     ch.send_raw("\033[H\033[J")
+ 
+ def event_delayed_cmd(ch, filler, cmd):
+@@ -27,7 +28,15 @@
+     ch.act(cmd, True)
+ 
+ def cmd_delay(ch, cmd, arg):
+-    '''Perform a command, but delay its execution by a couple seconds'''
++    '''Usage: delay <seconds> <command>
++
++       Allows the user to prepare a command to be executed in the future. For
++       example:
++
++       > delay 2 say hello, world!
++
++       Will make you say \'hello, world!\' two seconds after entering the
++       delayed command.'''
+     try:
+         secs, to_delay = parse_args(ch, True, cmd, arg, "double string")
+     except: return
+@@ -39,16 +48,17 @@
+         event.start_event(ch, secs, event_delayed_cmd, None, to_delay)
+ 
+ def cmd_motd(ch, cmd, arg):
+-    '''Displays the MOTD to the character'''
++    '''This command will display to you the mud\'s message of the day.'''
+     ch.page(get_motd())
+ 
+ def cmd_save(ch, cmd, arg):
+-    '''save the character'''
++    '''Attempt to save your character and all recent changes made to it, to
++       disk. This automatically happens when logging out.'''
+     mudsys.do_save(ch)
+     ch.send("Saved.")
+ 
+ def cmd_quit(ch, cmd, arg):
+-    '''quit the game'''
++    '''Attempts to save and log out of the game.'''
+     log_string(ch.name + " has left the game.")
+     mudsys.do_save(ch)
+     mudsys.do_quit(ch)
+diff -ruN ../nakedmudv3.5/lib/pymodules/colour.py lib/pymodules/colour.py
+--- ../nakedmudv3.5/lib/pymodules/colour.py	2007-10-15 19:33:44.000000000 -0400
++++ lib/pymodules/colour.py	2008-05-31 00:18:11.000000000 -0400
+@@ -81,8 +81,10 @@
+ ################################################################################
+ # initializing and unloading our hooks
+ ################################################################################
+-hooks.add("process_outbound_text", process_colour_hook)
++hooks.add("process_outbound_text",   process_colour_hook)
++hooks.add("process_outbound_prompt", process_colour_hook)
+ 
+ def __unload__():
+     '''detaches our colour module from the game'''
+-    hooks.remove("process_outbound_text", process_colour_hook)
++    hooks.remove("process_outbound_text",   process_colour_hook)
++    hooks.remove("process_outbound_prompt", process_colour_hook)
+diff -ruN ../nakedmudv3.5/lib/pymodules/movement.py lib/pymodules/movement.py
+--- ../nakedmudv3.5/lib/pymodules/movement.py	2007-10-15 19:39:49.000000000 -0400
++++ lib/pymodules/movement.py	2008-05-31 00:18:11.000000000 -0400
+@@ -70,7 +70,7 @@
+         return True
+ 
+ def cmd_sit(ch, cmd, arg):
+-    '''attempts to sit'''
++    '''If standing, attempts to sit instead.'''
+     try:
+         obj, = parse_args(ch, True, cmd, arg, "| [on] obj.room")
+     except: return
+@@ -83,7 +83,7 @@
+         ch.send("You cannot sit on " + inform.see_obj_as(ch, obj) + ".")
+ 
+ def cmd_sleep(ch, cmd, arg):
+-    '''attempts to sleep'''
++    '''If awake, attempts to lay down and sleep.'''
+     try:
+         obj, = parse_args(ch, True, cmd, arg, "| [on] obj.room")
+     except: return
+@@ -96,11 +96,11 @@
+         ch.send("You cannot sleep on " + inform.see_obj_as(ch, obj) + ".")
+ 
+ def cmd_stand(ch, cmd, arg):
+-    '''attempts to stand'''
++    '''If sitting, attempts to stand. If flying, attempts to land.'''
+     try_change_pos(ch, "standing")
+ 
+ def cmd_wake(ch, cmd, arg):
+-    '''attempts to wake up'''
++    '''If sleeping, attempts to wake up and sit.'''
+     message(ch,None,None,None,True, "to_char", "You stop sleeping and sit up.")
+     message(ch,None,None,None,True, "to_room", "$n stops sleeping and sits up.")
+     ch.pos = "sitting"
+@@ -182,8 +182,10 @@
+     return ex
+ 
+ def cmd_move(ch, cmd, arg):
+-    '''cmd_move is the basic entry to all of the movement utilities. See
+-       try_move() in movement.py'''
++    '''A basic movement command, relocating you to another room in the
++       specified direction.'''
++    # cmd_move is the basic entry to all of the movement utilities.
++    # See try_move() in movement.py
+     try_move_mssg(ch, cmd)
+ 
+ 
+diff -ruN ../nakedmudv3.5/lib/pymodules/path.py lib/pymodules/path.py
+--- ../nakedmudv3.5/lib/pymodules/path.py	2007-10-15 19:39:49.000000000 -0400
++++ lib/pymodules/path.py	2008-05-31 00:18:11.000000000 -0400
+@@ -188,8 +188,10 @@
+ # commands
+ ################################################################################
+ def cmd_path(ch, cmd, arg):
+-    '''This is really just for purposes of testing to make sure the module
+-       works properly'''
++    '''Usage: path <person>
++
++       Prints out a Python list of the directions needed to move from your
++       current location to the location of the specified person.'''
+     try:
+         tgt, = parse_args(ch, True, cmd, arg, "ch.world.noself")
+     except: return
+diff -ruN ../nakedmudv3.5/lib/pymodules/routine.py lib/pymodules/routine.py
+--- ../nakedmudv3.5/lib/pymodules/routine.py	2007-10-15 19:39:49.000000000 -0400
++++ lib/pymodules/routine.py	2008-05-31 00:18:11.000000000 -0400
+@@ -166,10 +166,10 @@
+ def cmd_routine(ch, cmd, arg):
+     '''Appends a routine onto a character. The second argument needs to be an
+        evaluable list statement. Put it in parentheses to avoid being cut off
+-       as spaces, since parse treats it as a single word
+-
+-       e.g., routine man "[\'say hi\', (3, \'say I am a little teapot\')]" True
+-
++       as spaces, since parse treats it as a single word. Example: 
++    
++         > routine man "[\'say hi\', (3, \'say I am a little teapot\')]" True
++    
+        this will say hi after the default delay, and I am a little teapot after
+        a delay of 3. It will then loop through this process indefinitely.
+        Alternatively, these commands can be replaced with function calls.
+diff -ruN ../nakedmudv3.5/lib/pymodules/universal_newline.py lib/pymodules/universal_newline.py
+--- ../nakedmudv3.5/lib/pymodules/universal_newline.py	2007-10-15 19:33:45.000000000 -0400
++++ lib/pymodules/universal_newline.py	2008-05-31 00:18:11.000000000 -0400
+@@ -42,8 +42,10 @@
+ ################################################################################
+ # initializing and unloading our hooks
+ ################################################################################
+-hooks.add("process_outbound_text", universal_newline_hook)
++hooks.add("process_outbound_text",   universal_newline_hook)
++hooks.add("process_outbound_prompt", universal_newline_hook)
+ 
+ def __unload__():
+-    '''detaches our colour module from the game'''
+-    hooks.remove("process_outbound_text", universal_newline_hook)
++    '''detaches our newline module from the game'''
++    hooks.remove("process_outbound_text",   universal_newline_hook)
++    hooks.remove("process_outbound_prompt", universal_newline_hook)
+diff -ruN ../nakedmudv3.5/src/Makefile src/Makefile
+--- ../nakedmudv3.5/src/Makefile	2007-10-15 19:39:48.000000000 -0400
++++ src/Makefile	2008-05-31 00:25:38.000000000 -0400
+@@ -29,7 +29,7 @@
+ MODULES := dyn_vars set_val olc2 editor items scripts
+ 
+ # optional modules go on this line
+-MODULES += time socials alias help
++MODULES += time socials alias help2
+ 
+ # flags to use during compilation
+ C_FLAGS := -Wall -g -ggdb -O2
+diff -ruN ../nakedmudv3.5/src/buffer.c src/buffer.c
+--- ../nakedmudv3.5/src/buffer.c	2007-10-15 19:33:45.000000000 -0400
++++ src/buffer.c	2008-05-31 00:17:59.000000000 -0400
+@@ -236,12 +236,23 @@
+       col = 0;
+     }
+ 
+-    char ch = buf->data[buf_i];
++    char        ch = buf->data[buf_i];
++    int para_start = -1;
+ 
++    // try to preserve our paragraph structure
++    if((para_start = is_paragraph_marker(buf->data, buf_i)) > buf_i) {
++      formatted[fmt_i] = '\r'; fmt_i++;
++      formatted[fmt_i] = '\n'; fmt_i++;
++      formatted[fmt_i] = '\r'; fmt_i++;
++      formatted[fmt_i] = '\n'; fmt_i++;
++      buf_i = para_start - 1;
++      col = 0;
++      continue;
++    }
+     // no spaces on newlines or ends of lines
+-    if(isspace(ch) && (col == 0 || col == max_width-1))
++    else if(isspace(ch) && (col == 0 || col == max_width-1))
+       continue;
+-    // we will do our own sentance formatting
++    // we will do our own sentence formatting
+     else if(needs_capital && isspace(ch))
+       continue;
+     // delete multiple spaces
+diff -ruN ../nakedmudv3.5/src/command.c src/command.c
+--- ../nakedmudv3.5/src/command.c	2007-10-15 19:39:49.000000000 -0400
++++ src/command.c	2008-05-31 00:17:59.000000000 -0400
+@@ -139,7 +139,7 @@
+   if(to->pyfunc)     { Py_DECREF(to->pyfunc); }
+   to->name         = strdup(from->name);
+   to->user_group   = strdup(from->user_group);
+-  if(to->pyfunc)     { Py_INCREF(to->pyfunc); }
++  if(from->pyfunc)   { Py_INCREF(from->pyfunc); }
+   to->func         = from->func;
+   to->interrupts   = from->interrupts;
+ }
+diff -ruN ../nakedmudv3.5/src/event.c src/event.c
+--- ../nakedmudv3.5/src/event.c	2007-10-15 19:39:49.000000000 -0400
++++ src/event.c	2008-05-31 00:17:59.000000000 -0400
+@@ -172,7 +172,7 @@
+   // providing a delay of 0. In this case, we queue events to the back of the
+   // event list instead of push them on to the front
+   EVENT_DATA *event = newEvent(owner, delay, on_complete, check_involvement,
+-			       data, arg, FALSE);
++			       data, arg, TRUE);
+   if(delay == 0)
+     listQueue(events, event);
+   else
+diff -ruN ../nakedmudv3.5/src/gameloop.c src/gameloop.c
+--- ../nakedmudv3.5/src/gameloop.c	2007-10-15 19:39:49.000000000 -0400
++++ src/gameloop.c	2008-05-31 00:17:59.000000000 -0400
+@@ -49,8 +49,8 @@
+ #ifdef MODULE_SOCIALS
+ #include "socials/socials.h"
+ #endif
+-#ifdef MODULE_HELP
+-#include "help/help.h"
++#ifdef MODULE_HELP2
++#include "help2/help.h"
+ #endif
+ #ifdef MODULE_ALIAS
+ #include "alias/alias.h"
+@@ -243,7 +243,7 @@
+   init_socials();
+ #endif
+ 
+-#ifdef MODULE_HELP
++#ifdef MODULE_HELP2
+   log_string("Initializing helpfiles.");
+   init_help();
+ #endif
+diff -ruN ../nakedmudv3.5/src/help/help.c src/help/help.c
+--- ../nakedmudv3.5/src/help/help.c	2007-10-15 19:39:49.000000000 -0400
++++ src/help/help.c	1969-12-31 19:00:00.000000000 -0500
+@@ -1,557 +0,0 @@
+-//*****************************************************************************
+-//
+-// help.c
+-//
+-// This helpfile system has been set up to be amenable to allowing players to
+-// edit helpfiles without having to worry about malicious users. 
+-//
+-//*****************************************************************************
+-
+-#include "../mud.h"
+-#include "../utils.h"
+-#include "../storage.h"
+-#include "../character.h"
+-#include "../socket.h"
+-
+-#include "../editor/editor.h"
+-
+-#include "help.h"
+-
+-
+-
+-//*****************************************************************************
+-//
+-// local variables, data structures, and functions
+-//
+-//*****************************************************************************
+-
+-// the file we keep all of our help in
+-#define HELP_FILE          "../lib/misc/help"
+-
+-// how many buckets are in our help table
+-#define HELP_TABLE_BUCKETS             27 // 26 for letters, 1 for non-alphas
+-
+-// the table we store all of our helpfiles in
+-LIST *help_table[HELP_TABLE_BUCKETS];
+-
+-typedef struct help_data {
+-  char *keywords;   // words that bring up this helpfile
+-  char *info;       // the information in the helpfile
+-  char *editor;     // who edited the helpfile?
+-  char *timestamp;  // when was it last edited?
+-  // user_group is currently unused
+-  char *user_group; // the user group the helpfile belongs to, if any
+-  LIST *backups;    // a chronologically sorted list of backup helps
+-} HELP_DATA;
+-
+-
+-HELP_DATA *newHelp(const char *editor, const char *timestamp, 
+-		   const char *keywords, const char *user_group, 
+-		   const char *info) {
+-  HELP_DATA *data   = malloc(sizeof(HELP_DATA));
+-  data->keywords    = strdupsafe(keywords);
+-  data->editor      = strdupsafe(editor);
+-  data->info        = strdupsafe(info);
+-  data->timestamp   = strdupsafe(timestamp);
+-  data->user_group  = strdupsafe(user_group);
+-  data->backups     = newList();
+-  return data;
+-}
+-
+-void deleteHelp(HELP_DATA *data) {
+-  deleteListWith(data->backups, deleteHelp);
+-  if(data->keywords)  free(data->keywords);
+-  if(data->editor)    free(data->editor);
+-  if(data->timestamp) free(data->timestamp);
+-  if(data->user_group)free(data->user_group);
+-  if(data->info)      free(data->info);
+-  free(data);
+-}
+-
+-HELP_DATA *helpRead(STORAGE_SET *set) {
+-  HELP_DATA *data = newHelp(read_string(set, "editor"),
+-			    read_string(set, "timestamp"),
+-			    read_string(set, "keywords"),
+-			    read_string(set, "user_group"),
+-			    read_string(set, "info"));
+-  deleteList(data->backups);
+-  data->backups = gen_read_list(read_list(set, "backups"), helpRead);
+-  return data;
+-}
+-
+-STORAGE_SET *helpStore(HELP_DATA *help) {
+-  STORAGE_SET *set = new_storage_set();
+-  store_string(set, "keywords",  help->keywords);
+-  store_string(set, "editor",    help->editor);
+-  store_string(set, "timestamp", help->timestamp);
+-  store_string(set, "user_group",help->user_group);
+-  store_string(set, "info",      help->info);
+-  store_list  (set, "backups",   gen_store_list(help->backups, helpStore));
+-  return set;
+-}
+-
+-
+-//
+-// HELP_DATA holds all of the information about a helpfile, but HELP_ENTRY
+-// is a key/value pair used for storing helpfiles in the help table.
+-//
+-typedef struct help_entry {
+-  char   *keyword;
+-  HELP_DATA *help;
+-} HELP_ENTRY;
+-
+-HELP_ENTRY *newHelpEntry(const char *keyword, HELP_DATA *data) {
+-  HELP_ENTRY *entry = malloc(sizeof(HELP_ENTRY));
+-  entry->keyword = strdupsafe(keyword);
+-  entry->help    = data;
+-  return entry;
+-}
+-
+-void deleteHelpEntry(HELP_ENTRY *entry) {
+-  if(entry->keyword) free(entry->keyword);
+-  free(entry);
+-}
+-
+-int hentrycmp(HELP_ENTRY *entry1, HELP_ENTRY *entry2) {
+-  return strcasecmp(entry1->keyword, entry2->keyword);
+-}
+-
+-int is_help_entry(const char *help, HELP_ENTRY *entry) {
+-  return strcasecmp(help, entry->keyword);
+-}
+-
+-int is_help_abbrev(const char *help, HELP_ENTRY *entry) {
+-  return strncasecmp(help, entry->keyword, strlen(help));
+-}
+-
+-
+-//
+-// return the bucket that the specified helpfile belongs to
+-//
+-int helpbucket(const char *help) {
+-  if(isalpha(*help))
+-    return (tolower(*help) - 'a');
+-  else
+-    return HELP_TABLE_BUCKETS-1;
+-}
+-
+-
+-//
+-// save all of the helpfiles
+-//
+-void save_help() {
+-  STORAGE_SET      *set = new_storage_set();
+-  LIST       *help_list = newList();
+-
+-  // iterate across the table and save all the unique helpfiles
+-  int i;
+-  for(i = 0; i < HELP_TABLE_BUCKETS; i++) {
+-    LIST_ITERATOR *row_i = newListIterator(help_table[i]);
+-    HELP_ENTRY    *entry = NULL;
+-    ITERATE_LIST(entry, row_i)
+-      listPut(help_list, entry->help);
+-    deleteListIterator(row_i);
+-  }
+-
+-  store_list(set, "helpfiles", gen_store_list(help_list, helpStore));
+-  deleteList(help_list);
+-
+-  // write the set
+-  storage_write(set, HELP_FILE);
+-  
+-  // close the set
+-  storage_close(set);
+-}
+-
+-
+-//
+-// add a helpfile to the help table. Assocciate all of its keywords with it
+-//
+-void add_help(HELP_DATA *help) {
+-  LIST       *keywords = parse_keywords(help->keywords);
+-  LIST_ITERATOR *key_i = newListIterator(keywords);
+-  char            *key = NULL;
+-
+-  ITERATE_LIST(key, key_i) {
+-    LIST *row = help_table[helpbucket(key)];
+-    HELP_ENTRY *new_entry = newHelpEntry(key, help);
+-    HELP_ENTRY *old_entry = NULL;
+-    // make sure we're not already in the help table
+-    if((old_entry = listRemoveWith(row, new_entry, hentrycmp)) != NULL)
+-      deleteHelpEntry(old_entry);
+-    listPutWith(row, new_entry, hentrycmp);
+-  } deleteListIterator(key_i);
+-
+-  // garbage collection
+-  deleteListWith(keywords, free);
+-}
+-
+-
+-//
+-// Returns the datastructure for the helpfile
+-//
+-HELP_DATA *get_help_data(const char *keyword, bool abbrev_ok) {
+-  HELP_ENTRY *entry = listGetWith(help_table[helpbucket(keyword)], keyword, 
+-				  (abbrev_ok ? is_help_abbrev : is_help_entry));
+-  return (entry ? entry->help : NULL);
+-}
+-
+-
+-//
+-// remove a helpfile from the help table
+-//
+-HELP_DATA *remove_help(const char *keyword) {
+-  HELP_ENTRY *entry = listRemoveWith(help_table[helpbucket(keyword)], keyword, 
+-				     is_help_entry);
+-  HELP_DATA *help = (entry ? entry->help : NULL);
+-  if(entry) deleteHelpEntry(entry);
+-  return help;
+-}
+-
+-
+-//
+-// return a list of matches for the specified help keyword. If we find an
+-// exact match, only that match will be contained within the list.
+-// List must be deleted after use.
+-//
+-LIST *help_matches(const char *keyword) {
+-  int bucket  = helpbucket(keyword);
+-  int key_len = strlen(keyword);
+-  LIST_ITERATOR *buck_i = newListIterator(help_table[bucket]);
+-  HELP_ENTRY     *entry = NULL;
+-  LIST         *matches = newList();
+-
+-  ITERATE_LIST(entry, buck_i) {
+-    // exact match
+-    if(!strcasecmp(keyword, entry->keyword)) {
+-      while(listSize(matches) > 0) listPop(matches);
+-      listPut(matches, entry);
+-      break;
+-    }
+-    else if(!strncasecmp(keyword, entry->keyword, key_len))
+-      listQueue(matches, entry);
+-  }
+-  deleteListIterator(buck_i);
+-  return matches;
+-}
+-
+-
+-//
+-// Show the contents of a helpfile to the character. If no argument is
+-// supplied, list all of the helpfiles. If we try to get info on a help
+-// that does not exist, list near-matches.
+-//
+-// usage:
+-//   help <topic>
+-//
+-COMMAND(cmd_help) {
+-  // make sure we can view it, first
+-  HELP_DATA *help = get_help_data(arg, TRUE);
+-  if(help != NULL && *help->user_group) {
+-    if(!bitIsSet(charGetUserGroups(ch), help->user_group)) {
+-      send_to_char(ch, "You may not view that help file.\r\n");
+-      return;
+-    }
+-  }
+-
+-  BUFFER *buf = build_help(arg);
+-  if(buf == NULL)
+-    send_to_char(ch, "No help exists on that topic.\r\n");
+-  else {
+-    // send this to the character
+-    if(charGetSocket(ch))
+-      page_string(charGetSocket(ch), bufferString(buf));
+-    deleteBuffer(buf);
+-  }
+-}
+-
+-
+-//
+-// same as cmd_write, but loads the contents of the helpfile into the buffer
+-//
+-COMMAND(cmd_hedit) {
+-  if(!arg || !*arg) {
+-    send_to_char(ch, "Which helpfile are you trying to edit?\r\n");
+-    return;
+-  }
+-  if(!charGetSocket(ch)) {
+-    send_to_char(ch, "You must have a socket attached to use hedit.\r\n");
+-    return;
+-  }
+-
+-  // because we replace underscores with spaces in hlink,
+-  // we should do the same thing here for consistancy's sake
+-  char *ptr;
+-  for(ptr = arg; *ptr; ptr++)
+-    if(*ptr == '_') *ptr = ' ';
+-
+-  HELP_DATA *data = get_help_data(arg, FALSE);
+-
+-  socketSetNotepad(charGetSocket(ch), (data ? data->info : ""));
+-  socketStartNotepad(charGetSocket(ch), text_editor);
+-}
+-
+-
+-//
+-// Edit the contents of a helpfile
+-//
+-COMMAND(cmd_hupdate) {
+-  if(!arg || !*arg) {
+-    send_to_char(ch, "Which helpfile were you trying to update?\r\n");
+-    return;
+-  }
+-  if(!charGetSocket(ch) || !bufferLength(socketGetNotepad(charGetSocket(ch)))) {
+-    send_to_char(ch, "You have nothing in your notepad! Try writing something.\r\n");
+-    return;
+-  }
+-
+-  // because we replace underscores with spaces in hlink,
+-  // we should do the same thing here for consistancy's sake
+-  char *ptr;
+-  for(ptr = arg; *ptr; ptr++)
+-    if(*ptr == '_') *ptr = ' ';
+-
+-  update_help(charGetName(ch), arg, 
+-	      bufferString(socketGetNotepad(charGetSocket(ch))));
+-}
+-
+-
+-//
+-// Link a keyword to an already-existing helpfile. underscores must be
+-// used instead of spaces.
+-//   usage:
+-//     hlink [new_topic] [old_topic]
+-//
+-COMMAND(cmd_hlink) {
+-  char new_help[SMALL_BUFFER];
+-
+-  if(!arg || !*arg) {
+-    send_to_char(ch, "Link which helpfile to which?\r\n");
+-    return;
+-  }
+-
+-  arg = one_arg(arg, new_help);
+-
+-  if(!*new_help || !*arg) {
+-    send_to_char(ch, "You must provide a new keyword and an old keyword "
+-		 "to link it to.\r\n");
+-    return;
+-  }
+-
+-  // kill all of the underscores, and put spaces in instead
+-  char *ptr;
+-  for(ptr = new_help; *ptr; ptr++)
+-    if(*ptr == '_') *ptr = ' ';
+-  for(ptr = arg; *ptr; ptr++)
+-    if(*ptr == '_') *ptr = ' ';
+-
+-  // find the help we're trying to link to
+-  HELP_DATA *help = get_help_data(arg, FALSE);
+-
+-  if(help == NULL) {
+-    send_to_char(ch, "No help exists for %s.\r\n", arg);
+-    return;
+-  }
+-
+-
+-  // perform the link
+-  link_help(new_help, arg);
+-  send_to_char(ch, "%s linked to %s.\r\n", new_help, arg);
+-}
+-
+-
+-//
+-// Unlink a keyword from its assocciated helpfile. 
+-//   usage:
+-//     hunlink [topic]
+-//
+-COMMAND(cmd_hunlink) {
+-  if(!arg || !*arg) {
+-    send_to_char(ch, "Unlink which helpfile?\r\n");
+-    return;
+-  }
+-
+-  // because we replace underscores with spaces in hlink,
+-  // we should do the same thing here for consistancy's sake
+-  char *ptr;
+-  for(ptr = arg; *ptr; ptr++)
+-    if(*ptr == '_') *ptr = ' ';
+-
+-  // find the social we're trying to link to
+-  HELP_DATA *help = get_help_data(arg, FALSE);
+-
+-  if(help == NULL) {
+-    send_to_char(ch, "No help exists for %s.\r\n", arg);
+-    return;
+-  }
+-
+-  // perform the unlinking
+-  unlink_help(arg);
+-  send_to_char(ch, "The %s helpfile was unlinked.\r\n", arg);
+-}
+-
+-
+-
+-//*****************************************************************************
+-//
+-// implementation of help.h
+-//
+-//*****************************************************************************
+-void init_help() {
+-  // init all of our buckets
+-  int i;
+-  for(i = 0; i < HELP_TABLE_BUCKETS; i++)
+-    help_table[i] = newList();
+-
+-  // add all of our commands
+-  add_cmd("help",    NULL, cmd_help,    "player",  FALSE);
+-  add_cmd("hlink",   NULL, cmd_hlink,   "admin",   FALSE);
+-  add_cmd("hunlink", NULL, cmd_hunlink, "admin",   FALSE);
+-  add_cmd("hupdate", NULL, cmd_hupdate, "builder", TRUE);
+-  add_cmd("hedit",   NULL, cmd_hedit,   "builder", TRUE);
+-
+-  // read in all of our helps
+-  STORAGE_SET       *set = storage_read(HELP_FILE);
+-  STORAGE_SET_LIST *list = read_list(set, "helpfiles");
+-  STORAGE_SET     *entry = NULL;
+-
+-  // parse all of the helpfiles
+-  while( (entry = storage_list_next(list)) != NULL)
+-    add_help(helpRead(entry));
+-
+-  storage_close(set);
+-}
+-
+-BUFFER *build_help(const char *keyword) {
+-  // we have to edit the keyword... dup it
+-  char   *arg = strdup(keyword);
+-  BUFFER *buf = newBuffer(MAX_BUFFER);
+-  // no argument. Show a list of all our help topics
+-  if(!*arg) {
+-    int count, i;
+-    bprintf(buf, "Help is available on the following topics:\r\n");
+-    for(i = 0, count = 0; i < HELP_TABLE_BUCKETS; i++) {
+-      LIST_ITERATOR *buck_i = newListIterator(help_table[i]);
+-      HELP_ENTRY     *entry = NULL;
+-
+-      ITERATE_LIST(entry, buck_i) {
+-	bprintf(buf, "%-16s", entry->keyword);
+-	count++;
+-	// only 4 entries per row
+-	if((count % 5) == 0) 
+-	  bufferCat(buf, "\r\n");
+-      } deleteListIterator(buck_i);
+-    }
+-
+-    // make sure we add a newline to the end
+-    if((count % 5) != 0)
+-      bufferCat(buf, "\r\n");
+-  }
+-
+-  // pull out the helpfile
+-  else {
+-    // because we replace underscores with spaces in hlink,
+-    // we should do the same thing here for consistancy's sake
+-    char *ptr;
+-    for(ptr = arg; *ptr; ptr++)
+-      if(*ptr == '_') *ptr = ' ';
+-
+-    LIST *matches = help_matches(arg);
+-    HELP_ENTRY *entry = NULL;
+-    // no matches found
+-    if(listSize(matches) == 0)
+-      bprintf(buf, "No help exists for %s.\r\n", arg);
+-    // one match found
+-    else if(listSize(matches) == 1) {
+-      entry = listPop(matches);
+-      char header[128]; // +2 for \r\n, +1 for \0
+-      center_string(header, entry->keyword, 80, 128, TRUE);
+-      bprintf(buf, "%s{wBy: %-36s%40s\r\n\r\n{n%s",
+-	      header, entry->help->editor, entry->help->timestamp,
+-	      entry->help->info);
+-    }
+-
+-    // more than one match found. Tell person to narrow search
+-    else {
+-      bprintf(buf, "More than one entry matched your query: \r\n");
+-      LIST_ITERATOR *match_i = newListIterator(matches);
+-      ITERATE_LIST(entry, match_i) {
+-	bprintf(buf, "{c%s ", entry->keyword);
+-      } deleteListIterator(match_i);
+-      bufferCat(buf, "{n\r\n");
+-    }
+-    
+-    // delete the list of matches we found
+-    deleteList(matches);
+-  }
+-
+-  // clean up our mess
+-  free(arg);
+-
+-  // return whatever we created
+-  return buf;
+-}
+-
+-
+-void update_help(const char *editor, const char *keyword, const char *info) {
+-  HELP_DATA *data = get_help_data(keyword, FALSE);
+-
+-  if(data != NULL) {
+-    HELP_DATA *help_old = newHelp(data->editor, data->timestamp, data->keywords,
+-				  "", data->info);
+-    if(data->editor)    free(data->editor);
+-    if(data->timestamp) free(data->timestamp);
+-    if(data->info)      free(data->info);
+-    
+-    data->editor      = strdupsafe(editor);
+-    data->info        = strdupsafe(info);
+-    data->timestamp   = strdup(get_time());
+-
+-    listPut(data->backups, help_old);
+-  }
+-  else
+-    add_help(newHelp(editor, get_time(), keyword, "", info));
+-
+-  save_help();
+-}
+-
+-
+-void unlink_help(const char *keyword) {
+-  // remove the helpfile
+-  HELP_DATA *data = remove_help(keyword);
+-
+-  // unlink the helpfile
+-  if(data != NULL) {
+-    remove_keyword(data->keywords, keyword);
+-
+-    // if no links are left, delete the helpfile
+-    if(!*data->keywords)
+-      deleteHelp(data);
+-    
+-    // save our changes
+-    save_help();
+-  }
+-}
+-
+-
+-void link_help(const char *keyword, const char *old_word) {
+-  // check for the old keyword
+-  HELP_DATA *data = get_help_data(old_word, FALSE);
+-
+-  // link the new keyword to the old one
+-  if(data != NULL) {
+-    // first, remove the current new_keyword help, if it exists
+-    unlink_help(keyword);
+-
+-    // add the new keyword to the help
+-    add_keyword(&(data->keywords), keyword);
+-
+-    // add the new command to the help table
+-    LIST *row = help_table[helpbucket(keyword)];
+-    HELP_ENTRY *new_entry = newHelpEntry(keyword, data);
+-    listPutWith(row, new_entry, hentrycmp);
+-
+-    // save our changes
+-    save_help();
+-  }
+-}
+diff -ruN ../nakedmudv3.5/src/help/help.h src/help/help.h
+--- ../nakedmudv3.5/src/help/help.h	2007-10-15 19:33:45.000000000 -0400
++++ src/help/help.h	1969-12-31 19:00:00.000000000 -0500
+@@ -1,51 +0,0 @@
+-#ifndef __HELP_H
+-#define __HELP_H
+-//*****************************************************************************
+-//
+-// help.h
+-//
+-// This helpfile system has been set up to be amenable to allowing players to
+-// edit helpfiles without having to worry about malicious users. 
+-//
+-//*****************************************************************************
+-
+-//
+-// This must be put at the top of mud.h so the rest of the MUD knows that
+-// we've got the help module installed
+-// #define MODULE_HELP
+-//
+-
+-
+-//
+-// prepare helpfiles for use
+-//
+-void init_help();
+-
+-
+-//
+-// Make changes to the content of the helpfile. The old info is backed up.
+-// To protect against malicious changes. update_help can be used to create
+-// new helpfiles as well.
+-//
+-void update_help(const char *editor, const char *keyword, const char *info);
+-
+-
+-//
+-// Builds the output of the help query. If no help exists on the topic, NULL
+-// is returned. Returned buffer must be deleted after use.
+-BUFFER *build_help(const char *keyword);
+-
+-
+-//
+-// unlink a keyword from the help info. If no more links are left to the
+-// helpfile, the helpfile is deleted.
+-//
+-void unlink_help(const char *keyword);
+-
+-
+-//
+-// link a new keyword to a helpfile
+-//
+-void link_help(const char *keyword, const char *old_word);
+-
+-#endif // __HELP_H
+diff -ruN ../nakedmudv3.5/src/help/module.mk src/help/module.mk
+--- ../nakedmudv3.5/src/help/module.mk	2007-10-15 19:33:45.000000000 -0400
++++ src/help/module.mk	1969-12-31 19:00:00.000000000 -0500
+@@ -1,2 +0,0 @@
+-# the source files we need to compile
+-SRC += help/help.c
+diff -ruN ../nakedmudv3.5/src/help2/hedit.c src/help2/hedit.c
+--- ../nakedmudv3.5/src/help2/hedit.c	1969-12-31 19:00:00.000000000 -0500
++++ src/help2/hedit.c	2008-05-31 00:17:59.000000000 -0400
+@@ -0,0 +1,188 @@
++//*****************************************************************************
++//
++// hedit.c
++//
++// Contains all of the functions necessary to edit helpfiles online. Built 
++// into the olc2 module.
++//
++//*****************************************************************************
++#include "../mud.h"
++#include "../utils.h"
++#include "../storage.h"
++#include "../character.h"
++#include "../socket.h"
++#include "help.h"
++//#include "hedit.h"
++
++
++
++//*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../olc2/olc.h"
++#include "../editor/editor.h"
++
++
++
++//*****************************************************************************
++// local functions and data structures
++//*****************************************************************************
++typedef struct help_olc_data {
++  char *old_keywords;
++  char     *keywords;
++  char      *related;
++  char  *user_groups;
++  BUFFER       *info;
++} HELP_OLC;
++
++HELP_OLC *newHelpOLC(const char *keywords, const char *info, 
++		     const char *user_groups, const char *related) {
++  HELP_OLC     *data = malloc(sizeof(HELP_OLC));
++  data->old_keywords = strdupsafe(keywords);
++  data->keywords     = strdupsafe(keywords);
++  data->user_groups  = strdupsafe(user_groups);
++  data->related      = strdupsafe(related);
++  data->info         = newBuffer(1);
++  bufferCat(data->info, info);
++  return data;
++}
++
++void deleteHelpOLC(HELP_OLC *data) {
++  if(data->old_keywords) free(data->old_keywords);
++  if(data->keywords)     free(data->keywords);
++  if(data->user_groups)  free(data->user_groups);
++  if(data->related)      free(data->related);
++  if(data->info)         deleteBuffer(data->info);
++  free(data);
++}
++
++
++
++//*****************************************************************************
++// help file editing
++//*****************************************************************************
++#define HEDIT_KEYWORDS      1
++#define HEDIT_USER_GROUPS   2
++#define HEDIT_RELATED       3
++
++void hedit_menu(SOCKET_DATA *sock, HELP_OLC *data) {
++  send_to_socket(sock,
++		 "{g1) keywords         : {c%s\r\n"
++		 "{g2) related          : {c%s\r\n"
++		 "{g3) group restriction: {c%s\r\n"
++		 "{g4) Info:\r\n"
++		 "{c%s",
++		 data->keywords,
++		 data->related,
++		 data->user_groups,
++		 bufferString(data->info));
++}
++
++int hedit_chooser(SOCKET_DATA *sock, HELP_OLC *data, const char *option) {
++  switch(toupper(*option)) {
++  case '1':
++    send_to_socket(sock, "Enter the keywords that reference this helpfile: ");
++    return HEDIT_KEYWORDS;
++  case '2':
++    send_to_socket(sock, "Enter the names of related helpfiles: ");
++    return HEDIT_RELATED;
++  case '3':
++    send_to_socket(sock, "Which user groups are this helpfile limited to: ");
++    return HEDIT_USER_GROUPS;
++  case '4':
++    text_to_buffer(sock, "Enter Helpfile Information\r\n");
++    socketStartEditor(sock, text_editor, data->info);
++    return MENU_NOCHOICE;
++  default: 
++    return MENU_CHOICE_INVALID;
++  }
++}
++
++bool hedit_parser(SOCKET_DATA *sock, HELP_OLC *data, int choice, 
++		  const char *arg) {
++  switch(choice) {
++  case HEDIT_KEYWORDS:
++    free(data->keywords);
++    data->keywords = strdupsafe(arg);
++    return TRUE;
++  case HEDIT_RELATED:
++    free(data->related);
++    data->related = strdupsafe(arg);
++    return TRUE;
++  case HEDIT_USER_GROUPS:
++    free(data->user_groups);
++    data->user_groups = strdupsafe(arg);
++    return TRUE;
++  default: 
++    return FALSE;
++  }
++}
++
++void save_help_olc(HELP_OLC *data) {
++  // first, remove our old helpfile from disc
++  LIST    *kwds = parse_keywords(data->old_keywords);
++  char *primary = listGet(kwds, 0);
++  if(primary && *primary)
++    remove_help(primary);
++  deleteListWith(kwds, free);
++
++  // now, add our new one
++  add_help(data->keywords, bufferString(data->info), data->user_groups,
++	   data->related, TRUE);
++}
++
++
++
++//*****************************************************************************
++// commnds
++//*****************************************************************************
++COMMAND(cmd_hedit) {
++  if(!arg || !*arg)
++    send_to_char(ch, "Which help file would you like to edit?\r\n");
++  else {
++    // first, try to find the helpfile
++    HELP_DATA    *data = get_help(arg, FALSE);
++    HELP_OLC *olc_data = NULL;
++
++    // No such file exists; create a new one
++    if(data == NULL)
++      olc_data = newHelpOLC(arg, "This is not very helpful.\r\n", "", "");
++    else
++      olc_data = newHelpOLC(helpGetKeywords(data),
++			    helpGetInfo(data),
++			    helpGetUserGroups(data),
++			    helpGetRelated(data));
++
++    // do our olc
++    do_olc(charGetSocket(ch), hedit_menu, hedit_chooser, hedit_parser,
++	   NULL, NULL, deleteHelpOLC, save_help_olc, olc_data);
++  }
++}
++
++COMMAND(cmd_hdelete) {
++  if(!arg || !*arg)
++    send_to_char(ch, "Which help file would you like to delete?\r\n");
++  else {
++    // first, try to find the helpfile
++    HELP_DATA *data = get_help(arg, FALSE);
++    
++    // make sure it exists
++    if(data == NULL)
++      send_to_char(ch, "No helpfile by that name exists.\r\n");
++    else {
++      send_to_char(ch, "Helpfile for %s removed.\r\n", arg);
++      remove_help(arg);
++    }
++  }
++}
++
++
++
++//*****************************************************************************
++// initialization
++//*****************************************************************************
++void init_hedit() {
++  // add our commands
++  add_cmd("hedit",   NULL, cmd_hedit,   "admin", FALSE);
++  add_cmd("hdelete", NULL, cmd_hdelete, "admin", FALSE); 
++}
+diff -ruN ../nakedmudv3.5/src/help2/hedit.h src/help2/hedit.h
+--- ../nakedmudv3.5/src/help2/hedit.h	1969-12-31 19:00:00.000000000 -0500
++++ src/help2/hedit.h	2008-05-31 00:17:59.000000000 -0400
+@@ -0,0 +1,16 @@
++#ifndef HEDIT_H
++#define HEDIT_H
++//*****************************************************************************
++//
++// hedit.h
++//
++// Contains all of the functions necessary to edit helpfiles online. Built 
++// into the olc2 module.
++//
++//*****************************************************************************
++
++//
++// initialize hedit
++void init_hedit();
++
++#endif // HEDIT_H
+diff -ruN ../nakedmudv3.5/src/help2/help.c src/help2/help.c
+--- ../nakedmudv3.5/src/help2/help.c	1969-12-31 19:00:00.000000000 -0500
++++ src/help2/help.c	2008-05-31 00:38:22.000000000 -0400
+@@ -0,0 +1,402 @@
++//*****************************************************************************
++//
++// help.c
++//
++// Contained within is the new help module for NakedMud, instituted at v3.6.
++// It allows for help files to exist both on disc, and to be built on the fly
++// by other game modules (but not saved to disc). 
++//
++//*****************************************************************************
++
++#include <dirent.h>
++
++#include "../mud.h"
++#include "../utils.h"
++#include "../storage.h"
++#include "../character.h"
++#include "help.h"
++#include "hedit.h"
++
++
++
++//*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../scripts/scripts.h"
++#include "../scripts/pymudsys.h"
++
++
++
++//*****************************************************************************
++// local variables, data structures, and functions
++//*****************************************************************************
++
++// the folder where we save persistent helpfiles to disc
++#define HELP_DIR   "../lib/help"
++
++// the old file we used to store all help files in
++#define OLD_HELP_FILE "../lib/misc/help"
++
++// where we store all of our helpfiles
++NEAR_MAP *help_table;
++
++struct help_data {
++  char *keywords;    // words that bring up this helpfile
++  char *info;        // the information in the helpfile
++  char *user_groups; // the user group the helpfile belongs to, if any
++  char *related;     // a list of other helpfiles that are related
++};
++
++HELP_DATA *newHelp(const char *keywords, const char *info, 
++		   const char *user_groups, const char *related) {
++  HELP_DATA *data   = malloc(sizeof(HELP_DATA));
++  data->keywords    = strdupsafe(keywords);
++  data->info        = strdupsafe(info);
++  data->user_groups = strdupsafe(user_groups);
++  data->related     = strdupsafe(related);
++  return data;
++}
++
++void deleteHelp(HELP_DATA *data) {
++  if(data->keywords)    free(data->keywords);
++  if(data->info)        free(data->info);
++  if(data->user_groups) free(data->user_groups);
++  if(data->related)     free(data->related);
++  free(data);
++}
++
++HELP_DATA *helpRead(STORAGE_SET *set) {
++  return newHelp(read_string(set, "keywords"),
++		 read_string(set, "info"),
++		 read_string(set, "user_group"),
++		 read_string(set, "related"));
++}
++
++STORAGE_SET *helpStore(HELP_DATA *data) {
++  STORAGE_SET *set = new_storage_set();
++  store_string(set, "keywords",   data->keywords);
++  store_string(set, "info",       data->info);
++  store_string(set, "user_group", data->user_groups);
++  store_string(set, "related",    data->related);
++  return set;
++}
++
++
++//*****************************************************************************
++// local functions
++//*****************************************************************************
++
++//
++// returns a list of all the help files that match the keyword in our help
++// table, in the event that what we are trying to look up is ambiguous.
++LIST *get_help_matches(const char *keyword) {
++  return nearMapGetAllMatches(help_table, keyword);
++}
++
++//
++// returns where the help file would be stored on disc if it exists
++const char *get_help_file(const char *keyword) {
++  static BUFFER *buf = NULL;
++  char        subdir = 'Z';   // Z is the default subdir for non-alpha kwds
++  if(buf == NULL)
++    buf = newBuffer(1);
++  bufferClear(buf);
++  if(isalpha(*keyword))
++    subdir = toupper(*keyword);
++  bprintf(buf, "%s/%c/%s", HELP_DIR, subdir, keyword);
++  return bufferString(buf);
++}
++
++
++
++//*****************************************************************************
++// in game commands
++//*****************************************************************************
++COMMAND(cmd_help) {
++  char       *kwd = NULL;
++  HELP_DATA *data = NULL;
++  if(!parse_args(ch, TRUE, cmd, arg, "| string", &kwd))
++    return;
++
++  // did we supply an argument, or do we want to see a list of all help topics?
++  if(kwd == NULL) {
++    BUFFER           *buf = newBuffer(1);
++    NEAR_ITERATOR *near_i = newNearIterator(help_table);
++    const char       *kwd = NULL;
++    HELP_DATA       *data = NULL;
++    LIST        *viewable = newList();
++    LIST_ITERATOR *view_i = NULL;
++    int             count = 0;
++    
++    ITERATE_NEARMAP(kwd, data, near_i) {
++      // if we can view the help file, list it
++      if(!*data->user_groups || bitIsOneSet(charGetUserGroups(ch), 
++					    data->user_groups))
++	// add it to our list of helps we can view
++	listPut(viewable, strdupsafe(kwd));
++    } deleteNearIterator(near_i);
++
++    // sort our list of helps
++    listSortWith(viewable, strcasecmp);
++
++    // build up our buffer of help topics
++    view_i = newListIterator(viewable);
++    ITERATE_LIST(kwd, view_i) {
++      bprintf(buf, "%-20s", kwd);
++      count++;
++      // only 4 entries per row
++      if((count % 4) == 0) 
++	bufferCat(buf, "\r\n");
++    } deleteListIterator(view_i);
++    bufferCat(buf, "\r\n");
++
++    // show our list
++    if(charGetSocket(ch))
++      page_string(charGetSocket(ch), bufferString(buf));
++
++    // garbage collection
++    deleteBuffer(buf);
++    deleteListWith(viewable, free);
++  }
++
++  // do we have a match?
++  else if( (data = get_help(kwd, TRUE)) == NULL)
++    send_to_char(ch, "No help exists on that topic.\r\n");
++  else if(*data->user_groups && !bitIsOneSet(charGetUserGroups(ch), 
++					     data->user_groups))
++    send_to_char(ch, "You may not view that help file.\r\n");
++  else {
++    BUFFER *buf = build_help(kwd);
++    if(charGetSocket(ch))
++      page_string(charGetSocket(ch), bufferString(buf));
++    deleteBuffer(buf);
++  }
++}
++
++
++
++//*****************************************************************************
++// implementation of help.h
++//*****************************************************************************
++BUFFER *build_help(const char *keyword) {
++  HELP_DATA *data = get_help(keyword, TRUE);
++
++  // no match
++  if(data == NULL)
++    return NULL;
++  // build the info for our match
++  else {
++    BUFFER     *buf = newBuffer(1);
++    char      header[128]; // +2 for \r\n, +1 for \0
++    center_string(header, data->keywords, 80, 128, TRUE);
++
++    // build the header and the info
++    bprintf(buf, "%s{n%s", header, data->info);
++
++    // do we have a reference list?
++    if(*data->related)
++      bprintf(buf, "\r\nsee also: %s\r\n", data->related);
++    return buf;
++  }
++}
++
++void add_help(const char *keywords, const char *info, const char *user_groups,
++	      const char *related, bool persistent) {
++  // build our help data
++  HELP_DATA *data = newHelp(keywords, info, user_groups, related);
++  
++  // add it to the help table for all of our keywords
++  LIST           *kwds = parse_keywords(keywords);
++  LIST_ITERATOR *kwd_i = newListIterator(kwds);
++  char            *kwd = NULL;
++  ITERATE_LIST(kwd, kwd_i) {
++    // remove any old copy we might of had
++    nearMapRemove(help_table, kwd);
++    
++    // put our new entry
++    nearMapPut(help_table, kwd, NULL, data);
++  } deleteListIterator(kwd_i);
++
++  // is this meant to be persistent?
++  if(persistent && listSize(kwds) > 0) {
++    STORAGE_SET *set = helpStore(data);
++    char    *primary = listGet(kwds, 0); 
++    storage_write(set, get_help_file(primary));
++  }
++
++  // garbage collection
++  deleteListWith(kwds, free);
++}
++
++void remove_help(const char *keyword) {
++  HELP_DATA *help = get_help(keyword, FALSE);
++
++  // does the helpfile exist?
++  if(help != NULL) {
++    // build up a list of all the keywords that reference this helpfile. Also,
++    // figure out what the main topic is so we can delete its from disc if it
++    // is persistent
++    LIST           *kwds = parse_keywords(help->keywords);
++    LIST_ITERATOR *kwd_i = newListIterator(kwds);
++    char            *kwd = NULL;
++    char        *primary = listGet(kwds, 0);
++
++    // remove all of our data from the help table
++    ITERATE_LIST(kwd, kwd_i) {
++      nearMapRemove(help_table, kwd);
++    } deleteListIterator(kwd_i);
++
++    // delete our primary file
++    if(file_exists(get_help_file(primary)))
++      unlink(get_help_file(primary));
++
++    // garbage collection
++    deleteListWith(kwds, free);
++    deleteHelp(help);
++  }
++}
++
++//
++// returns the help file in our help table corresponding to the keyword
++HELP_DATA *get_help(const char *keyword, bool abbrev_ok) {
++  return nearMapGet(help_table, keyword, abbrev_ok);
++}
++
++const char *helpGetKeywords(HELP_DATA *data) {
++  return data->keywords;
++}
++
++const char *helpGetUserGroups(HELP_DATA *data) {
++  return data->user_groups;
++}
++
++const char *helpGetRelated(HELP_DATA *data) {
++  return data->related;
++}
++
++const char *helpGetInfo(HELP_DATA *data) {
++  return data->info;
++}
++
++
++
++//*****************************************************************************
++// python hooks
++//*****************************************************************************
++PyObject *PyMudSys_add_help(PyObject *self, PyObject *args) {
++  char *keywords    = NULL;
++  char *info        = NULL;
++  char *user_groups = NULL;
++  char *related     = NULL;
++
++  if(!PyArg_ParseTuple(args,"ss|ss", &keywords, &info, &user_groups, &related)){
++    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to add_help");
++    return NULL;
++  }
++
++  add_help(keywords, info, user_groups, related, FALSE);
++  return Py_BuildValue("i", 1);
++}
++
++
++
++//*****************************************************************************
++// initialization
++//*****************************************************************************
++
++//
++// reads in all of our helpfiles from disc
++void read_help() {
++  // directory info for reading in helpfiles
++  char fname[SMALL_BUFFER];
++  struct dirent *entry = NULL;
++  DIR             *dir = NULL;
++  char          subdir = '\0';
++  
++  // read in all of our help files from disc
++  for(subdir = 'A'; subdir <= 'Z'; subdir++) {
++    // build up our directory name
++    sprintf(fname, "%s/%c", HELP_DIR, subdir);
++
++    // open the directory
++    dir = opendir(fname);
++
++    // read in each file
++    if(dir != NULL) {
++      for(entry = readdir(dir); entry != NULL; entry = readdir(dir)) {
++	if(*entry->d_name == '.')
++	  continue;
++	sprintf(fname, "%s/%c/%s", HELP_DIR, subdir, entry->d_name);
++	if(file_exists(fname)) {
++	  STORAGE_SET *set = storage_read(fname);
++	  add_help(read_string(set, "keywords"),
++		   read_string(set, "info"),
++		   read_string(set, "user_group"),
++		   read_string(set, "related"),
++		   FALSE);
++	  storage_close(set);
++	}
++      }
++      closedir(dir);
++    }
++  }
++}
++
++//
++// read all of our helpfiles that were created with the old help system. The
++// master file is deleted after they are read in, since they are saved to the
++// new format.
++void read_old_help() {
++  // if we still have the old help file, read in all of its contents and save
++  // all of the entries in the new format. Then, delete the old help file
++  if(file_exists(OLD_HELP_FILE)) {
++    STORAGE_SET       *set = storage_read(OLD_HELP_FILE);
++    STORAGE_SET_LIST *list = read_list(set, "helpfiles");
++    STORAGE_SET     *entry = NULL;
++    BUFFER         *dirbuf = newBuffer(1);
++
++    // make all of our new directories
++    mkdir(HELP_DIR, S_IRWXU | S_IRWXG);
++    char subdir = '\0';
++    for(subdir = 'A'; subdir <= 'Z'; subdir++) {
++      bufferClear(dirbuf);
++      bprintf(dirbuf, "%s/%c", HELP_DIR, subdir);
++      mkdir(bufferString(dirbuf), S_IRWXU | S_IRWXG);
++    }
++    deleteBuffer(dirbuf);
++
++    // parse all of the helpfiles
++    while( (entry = storage_list_next(list)) != NULL)
++      add_help(read_string(entry, "keywords"),
++	       read_string(entry, "info"),
++	       read_string(entry, "user_group"),
++	       read_string(entry, "related"),
++	       TRUE);
++
++    // close the set
++    storage_close(set);
++
++    // delete the old file; we don't need it any more
++    unlink(OLD_HELP_FILE);
++  }
++}
++
++void init_help() {
++  // create our help table
++  help_table = newNearMap();
++
++  // read in all of our helpfiles. Old helpfiles are read, merged into the
++  // new system, and then deleted from disc as part of the old system
++  read_help();
++  read_old_help();
++
++  // initialize our editing system
++  init_hedit();
++
++  // add our commands
++  add_cmd("help", NULL, cmd_help, "player", FALSE);
++
++  // add all of our Python hooks
++  PyMudSys_addMethod("add_help", PyMudSys_add_help, METH_VARARGS, 
++		     "allows Python modules to add non-persistent helpfiles.");
++}
+diff -ruN ../nakedmudv3.5/src/help2/help.h src/help2/help.h
+--- ../nakedmudv3.5/src/help2/help.h	1969-12-31 19:00:00.000000000 -0500
++++ src/help2/help.h	2008-05-31 00:17:59.000000000 -0400
+@@ -0,0 +1,58 @@
++#ifndef HELP2_H
++#define HELP2_H
++//*****************************************************************************
++//
++// help.h
++//
++// Contained within is the new help module for NakedMud, instituted at v3.6.
++// It allows for help files to exist both on disc, and to be built on the fly
++// by other game modules (but not saved to disc). 
++//
++//*****************************************************************************
++
++//
++// This must be put at the top of mud.h so the rest of the MUD knows that
++// we've got the help module installed
++// #define MODULE_HELP2
++//
++
++// the structure our help info is held in
++typedef struct help_data HELP_DATA;
++
++//
++// prepare helpfiles for use
++void init_help();
++
++//
++// Builds the output of the help query. If no help exists on the topic, NULL
++// is returned. Returned buffer must be deleted after use.
++BUFFER *build_help(const char *keyword);
++
++//
++// Adds a helpfile to the game. Keywords are the list of queries that reference
++// the helpfile. info is the content of the helpfile. user_groups are the list
++// of of groups that can view the content of the helpfile by using the "help"
++// command. If user_goups is an empty string or NULL, anyone can view the
++// helpfile. related is a list of other queries that are suggested at the end
++// of a help buffer after build_help is called. This can be an empty string or
++// NULL if none are related. If persistent is TRUE, this helpfile will be saved
++// to disc and loaded anew each time the MUD is booted up. It will be saved with
++// the first keyword in the keywords list as the main keyword.
++void add_help(const char *keywords, const char *info, const char *user_groups,
++	      const char *related, bool persistent);
++
++//
++// removes a help file with the given keyword from our records; if it is 
++// persistent, delete it from disc as well
++void remove_help(const char *keyword);
++
++//
++// returns the help data associated with the keyword. 
++// Also, various get functions for it
++HELP_DATA           *get_help(const char *keyword, bool abbrev_ok);
++const char   *helpGetKeywords(HELP_DATA *data);
++const char *helpGetUserGroups(HELP_DATA *data);
++const char    *helpGetRelated(HELP_DATA *data);
++const char       *helpGetInfo(HELP_DATA *data);
++
++#endif // HELP2_H
+diff -ruN ../nakedmudv3.5/src/help2/module.mk src/help2/module.mk
+--- ../nakedmudv3.5/src/help2/module.mk	1969-12-31 19:00:00.000000000 -0500
++++ src/help2/module.mk	2008-05-31 00:17:59.000000000 -0400
+@@ -0,0 +1,2 @@
++SRC  += help2/help.c  \
++	help2/hedit.c \
+diff -ruN ../nakedmudv3.5/src/module.mk src/module.mk
+--- ../nakedmudv3.5/src/module.mk	1969-12-31 19:00:00.000000000 -0500
++++ src/module.mk	2008-05-31 00:17:59.000000000 -0400
+@@ -0,0 +1,2 @@
++SRC  += help2/help.c  \
++	help2/hedit.c \
+diff -ruN ../nakedmudv3.5/src/mud.h src/mud.h
+--- ../nakedmudv3.5/src/mud.h	2007-10-15 19:39:49.000000000 -0400
++++ src/mud.h	2008-05-31 00:17:59.000000000 -0400
+@@ -30,7 +30,7 @@
+ // here is where your optional modules will go
+ #define MODULE_ALIAS
+ #define MODULE_SOCIALS
+-#define MODULE_HELP
++#define MODULE_HELP2
+ #define MODULE_TIME
+ 
+ 
+diff -ruN ../nakedmudv3.5/src/olc2/olc.c src/olc2/olc.c
+--- ../nakedmudv3.5/src/olc2/olc.c	2007-10-15 19:39:49.000000000 -0400
++++ src/olc2/olc.c	2008-05-31 00:17:59.000000000 -0400
+@@ -31,8 +31,8 @@
+ //*****************************************************************************
+ // optional modules
+ //*****************************************************************************
+-#ifdef MODULE_HELP
+-#include "../help/help.h"
++#ifdef MODULE_HELP2
++#include "../help2/help.h"
+ #endif
+ 
+ 
+@@ -125,7 +125,7 @@
+   if(olc->cmd == MENU_NOCHOICE) {
+     text_to_buffer(sock, CLEAR_SCREEN);
+     olc->menu(sock, olc->working_copy);
+-#ifdef MODULE_HELP
++#ifdef MODULE_HELP2
+     text_to_buffer(sock, "\r\n{gEnter choice, ? [topic] for help, or Q to quit: ");
+ #else
+     text_to_buffer(sock, "\r\n{gEnter choice, or Q to quit: ");
+@@ -184,7 +184,7 @@
+     // the change went alright. Re-display the menu
+     if(olc->parser(sock, olc->working_copy, olc->cmd, arg)) {
+       olc->cmd = MENU_NOCHOICE;
+-      olc_menu(sock);
++      //olc_menu(sock);
+     }
+     else
+       text_to_buffer(sock, "Invalid choice!\r\nTry again: ");
+@@ -220,15 +220,25 @@
+       }
+       break;
+ 
+-#ifdef MODULE_HELP
++#ifdef MODULE_HELP2
+     case '?': {
+       while(*arg == '?' || isspace(*arg))
+ 	arg++;
+-      BUFFER *buf = build_help(arg);
+-      if(buf == NULL)
+-	text_to_buffer(sock, "No help available.\r\nTry again: ");
+-      // we've (tried to) switched handlers... no menu display
++      // we have a prompt; don't redisplay our menu
++      HELP_DATA *data = get_help(arg, TRUE);
++      if(data == NULL) {
++	send_to_socket(sock, "No help available.\r\nTry again: ");
++	olc->cmd = MENU_CHOICE_INVALID;
++      }
++      else if(*helpGetUserGroups(data) && socketGetChar(sock) &&
++	      !bitIsOneSet(charGetUserGroups(socketGetChar(sock)),
++			   helpGetUserGroups(data))) {
++	send_to_socket(sock, "You may not view that help file.\r\nTry again: ");
++	olc->cmd = MENU_CHOICE_INVALID;
++      }
+       else {
++	// we've (tried to) switched handlers... no menu display
++	BUFFER *buf = build_help(arg);
+ 	olc->cmd = MENU_NOCHOICE;
+ 	start_reader(sock, bufferString(buf));
+ 	deleteBuffer(buf);
+@@ -241,7 +251,7 @@
+       int cmd = olc->chooser(sock, olc->working_copy, arg);
+       // the menu choice we entered wasn't a valid one. redisplay the menu
+       if(cmd == MENU_CHOICE_INVALID)
+-	olc_menu(sock);
++	;//olc_menu(sock);
+       // the menu choice was acceptable. Note this in our data
+       else if(cmd > MENU_NOCHOICE)
+ 	olc->cmd = cmd;
+@@ -339,9 +349,9 @@
+ 	    "$n raises $s arms, and white flames engulf the entire room.");
+ 
+     // purge all the objects. 
+-    ITERATE_LIST(obj, list_i)
++    ITERATE_LIST(obj, list_i) {
+       extract_obj(obj);
+-    deleteListIterator(list_i);
++    } deleteListIterator(list_i);
+ 
+     // and now all of the non-characters
+     list_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
+@@ -349,8 +359,7 @@
+       if(vict == ch || !charIsNPC(vict)) 
+ 	continue;
+       extract_mobile(vict);
+-    }
+-    deleteListIterator(list_i);
++    } deleteListIterator(list_i);
+   }
+ 
+   // purge characters
+@@ -592,7 +601,6 @@
+ 
+   add_cmd("dig",     NULL, cmd_dig,     "builder", TRUE);
+   add_cmd("fill",    NULL, cmd_fill,    "builder", TRUE);
+-  add_cmd("instantiate", NULL, cmd_instantiate, "builder", TRUE);
+   add_cmd("purge",   NULL, cmd_purge,   "builder", FALSE);
+   add_cmd("load",    NULL, cmd_load,    "builder", FALSE);
+   add_cmd("rcopy",   NULL, cmd_instantiate,"builder", TRUE);
+diff -ruN ../nakedmudv3.5/src/scripts/pymudsys.c src/scripts/pymudsys.c
+--- ../nakedmudv3.5/src/scripts/pymudsys.c	2007-10-15 19:39:49.000000000 -0400
++++ src/scripts/pymudsys.c	2008-05-31 01:43:38.000000000 -0400
+@@ -25,6 +25,13 @@
+ #include "pysocket.h"
+ 
+ 
++//******************************************************************************
++// optional modules
++//******************************************************************************
++#ifdef MODULE_HELP2
++#include "../help2/help.h"
++#endif
++
+ 
+ //*****************************************************************************
+ // local variables and functions
+@@ -549,8 +556,23 @@
+     return NULL;
+   }
+ 
+-  // add the command to the game
+-  add_py_cmd(name, sort_by, func, group, interrupts);
++  // make sure it's a function object, and check its documentation to see if
++  // we can add it as a helpfile
++  if(PyFunction_Check(func)) {
++    add_py_cmd(name, sort_by, func, group, interrupts);
++#ifdef MODULE_HELP2
++    if(get_help(name,FALSE) == NULL && 
++       ((PyFunctionObject*)func)->func_doc != NULL &&
++       PyString_Check(((PyFunctionObject*)func)->func_doc)) {
++      BUFFER *buf = newBuffer(1);
++      bufferCat(buf, PyString_AsString(((PyFunctionObject*)func)->func_doc));
++      bufferFormat(buf, SCREEN_WIDTH, 0);
++      if(bufferLength(buf) > 0)
++	add_help(name, bufferString(buf), group, NULL, FALSE);
++    }
++#endif
++  }
++
+   return Py_BuildValue("O", Py_None);
+ }
+ 
+diff -ruN ../nakedmudv3.5/src/socket.c src/socket.c
+--- ../nakedmudv3.5/src/socket.c	2007-10-15 19:39:49.000000000 -0400
++++ src/socket.c	2008-05-31 00:17:59.000000000 -0400
+@@ -511,23 +511,33 @@
+ bool flush_output(SOCKET_DATA *dsock) {
+   bool  success = TRUE;
+ 
++  // run any hooks prior to flushing our text
++  hookRun("flush", hookBuildInfo("sk", dsock));
++
+   // quit if we have no output and don't need/can't have a prompt
+   if(bufferLength(dsock->outbuf) <= 0 && 
+      (!dsock->bust_prompt || !socketHasPrompt(dsock)))
+-    return TRUE;
++    return success;
++
++  // send our outbound text
++  if(bufferLength(dsock->outbuf) > 0) {
++    hookRun("process_outbound_text",  hookBuildInfo("sk", dsock));
++    hookRun("finalize_outbound_text", hookBuildInfo("sk", dsock));
++    success = text_to_socket(dsock, bufferString(dsock->outbuf));
++    bufferClear(dsock->outbuf);
++  }
+ 
+-  if(dsock->bust_prompt) {
++  // send our prompt
++  if(dsock->bust_prompt && success) {
+     socketShowPrompt(dsock);
++    hookRun("process_outbound_prompt",  hookBuildInfo("sk", dsock));
++    hookRun("finalize_outbound_prompt", hookBuildInfo("sk", dsock));
++    success = text_to_socket(dsock, bufferString(dsock->outbuf));
++    bufferClear(dsock->outbuf);
+     dsock->bust_prompt = FALSE;
+   }
+ 
+-  // process all of our outbound text for stuff like colors, etc
+-  hookRun("process_outbound_text",  hookBuildInfo("sk", dsock));
+-  hookRun("finalize_outbound_text", hookBuildInfo("sk", dsock));
+-
+-  // Send the buffer, and return FALSE if the write fails. Clear our output
+-  success = text_to_socket(dsock, bufferString(dsock->outbuf));
+-  bufferClear(dsock->outbuf);
++  // return our success
+   return success;
+ }
+ 
+diff -ruN ../nakedmudv3.5/src/utils.c src/utils.c
+--- ../nakedmudv3.5/src/utils.c	2007-10-15 19:33:45.000000000 -0400
++++ src/utils.c	2008-05-31 00:17:59.000000000 -0400
+@@ -532,6 +532,21 @@
+   return -1; // none found
+ }
+ 
++//
++// If we're at the beginning of a new paragraph, return where the new paragraph
++// starts. Otherwise, return our current position (index)
++int is_paragraph_marker(const char *string, int index) {
++  int nl_count = 0;
++  int i = 0;
++  for(i = index; isspace(string[i]); i++) {
++    if(string[i] == '\n')
++      nl_count++;
++  }
++  if(nl_count > 1)
++    return i;
++  else
++    return index;
++}
+ 
+ //
+ // just a generic function for hashing a string. This could be 
+diff -ruN ../nakedmudv3.5/src/utils.h src/utils.h
+--- ../nakedmudv3.5/src/utils.h	2007-10-15 19:33:45.000000000 -0400
++++ src/utils.h	2008-05-31 00:17:59.000000000 -0400
+@@ -123,6 +123,7 @@
+ 			   int buflen, bool border);
+ int next_space_in         (const char *string);
+ int next_letter_in        (const char *string, char marker);
++int is_paragraph_marker   (const char *string, int index);
+ int string_hash           (const char *key);
+ bool endswith             (const char *string, const char *end);
+ bool startswith           (const char *string, const char *start);

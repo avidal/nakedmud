@@ -30,7 +30,7 @@
 // here is where your optional modules will go
 #define MODULE_ALIAS
 #define MODULE_SOCIALS
-#define MODULE_HELP
+#define MODULE_HELP2
 #define MODULE_TIME
 
 

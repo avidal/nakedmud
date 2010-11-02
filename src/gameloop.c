@@ -49,8 +49,8 @@
 #ifdef MODULE_SOCIALS
 #include "socials/socials.h"
 #endif
-#ifdef MODULE_HELP
-#include "help/help.h"
+#ifdef MODULE_HELP2
+#include "help2/help.h"
 #endif
 #ifdef MODULE_ALIAS
 #include "alias/alias.h"
@@ -243,7 +243,7 @@ int main(int argc, char **argv)
   init_socials();
 #endif
 
-#ifdef MODULE_HELP
+#ifdef MODULE_HELP2
   log_string("Initializing helpfiles.");
   init_help();
 #endif

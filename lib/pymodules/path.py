@@ -188,8 +188,10 @@ def step(frm, to, ignore_doors = False):
 # commands
 ################################################################################
 def cmd_path(ch, cmd, arg):
-    '''This is really just for purposes of testing to make sure the module
-       works properly'''
+    '''Usage: path <person>
+
+       Prints out a Python list of the directions needed to move from your
+       current location to the location of the specified person.'''
     try:
         tgt, = parse_args(ch, True, cmd, arg, "ch.world.noself")
     except: return

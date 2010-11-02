@@ -511,23 +511,33 @@ void next_cmd_from_buffer(SOCKET_DATA *dsock) {
 bool flush_output(SOCKET_DATA *dsock) {
   bool  success = TRUE;
 
+  // run any hooks prior to flushing our text
+  hookRun("flush", hookBuildInfo("sk", dsock));
+
   // quit if we have no output and don't need/can't have a prompt
   if(bufferLength(dsock->outbuf) <= 0 && 
      (!dsock->bust_prompt || !socketHasPrompt(dsock)))
-    return TRUE;
+    return success;
 
-  if(dsock->bust_prompt) {
+  // send our outbound text
+  if(bufferLength(dsock->outbuf) > 0) {
+    hookRun("process_outbound_text",  hookBuildInfo("sk", dsock));
+    hookRun("finalize_outbound_text", hookBuildInfo("sk", dsock));
+    success = text_to_socket(dsock, bufferString(dsock->outbuf));
+    bufferClear(dsock->outbuf);
+  }
+
+  // send our prompt
+  if(dsock->bust_prompt && success) {
     socketShowPrompt(dsock);
+    hookRun("process_outbound_prompt",  hookBuildInfo("sk", dsock));
+    hookRun("finalize_outbound_prompt", hookBuildInfo("sk", dsock));
+    success = text_to_socket(dsock, bufferString(dsock->outbuf));
+    bufferClear(dsock->outbuf);
     dsock->bust_prompt = FALSE;
   }
 
-  // process all of our outbound text for stuff like colors, etc
-  hookRun("process_outbound_text",  hookBuildInfo("sk", dsock));
-  hookRun("finalize_outbound_text", hookBuildInfo("sk", dsock));
-
-  // Send the buffer, and return FALSE if the write fails. Clear our output
-  success = text_to_socket(dsock, bufferString(dsock->outbuf));
-  bufferClear(dsock->outbuf);
+  // return our success
   return success;
 }
 

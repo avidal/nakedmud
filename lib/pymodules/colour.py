@@ -81,8 +81,10 @@ def process_colour_hook(info):
 ################################################################################
 # initializing and unloading our hooks
 ################################################################################
-hooks.add("process_outbound_text", process_colour_hook)
+hooks.add("process_outbound_text",   process_colour_hook)
+hooks.add("process_outbound_prompt", process_colour_hook)
 
 def __unload__():
     '''detaches our colour module from the game'''
-    hooks.remove("process_outbound_text", process_colour_hook)
+    hooks.remove("process_outbound_text",   process_colour_hook)
+    hooks.remove("process_outbound_prompt", process_colour_hook)

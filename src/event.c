@@ -172,7 +172,7 @@ void start_update(void *owner,
   // providing a delay of 0. In this case, we queue events to the back of the
   // event list instead of push them on to the front
   EVENT_DATA *event = newEvent(owner, delay, on_complete, check_involvement,
-			       data, arg, FALSE);
+			       data, arg, TRUE);
   if(delay == 0)
     listQueue(events, event);
   else

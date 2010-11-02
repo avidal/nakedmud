@@ -236,12 +236,23 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
       col = 0;
     }
 
-    char ch = buf->data[buf_i];
+    char        ch = buf->data[buf_i];
+    int para_start = -1;
 
-    // no spaces on newlines or ends of lines
-    if(isspace(ch) && (col == 0 || col == max_width-1))
+    // try to preserve our paragraph structure
+    if((para_start = is_paragraph_marker(buf->data, buf_i)) > buf_i) {
+      formatted[fmt_i] = '\r'; fmt_i++;
+      formatted[fmt_i] = '\n'; fmt_i++;
+      formatted[fmt_i] = '\r'; fmt_i++;
+      formatted[fmt_i] = '\n'; fmt_i++;
+      buf_i = para_start - 1;
+      col = 0;
       continue;
-    // we will do our own sentance formatting
+    }
+    // no spaces on newlines or ends of lines
+    else if(isspace(ch) && (col == 0 || col == max_width-1))
+      continue;
+    // we will do our own sentence formatting
     else if(needs_capital && isspace(ch))
       continue;
     // delete multiple spaces

@@ -29,7 +29,7 @@ NOCOLOR := \x1B[0m
 MODULES := dyn_vars set_val olc2 editor items scripts
 
 # optional modules go on this line
-MODULES += time socials alias help
+MODULES += time socials alias help2
 
 # flags to use during compilation
 C_FLAGS := -Wall -g -ggdb -O2

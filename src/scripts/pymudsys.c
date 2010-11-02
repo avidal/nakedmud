@@ -25,6 +25,13 @@
 #include "pysocket.h"
 
 
+//******************************************************************************
+// optional modules
+//******************************************************************************
+#ifdef MODULE_HELP2
+#include "../help2/help.h"
+#endif
+
 
 //*****************************************************************************
 // local variables and functions
@@ -549,8 +556,23 @@ PyObject *mudsys_add_cmd(PyObject *self, PyObject *args) {
     return NULL;
   }
 
-  // add the command to the game
-  add_py_cmd(name, sort_by, func, group, interrupts);
+  // make sure it's a function object, and check its documentation to see if
+  // we can add it as a helpfile
+  if(PyFunction_Check(func)) {
+    add_py_cmd(name, sort_by, func, group, interrupts);
+#ifdef MODULE_HELP2
+    if(get_help(name,FALSE) == NULL && 
+       ((PyFunctionObject*)func)->func_doc != NULL &&
+       PyString_Check(((PyFunctionObject*)func)->func_doc)) {
+      BUFFER *buf = newBuffer(1);
+      bufferCat(buf, PyString_AsString(((PyFunctionObject*)func)->func_doc));
+      bufferFormat(buf, SCREEN_WIDTH, 0);
+      if(bufferLength(buf) > 0)
+	add_help(name, bufferString(buf), group, NULL, FALSE);
+    }
+#endif
+  }
+
   return Py_BuildValue("O", Py_None);
 }
 

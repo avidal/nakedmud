@@ -139,7 +139,7 @@ void cmdCopyTo(CMD_DATA *from, CMD_DATA *to) {
   if(to->pyfunc)     { Py_DECREF(to->pyfunc); }
   to->name         = strdup(from->name);
   to->user_group   = strdup(from->user_group);
-  if(to->pyfunc)     { Py_INCREF(to->pyfunc); }
+  if(from->pyfunc)   { Py_INCREF(from->pyfunc); }
   to->func         = from->func;
   to->interrupts   = from->interrupts;
 }
