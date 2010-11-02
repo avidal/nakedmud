@@ -123,7 +123,7 @@ void extenderDoMenu(SOCKET_DATA *sock, OLC_EXTENDER *ext, void *data) {
     if(edata->type == OLCEXT_C)
       edata->menu(sock, data);
     else if(ext->borrow_py != NULL) {
-      PyObject *ret = PyObject_CallFunction(edata->pychoose, "OO", 
+      PyObject *ret = PyObject_CallFunction(edata->pymenu, "OO", 
 					    socketGetPyFormBorrowed(sock), 
 					    ext->borrow_py(data));
       if(ret == NULL)
@@ -153,7 +153,7 @@ int extenderDoOptChoice(SOCKET_DATA *sock, OLC_EXTENDER *ext, void *data,
     retval = edata->choose_exec(sock, data);
   else if(ext->borrow_py != NULL) {
     PyObject *ret = 
-      PyObject_CallFunction(edata->pychoose, "O", ext->borrow_py(data));
+      PyObject_CallFunction(edata->pychoose, "OO", socketGetPyFormBorrowed(sock), ext->borrow_py(data));
     if(ret == NULL)
       log_pyerr("Error running Python OLC exention choice function: %s", key);
     else if(PyInt_Check(ret))

@@ -101,7 +101,7 @@ struct zone_data {
   HASHTABLE       *type_table; // a table of our types and their functions
   int             pulse_timer; // the timer duration
   int                   pulse; // how far down have we gone?
-  HASHTABLE   *auxiliary_data; // additional data installed on us
+  AUX_TABLE   *auxiliary_data; // additional data installed on us
 };
 
 
@@ -167,7 +167,7 @@ void zonePulse(ZONE_DATA *zone) {
   zone->pulse--;
   if(zone->pulse == 0) {
     zone->pulse = zone->pulse_timer;
-    hookRun("reset", hookBuildInfo("str", zoneGetKey(zone)));
+    hookRun("reset_zone", hookBuildInfo("str", zoneGetKey(zone)));
   }
 }
 
@@ -243,7 +243,7 @@ bool zoneSave(ZONE_DATA *zone) {
 // get and set functions for zones
 //*****************************************************************************
 void *zoneGetAuxiliaryData(const ZONE_DATA *zone, char *name) {
-  return hashGet(zone->auxiliary_data, name);
+  return auxiliaryGet(zone->auxiliary_data, name);
 }
 
 int zoneGetPulseTimer(ZONE_DATA *zone) { 
@@ -326,7 +326,7 @@ LIST *zoneGetTypeKeys(ZONE_DATA *zone, const char *type) {
   struct dirent *entry = NULL;
   if(dir != NULL) {
     for(entry = readdir(dir); entry; entry = readdir(dir)) {
-      if(strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+      if(!startswith(entry->d_name, "."))
 	listPut(key_list, strdup(entry->d_name));
     }
     closedir(dir);

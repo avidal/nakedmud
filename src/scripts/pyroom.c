@@ -21,6 +21,7 @@
 #include "../handler.h"
 #include "../prototype.h"
 #include "../commands.h"
+#include "../hooks.h"
 
 #include "pyplugs.h"
 #include "scripts.h"
@@ -28,8 +29,15 @@
 #include "pyobj.h"
 #include "pyexit.h"
 #include "pyroom.h"
-#include "pymud.h"
+#include "pymudsys.h"
 #include "pyauxiliary.h"
+
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../dyn_vars/dyn_vars.h"
 
 
 
@@ -74,22 +82,48 @@ PyObject *PyRoom_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
 int PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
   char *kwlist[] = {"uid", NULL};
   int        uid = NOTHING;
+  PyObject  *who = NULL;
 
   // get the vnum
-  if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwlist, &uid)) {
-    PyErr_Format(PyExc_TypeError, "Rooms may only be created using a uid");
+  if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist, &who)) {
+    PyErr_Format(PyExc_TypeError, "a room UID or string ID must be supplied");
     return -1;
   }
 
-  // make sure a room with the uid exists
-  if(!propertyTableGet(room_table, uid)) {
-    PyErr_Format(PyExc_TypeError, 
-		 "Room with uid, %d, does not exist", uid);
+  // are we doing it as a uid?
+  if(PyInt_Check(who)) {
+    uid = (int)PyInt_AsLong(who);
+    // make sure a room with the uid exists
+    if(!propertyTableGet(room_table, uid)) {
+      PyErr_Format(PyExc_TypeError, 
+		   "Room with uid, %d, does not exist", uid);
+      return -1;
+    }
+
+    self->uid = uid;
+    return 0;
+  }
+  else if(PyString_Check(who)) {
+    ROOM_DATA *room = NULL;
+    if( (room = worldGetRoom(gameworld, get_fullkey_relative(PyString_AsString(who), get_script_locale()))) != NULL) {
+      self->uid = roomGetUID(room);
+      return 0;
+    }
+    // create a fresh room with the given key, and add it to the game
+    else {
+      room = newRoom();
+      roomSetClass(room, get_fullkey_relative(PyString_AsString(who),
+					      get_script_locale()));
+      worldPutRoom(gameworld, roomGetClass(room), room);
+      room_to_game(room);
+      self->uid = roomGetUID(room);
+      return 0;
+    }
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, "a room UID or string ID must be supplied");
     return -1;
   }
-
-  self->uid = uid;
-  return 0;
 }
 
 int PyRoom_compare(PyRoom *room1, PyRoom *room2) {
@@ -123,14 +157,69 @@ PyObject *PyRoom_get_room(PyObject *self, PyObject *args) {
   // try to find the room
   room = worldGetRoom(gameworld, get_fullkey_relative(room_key, get_script_locale()));
 
-  if(room == NULL) {
-    PyErr_Format(PyExc_TypeError, "get room failed: room does not exist or "
-		 "is abstract.");
+  if(room == NULL)
+    return Py_BuildValue("O", Py_None);
+  // create a python object for the new char, and return it
+  return Py_BuildValue("O", roomGetPyFormBorrowed(room));
+}
+
+PyObject *PyRoom_loaded(PyObject *self, PyObject *args) {
+  char     *room_key = NULL;
+  
+  if (!PyArg_ParseTuple(args, "s", &room_key)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "load check failed - it needs a room key/locale.");
     return NULL;
   }
 
-  // create a python object for the new char, and return it
-  return Py_BuildValue("O", roomGetPyFormBorrowed(room));
+  bool val = worldRoomLoaded(gameworld, get_fullkey_relative(room_key, get_script_locale()));
+
+  return Py_BuildValue("i", val);
+}
+
+PyObject *PyRoom_instance(PyObject *self, PyObject *args) {
+  char *room_key = NULL;
+  char   *as_key = NULL;
+ 
+  if (!PyArg_ParseTuple(args, "ss", &room_key, &as_key)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Instance failed. Need source key and instance key.");
+    return NULL;
+  }
+
+  // see if the room is already in existence
+  ROOM_DATA *room = worldGetRoom(gameworld, as_key);
+  if(room != NULL)
+    return Py_BuildValue("O", roomGetPyFormBorrowed(room));
+  else {
+    PROTO_DATA *proto = worldGetType(gameworld, "rproto", room_key);
+    if(proto == NULL) {
+      PyErr_Format(PyExc_TypeError, "prototype %s does not exist.", room_key);
+      return NULL;
+    }
+    as_key = strdupsafe(get_fullkey_relative(as_key, get_key_locale(room_key)));
+    room = protoRoomInstance(proto, as_key);
+    if(room == NULL)
+      return NULL;
+    worldPutRoom(gameworld, as_key, room);
+    free(as_key);
+    return Py_BuildValue("O", roomGetPyFormBorrowed(room));
+  }
+}
+
+PyObject *PyRoom_is_abstract(PyObject *self, PyObject *args) {
+  char     *room_key = NULL;
+  if (!PyArg_ParseTuple(args, "s", &room_key)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "is_abstract failed - it needs a room key/locale.");
+    return NULL;
+  }
+
+  PROTO_DATA *proto = worldGetType(gameworld, "rproto", 
+				   get_fullkey_relative(room_key, get_script_locale()));
+  if(proto == NULL || protoIsAbstract(proto))
+    return Py_BuildValue("i", 1);
+  return Py_BuildValue("i", 0);
 }
 
 
@@ -141,6 +230,24 @@ PyObject *PyRoom_get_room(PyObject *self, PyObject *args) {
 PyObject *PyRoom_getclass(PyRoom *self, void *closure) {
   ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
   if(room != NULL) return Py_BuildValue("s", roomGetClass(room));
+  else             return NULL;
+}
+
+PyObject *PyRoom_getlocale(PyRoom *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL) return Py_BuildValue("s",get_key_locale(roomGetClass(room)));
+  else             return NULL;
+}
+
+PyObject *PyRoom_getprotoname(PyRoom *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL) return Py_BuildValue("s",get_key_name(roomGetClass(room)));
+  else             return NULL;
+}
+
+PyObject *PyRoom_getprotos(PyRoom *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room != NULL) return Py_BuildValue("s", roomGetPrototypes(room));
   else             return NULL;
 }
 
@@ -440,7 +547,7 @@ PyObject *PyRoom_get_exit_dir(PyObject *self, PyObject *args) {
     return NULL;
   }
 
-  return Py_BuildValue("s", roomGetExitDir(room, exit));
+  return Py_BuildValue("z", roomGetExitDir(room, exit));
 }
 
 
@@ -469,7 +576,7 @@ PyObject *PyRoom_fill(PyRoom *self, PyObject *value) {
 
     // is it a special exit? If so, we may need to remove the command as well
     if(dirGetNum(dir) == DIR_NONE) {
-      CMD_DATA *cmd = nearMapRemove(roomGetCmdTable(room), dir);
+      CMD_DATA *cmd = roomRemoveCmd(room, dir);
       if(cmd != NULL)
 	deleteCmd(cmd);
     }
@@ -502,7 +609,7 @@ PyObject *PyRoom_dig(PyRoom *self, PyObject *value) {
 
   // make sure we have a valid destination
   if(PyString_Check(py_dest))
-    dest = get_fullkey_relative(PyString_AsString(py_dest),get_script_locale());
+    dest = PyString_AsString(py_dest); // get_fullkey_relative(PyString_AsString(py_dest),get_script_locale());
   else if(PyRoom_Check(py_dest)) {
     ROOM_DATA *to_room = PyRoom_AsRoom(py_dest);
     if(to_room != NULL)
@@ -542,8 +649,16 @@ PyObject *PyRoom_dig(PyRoom *self, PyObject *value) {
     // if we're digging a special exit, add a cmd for it to the room cmd table
     if(get_cmd_move() && dir_num == DIR_NONE && dir_abbrev_num == DIR_NONE) {
       CMD_DATA *cmd = newPyCmd(cdir, get_cmd_move(), "player", TRUE);
-      cmdAddCheck(cmd, chk_can_move);
-      nearMapPut(roomGetCmdTable(room), cdir, NULL, cmd);
+
+      // add all of our movement checks
+      LIST_ITERATOR *chk_i = newListIterator(get_move_checks());
+      PyObject        *chk = NULL;
+      ITERATE_LIST(chk, chk_i) {
+	cmdAddPyCheck(cmd, chk);
+      } deleteListIterator(chk_i);
+
+      //cmdAddCheck(cmd, chk_can_move);
+      roomAddCmd(room, cdir, NULL, cmd);
     }
   }
 
@@ -637,8 +752,7 @@ PyObject *PyRoom_add_cmd(PyRoom *self, PyObject *args) {
   }
 
   // add the command to the game
-  nearMapPut(roomGetCmdTable(room), name, sort_by, 
-	     newPyCmd(name, func, group, TRUE));
+  roomAddCmd(room, name, sort_by, newPyCmd(name, func, group, TRUE));
   return Py_BuildValue("O", Py_None);
 }
 
@@ -666,7 +780,15 @@ PyObject *PyRoom_add_cmd_check(PyRoom *self, PyObject *args) {
   }
 
   // get the command
-  CMD_DATA *cmd = nearMapGet(roomGetCmdTable(room), name, FALSE);
+  CMD_DATA *cmd = roomGetCmd(room, name, FALSE);
+
+  // command doesn't exist; add a null command so we can 
+  // register just the check on larger-scale tables
+  if(cmd == NULL) {
+    cmd = newCmd(name, NULL, "", FALSE);
+    roomAddCmd(room, name, NULL, cmd);
+  }
+
   if(cmd != NULL)
     cmdAddPyCheck(cmd, func);
   return Py_BuildValue("O", Py_None);
@@ -842,6 +964,40 @@ PyObject *PyRoom_setvar(PyRoom *self, PyObject *args) {
   }
 }
 
+//
+// run all of a room's reset commands
+PyObject *PyRoom_reset(PyRoom *self, void *closure) {
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room == NULL) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to run resets for nonexistant room, %d",
+		 self->uid);
+    return NULL;
+  }
+  hookRun("reset_room", hookBuildInfo("rm", room));
+  return Py_BuildValue("");
+}
+
+PyObject *PyRoom_hasBit(PyObject *self, PyObject *args) {
+  char *bits = NULL;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "s", &bits)) {
+    PyErr_Format(PyExc_TypeError, "hasBit only accepts strings.");
+    return NULL;
+  }
+
+  // pull out the object and check the type
+  ROOM_DATA *rm = PyRoom_AsRoom(self);
+  if(rm != NULL)
+    return Py_BuildValue("i", bitIsSet(roomGetBits(rm), bits));
+  else {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to check bits of nonexistent room, %d.", PyRoom_AsUid(self));
+    return NULL;
+  }
+}
+
 
 
 //*****************************************************************************
@@ -892,6 +1048,12 @@ PyTypeObject PyRoom_Type = {
 PyMethodDef room_module_methods[] = {
   { "get_room", (PyCFunction)PyRoom_get_room, METH_VARARGS,
     "Takes a room key/locale and returns a pointer to that room." },
+  { "is_loaded", (PyCFunction)PyRoom_loaded, METH_VARARGS,
+    "Returns whether the given room key has been loaded to the game." },
+  { "instance",  (PyCFunction)PyRoom_instance, METH_VARARGS,
+    "Returns a new instanced room to the game." },
+  { "is_abstract",  (PyCFunction)PyRoom_is_abstract, METH_VARARGS,
+    "Returns whether a room with the specified prototype is abstract." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -940,6 +1102,12 @@ init_PyRoom(void) {
 			"the room's desc");
     PyRoom_addGetSetter("proto",   PyRoom_getclass,    NULL, 
 			"The room's class");
+    PyRoom_addGetSetter("locale",  PyRoom_getlocale,   NULL, 
+			"The zone we belong to");
+    PyRoom_addGetSetter("protoname",PyRoom_getprotoname,NULL, 
+			"The head of our proto");
+    PyRoom_addGetSetter("protos",  PyRoom_getprotos,   NULL, 
+			"The room's prototypes");
     PyRoom_addGetSetter("chars",   PyRoom_getchars,    NULL, 
 			"chars in the room");
     PyRoom_addGetSetter("objs",  PyRoom_getobjs,       NULL, 
@@ -980,6 +1148,8 @@ init_PyRoom(void) {
 		     "returns whether or not the room inherits from the proto");
     PyRoom_addMethod("getAuxiliary", PyRoom_get_auxiliary, METH_VARARGS,
 		     "get's the specified piece of aux data from the room");
+    PyRoom_addMethod("aux", PyRoom_get_auxiliary, METH_VARARGS,
+		     "get's the specified piece of aux data from the room");
     PyRoom_addMethod("getvar", PyRoom_getvar, METH_VARARGS,
 		    "get the value of a special variable the room has.");
     PyRoom_addMethod("setvar", PyRoom_setvar, METH_VARARGS,
@@ -990,6 +1160,10 @@ init_PyRoom(void) {
 		    "delete a variable from the room's variable table.");
     PyRoom_addMethod("delvar", PyRoom_deletevar, METH_VARARGS,
 		    "delete a variable from the room's variable table.");
+    PyRoom_addMethod("reset", PyRoom_reset, METH_NOARGS,
+		     "run all of the room's reset commands.");
+    PyRoom_addMethod("hasBit", PyRoom_hasBit, METH_VARARGS,
+		     "return whether or not the room has a specified bit.");
 
     // add in all the getsetters and methods
     makePyType(&PyRoom_Type, pyroom_getsetters, pyroom_methods);

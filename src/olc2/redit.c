@@ -34,6 +34,7 @@
 //*****************************************************************************
 #include "../editor/editor.h"
 #include "../scripts/scripts.h"
+#include "../scripts/pymudsys.h"
 #include "../scripts/script_editor.h"
 
 
@@ -43,6 +44,9 @@
 //*****************************************************************************
 #ifdef MODULE_TIME
 #include "../time/mudtime.h"
+#endif
+#ifdef MODULE_PERSISTENT
+#include "../persistent/persistent.h"
 #endif
 
 
@@ -520,10 +524,12 @@ void exedit_menu(SOCKET_DATA *sock, EXIT_DATA *exit) {
 		 "{g5) Description\r\n"
 		 "{c%s\r\n"
 		 "{g6) Exits to    : {c%s\r\n"
-		 "{g8) Key         : {c%s\r\n"
-		 "{g7) Closable    : {y[{c%6s{y]%s\r\n"
-		 "{g9) Pick diff   : {y[{c%6d{y]\r\n"
-		 "{g0) Spot diff   : {y[{c%6d{y]\r\n"
+		 "{g7) Key         : {c%s\r\n"
+		 "{g8) Closable    : {y[{c%6s{y]%s\r\n"
+		 "{g9) Closed      : {y[{c%6s{y]\r\n"
+		 "{g0) Locked      : {y[{c%6s{y]\r\n"
+		 "{gP) Pick diff   : {y[{c%6d{y]\r\n"
+		 "{gS) Spot diff   : {y[{c%6d{y]\r\n"
 		 "{gO) Opposite dir: {c%s{n\r\n",
 		 (*exitGetName(exit) ? exitGetName(exit) : "<NONE>"),
 		 (*exitGetKeywords(exit) ? exitGetKeywords(exit) : "<NONE>"),
@@ -532,8 +538,10 @@ void exedit_menu(SOCKET_DATA *sock, EXIT_DATA *exit) {
 		 exitGetDesc(exit),
 		 exitGetTo(exit),
 		 exitGetKey(exit),
-		 (exitIsClosable(exit) ? "Yes" : "No" ),
+		 YESNO(exitIsClosable(exit)),
 		 (exitIsClosable(exit) && (!*exitGetName(exit) || !*exitGetKeywords(exit)) ? " {r* exit also needs name and keywords{n" : ""),
+		 YESNO(exitIsClosed(exit)),
+		 YESNO(exitIsLocked(exit)),
 		 exitGetPickLev(exit),
 		 exitGetHidden(exit),
 		 (*exitGetOpposite(exit) ? exitGetOpposite(exit) : "<DEFAULT>")
@@ -561,15 +569,23 @@ int exedit_chooser(SOCKET_DATA *sock, EXIT_DATA *exit, const char *option) {
     text_to_buffer(sock, "Enter a new destination: ");
     return EXEDIT_TO;
   case '7':
-    exitSetClosable(exit, (exitIsClosable(exit) ? FALSE : TRUE));
-    return MENU_NOCHOICE;
-  case '8':
     text_to_buffer(sock, "Enter a new key name: ");
     return EXEDIT_KEY;
+  case '8':
+    exitSetClosable(exit, TOGGLE(exitIsClosable(exit)));
+    return MENU_NOCHOICE;
   case '9':
+    exitSetClosed(exit, TOGGLE(exitIsClosed(exit)));
+    return MENU_NOCHOICE;
+  case '0':
+    exitSetLocked(exit, TOGGLE(exitIsLocked(exit)));
+    if(exitIsLocked(exit))
+      exitSetClosed(exit, TRUE);
+    return MENU_NOCHOICE;
+  case 'P':
     text_to_buffer(sock, "Enter a new lock difficulty: ");
     return EXEDIT_PICK;
-  case '0':
+  case 'S':
     text_to_buffer(sock, "Enter a new spot difficulty: ");
     return EXEDIT_SPOT;
   case 'O':
@@ -640,10 +656,16 @@ ROOM_OLC *newRoomOLC(void) {
   data->abstract   = TRUE;
   data->resettable = FALSE;
   roomSetTerrain(data->room, TERRAIN_NONE);
+
+  // so python olc extensions can get at us
+  room_exist(data->room);
+
   return data;
 }
 
 void deleteRoomOLC(ROOM_OLC *data) {
+  room_unexist(data->room);
+
   if(data->key)        free(data->key);
   if(data->parents)    free(data->parents);
   if(data->room)       deleteRoom(data->room);
@@ -775,8 +797,7 @@ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
   roomOLCSetAbstract(data, protoIsAbstract(proto));
 
   // build it from the prototype
-  olc_from_proto(proto, roomOLCGetExtraCode(data), room, roomGetPyFormBorrowed,
-		 room_exist, room_unexist);
+  olc_from_proto(proto, roomOLCGetExtraCode(data), room, roomGetPyFormBorrowed);
   bufferFormatFromPy(roomGetDescBuffer(room));
   bufferFormat(roomGetDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
 
@@ -792,7 +813,7 @@ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
   deleteListWith(ex_list, free);
 
   // format our extra descriptions
-  if(listSize(edescSetGetList(roomGetEdescs(room))) > 0) {
+  if(edescGetSetSize(roomGetEdescs(room)) > 0) {
     LIST_ITERATOR *edesc_i= newListIterator(edescSetGetList(roomGetEdescs(room)));
     EDESC_DATA      *edesc= NULL;
     ITERATE_LIST(edesc, edesc_i) {
@@ -813,6 +834,10 @@ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
 void exit_to_proto(EXIT_DATA *exit, BUFFER *buf) {
   if(exitIsClosable(exit))
     bprintf(buf, "exit.makedoor()\n");
+  if(exitIsClosed(exit))
+    bprintf(buf, "exit.close()\n");
+  if(exitIsLocked(exit))
+    bprintf(buf, "exit.lock()\n");
   if(*exitGetName(exit))
     bprintf(buf, "exit.name       = \"%s\"\n", exitGetName(exit));
   if(*exitGetKeywords(exit))
@@ -864,7 +889,7 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
   }
 
   // extra descriptions
-  if(listSize(edescSetGetList(roomGetEdescs(room))) > 0) {
+  if(edescGetSetSize(roomGetEdescs(room)) > 0) {
     bprintf(buf, "\n### extra descriptions\n");
     LIST_ITERATOR *edesc_i= 
       newListIterator(edescSetGetList(roomGetEdescs(room)));
@@ -1215,6 +1240,10 @@ COMMAND(cmd_resedit) {
   // we need a key
   if(!rkey || !*rkey)
     rkey = roomGetClass(charGetRoom(ch));
+  else if(key_malformed(rkey)) {
+    send_to_char(ch, "You entered an invalid content key.\r\n");
+    return;
+  }
 
   char locale[SMALL_BUFFER];
   char   name[SMALL_BUFFER];
@@ -1241,6 +1270,137 @@ COMMAND(cmd_resedit) {
   }
 }
 
+bool do_fill(ROOM_DATA *room, const char *dir) {
+#ifdef MODULE_PERSISTENT
+  if(roomIsPersistent(room)) {
+    EXIT_DATA *exit = roomRemoveExit(room, dir);
+    if(exit != NULL) {
+      exit_from_game(exit);
+      deleteExit(exit);
+    }
+
+    // is it a special exit? If so, we may need to remove the command as well
+    if(dirGetNum(dir) == DIR_NONE) {
+      CMD_DATA *cmd = roomRemoveCmd(room, dir);
+      if(cmd != NULL)
+	deleteCmd(cmd);
+    }
+
+    // save our change
+    worldStorePersistentRoom(gameworld, roomGetClass(room), room);
+  }
+  else
+#endif
+    {
+    PROTO_DATA *proto = worldGetType(gameworld, "rproto", roomGetClass(room));
+
+    // parse a room OLC out of it
+    ROOM_OLC *olc = roomOLCFromProto(proto);
+    
+    if(olc == NULL)
+      return FALSE;
+
+    // delete our exits
+    EXIT_DATA *exit = roomRemoveExit(roomOLCGetRoom(olc), dir);
+    if(exit != NULL) {
+      exit_from_game(exit);
+      deleteExit(exit);
+    }
+
+    // is it a special exit? If so, we may need to remove the command as well
+    if(dirGetNum(dir) == DIR_NONE) {
+      CMD_DATA *cmd = roomRemoveCmd(room, dir);
+      if(cmd != NULL)
+	deleteCmd(cmd);
+    }
+
+    // add in our resets so they don't get wiped during saving
+    RESET_LIST  *resets = worldGetType(gameworld, "reset", roomGetClass(room));
+    if(resets != NULL)
+      resetListCopyTo(resets, roomOLCGetResets(olc));
+    if(listGetWith(zoneGetResettable(worldGetZone(gameworld, get_key_locale(roomGetClass(room)))),
+		   get_key_name(roomGetClass(room)),
+		   strcasecmp) != NULL)
+      roomOLCSetResettable(olc, TRUE);
+
+    // save our changes and reload the room
+    save_room_olc(olc);
+
+    // garbage collection
+    deleteRoomOLC(olc);
+  }
+
+  return TRUE;
+}
+
+bool do_dig(ROOM_DATA *from, ROOM_DATA *to, const char *dir) {
+#ifdef MODULE_PERSISTENT
+  // are we in a persistent room?
+  if(roomIsPersistent(from)) {
+    EXIT_DATA *exit = newExit();
+    exitSetTo(exit, roomGetClass(to));
+    roomSetExit(from, dir, exit);
+    exit_to_game(exit);
+
+    // if it is a special exit and we have a registered movement command,
+    // add a special command to the room to use this exit
+    if(dirGetNum(dir) == DIR_NONE && get_cmd_move() != NULL) {
+      CMD_DATA *cmd = newPyCmd(dir, get_cmd_move(), "player", TRUE);
+
+      // add all of our movement checks
+      LIST_ITERATOR *chk_i = newListIterator(get_move_checks());
+      PyObject        *chk = NULL;
+      ITERATE_LIST(chk, chk_i) {
+	cmdAddPyCheck(cmd, chk);
+      } deleteListIterator(chk_i);
+
+      //cmdAddCheck(cmd, chk_can_move);
+      roomAddCmd(from, dir, NULL, cmd);
+    }
+      
+    // save our change
+    worldStorePersistentRoom(gameworld, roomGetClass(from), from);
+  }
+
+  // load up the rproto and edit it
+  else
+#endif
+    {
+    // get the prototype for our current room
+    PROTO_DATA *proto = 
+      worldGetType(gameworld, "rproto", roomGetClass(from));
+
+    // parse a ROOM_OLC out of it
+    ROOM_OLC *olc = roomOLCFromProto(proto);
+
+    // error occured
+    if(olc == NULL)
+      return FALSE;
+
+    // make our exits
+    EXIT_DATA  *exit = newExit();
+    exitSetTo(exit, roomGetClass(to));
+
+    // link our rooms
+    roomSetExit(roomOLCGetRoom(olc), dir, exit);
+
+    // re-update our resets
+    RESET_LIST  *resets = 
+      worldGetType(gameworld, "reset", roomGetClass(from));
+    if(resets != NULL)
+      resetListCopyTo(resets, roomOLCGetResets(olc));
+    if(listGetWith(zoneGetResettable(worldGetZone(gameworld, get_key_locale(roomGetClass(from)))),
+		   get_key_name(roomGetClass(from)),
+		   strcasecmp) != NULL)
+      roomOLCSetResettable(olc, TRUE);
+    
+    // save our changes and reload the rooms
+    save_room_olc(olc);
+    deleteRoomOLC(olc);
+  }
+
+  return TRUE;
+}
 
 COMMAND(cmd_dig) {
   ROOM_DATA      *dest = NULL;
@@ -1269,17 +1429,13 @@ COMMAND(cmd_dig) {
   else if(dirGetAbbrevNum(dir) != DIR_NONE)
     ret_dir = strdup(dirGetName(dirGetOpposite(dirGetAbbrevNum(dir))));
 
-  // make sure we have a return direction
-  if(ret_dir == NULL)
-    send_to_char(ch, "A return direction for the dig could not be found.\r\n");
-
   // make sure we don't have an exit in the specified direction
-  else if(roomGetExit(charGetRoom(ch), dir) != NULL)
+  if(roomGetExit(charGetRoom(ch), dir) != NULL)
     send_to_char(ch, "An exit already exists %s -- fill it first!\r\n",
 		 dir);
 
   // make sure we don't have an exit in the return direction
-  else if(roomGetExit(dest, ret_dir) != NULL)
+  else if(ret_dir && roomGetExit(dest, ret_dir) != NULL)
     send_to_char(ch, "An exit already exists in the return direction -- fill it first!\r\n");
 
   // make sure we have edit priviledges
@@ -1292,38 +1448,21 @@ COMMAND(cmd_dig) {
 
   // do the digging
   else {
-    // get the prototype for our current room and destination
-    PROTO_DATA  *proto_here = 
-      worldGetType(gameworld, "rproto", roomGetClass(charGetRoom(ch)));
-    PROTO_DATA *proto_there = 
-      worldGetType(gameworld, "rproto", roomGetClass(dest));
+    if(do_dig(charGetRoom(ch), dest, dir))
+      send_to_char(ch, "You link %s to %s [%s].\r\n",
+		   roomGetClass(charGetRoom(ch)), roomGetClass(dest), dir);
+    else {
+      send_to_char(ch, "An error occured while digging to %s.",
+		   roomGetClass(dest));
+    }
 
-    // parse a ROOM_OLC out of them both
-    ROOM_OLC  *olc_here = roomOLCFromProto(proto_here);
-    ROOM_OLC *olc_there = roomOLCFromProto(proto_there);
-
-    // make our exits
-    EXIT_DATA  *exit_here = newExit();
-    EXIT_DATA *exit_there = newExit();
-    exitSetTo(exit_here, roomGetClass(dest));
-    exitSetTo(exit_there, roomGetClass(charGetRoom(ch)));
-
-    // link our rooms
-    roomSetExit(roomOLCGetRoom(olc_here), dir, exit_here);
-    roomSetExit(roomOLCGetRoom(olc_there), ret_dir, exit_there);
-
-    // save our changes and reload the rooms
-    save_room_olc(olc_here);
-    save_room_olc(olc_there);
-
-    // garbage collection
-    deleteRoomOLC(olc_here);
-    deleteRoomOLC(olc_there);
-
-    // inform the builder
-    send_to_char(ch, "You link %s [%s] to %s [%s].\r\n",
-		 roomGetClass(charGetRoom(ch)), dir,
-		 roomGetClass(dest), ret_dir);
+    if(ret_dir && do_dig(dest, charGetRoom(ch), ret_dir))
+      send_to_char(ch, "You link %s to %s [%s].\r\n",
+		   roomGetClass(dest), roomGetClass(charGetRoom(ch)), ret_dir);
+    else if(ret_dir) {
+      send_to_char(ch, "An error occured while digging a return to %s.",
+		   roomGetClass(charGetRoom(ch)));
+    }
   }
 
   // garbage collection
@@ -1358,15 +1497,12 @@ COMMAND(cmd_fill) {
   else if(dirGetAbbrevNum(dir) != DIR_NONE)
     ret_dir = strdup(dirGetName(dirGetOpposite(dirGetAbbrevNum(dir))));
 
-  // make sure we have a return direction
-  if(ret_dir == NULL)
-    send_to_char(ch, "A return direction for fill could not be found.\r\n");
   // make sure we have the exit
-  else if(!roomGetExit(charGetRoom(ch), dir))
+  if(!roomGetExit(charGetRoom(ch), dir))
     send_to_char(ch, "No exit exists %s!\r\n", dir);
   // make sure the destination exists
-  else if((dest = worldGetRoom(gameworld,exitGetTo(roomGetExit(charGetRoom(ch),
-							       dir)))) == NULL)
+  else if((dest = worldGetRoom(gameworld,exitGetToFull(roomGetExit(charGetRoom(ch),
+								   dir)))) == NULL)
     send_to_char(ch, "No destination exists %s!\r\n", dir);
   // make sure we have edit priviledges
   else if(!canEditZone(worldGetZone(gameworld, get_key_locale(roomGetClass(charGetRoom(ch)))), ch))
@@ -1375,34 +1511,22 @@ COMMAND(cmd_fill) {
   else if(!canEditZone(worldGetZone(gameworld, get_key_locale(roomGetClass(dest))), ch))
     send_to_char(ch,"You are not authorized to edit the destination zone.\r\n");
 
-  // do the digging
+  // do the filling
   else {
-    // get the prototype for our current room and destination
-    PROTO_DATA  *proto_here = 
-      worldGetType(gameworld, "rproto", roomGetClass(charGetRoom(ch)));
-    PROTO_DATA *proto_there = 
-      worldGetType(gameworld, "rproto", roomGetClass(dest));
+    if(do_fill(charGetRoom(ch), dir))
+      send_to_char(ch, "You unlink %s [%s].\r\n", 
+		   roomGetClass(charGetRoom(ch)), dir);
+    else {
+      send_to_char(ch, "An error occured while filling %s %s.", 
+		   roomGetClass(charGetRoom(ch)), dir);
+    }
 
-    // parse a ROOM_OLC out of them both
-    ROOM_OLC  *olc_here = roomOLCFromProto(proto_here);
-    ROOM_OLC *olc_there = roomOLCFromProto(proto_there);
-
-    // delete our exits
-    roomRemoveExit(roomOLCGetRoom(olc_here), dir);
-    roomRemoveExit(roomOLCGetRoom(olc_there), ret_dir);
-
-    // save our changes and reload the rooms
-    save_room_olc(olc_here);
-    save_room_olc(olc_there);
-
-    // garbage collection
-    deleteRoomOLC(olc_here);
-    deleteRoomOLC(olc_there);
-
-    // inform the builder
-    send_to_char(ch, "You unlink %s [%s] and %s [%s].\r\n",
-		 roomGetClass(charGetRoom(ch)), dir,
-		 roomGetClass(dest), ret_dir);
+    if(ret_dir && do_fill(dest, ret_dir))
+      send_to_char(ch, "You unlink %s [%s].\r\n", roomGetClass(dest), ret_dir);
+    else if(ret_dir) {
+      send_to_char(ch, "An error occured while filling %s %s.", 
+		   roomGetClass(dest), ret_dir);
+    }
   }
 
   // garbage collection
@@ -1477,6 +1601,8 @@ COMMAND(cmd_instantiate) {
   // get our locale and name for the dest
   else if(!parse_worldkey_relative(ch, dest, dest_name, dest_locale))
     send_to_char(ch, "What is the key of the destination room?\r\n");
+  else if(key_malformed(src) || key_malformed(dest))
+    send_to_char(ch, "Malformed source or destination keys.");
   // make sure the destination zone is editable
   else if((dest_zone = worldGetZone(gameworld, dest_locale)) == NULL)
     send_to_char(ch, "No such destination zone exists.\r\n");
@@ -1527,6 +1653,10 @@ COMMAND(cmd_redit) {
   // we need a key
   if(!rkey || !*rkey)
     rkey = roomGetClass(charGetRoom(ch));
+  else if(key_malformed(rkey)) {
+    send_to_char(ch, "You entered an invalid content key.\r\n");
+    return;
+  }
 
   char locale[SMALL_BUFFER];
   char   name[SMALL_BUFFER];

@@ -99,8 +99,7 @@ void do_olc(SOCKET_DATA *sock,
 // Now, we just run the relevant code to generate something editable. This is
 // the function that does all the work of parsing out the 'extra' code and not
 // running it, but running everything else.
-void olc_from_proto(PROTO_DATA *proto,BUFFER *extra,void *me,void *aspy,
-		    void *togame,void *fromgame);
+void olc_from_proto(PROTO_DATA *proto,BUFFER *extra,void *me,void *aspy);
 
 
 

@@ -43,12 +43,16 @@ void          socketSetAccount( SOCKET_DATA *dsock, ACCOUNT_DATA *account);
 
 void socketPushInputHandler   ( SOCKET_DATA *socket, 
 			        void handler(SOCKET_DATA *socket, char *input),
-				void prompt (SOCKET_DATA *socket));
+				void prompt (SOCKET_DATA *socket),
+				const char *state);
 void socketReplaceInputHandler( SOCKET_DATA *socket,
 				void handler(SOCKET_DATA *socket, char *input),
-				void prompt (SOCKET_DATA *socket));
-void socketPushPyInputHandler   (SOCKET_DATA *sock, void *handler,void *prompt);
-void socketReplacePyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt);
+				void prompt (SOCKET_DATA *socket),
+				const char *state);
+void socketPushPyInputHandler   (SOCKET_DATA *sock, void *handler,void *prompt,
+				 const char *state);
+void socketReplacePyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt,
+				 const char *state);
 void socketPopInputHandler    ( SOCKET_DATA *socket);
 void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name);
 const char *socketGetHostname ( SOCKET_DATA *sock);
@@ -60,6 +64,9 @@ int               socketGetUID( SOCKET_DATA *sock);
 bool socketHasPrompt          ( SOCKET_DATA *sock);
 void socketBustPrompt         ( SOCKET_DATA *sock);
 void socketShowPrompt         ( SOCKET_DATA *sock);
+bool socketHasCommand         ( SOCKET_DATA *sock);
 const char *socketGetLastCmd  ( SOCKET_DATA *sock);
+const char *socketGetState    ( SOCKET_DATA *sock);
+double socketGetIdleTime      ( SOCKET_DATA *sock);
 
 #endif // SOCKET_H

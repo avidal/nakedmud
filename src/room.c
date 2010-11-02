@@ -19,16 +19,12 @@
 #include "storage.h"
 #include "exit.h"
 #include "room.h"
-
-
-
-// room UIDs (unique IDs) start at a million and go 
-// up by one every time a new room is created
-#define START_ROOM_UID       1000000
-int next_room_uid  =   START_ROOM_UID;
+#include "character.h"
+#include "object.h"
 
 struct room_data {
   int         uid;               // what is our unique room ID number?
+  time_t      birth;             // the time we were created
   int         terrain;           // what kind of terrain do we have?
   char       *name;              // what is the name of our room?
   BUFFER     *desc;              // our description
@@ -43,7 +39,9 @@ struct room_data {
   LIST       *contents;          // what objects do we contain in the room?
   LIST       *characters;        // who is in our room?
 
-  HASHTABLE  *auxiliary_data;    // data modules have installed in us
+  AUX_TABLE  *auxiliary_data;    // data modules have installed in us
+
+  bool        extracted;         // have we been extracted from the game?
 };
 
 
@@ -55,7 +53,8 @@ struct room_data {
 ROOM_DATA *newRoom() {
   ROOM_DATA *room = malloc(sizeof(ROOM_DATA));
 
-  room->uid       = next_room_uid++;
+  room->uid       = next_uid();
+  room->birth     = current_time;
   room->prototypes= strdup("");
   room->name      = strdup("");
   room->class     = strdup("");
@@ -67,10 +66,11 @@ ROOM_DATA *newRoom() {
   room->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_ROOM);
 
   room->exits      = newHashtable();
-  room->cmd_table  = newNearMap();
   room->edescs     = newEdescSet();
   room->contents   = newList();
   room->characters = newList();
+  room->extracted  = FALSE;
+  room->cmd_table  = NULL;
 
   return room;
 }
@@ -111,14 +111,16 @@ void deleteRoom(ROOM_DATA *room) {
   deleteHashtable(room->exits);
 
   // delete all of our commands
-  NEAR_ITERATOR *cmd_i = newNearIterator(room->cmd_table);
-  const char      *key = NULL;
-  CMD_DATA        *cmd = NULL;
-  ITERATE_NEARMAP(key, cmd, cmd_i)
-    deleteCmd(cmd);
-  deleteNearIterator(cmd_i);
-  deleteNearMap(room->cmd_table);
-
+  if(room->cmd_table != NULL) {
+    NEAR_ITERATOR *cmd_i = newNearIterator(room->cmd_table);
+    const char      *key = NULL;
+    CMD_DATA        *cmd = NULL;
+    ITERATE_NEARMAP(key, cmd, cmd_i)
+      deleteCmd(cmd);
+    deleteNearIterator(cmd_i);
+    deleteNearMap(room->cmd_table);
+  }
+    
   // delete extra descriptions
   if(room->edescs) deleteEdescSet(room->edescs);
 
@@ -146,6 +148,7 @@ STORAGE_SET *roomStore(ROOM_DATA *room) {
   store_string(set, "terrain",    terrainGetName(room->terrain));
   store_set   (set, "edescs",     edescSetStore(room->edescs));
   store_list  (set, "exits",      ex_list);
+  store_long  (set, "birth",      room->birth);
 
   // store all of our exits. We're doing this in an odd way by putting the
   // direction name on the storage set for the exit. They should probably be
@@ -160,8 +163,26 @@ STORAGE_SET *roomStore(ROOM_DATA *room) {
     store_string(ex_set, "direction", dir);
     storage_list_put(ex_list, ex_set);
   } deleteHashIterator(ex_i);
+  
+  // store our auxiliary data
+  store_set(set, "auxiliary", auxiliaryDataStore(room->auxiliary_data));
 
-  store_set   (set, "auxiliary", auxiliaryDataStore(room->auxiliary_data));
+  // store all of our characters
+  if(listSize(roomGetCharacters(room)) > 0) {
+    LIST_ITERATOR      *ch_i = newListIterator(roomGetCharacters(room));
+    CHAR_DATA            *ch = NULL;
+    STORAGE_SET_LIST *chlist = new_storage_list();
+    ITERATE_LIST(ch, ch_i) {
+      if(charIsNPC(ch))
+	storage_list_put(chlist, charStore(ch));
+    } deleteListIterator(ch_i);
+    store_list(set, "chars", chlist);
+  }
+
+  // and all of our objects
+  if(listSize(roomGetContents(room)) > 0)
+    store_list(set, "objs", gen_store_list(room->contents, objStore));
+
   return set;
 }
 
@@ -178,6 +199,9 @@ ROOM_DATA *roomRead(STORAGE_SET *set) {
   roomSetEdescs(room,     edescSetRead(read_set   (set, "edescs")));
   bitSet(room->bits,      read_string(set, "room_bits"));
 
+  if(storage_contains(set, "birth"))
+    room->birth = read_long(set, "birth");
+
   // parse and add all of our exits
   while( (ex_set = storage_list_next(ex_list)) != NULL)
     roomSetExit(room, read_string(ex_set, "direction"), exitRead(ex_set));
@@ -185,6 +209,29 @@ ROOM_DATA *roomRead(STORAGE_SET *set) {
   deleteAuxiliaryData(room->auxiliary_data);
   room->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
 					   AUXILIARY_TYPE_ROOM);
+
+  // read all of our characters
+  if(storage_contains(set, "chars")) {
+    deleteList(room->characters);
+    room->characters    = gen_read_list(read_list(set, "chars"), charRead);
+    CHAR_DATA       *ch = NULL;
+    LIST_ITERATOR *ch_i = newListIterator(room->characters);
+    ITERATE_LIST(ch, ch_i) {
+      charSetRoom(ch, room);
+    } deleteListIterator(ch_i);
+  }
+
+  // and all of our objects
+  if(storage_contains(set, "objs")) {
+    deleteList(room->contents);
+    room->contents = gen_read_list(read_list(set, "objs"), objRead);
+    OBJ_DATA        *obj = NULL;
+    LIST_ITERATOR *obj_i = newListIterator(room->contents);
+    ITERATE_LIST(obj, obj_i) {
+      objSetRoom(obj, room);
+    } deleteListIterator(obj_i);
+  }
+
   return room;
 }
 
@@ -207,6 +254,7 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
   roomSetDesc      (to, roomGetDesc(from));
   roomSetTerrain   (to, roomGetTerrain(from));
   bitvectorCopyTo  (from->bits, to->bits);
+  to->birth = from->birth;
 
   // set our edescs
   roomSetEdescs(to, edescSetCopy(from->edescs));
@@ -238,22 +286,38 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
   } deleteHashIterator(ex_i);
 
   // delete all of our old commands
-  NEAR_ITERATOR *cmd_i = newNearIterator(to->cmd_table);
-  const char   *abbrev = NULL;
-  CMD_DATA        *cmd = NULL;
-  ITERATE_NEARMAP(abbrev, cmd, cmd_i) {
-    nearMapRemove(to->cmd_table, cmdGetName(cmd));
-    deleteCmd(cmd);
-  } deleteNearIterator(cmd_i);
+  if(to->cmd_table != NULL) {
+    NEAR_ITERATOR *cmd_i = newNearIterator(to->cmd_table);
+    const char   *abbrev = NULL;
+    CMD_DATA        *cmd = NULL;
+    ITERATE_NEARMAP(abbrev, cmd, cmd_i) {
+      nearMapRemove(to->cmd_table, cmdGetName(cmd));
+      deleteCmd(cmd);
+    } deleteNearIterator(cmd_i);
+  }
 
   // now, copy in all of our new commands
-   cmd_i = newNearIterator(from->cmd_table);
-   ITERATE_NEARMAP(abbrev, cmd, cmd_i) {
-     nearMapPut(to->cmd_table, cmdGetName(cmd), abbrev, cmdCopy(cmd));
-   } deleteNearIterator(cmd_i);
+  if(from->cmd_table != NULL) {
+    if(to->cmd_table == NULL)
+      to->cmd_table = newNearMap();
+    NEAR_ITERATOR *cmd_i = newNearIterator(from->cmd_table);
+    const char   *abbrev = NULL;
+    CMD_DATA        *cmd = NULL;
+    ITERATE_NEARMAP(abbrev, cmd, cmd_i) {
+      nearMapPut(to->cmd_table, cmdGetName(cmd), abbrev, cmdCopy(cmd));
+    } deleteNearIterator(cmd_i);
+  }
   
   // copy all of our auxiliary data
   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
+}
+
+void roomSetExtracted(ROOM_DATA *room) {
+  room->extracted = TRUE;
+}
+
+bool roomIsExtracted(ROOM_DATA *room) {
+  return room->extracted;
 }
 
 bool roomIsInstance(ROOM_DATA *room, const char *prototype) {
@@ -374,6 +438,10 @@ int         roomGetUID         (const ROOM_DATA *room) {
   return room->uid;
 }
 
+time_t      roomGetBirth       (const ROOM_DATA *room) {
+  return room->birth;
+}
+
 EDESC_SET  *roomGetEdescs      (const ROOM_DATA *room) {
   return room->edescs;
 }
@@ -385,7 +453,7 @@ const char *roomGetEdesc       (const ROOM_DATA *room, const char *keyword) {
 }
 
 void *roomGetAuxiliaryData     (const ROOM_DATA *room, const char *name) {
-  return hashGet(room->auxiliary_data, name);
+  return auxiliaryGet(room->auxiliary_data, name);
 }
 
 void        roomSetEdescs      (ROOM_DATA *room, EDESC_SET *edescs) {
@@ -413,6 +481,38 @@ BITVECTOR *roomGetBits(const ROOM_DATA *room) {
 
 NEAR_MAP *roomGetCmdTable(const ROOM_DATA *room) {
   return room->cmd_table;
+}
+
+bool roomHasCmds(const ROOM_DATA *room) {
+  return room->cmd_table != NULL;
+}
+
+bool roomHasCmd(const ROOM_DATA *room, const char *name) {
+  return room->cmd_table != NULL && nearMapKeyExists(room->cmd_table, name);
+}
+
+CMD_DATA *roomRemoveCmd(ROOM_DATA *room, const char *name) {
+  if(room->cmd_table != NULL)
+    return nearMapRemove(room->cmd_table, name);
+  return NULL;
+}
+
+CMD_DATA *roomGetCmd(ROOM_DATA *room, const char *name, bool abbr_ok) {
+  if(room->cmd_table != NULL)
+    return nearMapGet(room->cmd_table, name, abbr_ok);
+  return NULL;
+}
+
+void roomAddCmd(ROOM_DATA *room, const char *name, 
+		const char *abbr, CMD_DATA *cmd) {
+  CMD_DATA *old = NULL;
+  if(room->cmd_table == NULL)
+    room->cmd_table = newNearMap();
+  else
+    old = nearMapRemove(room->cmd_table, name);
+  nearMapPut(room->cmd_table, name, abbr, cmd);
+  if(old != NULL)
+    deleteCmd(old);
 }
 
 
@@ -477,6 +577,7 @@ int dirGetAbbrevNum(const char *dir) {
       return i;
   return DIR_NONE;
 }
+
 
 
 //*****************************************************************************

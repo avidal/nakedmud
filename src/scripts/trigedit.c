@@ -95,7 +95,8 @@ struct trigger_type_usable_list trigger_types[] = {
   { "greet",          "mob"       },
   { "enter",          "mob, room" },
   { "exit",           "mob, room" },
-  { "move",           "mob"       },
+  { "self_enter",     "mob"       },
+  { "self_exit",      "mob"       },
   { "drop",           "obj, room" },
   { "get",            "obj, room" },
   { "give",           "obj, mob"  },
@@ -103,8 +104,10 @@ struct trigger_type_usable_list trigger_types[] = {
   { "wear",           "obj, mob"  },
   { "remove",         "obj, mob"  },
   { "reset",          "room"      },
-  { "combat",         "mob"       },
+  { "look",           "obj, mob, room" },
   { "open",           "obj, room" },
+  { "close",          "obj, room" },
+  { "to_game",        "obj, mob, room" },
   { "", "" },
 };
 
@@ -198,6 +201,8 @@ COMMAND(cmd_tedit) {
   // we need a key
   if(!arg || !*arg)
     send_to_char(ch,"Please supply the key of a trigger you wish to edit.\r\n");
+  else if(key_malformed(arg))
+    send_to_char(ch, "You entered a malformed trigger key.\r\n");
   else {
     char name[SMALL_BUFFER], locale[SMALL_BUFFER];
     if(!parse_worldkey_relative(ch, arg, name, locale))

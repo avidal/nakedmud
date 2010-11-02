@@ -21,4 +21,12 @@ init_PyMudSys(void);
 // new methods, see pymud.c
 void PyMudSys_addMethod(const char *name, void *f, int flags, const char *doc);
 
+//
+// returns the current defined cmd_move
+void *get_cmd_move(void);
+
+//
+// returns a list of checks that must be performed before moving
+LIST *get_move_checks(void);
+
 #endif //__PYMUD_H

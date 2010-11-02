@@ -18,6 +18,7 @@
 #include "../account.h"
 #include "../storage.h"
 #include "../world.h"
+#include "../zone.h"
 
 #include "pymudsys.h"
 #include "scripts.h"
@@ -40,6 +41,7 @@
 #endif
 
 
+
 //*****************************************************************************
 // local variables and functions
 //*****************************************************************************
@@ -49,6 +51,15 @@ PyObject *worldtypes = NULL;
 
 // a list of methods to add to the mudsys module
 LIST *pymudsys_methods = NULL;
+
+// a placeholder of the movement command, as set by one of our modules
+PyObject *py_cmd_move = NULL;
+
+// a list of checks that need to be performed before movement
+LIST *py_move_checks = NULL;
+
+// a list of default movement commands
+LIST *dflt_move_cmds = NULL;
 
 
 
@@ -124,7 +135,10 @@ PyObject *mudsys_create_player(PyObject *Self, PyObject *args) {
   // if it's the first player, give him all priviledges
   if(charGetUID(ch) == 1)
     bitSet(charGetUserGroups(ch),
-	   "admin, builder, scripter, player, playtester");
+	   "admin, wizard, builder, scripter, player, playtester");
+
+  // make sure we'll load back into the same room we were saved in
+  charSetLoadroom(ch, START_ROOM);
 
   char_exist(ch);
   return Py_BuildValue("O", charGetPyFormBorrowed(ch));
@@ -392,9 +406,9 @@ PyObject *mudsys_do_quit(PyObject *self, PyObject *args) {
     charSetSocket(ch, NULL);
     socketSetChar(sock, NULL);
     socketPopInputHandler(sock);
-    extract_mobile(ch);
   }
 
+  extract_mobile(ch);
   return Py_BuildValue("i", 1);
 }
 
@@ -572,9 +586,9 @@ PyObject *mudsys_add_cmd(PyObject *self, PyObject *args) {
   if(PyFunction_Check(func)) {
     add_py_cmd(name, sort_by, func, group, interrupts);
 #ifdef MODULE_HELP2
-    if(get_help(name,FALSE) == NULL && 
+    if(get_help(name,FALSE)==NULL && 
        ((PyFunctionObject*)func)->func_doc != NULL &&
-       PyString_Check(((PyFunctionObject*)func)->func_doc)) {
+       PyString_Check(((PyFunctionObject*)func)->func_doc)){
       BUFFER *buf = newBuffer(1);
       bufferCat(buf, PyString_AsString(((PyFunctionObject*)func)->func_doc));
       bufferFormat(buf, SCREEN_WIDTH, 0);
@@ -585,7 +599,7 @@ PyObject *mudsys_add_cmd(PyObject *self, PyObject *args) {
 #endif
   }
 
-  return Py_BuildValue("O", Py_None);
+  return Py_BuildValue("");
 }
 
 //
@@ -604,8 +618,9 @@ PyObject *mudsys_add_cmd_check(PyObject *self, PyObject *args) {
   }
 
   // add the command to the game
-  add_py_cmd_check(name, func);
-  return Py_BuildValue("O", Py_None);
+  if(PyFunction_Check(func))
+    add_py_cmd_check(name, func);
+  return Py_BuildValue("");
 }
 
 //
@@ -617,7 +632,9 @@ PyObject *mudsys_remove_cmd(PyObject *self, PyObject *args) {
     PyErr_Format(PyExc_TypeError, "function requires string argument.");
     return NULL;
   }
-  remove_cmd(name);
+  CMD_DATA *cmd = remove_cmd(name);
+  if(cmd != NULL)
+    deleteCmd(cmd);
   return Py_BuildValue("O", Py_None);
 }
 
@@ -666,6 +683,70 @@ PyObject *mudsys_show_prompt(PyObject *self, PyObject *args) {
   }
 
   show_prompt(sock);
+  return Py_BuildValue("i", 1);
+}
+
+PyObject *mudsys_set_cmd_move(PyObject *self, PyObject *args) {
+  PyObject *cmd = NULL;
+  if(!PyArg_ParseTuple(args, "O", &cmd)) {
+    PyErr_Format(PyExc_TypeError, "a command must be suppled");
+    return NULL;
+  }
+
+  // make sure it's a function
+  if(!PyFunction_Check(cmd)) {
+    PyErr_Format(PyExc_TypeError, "a command must be suppled");
+    return NULL;
+  }
+
+  Py_XDECREF(py_cmd_move);
+  py_cmd_move = cmd;
+  Py_XINCREF(cmd);
+  return Py_BuildValue("i", 1);
+}
+
+PyObject *mudsys_register_dflt_move_cmd(PyObject *self, PyObject *args) {
+  char *cmd = NULL;
+  if(!PyArg_ParseTuple(args, "s", &cmd)) {
+    PyErr_Format(PyExc_TypeError, "a command name must be supplied.");
+    return NULL;
+  }
+
+  listPut(dflt_move_cmds, strdupsafe(cmd));
+
+  // add all of our default movement checks
+  LIST_ITERATOR *chk_i = newListIterator(py_move_checks);
+  PyObject        *chk = NULL;
+  ITERATE_LIST(chk, chk_i) {
+    add_py_cmd_check(cmd, chk);
+  } deleteListIterator(chk_i);
+
+  return Py_BuildValue("i", 1);
+}
+
+PyObject *mudsys_register_move_check(PyObject *self, PyObject *args) {
+  PyObject *check = NULL;
+  if(!PyArg_ParseTuple(args, "O", &check)) {
+    PyErr_Format(PyExc_TypeError, "a check must be suppled");
+    return NULL;
+  }
+
+  // make sure it's a function
+  if(!PyFunction_Check(check)) {
+    PyErr_Format(PyExc_TypeError, "a function must be suppled");
+    return NULL;
+  }
+
+  // add it to all of our default movement commands
+  LIST_ITERATOR *dir_i = newListIterator(dflt_move_cmds);
+  char            *dir = NULL;
+  ITERATE_LIST(dir, dir_i) {
+    add_py_cmd_check(dir, check);
+  } deleteListIterator(dir_i);
+
+  // now keep track of it for all of our special movement commands
+  Py_XINCREF(check);
+  listQueue(py_move_checks, check);
   return Py_BuildValue("i", 1);
 }
 
@@ -723,6 +804,122 @@ PyObject *mudsys_add_char_method(PyObject *self, PyObject *args) {
 }
 PyObject *mudsys_add_acct_method(PyObject *self, PyObject *args) {
   return mudsys_gen_add_method(&PyAccount_Type, args);
+}
+
+LIST *pychar_see_checks = NULL;
+LIST *pyobj_see_checks  = NULL;
+LIST *pyexit_see_checks = NULL;
+
+bool pycan_see_char(CHAR_DATA *ch, CHAR_DATA *target) {
+  bool ret = TRUE;
+  if(pychar_see_checks != NULL) {
+    PyObject       *pych = charGetPyFormBorrowed(ch);
+    PyObject   *pytarget = charGetPyFormBorrowed(target);
+    LIST_ITERATOR *chk_i = newListIterator(pychar_see_checks);
+    PyObject        *chk = NULL;
+    ITERATE_LIST(chk, chk_i) {
+      PyObject *pyret = PyObject_CallFunction(chk, "OO", pych, pytarget);
+      if(pyret == NULL)
+	log_pyerr("Error evaluating char cansee check");
+      else if(!PyObject_IsTrue(pyret))
+	ret = FALSE;
+
+      Py_XDECREF(pyret);
+      if(ret == FALSE)
+	break;
+    } deleteListIterator(chk_i);
+  }
+  return ret;
+}
+
+bool pycan_see_obj(CHAR_DATA *ch, OBJ_DATA *target) {
+  bool ret = TRUE;
+  if(pyobj_see_checks != NULL) {
+    PyObject       *pych = charGetPyFormBorrowed(ch);
+    PyObject   *pytarget = objGetPyFormBorrowed(target);
+    LIST_ITERATOR *chk_i = newListIterator(pyobj_see_checks);
+    PyObject        *chk = NULL;
+    ITERATE_LIST(chk, chk_i) {
+      PyObject *pyret = PyObject_CallFunction(chk, "OO", pych, pytarget);
+      if(pyret == NULL)
+	log_pyerr("Error evaluating obj cansee check");
+      else if(!PyObject_IsTrue(pyret))
+	ret = FALSE;
+
+      Py_XDECREF(pyret);
+      if(ret == FALSE)
+	break;
+    } deleteListIterator(chk_i);
+  }
+  return ret;
+}
+
+bool pycan_see_exit(CHAR_DATA *ch, EXIT_DATA *target) {
+  bool ret = TRUE;
+  if(pyexit_see_checks != NULL) {
+    PyObject       *pych = charGetPyFormBorrowed(ch);
+    PyObject   *pytarget = newPyExit(target);
+    LIST_ITERATOR *chk_i = newListIterator(pyexit_see_checks);
+    PyObject        *chk = NULL;
+    ITERATE_LIST(chk, chk_i) {
+      PyObject *pyret = PyObject_CallFunction(chk, "OO", pych, pytarget);
+      if(pyret == NULL)
+	log_pyerr("Error evaluating exit cansee check");
+      else if(!PyObject_IsTrue(pyret))
+	ret = FALSE;
+
+      Py_XDECREF(pyret);
+      if(ret == FALSE)
+	break;
+    } deleteListIterator(chk_i);
+    Py_DECREF(pytarget);
+  }
+  return ret;
+}
+
+PyObject *mudsys_register_char_cansee(PyObject *self, PyObject *args) {
+  PyObject *check = NULL;
+  if(!PyArg_ParseTuple(args, "O", &check)) {
+    PyErr_Format(PyExc_TypeError, "Error parsing new character see check.");
+    return NULL;
+  }
+
+  if(pychar_see_checks == NULL)
+    pychar_see_checks = newList();
+  Py_INCREF(check);
+  listPut(pychar_see_checks, check);
+
+  return Py_BuildValue("O", Py_None);
+}
+
+PyObject *mudsys_register_obj_cansee(PyObject *self, PyObject *args) {
+  PyObject *check = NULL;
+  if(!PyArg_ParseTuple(args, "O", &check)) {
+    PyErr_Format(PyExc_TypeError, "Error parsing new object see check.");
+    return NULL;
+  }
+
+  if(pyobj_see_checks == NULL)
+    pyobj_see_checks = newList();
+  Py_INCREF(check);
+  listPut(pyobj_see_checks, check);
+
+  return Py_BuildValue("O", Py_None);
+}
+
+PyObject *mudsys_register_exit_cansee(PyObject *self, PyObject *args) {
+  PyObject *check = NULL;
+  if(!PyArg_ParseTuple(args, "O", &check)) {
+    PyErr_Format(PyExc_TypeError, "Error parsing new exit see check.");
+    return NULL;
+  }
+
+  if(pyexit_see_checks == NULL)
+    pyexit_see_checks = newList();
+  Py_INCREF(check);
+  listPut(pyexit_see_checks, check);
+
+  return Py_BuildValue("O", Py_None);
 }
 
 
@@ -817,6 +1014,7 @@ PyObject *mudsys_world_put_type(PyObject *self, PyObject *args) {
     return NULL;
   }
 
+  Py_XINCREF(entry);
   worldPutType(gameworld, type, key, entry);
   return Py_BuildValue("i", 1);
 }
@@ -851,6 +1049,58 @@ PyObject *mudsys_world_remove_type(PyObject *self, PyObject *args) {
   return ret;
 }
 
+PyObject *mudsys_create_bitvector(PyObject *self, PyObject *args) {
+  return Py_BuildValue("");
+}
+
+PyObject *mudsys_create_bit(PyObject *self, PyObject *args) {
+  char *vector = NULL;
+  char    *bit = NULL;
+
+  if(!PyArg_ParseTuple(args, "ss", &vector, &bit)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Error parsing vector and bit for create_bit.");
+    return NULL;
+  }
+  
+  bitvectorAddBit(vector, bit);
+  return Py_BuildValue("O", Py_True);
+}
+
+PyObject *mudsys_next_uid(PyObject *self, void *closure) {
+  return Py_BuildValue("i", next_uid());
+}
+
+
+PyObject *mudsys_list_zone_contents(PyObject *self, PyObject *args) {
+  char *zonekey = NULL;
+  char    *type = NULL;
+
+  if(!PyArg_ParseTuple(args, "ss", &zonekey, &type)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "a zone name and content type must be supplied.");
+    return NULL;
+  }
+
+  // make sure the zone exists
+  ZONE_DATA *zone = worldGetZone(gameworld, zonekey);
+  if(zone == NULL)
+    return PyList_New(0);
+  else {
+    LIST           *keys = zoneGetTypeKeys(zone, type);
+    LIST_ITERATOR *key_i = newListIterator(keys);
+    PyObject        *ret = PyList_New(0);
+    char            *key = NULL;
+    ITERATE_LIST(key, key_i) {
+      PyObject *str = Py_BuildValue("s", key);
+      PyList_Append(ret, str);
+      Py_XDECREF(str);
+    } deleteListIterator(key_i);
+    deleteListWith(keys, free);
+    return ret;
+  }
+}
+
 
 
 //*****************************************************************************
@@ -872,6 +1122,15 @@ void PyMudSys_addMethod(const char *name, void *f, int flags, const char *doc) {
 
 PyMODINIT_FUNC
 init_PyMudSys(void) {
+  // local variables
+  py_move_checks = newList();
+  dflt_move_cmds = newList();
+
+  // add in hooks to the main MUD
+  register_char_see(pycan_see_char);
+  register_obj_see(pycan_see_obj);
+  register_exit_see(pycan_see_exit);
+
   // add all of our methods
   PyMudSys_addMethod("do_shutdown", mudsys_shutdown, METH_VARARGS,
 		     "shuts the mud down.");
@@ -881,6 +1140,10 @@ init_PyMudSys(void) {
 		     "sets a system value on the mud.");
   PyMudSys_addMethod("sys_getval", mudsys_get_sys_val, METH_VARARGS,
 		     "returns a system value on the mud.");
+  PyMudSys_addMethod("sys_getvar", mudsys_get_sys_val, METH_VARARGS,
+		     "returns a system value on the mud.");
+  PyMudSys_addMethod("sys_setvar", mudsys_set_sys_val, METH_VARARGS,
+		     "sets a system value on the mud.");
   PyMudSys_addMethod("player_exists", mudsys_player_exists, METH_VARARGS,
 		     "returns whether a player with the name exists.");
   PyMudSys_addMethod("account_exists", mudsys_account_exists, METH_VARARGS,
@@ -958,10 +1221,41 @@ init_PyMudSys(void) {
   PyMudSys_addMethod("world_remove_type", mudsys_world_remove_type,METH_VARARGS,
 		     "Removes a type, and returns a reference to it, or None "
 		     "if it does not exist.");
+  PyMudSys_addMethod("register_char_cansee", mudsys_register_char_cansee,
+		     METH_VARARGS, "Register a new check of whether one "
+		     "character can see another.");
+  PyMudSys_addMethod("register_obj_cansee", mudsys_register_obj_cansee,
+		     METH_VARARGS, "Register a new check of whether a "
+		     "character can see an object.");
+  PyMudSys_addMethod("register_exit_cansee", mudsys_register_exit_cansee,
+		     METH_VARARGS, "Register a new check of whether a char "
+		     "can see an exit.");
+  PyMudSys_addMethod("set_cmd_move", mudsys_set_cmd_move, METH_VARARGS,
+		     "sets the movement command.");
+  PyMudSys_addMethod("register_dflt_move_cmd", mudsys_register_dflt_move_cmd, 
+		     METH_VARARGS, "registers a new default movement command.");
+  PyMudSys_addMethod("register_move_check",mudsys_register_move_check,
+		     METH_VARARGS,"register new check to perform a movement.");
+  PyMudSys_addMethod("create_bitvector", mudsys_create_bitvector,
+		     METH_VARARGS,"creates a new type of bitvector."); 
+  PyMudSys_addMethod("create_bit", mudsys_create_bit,
+		     METH_VARARGS,"creates a new bit on the specified bitvector."); 
+  PyMudSys_addMethod("next_uid", mudsys_next_uid, METH_NOARGS,
+		     "returns the next available uid.");
+  PyMudSys_addMethod("list_zone_contents", mudsys_list_zone_contents, 
+		     METH_VARARGS, "returns a list of the contents of the given type, for the specified zone.");
 
   Py_InitModule3("mudsys", makePyMethods(pymudsys_methods),
 		 "The mudsys module, for all MUD system utils.");
 
   worldtypes = PyDict_New();
   Py_INCREF(worldtypes);
+}
+
+void *get_cmd_move(void) {
+  return py_cmd_move;
+}
+
+LIST *get_move_checks(void) {
+  return py_move_checks;
 }

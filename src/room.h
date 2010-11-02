@@ -120,7 +120,16 @@ LIST       *roomGetCharacters   (const ROOM_DATA *room);
 LIST       *roomGetContents     (const ROOM_DATA *room);
 BITVECTOR  *roomGetBits         (const ROOM_DATA *room);
 int         roomGetUID          (const ROOM_DATA *room);
+time_t      roomGetBirth        (const ROOM_DATA *room);
 NEAR_MAP   *roomGetCmdTable     (const ROOM_DATA *room);
+bool        roomHasCmds         (const ROOM_DATA *room);
+bool        roomHasCmd          (const ROOM_DATA *room, const char *name);
+void        roomAddCmd          (ROOM_DATA *room, const char *name, 
+				 const char *abbr, CMD_DATA *cmd);
+CMD_DATA   *roomRemoveCmd       (ROOM_DATA *room, const char *name);
+CMD_DATA   *roomGetCmd          (ROOM_DATA *room, const char *name, 
+				 bool abbr_ok);
+
 
 const char *roomGetClass       (ROOM_DATA *room);
 void        roomSetClass       (ROOM_DATA *room, const char *prototype);
@@ -129,6 +138,8 @@ void        roomSetEdescs      (ROOM_DATA *room, EDESC_SET *edescs);
 void        roomSetName        (ROOM_DATA *room, const char *name);
 void        roomSetDesc        (ROOM_DATA *room, const char *desc);
 void        roomSetTerrain     (ROOM_DATA *room, int terrain_type);
+void        roomSetExtracted   (ROOM_DATA *room);
+bool        roomIsExtracted    (ROOM_DATA *room);
 
 
 

@@ -7,10 +7,25 @@
 ################################################################################
 from mud import *
 from mudsys import add_cmd
-import mudsys, inform, char, string
+import mudsys, inform, string, mudsock, mud, hooks
+import room as mudroom
+import char as mudchar
+import obj  as mudobj
 
 
 
+################################################################################
+# local variables
+################################################################################
+
+# a list of current instances, and their source zones
+curr_instances = [ ]
+
+
+
+################################################################################
+# game commands
+################################################################################
 def cmd_shutdown(ch, cmd, arg):
     '''Shuts the mud down.'''
     mudsys.do_shutdown()
@@ -36,7 +51,7 @@ def cmd_repeat(ch, cmd, arg):
          > repeat 20 load obj beer@drinks
        '''
     try:
-        times, arg = parse_args(ch, True, cmd, arg, "int string")
+        times, arg = parse_args(ch, True, cmd, arg, "int(times) string(command)")
     except: return
 
     if times < 1:
@@ -90,7 +105,7 @@ def cmd_lockdown(ch, cmd, arg):
         mudsys.sys_setval("lockdown", arg)
 
         # kick out everyone who we've just locked out
-        for ch in char.char_list():
+        for ch in mudchar.char_list():
             if ch.is_pc and not ch.isInGroup(arg):
                 ch.send("The mud has just been locked down to you.")
                 mudsys.do_save(ch)
@@ -104,7 +119,7 @@ def cmd_at(ch, cmd, arg):
        current room.'''
     try:
         found, type, arg = parse_args(ch, True, cmd, arg,
-                                      "{ room ch.world.noself } string")
+                                      "{ room ch.world.noself } string(command)")
     except: return
 
     # figure out what room we're doing the command at
@@ -124,19 +139,19 @@ def try_force(ch, vict, cmd):
     if ch == vict:
         ch.send("Why don't you just try doing it?")
     elif vict.isInGroup("admin"):
-        ch.send("But " + vict.name + " has just as many priviledges as you!")
+        ch.send("But " + ch.see_as(vict) + " has just as many priviledges as you!")
     else:
         ch.send("You force " + vict.name + " to '" + cmd + "'")
-        vict.send(inform.see_char_as(vict, ch) + " forces you to '" + cmd + "'")
+        vict.send(vict.see_as(ch) + " forces you to '" + cmd + "'")
         vict.act(cmd, False)
 
 def cmd_force(ch, cmd, arg):
-    '''Usage: force <person> <action>
+    '''Usage: force <person> <command>
     
        Attempts to make the specified perform a command of your choosing.'''
     try:
         found, multi, arg = parse_args(ch, True, cmd, arg,
-                                       "ch.world.noself.multiple string")
+                                       "ch.world.noself.multiple string(command)")
     except: return
 
     if multi == False:
@@ -167,14 +182,14 @@ def cmd_goto(ch, cmd, arg):
     ch.act("look")
     message(ch, None, None, None, True, "to_room",
             "$n appears in a puff of smoke.")
-
+    hooks.run("enter", hooks.build_info("ch rm", (ch, ch.room)))
+    
 def do_transfer(ch, tgt, dest):
     '''ch transfers tgt to dest'''
     if tgt.room == dest:
-        ch.send(tgt.name + " is already there")
+        ch.send(ch.see_as(tgt) + " is already there")
     else:
-        tgt.send(inform.see_char_as(tgt, ch) + " has transferred you to " +
-                 dest.name)
+        tgt.send(tgt.see_as(ch) + " has transferred you to " + dest.name)
         message(tgt, None, None, None, True, "to_room",
                 "$n disappears in a puff of smoke.")
         tgt.room = dest
@@ -204,19 +219,145 @@ def cmd_transfer(ch, cmd, arg):
         for tgt in found:
             do_transfer(ch, tgt, dest)
 
+def cmd_eval(ch, cmd, arg):
+    '''Usage: eval <python statement>
+
+       Evaluates a Python statement and sends its return value to the user.
+       For example:
+
+       > eval "Your name is " + ch.name
+       Evaluation: Your name is Alister
+
+       > eval dir()
+       Evaluation: ['arg', 'ch', 'cmd']
+
+       > eval dir(ch)
+       '''
+    if arg == "":
+        ch.send("What python statement do you want to evaluate?")
+    else:
+        ret = eval(arg)
+        ch.send("Evaluation: " + str(ret))
+
+def cmd_exec(ch, cmd, arg):
+    '''Usage: exec <python statement>
+
+       Execute any one-line python statement.'''
+    if arg == "":
+        ch.send("What python statement do you want to evaluate?")
+    else:
+        exec arg
+        ch.send("Command executed.")
+
+def cmd_instance(ch, cmd, arg):
+    '''Create an instanced version of the specified room'''
+    try:
+        source, dest = parse_args(ch, True, cmd, arg, "word(source) [as] word(dest)")
+    except: return
+
+    room = mudroom.instance(source, dest)
+    ch.send("You instance " + source + " as " + room.proto + ".")
+
+def do_zinstance(zone):
+    '''create a new instance of the specified zone.'''
+    # sanitize the zone key
+    if sum([(not v in string.ascii_letters+string.digits+"_") for v in zone]):
+        return None
+    elif len(zone) == 0:
+        return None
+
+    # find all of our room keys
+    rnames = mudsys.list_zone_contents(zone, "rproto")
+    if len(rnames) == 0:
+        return None
+            
+    to_instance = [ ]
+    for name in rnames:
+        key = name + "@" + zone
+        if not mudroom.is_abstract(key):
+            to_instance.append(name)
+
+    # instantiate and reset all of the relevant rooms
+    uid     = mudsys.next_uid()
+    inszone = zone + str(uid)
+    for name in to_instance:
+        key = name + "@" + zone
+        ins = name + "@" + inszone
+        rm  = mudroom.instance(key, ins)
+        rm.reset()
+
+    # append this to the list of instanced zones
+    curr_instances.append((inszone, zone))
+
+    # success
+    return inszone
+
+def cmd_zinstance(ch, cmd, arg):
+    '''create an instanced copy of the specified zone.'''
+    if arg == "":
+        if len(curr_instances) == 0:
+            ch.send("No zones currently instanced.")
+        else:
+            ch.send("{w %-40s %36s " % ("Instance", "Source"))
+            ch.send("{b-------------------------------------------------------------------------------")
+            for pair in curr_instances:
+                ch.send("{c %-40s %36s{n" % pair)
+        return
+
+    # try creating the instance, and returning the zone key
+    instance = do_zinstance(arg)
+        
+    if instance != None:
+        ch.send("Zone has been instanced with zone key, %s. zinstance for a list of current instances." % instance)
+    elif sum([(not v in string.ascii_letters+string.digits+"_") for v in arg]):
+        ch.send("Invalid zone key.")
+    elif len(mudsys.list_zone_contents(arg, "rproto")):
+        ch.send("Source zone contained no rooms to instance.")
+    else:
+        ch.send("Zone instance failed for unknown reason.")
+
+def cmd_connections(ch, cmd, arg):
+    '''lists all of the currently connected sockets, their status, and where
+       they are connected from.'''
+
+    tosend = [ ]
+
+    fmt = " %-11s %-11s %-11s %s"
+
+    tosend.append(("{w" + fmt) % ("Character", "Account", "Status", "Host"))
+    tosend.append("{b--------------------------------------------------------------------------------{c")
+    for sock in mudsock.socket_list():
+        chname  = "none"
+        accname = "none"
+        state   = sock.state
+        host    = sock.hostname
+
+        if sock.ch != None:
+            chname  = sock.ch.name
+        if sock.account != None:
+            accname = sock.account.name
+        tosend.append(fmt % (chname, accname, state, host))
+    tosend.append("{n")
+    ch.page("\r\n".join(tosend))
+
 
 
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("shutdow",  None, cmd_shutdown_net, "admin",   False)
-add_cmd("shutdown", None, cmd_shutdown,     "admin",   False)
-add_cmd("copyove",  None, cmd_copyover_net, "admin",   False)
-add_cmd("copyover", None, cmd_copyover,     "admin",   False)
-add_cmd("at",       None, cmd_at,           "admin",   False)
-add_cmd("lockdown", None, cmd_lockdown,     "admin",   False)
-add_cmd("pulserate",None, cmd_pulserate,    "admin",   False)
-add_cmd("repeat",   None, cmd_repeat,       "admin",   False)
-add_cmd("force",    None, cmd_force,        "admin",   False)
-add_cmd("goto",     None, cmd_goto,         "builder", False)
-add_cmd("transfer", None, cmd_transfer,     "builder", False)
+add_cmd("shutdow",     None, cmd_shutdown_net, "admin",   False)
+add_cmd("shutdown",    None, cmd_shutdown,     "admin",   False)
+add_cmd("copyove",     None, cmd_copyover_net, "admin",   False)
+add_cmd("copyover",    None, cmd_copyover,     "admin",   False)
+add_cmd("at",          None, cmd_at,           "wizard",  False)
+add_cmd("lockdown",    None, cmd_lockdown,     "admin",   False)
+add_cmd("pulserate",   None, cmd_pulserate,    "admin",   False)
+add_cmd("repeat",      None, cmd_repeat,       "wizard",  False)
+add_cmd("force",       None, cmd_force,        "wizard",  False)
+add_cmd("goto",        None, cmd_goto,         "wizard",  False)
+add_cmd("transfer",    None, cmd_transfer,     "wizard",  False)
+add_cmd("eval",        None, cmd_eval,         "admin",   False)
+add_cmd("exec",        None, cmd_exec,         "admin",   False)
+add_cmd("connections", None, cmd_connections,  "admin",   False)
+add_cmd("instance",    None, cmd_instance,     "admin",   False)
+add_cmd("zinstance",   None, cmd_zinstance,    "admin",   False)

@@ -94,6 +94,19 @@ LIST *get_help_matches(const char *keyword) {
 }
 
 //
+// returns a list of all help keywords
+LIST *get_all_help(void) {
+  LIST             *all = newList();
+  NEAR_ITERATOR *help_i = newNearIterator(help_table);
+  const char      *name = NULL;
+  HELP_DATA       *data = NULL;
+  ITERATE_NEARMAP(name, data, help_i) {
+    listQueue(all, strdup(name));
+  } deleteNearIterator(help_i);
+  return all;
+}
+
+//
 // returns where the help file would be stored on disc if it exists
 const char *get_help_file(const char *keyword) {
   static BUFFER *buf = NULL;
@@ -115,6 +128,9 @@ const char *get_help_file(const char *keyword) {
 COMMAND(cmd_help) {
   char       *kwd = NULL;
   HELP_DATA *data = NULL;
+  if(*arg == '\'' || *arg == '"')
+    one_arg(arg, arg);
+
   if(!parse_args(ch, TRUE, cmd, arg, "| string", &kwd))
     return;
 
@@ -188,7 +204,7 @@ BUFFER *build_help(const char *keyword) {
   else {
     BUFFER     *buf = newBuffer(1);
     char      header[128]; // +2 for \r\n, +1 for \0
-    center_string(header, data->keywords, 80, 128, TRUE);
+    center_string(header, data->keywords, 79, 128, TRUE);
 
     // build the header and the info
     bprintf(buf, "%s{n%s", header, data->info);
@@ -211,7 +227,9 @@ void add_help(const char *keywords, const char *info, const char *user_groups,
   char            *kwd = NULL;
   ITERATE_LIST(kwd, kwd_i) {
     // remove any old copy we might of had
-    nearMapRemove(help_table, kwd);
+    HELP_DATA *old = nearMapRemove(help_table, kwd);
+    if(old != NULL)
+      deleteHelp(old);
     
     // put our new entry
     nearMapPut(help_table, kwd, NULL, data);
@@ -222,6 +240,7 @@ void add_help(const char *keywords, const char *info, const char *user_groups,
     STORAGE_SET *set = helpStore(data);
     char    *primary = listGet(kwds, 0); 
     storage_write(set, get_help_file(primary));
+    storage_close(set);
   }
 
   // garbage collection
@@ -281,7 +300,7 @@ const char *helpGetInfo(HELP_DATA *data) {
 
 
 //*****************************************************************************
-// python hooks
+// python extensions
 //*****************************************************************************
 PyObject *PyMudSys_add_help(PyObject *self, PyObject *args) {
   char *keywords    = NULL;
@@ -296,6 +315,53 @@ PyObject *PyMudSys_add_help(PyObject *self, PyObject *args) {
 
   add_help(keywords, info, user_groups, related, FALSE);
   return Py_BuildValue("i", 1);
+}
+
+PyObject *PyMudSys_get_help(PyObject *self, PyObject *args) {
+  char     *name = NULL;
+  bool abbrev_ok = FALSE;
+
+  if(!PyArg_ParseTuple(args, "s|b", &name, &abbrev_ok)) {
+    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to get_help");
+    return NULL;
+  }
+
+  // find the helpfile we're looking for
+  HELP_DATA *help = get_help(name, abbrev_ok);
+  
+  // did we find it?
+  if(help == NULL)
+    return Py_BuildValue("OOOO", Py_None, Py_None, Py_None, Py_None);
+  else
+    return Py_BuildValue("ssss",
+			 helpGetKeywords(help),
+			 helpGetInfo(help),
+			 helpGetUserGroups(help),
+			 helpGetRelated(help));
+}
+
+PyObject *PyMudSys_list_help(PyObject *self, PyObject *args) {
+  char  *keyword = NULL;
+
+  if(!PyArg_ParseTuple(args, "|s", &keyword)) {
+    PyErr_Format(PyExc_TypeError, "Invalid arguments supplied to get_help");
+    return NULL;
+  }
+
+  // find our matches; all topics if there is no keyword
+  LIST *matches = (keyword ? get_help_matches(keyword) : get_all_help());
+
+  // get_help_matches likes to return NULL if it doesn't find anything.
+  // kind of annoying.
+  if(matches == NULL) 
+    matches = newList();
+
+  // convert the list of string to Python strings
+  PyObject *pymatches = PyList_fromList(matches, PyString_FromString);
+
+  // garbage collection
+  deleteListWith(matches, free);
+  return Py_BuildValue("O", pymatches);
 }
 
 
@@ -353,17 +419,6 @@ void read_old_help() {
     STORAGE_SET       *set = storage_read(OLD_HELP_FILE);
     STORAGE_SET_LIST *list = read_list(set, "helpfiles");
     STORAGE_SET     *entry = NULL;
-    BUFFER         *dirbuf = newBuffer(1);
-
-    // make all of our new directories
-    mkdir(HELP_DIR, S_IRWXU | S_IRWXG);
-    char subdir = '\0';
-    for(subdir = 'A'; subdir <= 'Z'; subdir++) {
-      bufferClear(dirbuf);
-      bprintf(dirbuf, "%s/%c", HELP_DIR, subdir);
-      mkdir(bufferString(dirbuf), S_IRWXU | S_IRWXG);
-    }
-    deleteBuffer(dirbuf);
 
     // parse all of the helpfiles
     while( (entry = storage_list_next(list)) != NULL)
@@ -399,4 +454,8 @@ void init_help() {
   // add all of our Python hooks
   PyMudSys_addMethod("add_help", PyMudSys_add_help, METH_VARARGS, 
 		     "allows Python modules to add non-persistent helpfiles.");
+  PyMudSys_addMethod("get_help", PyMudSys_get_help, METH_VARARGS, 
+		     "returns info for the help file.");
+  PyMudSys_addMethod("list_help", PyMudSys_list_help, METH_VARARGS,
+		     "Returns all help topics. If a partial keyword is supplied, only return partial matches.");
 }

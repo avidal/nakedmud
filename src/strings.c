@@ -95,11 +95,19 @@ char *one_arg(char *fStr, char *bStr)
   while (isspace(*fStr))
     fStr++; 
 
+  char arg_end = ' ';
+
+  // are we using quotation marks or commas to specify multiple words?
+  if(*fStr == '"' || *fStr == '\'') {
+    arg_end = *fStr;
+    fStr++;
+  }
+
   /* copy the beginning of the string */
   while (*fStr != '\0')
   {
     /* have we reached the end of the first word ? */
-    if (isspace(*fStr))
+    if (*fStr == arg_end)
     {
       fStr++;
       break;

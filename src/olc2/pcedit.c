@@ -35,6 +35,7 @@
 #define PCEDIT_MULTI_RDESC   5
 #define PCEDIT_RACE          6
 #define PCEDIT_SEX           7
+#define PCEDIT_USER_GROUPS   8
 
 
 
@@ -52,7 +53,8 @@ void pcedit_menu(SOCKET_DATA *sock, CHAR_DATA *mob) {
 		 "{c%s\r\n"
 		 "{g6) Description\r\n"
 		 "{c%s\r\n"
-		 "{gR) Change race   {y[{c%8s{y]\r\n"
+		 "{gU) User Groups   {c%s{n\r\n"
+		 "{gR) Change Race   {y[{c%8s{y]\r\n"
 		 "{gG) Change Gender {y[{c%8s{y]\r\n",
 		 charGetName(mob),
 		 charGetMultiName(mob),
@@ -60,6 +62,7 @@ void pcedit_menu(SOCKET_DATA *sock, CHAR_DATA *mob) {
 		 charGetRdesc(mob),
 		 charGetMultiRdesc(mob),
 		 charGetDesc(mob),
+		 bitvectorGetBits(charGetUserGroups(mob)),
 		 charGetRace(mob),
 		 sexGetName(charGetSex(mob))
 		 );
@@ -94,6 +97,9 @@ int  pcedit_chooser(SOCKET_DATA *sock, CHAR_DATA *mob, const char *option) {
     olc_display_table(sock, sexGetName, NUM_SEXES, 1);
     text_to_buffer(sock, "Pick a gender: ");
     return PCEDIT_SEX;
+  case 'U':
+    text_to_buffer(sock, "Enter comma-separated list of user groups: ");
+    return PCEDIT_USER_GROUPS;
   default: return MENU_CHOICE_INVALID;
   }
 }
@@ -115,6 +121,10 @@ bool pcedit_parser(SOCKET_DATA *sock, CHAR_DATA *mob, int choice,
     return TRUE;
   case PCEDIT_MULTI_RDESC:
     charSetMultiRdesc(mob, arg);
+    return TRUE;
+  case PCEDIT_USER_GROUPS:
+    bitClear(charGetUserGroups(mob));
+    bitToggle(charGetUserGroups(mob), arg);
     return TRUE;
   case PCEDIT_RACE:
     if(!isRace(arg))

@@ -23,10 +23,8 @@ int gen_hash_cmp(const void *key1, const void *key2) {
   return val;
 }
 
-int gen_hash_func(const void *key) {
-  int val = (int)key;
-  if(val < 0) return -val;
-  else        return  val;
+unsigned long gen_hash_func(const void *key) {
+  return (unsigned long)key;
 }
 
 struct map_iterator {
@@ -44,8 +42,8 @@ struct map_data {
   int size;
   int num_buckets;
   struct list **buckets;
-  int (* hash_func)(const void *key);
-  int (*  compares)(const void *key1, const void *key2);
+  unsigned long (* hash_func)(const void *key);
+  int           (*  compares)(const void *key1, const void *key2);
 };
 
 
@@ -53,18 +51,18 @@ struct map_data {
 // an internal form of hashGet that returns the entire entry (key and val)
 //
 MAP_ENTRY *mapGetEntry(MAP *map, const void *key) {
-  int bucket = map->hash_func(key) % map->num_buckets;
+  unsigned int bucket = map->hash_func(key) % map->num_buckets;
 
   if(map->buckets[bucket] == NULL)
     return NULL;
   else {
-    struct list_iterator *list_i = newListIterator(map->buckets[bucket]);
-    MAP_ENTRY *elem   = NULL;
+    LIST_ITERATOR *list_i = newListIterator(map->buckets[bucket]);
+    MAP_ENTRY     *elem   = NULL;
 
-    for(;(elem = listIteratorCurrent(list_i)) != NULL; listIteratorNext(list_i))
+    ITERATE_LIST(elem, list_i) {
       if(!map->compares(key, elem->key))
 	break;
-    deleteListIterator(list_i);
+    } deleteListIterator(list_i);
 
     return elem;
   }
@@ -92,9 +90,9 @@ LIST *mapCollectEntries(MAP *map) {
     if(map->buckets[i] == NULL) continue;
     LIST_ITERATOR *list_i = newListIterator(map->buckets[i]);
     MAP_ENTRY       *elem = NULL;
-    for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
+    ITERATE_LIST(elem, list_i) {
       listPut(list, elem);
-    deleteListIterator(list_i);
+    } deleteListIterator(list_i);
   }
   return list;
 }
@@ -121,7 +119,7 @@ void mapExpand(MAP *map, int size) {
 
   // now, we put all of our entries back into the new buckets
   while((entry = listPop(entries)) != NULL) {
-    int bucket = map->hash_func(entry->key) % map->num_buckets;
+    unsigned int bucket = map->hash_func(entry->key) % map->num_buckets;
     if(map->buckets[bucket] == NULL) map->buckets[bucket] = newList();
     listPut(map->buckets[bucket], entry);
   }
@@ -136,20 +134,21 @@ void mapExpand(MAP *map, int size) {
 // documentation found in map.h
 //
 //*****************************************************************************
-MAP *newMap(void *hash_func, void *compares) {
-  int i;
+MAP *newMapSize(void *hash_func, void *compares, int size) {
   MAP *map = malloc(sizeof(MAP));
   map->size        = 0;
-  map->num_buckets = DEFAULT_MAP_SIZE;
+  map->num_buckets = size;
   map->hash_func   = (hash_func ? hash_func : gen_hash_func);
   map->compares    = (compares  ? compares  : gen_hash_cmp);
-  map->buckets = malloc(sizeof(LIST *) * map->num_buckets);
-  for(i = 0; i < map->num_buckets; i++)
-    map->buckets[i] = NULL;
+  map->buckets     = calloc(map->num_buckets, sizeof(LIST *));
   return map;
 }
 
-void  deleteMap(MAP *map) {
+MAP *newMap(void *hash_func, void *compares) {
+  return newMapSize(hash_func, compares, DEFAULT_MAP_SIZE);
+}
+
+void deleteMap(MAP *map) {
   int i;
   for(i = 0; i < map->num_buckets; i++) {
     if(map->buckets[i])
@@ -159,20 +158,18 @@ void  deleteMap(MAP *map) {
   free(map);
 }
 
-int  mapPut    (MAP *map, const void *key, void *val) {
+int mapPut(MAP *map, const void *key, void *val) {
   MAP_ENTRY *elem = mapGetEntry(map, key);
 
   // update the val if it's already here
-  if(elem) {
+  if(elem)
     elem->val = val;
-    return 1;
-  }
   else {
     // first, see if we'll need to expand the map
     if((map->size * 80)/100 > map->num_buckets)
       mapExpand(map, (map->num_buckets * 150)/100);
 
-    int bucket = map->hash_func(key) % map->num_buckets;
+    unsigned int bucket = map->hash_func(key) % map->num_buckets;
 
     // if the bucket doesn't exist yet, create it
     if(map->buckets[bucket] == NULL)
@@ -181,11 +178,12 @@ int  mapPut    (MAP *map, const void *key, void *val) {
     MAP_ENTRY *entry = newMapEntry(key, val);
     listPut(map->buckets[bucket], entry);
     map->size++;
-    return 1;
   }
+
+  return 1;
 }
 
-void *mapGet    (MAP *map, const void *key) {
+void *mapGet(MAP *map, const void *key) {
   MAP_ENTRY *elem = mapGetEntry(map, key);
   if(elem)
     return elem->val;
@@ -193,39 +191,39 @@ void *mapGet    (MAP *map, const void *key) {
     return NULL;
 }
 
-void *mapRemove (MAP *map, const void *key) {
-  int bucket = map->hash_func(key) % map->num_buckets;
+void *mapRemove(MAP *map, const void *key) {
+  unsigned int bucket = map->hash_func(key) % map->num_buckets;
 
   if(map->buckets[bucket] == NULL)
     return NULL;
   else {
-    struct list_iterator *list_i = newListIterator(map->buckets[bucket]);
-    MAP_ENTRY *elem   = NULL;
+    LIST_ITERATOR *list_i = newListIterator(map->buckets[bucket]);
+    MAP_ENTRY       *elem = NULL;
 
-    for(;(elem = listIteratorCurrent(list_i)) != NULL; listIteratorNext(list_i))
+    ITERATE_LIST(elem, list_i) {
       if(!map->compares(key, elem->key))
 	break;
-    deleteListIterator(list_i);
+    } deleteListIterator(list_i);
 
-    if(elem) {
-      void *val = elem->val;
-      listRemove(map->buckets[bucket], elem);
-      deleteMapEntry(elem);
-      map->size--;
-      return val;
-    }
-    else
+    if(elem == NULL)
       return NULL;
+
+    void *val = elem->val;
+    listRemove(map->buckets[bucket], elem);
+    deleteMapEntry(elem);
+    map->size--;
+    return val;
   }
 }
 
-int   mapIn     (MAP *map, const void *key) {
+int mapIn(MAP *map, const void *key) {
   return (mapGetEntry(map, key) != NULL);
 }
 
-int   mapSize   (MAP *map) {
+int mapSize(MAP *map) {
   return map->size;
 }
+
 
 
 //*****************************************************************************

@@ -18,6 +18,7 @@
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
+#include "pyplugs.h"
 
 
 
@@ -42,10 +43,12 @@ void PyEvent_on_complete(void *owner, PyObject *tuple, const char *arg) {
       PyOwner = Py_None;
 
     PyObject *ret = PyObject_CallFunction(efunc, "OOs", PyOwner, edata, arg);
+    if(ret == NULL)
+      log_pyerr("Error finishing Python event");
     Py_XDECREF(ret);
   }
 
-  // decrease the reference on our function and data
+  // decrease the reference on our function and data, as well as our owner
   Py_XDECREF(tuple);
 }
 
@@ -70,8 +73,8 @@ PyObject *PyEvent_start(PyObject *self, PyObject *args, void *func) {
 
   // try to parse all of our values
   if(!PyArg_ParseTuple(args, "OdO|Os", &PyOwner, &delay, &efunc, &edata, &arg)){
-    PyErr_Format(PyExc_TypeError, 
-		 "Invalid arguments provided to event handler");
+    //PyErr_Format(PyExc_TypeError, 
+    //"Invalid arguments provided to event handler");
     return NULL;
   }
 
@@ -84,7 +87,7 @@ PyObject *PyEvent_start(PyObject *self, PyObject *args, void *func) {
 
   // figure out what type of data our owner is
   if(PyOwner == Py_None) {
-    owner = Py_None;
+    owner = NULL;
     sprintf(otype, "none");
   }
   else if(PyChar_Check(PyOwner)) {
@@ -107,7 +110,7 @@ PyObject *PyEvent_start(PyObject *self, PyObject *args, void *func) {
   }
 
   // make sure the owner exists
-  if(owner == NULL) {
+  if(PyOwner != Py_None && owner == NULL) {
     PyErr_Format(PyExc_StandardError, "Owner supplied does not exist in game");
     return NULL;
   }

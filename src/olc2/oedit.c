@@ -54,10 +54,16 @@ OBJ_OLC *newObjOLC(void) {
   data->obj       = newObj();
   objSetWeightRaw(data->obj, -1);
   data->extra_code = newBuffer(1);
+
+  // so python olc extensions can get at us
+  obj_exist(data->obj);
+
   return data;
 }
 
 void deleteObjOLC(OBJ_OLC *data) {
+  obj_unexist(data->obj);
+
   if(data->key)        free(data->key);
   if(data->parents)    free(data->parents);
   if(data->extra_code) deleteBuffer(data->extra_code);
@@ -111,13 +117,12 @@ OBJ_OLC *objOLCFromProto(PROTO_DATA *proto) {
   objOLCSetAbstract(data, protoIsAbstract(proto));
 
   // build it from the prototype
-  olc_from_proto(proto, objOLCGetExtraCode(data), obj, objGetPyFormBorrowed,
-		 obj_exist, obj_unexist);
+  olc_from_proto(proto, objOLCGetExtraCode(data), obj, objGetPyFormBorrowed);
   bufferFormatFromPy(objGetDescBuffer(obj));
   bufferFormat(objGetDescBuffer(obj), SCREEN_WIDTH, PARA_INDENT);
 
   // format our extra descriptions
-  if(listSize(edescSetGetList(objGetEdescs(obj))) > 0) {
+  if(edescGetSetSize(objGetEdescs(obj)) > 0) {
     LIST_ITERATOR *edesc_i= newListIterator(edescSetGetList(objGetEdescs(obj)));
     EDESC_DATA      *edesc= NULL;
     ITERATE_LIST(edesc, edesc_i) {
@@ -167,7 +172,7 @@ PROTO_DATA *objOLCToProto(OBJ_OLC *data) {
   }
 
   // extra descriptions
-  if(listSize(edescSetGetList(objGetEdescs(obj))) > 0) {
+  if(edescGetSetSize(objGetEdescs(obj)) > 0) {
     bprintf(buf, "\n### extra descriptions\n");
     LIST_ITERATOR *edesc_i= newListIterator(edescSetGetList(objGetEdescs(obj)));
     EDESC_DATA      *edesc= NULL;
@@ -388,6 +393,8 @@ COMMAND(cmd_oedit) {
   // we need a key
   if(!arg || !*arg)
     send_to_char(ch, "What is the name of the obj you want to edit?\r\n");
+  else if(key_malformed(arg))
+    send_to_char(ch, "You entered an invalid content key.\r\n");
   else {
     char locale[SMALL_BUFFER];
     char   name[SMALL_BUFFER];

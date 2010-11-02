@@ -20,7 +20,15 @@ HASHTABLE *newHashtableSize(int num_buckets);
 // create a new hashtable. the default number of buckets are used
 HASHTABLE *newHashtable(void);
 
-void  deleteHashtable(HASHTABLE *table);
+//
+// delete the hashtable. Nothing is done to its contents. Table must be cleared
+// before being deleted to prevent memory leaks
+void deleteHashtable(HASHTABLE *table);
+
+//
+// Deletes the hashtable, and also deletes all of its contents with the
+// given function. Should take the form: void func(void *data)
+void deleteHashtableWith(HASHTABLE *table, void *function);
 
 int   hashPut    (HASHTABLE *table, const char *key, void *val);
 void *hashGet    (HASHTABLE *table, const char *key);

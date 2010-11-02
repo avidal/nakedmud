@@ -19,12 +19,22 @@
 
 
 //*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../scripts/scripts.h"
+#include "../scripts/pyplugs.h"
+
+
+
+//*****************************************************************************
 // auxiliary data for sockets
 //*****************************************************************************
 typedef struct editor_aux_data {
-  EDITOR *editor;      // the editor we're using
-  BUFFER *buf;         // the buffer we're editing
-  BUFFER *working_buf; // the buffer where we do our work
+  EDITOR   *editor;      // the editor we're using
+  BUFFER   *buf;         // the buffer we're editing (if any)
+  BUFFER   *working_buf; // the buffer where we do our work
+  PyObject *py_complete; // python function to call on completion of editing
+  void    (* on_complete)(SOCKET_DATA *sock, const char *str);
 } EDITOR_AUX_DATA;
 
 EDITOR_AUX_DATA *newEditorAuxData() {
@@ -37,14 +47,18 @@ void deleteEditorAuxData(EDITOR_AUX_DATA *data) {
   // if we have a working buf, free it. Don't touch anything else. that
   // stuff will be needed by the rest of the program
   if(data->working_buf) deleteBuffer(data->working_buf);
+  if(data->py_complete) { Py_DECREF(data->py_complete); }
   free(data);
 }
 
 void clearEditorAuxData(EDITOR_AUX_DATA *data) {
   if(data->working_buf) deleteBuffer(data->working_buf);
+  if(data->py_complete) { Py_DECREF(data->py_complete); }
   data->working_buf = NULL;
   data->editor      = NULL;
   data->buf         = NULL;
+  data->on_complete = NULL;
+  data->py_complete = NULL;
 }
 
 
@@ -54,6 +68,7 @@ void clearEditorAuxData(EDITOR_AUX_DATA *data) {
 //*****************************************************************************
 // a basic text editor for use by other modules
 EDITOR *text_editor = NULL;
+
 // an editor for dialog. Essentially, text without newlines
 EDITOR *dialog_editor = NULL;
 
@@ -102,9 +117,9 @@ void editorDefaultPrompt(SOCKET_DATA *sock) {
 //
 void editorDefaultHeader(SOCKET_DATA *sock) {
   text_to_buffer(sock, 
-"==========================================================================\r\n"
+"================================================================================\r\n"
 "Begin editing. /q on a new line to quit, /a to abort. /h for help         \r\n"
-"==========================================================================\r\n"
+"================================================================================\r\n"
 		 );
 }
 
@@ -160,7 +175,18 @@ void editorInputHandler(SOCKET_DATA *sock, char *arg) {
 void editorQuit(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
   // save the current changes
   EDITOR_AUX_DATA *data = socketGetAuxiliaryData(sock, "editor_aux_data");
-  bufferCopyTo(buf, data->buf);
+  if(data->on_complete)
+    data->on_complete(sock, bufferString(buf));
+  else if(data->py_complete) {
+    PyObject *ret = PyObject_CallFunction(data->py_complete, "Os", 
+					  socketGetPyFormBorrowed(sock),
+					  bufferString(buf));
+    if(ret == NULL)
+      log_pyerr("Error quitting the buffer editor.");
+    Py_XDECREF(ret);
+  }
+
+  //bufferCopyTo(buf, data->buf);
   clearEditorAuxData(data);
   text_to_buffer(sock, "Saved and quit.\r\n");
   // and then pop the input handler
@@ -368,23 +394,55 @@ void editorRemoveCommand(EDITOR *editor, const char *cmd) {
   }
 }
 
-void socketStartEditor(SOCKET_DATA *sock, EDITOR *editor, BUFFER *buf) {
+void dflt_editor_complete(SOCKET_DATA *sock, const char *str) {
   EDITOR_AUX_DATA *data = socketGetAuxiliaryData(sock, "editor_aux_data"); 
-  data->working_buf = bufferCopy(buf);
-  data->buf         = buf;
-  data->editor      = editor;
-  if(editor->init) editor->init(sock);
+  bufferClear(data->buf);
+  bufferCat(data->buf, str);
+}
+
+void begin_editor(SOCKET_DATA *sock) {
+  EDITOR_AUX_DATA *data = socketGetAuxiliaryData(sock, "editor_aux_data"); 
+  if(data->editor->init) data->editor->init(sock);
 
   editorDefaultHeader(sock);
   
   // if we have a "list" command, execute it. Otherwise, cat the buf
   ECMD_DATA *list = NULL;
-  if((list = hashGet(editor->cmds, "l")) != NULL)
-    list->func(sock, "", buf);
+  if((list = hashGet(data->editor->cmds, "l")) != NULL)
+    list->func(sock, "", data->working_buf);
   else
-    text_to_buffer(sock, bufferString(buf));
+    text_to_buffer(sock, bufferString(data->working_buf));
 
-  socketPushInputHandler(sock, editorInputHandler, editor->prompt);
+  socketPushInputHandler(sock, editorInputHandler, data->editor->prompt, 
+			 "text editor");
+}
+
+void socketStartPyEditorFunc(SOCKET_DATA *sock, EDITOR *editor,const char *dflt,
+			     void *py_complete) {
+  EDITOR_AUX_DATA *data = socketGetAuxiliaryData(sock, "editor_aux_data"); 
+  data->working_buf = newBuffer(1);
+  bufferCat(data->working_buf, dflt);
+  data->editor      = editor;
+  data->py_complete = py_complete;
+  Py_XINCREF(data->py_complete);
+  begin_editor(sock);
+}
+
+void socketStartEditorFunc(SOCKET_DATA *sock, EDITOR *editor, const char *dflt,
+			   void (* on_complete)(SOCKET_DATA *, const char *)) {
+  EDITOR_AUX_DATA *data = socketGetAuxiliaryData(sock, "editor_aux_data"); 
+  data->working_buf = newBuffer(1);
+  bufferCat(data->working_buf, dflt);
+  data->editor      = editor;
+  data->on_complete = on_complete;
+  if(editor->init) editor->init(sock);
+  begin_editor(sock);
+}
+
+void socketStartEditor(SOCKET_DATA *sock, EDITOR *editor, BUFFER *buf) {
+  EDITOR_AUX_DATA *data = socketGetAuxiliaryData(sock, "editor_aux_data"); 
+  data->buf         = buf;
+  socketStartEditorFunc(sock, editor, bufferString(buf), dflt_editor_complete);
 }
 
 EDITOR *socketGetEditor(SOCKET_DATA *sock) {

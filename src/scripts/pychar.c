@@ -23,6 +23,7 @@
 #include "../socket.h"
 #include "../prototype.h"
 #include "../save.h"
+#include "../inform.h"
 
 #include "pyplugs.h"
 #include "scripts.h"
@@ -182,8 +183,7 @@ PyObject *PyChar_getroom(PyChar *self, void *closure) {
   else if(charGetRoom(ch) != NULL)
     return Py_BuildValue("O", roomGetPyFormBorrowed(charGetRoom(ch)));
   else {
-    Py_INCREF(Py_None);
-    return Py_BuildValue("O", Py_None);
+    return Py_BuildValue("");
   }
 }
 
@@ -194,8 +194,7 @@ PyObject *PyChar_getlastroom(PyChar *self, void *closure) {
   else if(charGetLastRoom(ch) != NULL)
     return Py_BuildValue("O", roomGetPyFormBorrowed(charGetLastRoom(ch)));
   else {
-    Py_INCREF(Py_None);
-    return Py_BuildValue("O", Py_None);
+    return Py_BuildValue("");
   }
 }
 
@@ -234,7 +233,7 @@ PyObject *PyChar_geton(PyChar *self, void *closure) {
   if(ch == NULL) 
     return NULL;
   else if(charGetFurniture(ch) == NULL)
-    return Py_BuildValue("O", Py_None);
+    return Py_BuildValue("");
   else 
     return Py_BuildValue("O", objGetPyFormBorrowed(charGetFurniture(ch)));
 }
@@ -243,6 +242,29 @@ PyObject *PyChar_getuid(PyChar *self, void *closure) {
   return Py_BuildValue("i", self->uid);
 }
 
+PyObject *PyChar_gethidden(PyObject *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar(self);
+  if(ch != NULL)  return Py_BuildValue("i", charGetHidden(ch));
+  else            return NULL;  
+}
+
+PyObject *PyChar_getweight(PyObject *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar(self);
+  if(ch != NULL)  return Py_BuildValue("d", charGetWeight(ch));
+  else            return NULL;  
+}
+
+PyObject *PyChar_getbirth(PyObject *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar(self);
+  if(ch != NULL)  return Py_BuildValue("i", charGetBirth(ch));
+  else            return NULL;
+}
+
+PyObject *PyChar_getage(PyObject *self, void *closure) {
+  CHAR_DATA *ch = PyChar_AsChar(self);
+  if(ch != NULL)  return Py_BuildValue("d", difftime(current_time, charGetBirth(ch)));
+  else            return NULL;  
+}
 
 PyObject *PyChar_getprototypes(PyChar *self, void *closure) {
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
@@ -288,6 +310,7 @@ PyObject *PyChar_geteq(PyChar *self, PyObject *args) {
   } deleteListIterator(eq_i);
   PyObject *retval = Py_BuildValue("O", list);
   Py_DECREF(list);
+  deleteList(equipped);
   return retval;
 }
 
@@ -323,7 +346,7 @@ PyObject *PyChar_getsocket(PyChar *self, void *closure) {
   else {
     SOCKET_DATA *sock = charGetSocket(ch);
     if(sock == NULL)
-      return Py_BuildValue("O", Py_None);
+      return Py_BuildValue("");
     return Py_BuildValue("O", socketGetPyFormBorrowed(sock));
   }
 }
@@ -427,6 +450,42 @@ int PyChar_setdesc(PyChar *self, PyObject *value, void *closure) {
   CHAR_DATA *ch;
   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
   charSetDesc(ch, PyString_AsString(value));
+  return 0;
+}
+
+int PyChar_sethidden(PyObject *self, PyObject *value, void *closure) {
+  CHAR_DATA *ch = NULL;
+  PYCHAR_CHECK_CHAR_EXISTS(PyChar_AsUid(self), ch);
+
+  if(value == NULL || value == Py_None)
+    charSetHidden(ch, 0);
+  else if(PyInt_Check(value))
+    charSetHidden(ch, PyInt_AsLong(value));
+  else {
+    PyErr_Format(PyExc_TypeError,
+		"Tried to change char %d's spot difficulty to an invalid type.",
+		 charGetUID(ch));
+    return -1;
+  }
+
+  return 0;
+}
+
+int PyChar_setweight(PyObject *self, PyObject *value, void *closure) {
+  CHAR_DATA *ch = NULL;
+  PYCHAR_CHECK_CHAR_EXISTS(PyChar_AsUid(self), ch);
+
+  if(value == NULL || value == Py_None)
+    charSetWeight(ch, 0.0);
+  else if(PyFloat_Check(value))
+    charSetWeight(ch, PyFloat_AsDouble(value));
+  else {
+    PyErr_Format(PyExc_TypeError,
+		"Tried to change char %d's weight to an invalid type.",
+		 charGetUID(ch));
+    return -1;
+  }
+
   return 0;
 }
 
@@ -553,9 +612,8 @@ int PyChar_setsex(PyChar *self, PyObject *value, void *closure) {
 
   int sex = sexGetNum(PyString_AsString(value));
   if(sex == SEX_NONE) {
-    char buf[SMALL_BUFFER];
-    sprintf(buf, "%s is an invalid sex type", PyString_AsString(value));
-    PyErr_Format(PyExc_TypeError, buf);
+    PyErr_Format(PyExc_TypeError, "%s is an invalid sex type",
+		 PyString_AsString(value));
     return -1;
   }
 
@@ -579,9 +637,8 @@ int PyChar_setposition(PyChar *self, PyObject *value, void *closure) {
 
   int pos = posGetNum(PyString_AsString(value));
   if(pos == POS_NONE) {
-    char buf[SMALL_BUFFER];
-    sprintf(buf, "%s is an invalid position type", PyString_AsString(value));
-    PyErr_Format(PyExc_TypeError, buf);
+    PyErr_Format(PyExc_TypeError, "%s is an invalid position type", 
+		 PyString_AsString(value));
     return -1;
   }
 
@@ -600,6 +657,9 @@ int PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
     return -1;
   }
 
+  CHAR_DATA *ch;
+  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+
   ROOM_DATA *room = NULL;
 
   if(PyRoom_Check(value))
@@ -607,7 +667,7 @@ int PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
   else if(PyString_Check(value))
     room = worldGetRoom(gameworld, 
 			get_fullkey_relative(PyString_AsString(value),
-					     get_script_locale()));
+					     get_smart_locale(ch)));
   else {
     PyErr_Format(PyExc_TypeError, 
 		 "Character's room must be a string value or a "
@@ -621,8 +681,6 @@ int PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
     return -1;
   }
 
-  CHAR_DATA *ch;
-  PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
   // only move if we're not already here
   if(charGetRoom(ch) != room) {
     char_to_room(ch, room);
@@ -758,7 +816,6 @@ PyObject *PyChar_act(PyChar *self, PyObject *value) {
   }
 }
 
-
 //
 // returns whether or not the character can see something
 PyObject *PyChar_cansee(PyChar *self, PyObject *arg) {
@@ -804,6 +861,50 @@ PyObject *PyChar_cansee(PyChar *self, PyObject *arg) {
   }
 }
 
+//
+// returns whether or not the character can see something
+PyObject *PyChar_see_as(PyChar *self, PyObject *arg) {
+  PyObject *py_tgt = NULL;
+
+  if(!PyArg_ParseTuple(arg, "O", &py_tgt)) {
+    PyErr_Format(PyExc_TypeError, "Must supply obj or mob for see_as");
+    return NULL;
+  }
+
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);  
+  if(ch == NULL) {
+    PyErr_Format(PyExc_TypeError, "Nonexistent character, %d, tried see_as",
+		 self->uid);
+    return NULL;
+  }
+  else {
+    OBJ_DATA    *obj = NULL;
+    CHAR_DATA  *pers = NULL;
+    EXIT_DATA  *exit = NULL;
+
+    if(PyChar_Check(py_tgt))
+      pers = PyChar_AsChar(py_tgt);
+    else if(PyObj_Check(py_tgt))
+      obj  = PyObj_AsObj(py_tgt);
+    else if(PyExit_Check(py_tgt))
+      exit = PyExit_AsExit(py_tgt);
+    else {
+      PyErr_Format(PyExc_TypeError, "Must supply obj, mob, or exit to see_as");
+      return NULL;
+    }
+
+    if(obj != NULL)
+      return Py_BuildValue("s", see_obj_as(ch, obj));
+    else if(pers != NULL)
+      return Py_BuildValue("s", see_char_as(ch, pers));
+    else if(exit != NULL)
+      return Py_BuildValue("s", see_exit_as(ch, exit));
+    else {
+      PyErr_Format(PyExc_StandardError, "Target of cansee did not exist!");
+      return NULL;
+    }
+  }
+}
 
 //
 // Returns TRUE if the character has the given variable set
@@ -939,10 +1040,12 @@ PyObject *PyChar_getbodypct(PyChar *self, PyObject *args) {
 //
 // equips a character with an item
 PyObject *PyChar_equip(PyChar *self, PyObject *args) {  
-  OBJ_DATA  *obj = NULL;
-  CHAR_DATA  *ch = NULL;
-  PyObject *pobj = NULL;
-  char      *pos = NULL;
+  OBJ_DATA      *obj = NULL;
+  CHAR_DATA      *ch = NULL;
+  PyObject     *pobj = NULL;
+  char          *pos = NULL;
+  const char *needed = NULL;
+  bool        forced = FALSE;
 
   // incase the equip fails, keep item in the original place.. here's the vars
   CHAR_DATA *old_carrier = NULL;
@@ -951,7 +1054,7 @@ PyObject *PyChar_equip(PyChar *self, PyObject *args) {
   ROOM_DATA    *old_room = NULL;
   OBJ_DATA     *old_cont = NULL;
 
-  if (!PyArg_ParseTuple(args, "O|z", &pobj, &pos)) {
+  if (!PyArg_ParseTuple(args, "O|zb", &pobj, &pos, &forced)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Character equip must be supplied with an item to equip!");
     return NULL;
@@ -989,8 +1092,11 @@ PyObject *PyChar_equip(PyChar *self, PyObject *args) {
     try_unequip(old_wearer, obj);
   }
 
+  if(objIsType(obj, "worn"))
+    needed = wornGetPositions(obj);
+
   // try equipping the object. If we fail, put it back wherever it came from
-  if(!objIsType(obj, "worn") || !try_equip(ch, obj, pos,wornGetPositions(obj))){
+  if((!forced && !objIsType(obj, "worn")) || !try_equip(ch,obj,pos,needed)) {
     if(old_room != NULL)
       obj_to_room(obj, old_room);
     else if(old_cont != NULL)
@@ -999,6 +1105,11 @@ PyObject *PyChar_equip(PyChar *self, PyObject *args) {
       obj_to_char(obj, old_carrier);
     else if(old_wearer != NULL)
       try_equip(ch, obj, old_pos, NULL);
+    if(pos == NULL)
+      message(ch, NULL, obj, NULL, TRUE, TO_CHAR, "You are already equipped in all possible positions for $o.");
+    else
+      message(ch, NULL, obj, NULL, TRUE, TO_CHAR, "You could not equip $o there.");
+
     return Py_BuildValue("i", 0);
     //    PyErr_Format(PyExc_StandardError,
     //		 "Character is already equipped in all possible positions!");
@@ -1026,11 +1137,77 @@ PyObject *PyChar_getequip(PyChar *self, PyObject *args) {
   
   obj = bodyGetEquipment(charGetBody(ch), pos);
   if(obj == NULL)
-    return Py_BuildValue("O", Py_None);
+    return Py_BuildValue("");
   else
     return Py_BuildValue("O", objGetPyFormBorrowed(obj));
 }
 
+PyObject *PyChar_getslots(PyChar *self, PyObject *args) {  
+  CHAR_DATA   *ch = PyChar_AsChar((PyObject *)self);
+  PyObject *pyobj = NULL;
+  OBJ_DATA   *obj = NULL;
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError, "Nonexistant character");
+    return NULL;
+  }
+
+  if(!PyArg_ParseTuple(args, "O", &pyobj)) {
+    PyErr_Format(PyExc_TypeError, "An item must be supplied.");
+    return NULL;
+  }
+  if(!PyObj_Check(pyobj)) {
+    PyErr_Format(PyExc_TypeError, "Missing object argument type.");
+    return NULL;
+  }
+  obj = PyObj_AsObj(pyobj);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried locate positions of nonexistent object, %d.", PyObj_AsUid(pyobj));
+    return NULL;
+  }
+
+  // return the slots
+  return Py_BuildValue("s", bodyEquippedWhere(charGetBody(ch), obj));
+}
+
+PyObject *PyChar_getslottypes(PyChar *self, PyObject *args) {  
+  CHAR_DATA   *ch = PyChar_AsChar((PyObject *)self);
+  PyObject *pyobj = NULL;
+  OBJ_DATA   *obj = NULL;
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError, "Nonexistant character");
+    return NULL;
+  }
+
+  if(!PyArg_ParseTuple(args, "O", &pyobj)) {
+    PyErr_Format(PyExc_TypeError, "An item must be supplied.");
+    return NULL;
+  }
+  if(!PyObj_Check(pyobj)) {
+    PyErr_Format(PyExc_TypeError, "Missing object argument type.");
+    return NULL;
+  }
+  obj = PyObj_AsObj(pyobj);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried locate positions of nonexistent object, %d.", PyObj_AsUid(pyobj));
+    return NULL;
+  }
+
+  PyObject *ret = PyList_New(0);
+  LIST   *where = parse_keywords(bodyEquippedWhere(charGetBody(ch), obj));
+  if(where > 0) {
+    LIST_ITERATOR *where_i = newListIterator(where);
+    const char        *pos = NULL;
+    ITERATE_LIST(pos, where_i) {
+      PyObject *str = Py_BuildValue("s", bodyposGetName(bodyGetPart(charGetBody(ch), pos)));
+      PyList_Append(ret, str);
+      Py_DECREF(str);
+    } deleteListIterator(where_i);
+  }
+  deleteListWith(where, free);
+  return ret;
+}
 
 PyObject *PyChar_attach(PyChar *self, PyObject *args) {  
   char *key = NULL;
@@ -1171,7 +1348,7 @@ PyObject *PyChar_start_action(PyChar *self, PyObject *args) {
 
 //
 // check to see if a character currently has an action in progress
-PyObject *PyChar_is_acting(PyChar *self, PyObject *args) {  
+PyObject *PyChar_is_acting(PyChar *self, void *closure) {  
   // make sure we exist
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
 
@@ -1189,7 +1366,7 @@ PyObject *PyChar_is_acting(PyChar *self, PyObject *args) {
 
 //
 // interrupt any actions the character is currently performing
-PyObject *PyChar_interrupt_action(PyChar *self, PyObject *args) {  
+PyObject *PyChar_interrupt_action(PyChar *self, void *closure) {
   // make sure we exist
   CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
 
@@ -1264,6 +1441,26 @@ PyObject *PyChar_isinstance(PyChar *self, PyObject *args) {
   }
 }
 
+PyObject *PyChar_hasPreferences(PyChar *self, PyObject *args) {
+  char *prefs = NULL;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "s", &prefs)) {
+    PyErr_Format(PyExc_TypeError, "hasPrefs only accepts strings.");
+    return NULL;
+  }
+
+  // pull out the object and check the type
+  CHAR_DATA *ch = PyChar_AsChar((PyObject *)self);
+  if(ch != NULL)
+    return Py_BuildValue("i", bitIsSet(charGetPrfs(ch), prefs));
+  else {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to check prefs of nonexistent char, %d.", self->uid);
+    return NULL;
+  }
+}
+
 //
 // returns whether or not the character belongs to one of the specified groups
 PyObject *PyChar_is_in_groups(PyChar *self, PyObject *args) {  
@@ -1283,6 +1480,42 @@ PyObject *PyChar_is_in_groups(PyChar *self, PyObject *args) {
     PyErr_Format(PyExc_StandardError, 
 		 "Tried to check user groups of nonexistent char, %d.", self->uid);
     return NULL;
+  }
+}
+
+PyObject *PyChar_append_look(PyObject *self, PyObject *args) {
+  char *desc = NULL;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "s", &desc)) {
+    PyErr_Format(PyExc_TypeError, "Only strings can be appended to the look buffer.");
+    return NULL;
+  }
+
+  // pull out the object and check the type
+  CHAR_DATA *ch = PyChar_AsChar(self);
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to append description to look buffer of nonexistent character, %d.", PyChar_AsUid(self));
+    return NULL;
+  }
+  else {
+    bufferCat(charGetLookBuffer(ch), desc);
+    return Py_BuildValue("");
+  }
+}
+
+PyObject *PyChar_clear_look(PyObject *self, void *closure) {
+  // pull out the object and check the type
+  CHAR_DATA *ch = PyChar_AsChar(self);
+  if(ch == NULL) {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to clear look buffer of nonexistent character, %d.", PyChar_AsUid(self));
+    return NULL;
+  }
+  else {
+    bufferClear(charGetLookBuffer(ch));
+    return Py_BuildValue("i", 1);
   }
 }
 
@@ -1547,9 +1780,23 @@ PyObject *PyChar_all_chars(PyObject *self) {
   ITERATE_LIST(ch, ch_i)
     PyList_Append(list, charGetPyFormBorrowed(ch));
   deleteListIterator(ch_i);
-  PyObject *retval = Py_BuildValue("O", list);
-  Py_DECREF(list);
-  return retval;
+  return list;
+}
+
+PyObject *PyChar_is_abstract(PyObject *self, PyObject *args) {
+  char     *mob_key = NULL;
+  if (!PyArg_ParseTuple(args, "s", &mob_key)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "is_abstract failed - it needs a mob key/locale.");
+    return NULL;
+  }
+
+  PROTO_DATA *proto = worldGetType(gameworld, "mproto", 
+				   get_fullkey_relative(mob_key, 
+							get_script_locale()));
+  if(proto == NULL || protoIsAbstract(proto))
+    return Py_BuildValue("i", 1);
+  return Py_BuildValue("i", 0);
 }
 
 PyMethodDef char_module_methods[] = {
@@ -1563,6 +1810,8 @@ PyMethodDef char_module_methods[] = {
   { "find_char_key", PyChar_find_char_key, METH_VARARGS,
     "finds a character (or group of chars) by their prototype. Finding by "
     "keywords is done with generic_find()" },
+  { "is_abstract",   PyChar_is_abstract, METH_VARARGS,
+    "Returns whether a mob with the specified prototype is abstract." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
 
@@ -1669,6 +1918,14 @@ PyMODINIT_FUNC init_PyChar(void) {
 		      "Returns the character's socket if it exists.");
   PyChar_addGetSetter("sock",   PyChar_getsocket, NULL,
 		      "Returns the character's socket if it exists.");
+  PyChar_addGetSetter("hidden", PyChar_gethidden, PyChar_sethidden,
+		      "integer value representing how hidden the char is.");
+  PyChar_addGetSetter("weight", PyChar_getweight, PyChar_setweight,
+		      "double value representing how heavy we are.");
+  PyChar_addGetSetter("age", PyChar_getage, NULL,
+		      "how old, in seconds, are we");
+  PyChar_addGetSetter("birth", PyChar_getbirth, NULL,
+		      "when were we created");
 
   // add in all of our methods for the Char class
   PyChar_addMethod("attach", PyChar_attach, METH_VARARGS,
@@ -1698,26 +1955,40 @@ PyMODINIT_FUNC init_PyChar(void) {
 		   "from whatever it is currently in/on.");
   PyChar_addMethod("get_equip", PyChar_getequip, METH_VARARGS,
 		   "Returns the person's equipment in the specified slot.");
+  PyChar_addMethod("get_slots", PyChar_getslots, METH_VARARGS,
+		   "Returns the slots occupied by the piece of equipment.");
+  PyChar_addMethod("get_slot_types", PyChar_getslottypes, METH_VARARGS,
+		   "Returns the slot types occupied by the equipment.");
   PyChar_addMethod("get_bodypct", PyChar_getbodypct, METH_VARARGS,
 		   "Returns the percent mass of the character's body taken up "
 		   "by the specified parts.");
-  PyChar_addMethod("isActing", PyChar_is_acting, METH_VARARGS,
+  PyChar_addMethod("isActing", PyChar_is_acting, METH_NOARGS,
 		   "Returns True if the character is currently taking an "
 		   "action, and False otherwise.");
   PyChar_addMethod("startAction", PyChar_start_action, METH_VARARGS,
 		   "Begins the character starting a new action");
-  PyChar_addMethod("interrupt", PyChar_interrupt_action, METH_VARARGS,
+  PyChar_addMethod("interrupt", PyChar_interrupt_action, METH_NOARGS,
 		   "Interrupts the character's current action.");
   PyChar_addMethod("getAuxiliary", PyChar_get_auxiliary, METH_VARARGS,
 		   "get's the specified piece of aux data from the char");
+  PyChar_addMethod("aux", PyChar_get_auxiliary, METH_VARARGS,
+		   "get's the specified piece of aux data from the char");
   PyChar_addMethod("cansee", PyChar_cansee, METH_VARARGS,
 		   "returns whether or not a char can see an obj or mob.");
+  PyChar_addMethod("see_as", PyChar_see_as, METH_VARARGS,
+		   "returns what the character sees the thing as.");
   PyChar_addMethod("page", PyChar_page, METH_VARARGS,
 		   "page a bunch of text to the character.");
   PyChar_addMethod("isinstance", PyChar_isinstance, METH_VARARGS,
 		   "returns whether or not the char inherits from the proto");
   PyChar_addMethod("isInGroup", PyChar_is_in_groups, METH_VARARGS,
 		   "returns whether or not the character belongs to one of the groups");
+  PyChar_addMethod("hasPrefs", PyChar_hasPreferences, METH_VARARGS,
+		   "Return if the character has the specified preference.");
+  PyChar_addMethod("append_look", PyChar_append_look, METH_VARARGS,
+		   "Append text to the character's look buffer.");
+  PyChar_addMethod("clear_look",  PyChar_clear_look, METH_VARARGS,
+		   "Clear the character's look buffer.");
 
   // add in all the getsetters and methods
   makePyType(&PyChar_Type, pychar_getsetters, pychar_methods);

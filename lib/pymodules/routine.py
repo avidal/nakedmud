@@ -60,7 +60,8 @@ class RoutineAuxData:
 ################################################################################
 def register_routine_check(check):
     '''adds a routine check to the global list. Must be a function taking one
-       argument, which is the character doing the routine'''
+       argument, which is the character doing the routine. Return should be
+       True if the check succeeded (i.e., we should not do a routine)'''
     __global_routine_checks__.append(check)
 
 def start_routine(ch):
@@ -166,17 +167,17 @@ def routine_event(owner, data, arg):
 def cmd_routine(ch, cmd, arg):
     '''Appends a routine onto a character. The second argument needs to be an
        evaluable list statement. Put it in parentheses to avoid being cut off
-       as spaces, since parse treats it as a single word. Example: 
-    
+       as spaces, since parse treats it as a single word. Example:
+
          > routine man "[\'say hi\', (3, \'say I am a little teapot\')]" True
-    
+
        this will say hi after the default delay, and I am a little teapot after
        a delay of 3. It will then loop through this process indefinitely.
        Alternatively, these commands can be replaced with function calls.
        '''
     try:
         tgt, routine, repeat = parse_args(ch, True, cmd, arg,
-                                          "ch.room.noself word | bool")
+                                          "ch.room.noself word(py_list) | bool(repeat)")
     except:
         return
 

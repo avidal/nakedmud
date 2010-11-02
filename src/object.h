@@ -52,10 +52,12 @@ ROOM_DATA   *objGetRoom      (OBJ_DATA *obj);
 LIST        *objGetContents  (OBJ_DATA *obj);
 LIST        *objGetUsers     (OBJ_DATA *obj);
 int          objGetUID       (OBJ_DATA *obj);
+time_t       objGetBirth     (OBJ_DATA *obj);
 double       objGetWeight    (OBJ_DATA *obj);
 double       objGetWeightRaw (OBJ_DATA *obj);
 void        *objGetAuxiliaryData(const OBJ_DATA *obj, const char *name);
 BITVECTOR   *objGetBits      (OBJ_DATA *obj);
+int          objGetHidden    (OBJ_DATA *Obj);
 
 void         objSetClass     (OBJ_DATA *obj, const char *type);
 void         objSetPrototypes(OBJ_DATA *obj, const char *type);
@@ -72,5 +74,6 @@ void         objSetWearer    (OBJ_DATA *obj, CHAR_DATA *ch);
 void         objSetContainer (OBJ_DATA *obj, OBJ_DATA  *cont);
 void         objSetRoom      (OBJ_DATA *obj, ROOM_DATA *room);
 void         objSetWeightRaw (OBJ_DATA *obj, double weight);
+void         objSetHidden    (OBJ_DATA *obj, int amnt);
 
 #endif // __OBJECT_H

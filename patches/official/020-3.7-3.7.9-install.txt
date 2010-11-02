@@ -1,0 +1,14 @@
+--- PATCH INSTRUCTIONS FROM v3.7 TO v3.7.9
+
+Before you do anything else, BACK UP YOUR MUD, AND ITS CONTENTS!! From the src 
+directory, type make backup. This will back up your src/ and lib/ directories 
+to a .tgz archive in the backup/ directory.
+
+The lib/world/ directory has been restructured in preparation for world
+persistence. Create a new directory, lib/world/zones/ and for each zone
+directory you have created (by default, examples/ and limbo/), move it from
+lib/world/ to lib/world/zones/
+
+Once you have done this, You can apply the patch. Enter your mud's root 
+directory (the one containing your src, lib, doc, etc... folders) and type:
+  patch -p0 < nakedmudv3.7-to-nakedmudv3.7.9.patch

@@ -647,7 +647,8 @@ void expand_dynamic_descs_dict(BUFFER *desc, PyObject *dict,const char *locale){
       bufferClear(code);
       for(j = 0; j < end; j++)
 	bprintf(code, "%c", *(bufferString(desc) + i + j));
-      bufferReplace(code, "\n", "", TRUE);
+      bufferReplace(code, "\n", " ", TRUE);
+      bufferReplace(code, "\r", "", TRUE);
 
       // skip i up to the end
       i = i + end;
@@ -729,6 +730,13 @@ void expand_dynamic_descs(BUFFER *desc, PyObject *me, CHAR_DATA *ch,
 
 const char *get_script_locale(void) {
   return listHead(locale_stack);
+}
+
+const char *get_smart_locale(CHAR_DATA *ch) {
+  const char *locale = get_script_locale();
+  if(locale == NULL && charGetRoom(ch) != NULL)
+    locale = get_key_locale(roomGetClass(charGetRoom(ch)));
+  return locale;
 }
 
 bool last_script_ok(void) {
@@ -863,6 +871,8 @@ const char *control_table[] = {
   "and",
   "or",
   "not",
+  "break",
+  "continue",
   NULL
 };
 
@@ -908,7 +918,7 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
   for(i = 0; ptr[i] != '\0'; i++) {
     // take off the color for digits
     if(in_digit && !isdigit(ptr[i])) {
-      sprintf(line+line_i, "{g");
+      sprintf(line+line_i, "{n");
       line_i += 2;
       in_digit = FALSE;
     } // NO ELSE ... we might need to color something else
@@ -937,7 +947,7 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
 	    !(in_string && string_type != ptr[i])) {
 
       if(in_string && ptr[i] == string_type)
-	sprintf(line+line_i, "\%c{g", string_type);
+	sprintf(line+line_i, "\%c{n", string_type);
       else
 	sprintf(line+line_i, "{w%c", ptr[i]);
       
@@ -957,7 +967,7 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
 	  *line_num_info = '\0';
 
 	line[line_i] = '\0';
-	send_to_socket(sock, "%s{g%s{n\r\n", line_num_info, line);
+	send_to_socket(sock, "%s{n%s{n\r\n", line_num_info, line);
 	*line = '\0';
 	line_i = 0;
 	line_num++;
@@ -969,7 +979,7 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
     else if(!(in_line_comment || in_digit || in_string) &&
 	    (syn_to_color = check_for_control(ptr, i)) != -1) {
       sprintf(line+line_i-strlen(control_table[syn_to_color])+1,
-	      "{p%s{g", control_table[syn_to_color]);
+	      "{p%s{n", control_table[syn_to_color]);
       line_i += 5; // the two markers for the color, and one for new character
     }
 
@@ -983,7 +993,7 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
   // send the last line
   if(*line) {
     if(show_line_nums)
-      send_to_socket(sock, "{c%2d]{g  %s{n\r\n", line_num, line);
+      send_to_socket(sock, "{c%2d]{n  %s{n\r\n", line_num, line);
     else
       send_to_socket(sock, "%s{n\r\n", line);
   }

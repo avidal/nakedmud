@@ -68,8 +68,9 @@ PARSE_TOKEN *newParseToken(int type) {
   token->type = type;
   if(type == PARSE_TOKEN_MULTI)
     token->token_list = newList();
-  else if(type == PARSE_TOKEN_OBJ)
+  else if(type == PARSE_TOKEN_OBJ) {
     SET_BIT(token->scope, FIND_SCOPE_VISIBLE);
+  }
   else if(type == PARSE_TOKEN_EXIT) {
     SET_BIT(token->scope, FIND_SCOPE_VISIBLE);
     SET_BIT(token->scope, FIND_SCOPE_ROOM);
@@ -81,6 +82,16 @@ PARSE_TOKEN *newParseToken(int type) {
   return token;
 }
 
+PARSE_TOKEN *newParseTokenDescriptive(int type, const char *format) {
+  PARSE_TOKEN *token = newParseToken(type);
+  // do we have a describer between ( and )?
+  if(endswith(format, ")") && strchr(format, '(')) {
+    format = format + next_letter_in(format, '(') + 1;
+    token->flavor = strdup(format);
+    token->flavor[strlen(token->flavor)-1] = '\0';
+  }
+  return token;
+}
 
 //
 // free a token from memory
@@ -135,7 +146,7 @@ void deleteParseVar(PARSE_VAR *var) {
 // makes a char token, and parses options. Returns NULL if there's bad options
 PARSE_TOKEN *parse_token_char(const char *options) {
   // make it
-  PARSE_TOKEN *token = newParseToken(PARSE_TOKEN_CHAR);
+  PARSE_TOKEN *token = newParseTokenDescriptive(PARSE_TOKEN_CHAR, options);
 
   // search for options
   while(*options != '\0') {
@@ -159,6 +170,8 @@ PARSE_TOKEN *parse_token_char(const char *options) {
       options = options + 9;
       REMOVE_BIT(token->scope, FIND_SCOPE_VISIBLE);
     }
+    else if(*options == '(' && endswith(options, ")"))
+      break;
     // didn't recognize the option
     else {
       deleteParseToken(token);
@@ -181,7 +194,7 @@ PARSE_TOKEN *parse_token_char(const char *options) {
 // makes an obj token, and parses options. Returns NULL if there's bad options
 PARSE_TOKEN *parse_token_obj(const char *options) {
   // make it
-  PARSE_TOKEN *token = newParseToken(PARSE_TOKEN_OBJ);
+  PARSE_TOKEN *token = newParseTokenDescriptive(PARSE_TOKEN_OBJ, options);
 
   // search for options
   while(*options != '\0') {
@@ -209,6 +222,8 @@ PARSE_TOKEN *parse_token_obj(const char *options) {
       options = options + 9;
       REMOVE_BIT(token->scope, FIND_SCOPE_VISIBLE);
     }
+    else if(*options == '(' && endswith(options, ")"))
+      break;
     // didn't recognize the option
     else {
       deleteParseToken(token);
@@ -232,7 +247,7 @@ PARSE_TOKEN *parse_token_obj(const char *options) {
 // makes an exit token, and parses options. Returns NULL if there's bad options
 PARSE_TOKEN *parse_token_exit(const char *options) {
   // make it
-  PARSE_TOKEN *token = newParseToken(PARSE_TOKEN_EXIT);
+  PARSE_TOKEN *token = newParseTokenDescriptive(PARSE_TOKEN_EXIT, options);
 
   // search for options
   while(*options != '\0') {
@@ -244,6 +259,8 @@ PARSE_TOKEN *parse_token_exit(const char *options) {
       options = options + 9;
       REMOVE_BIT(token->scope, FIND_SCOPE_VISIBLE);
     }
+    else if(*options == '(' && endswith(options, ")"))
+      break;
     // didn't recognize the option
     else {
       deleteParseToken(token);
@@ -266,23 +283,24 @@ PARSE_TOKEN *parse_one_datatype(const char **format) {
   int i = 0;
 
   // copy what we're trying to parse
-  for(i = 0; isalpha(*fmt) || *fmt == '_' || *fmt == '.'; i++, fmt++)
+  for(i = 0; isalpha(*fmt) || (strchr("_.()", *fmt) && *fmt); i++, fmt++)
+    // *fmt == '_' || *fmt == '.'; i++, fmt++)
     buf[i] = *fmt;
   buf[i] = '\0';
 
   // figure out our type
-  if(!strcasecmp(buf, "int"))
-    token = newParseToken(PARSE_TOKEN_INT);
-  else if(!strcasecmp(buf, "double"))
-    token = newParseToken(PARSE_TOKEN_DOUBLE);
-  else if(!strcasecmp(buf, "bool"))
-    token = newParseToken(PARSE_TOKEN_BOOL);
-  else if(!strcasecmp(buf, "word"))
-    token = newParseToken(PARSE_TOKEN_WORD);
-  else if(!strcasecmp(buf, "string"))
-    token = newParseToken(PARSE_TOKEN_STRING);
-  else if(!strcasecmp(buf, "room"))
-    token = newParseToken(PARSE_TOKEN_ROOM);
+  if(startswith(buf, "int"))
+    token = newParseTokenDescriptive(PARSE_TOKEN_INT, buf);
+  else if(startswith(buf, "double"))
+    token = newParseTokenDescriptive(PARSE_TOKEN_DOUBLE, buf);
+  else if(startswith(buf, "bool"))
+    token = newParseTokenDescriptive(PARSE_TOKEN_BOOL, buf);
+  else if(startswith(buf, "word"))
+    token = newParseTokenDescriptive(PARSE_TOKEN_WORD, buf);
+  else if(startswith(buf, "string"))
+    token = newParseTokenDescriptive(PARSE_TOKEN_STRING, buf);
+  else if(startswith(buf, "room"))
+    token = newParseTokenDescriptive(PARSE_TOKEN_ROOM, buf);
 
   // exits, chars, and objs can have arguments tagged to the end of them. For
   // exits, it is optional. For both chars and objs, it is neccessary to specify
@@ -576,8 +594,8 @@ PARSE_VAR *use_one_parse_token_bool(const char *buf) {
 PARSE_VAR *use_one_parse_token_char(CHAR_DATA *looker, PARSE_TOKEN *tok,
 				    const char *name) {
   int    type = FOUND_NONE;
-  void *found = generic_find(looker, name, FIND_TYPE_CHAR, tok->scope,
-			     tok->all_ok, &type);
+  void *found = find_specific(looker, name, "", "", FIND_TYPE_CHAR, tok->scope,
+			      tok->all_ok, &type);
 
   // make sure we found something...
   if(found == NULL)
@@ -633,8 +651,8 @@ PARSE_VAR *use_one_parse_token_char(CHAR_DATA *looker, PARSE_TOKEN *tok,
 PARSE_VAR *use_one_parse_token_obj(CHAR_DATA *looker, PARSE_TOKEN *tok,
 				   const char *name) {
   int    type = FOUND_NONE;
-  void *found = generic_find(looker, name, FIND_TYPE_OBJ, tok->scope,
-			     tok->all_ok, &type);
+  void *found = find_specific(looker, name, "", "", FIND_TYPE_OBJ, tok->scope,
+			      tok->all_ok, &type);
 
   // make sure we found something
   if(found == NULL)
@@ -683,8 +701,8 @@ PARSE_VAR *use_one_parse_token_obj(CHAR_DATA *looker, PARSE_TOKEN *tok,
 PARSE_VAR *use_one_parse_token_exit(CHAR_DATA *looker, PARSE_TOKEN *tok, 
 				    const char *name) {
   int    type = FOUND_NONE;
-  void *found = generic_find(looker, name, FIND_TYPE_EXIT, tok->scope,
-			     tok->all_ok, &type);
+  void *found = find_specific(looker, name, "", "", FIND_TYPE_EXIT, tok->scope,
+			      tok->all_ok, &type);
 
   // make sure we found something
   if(found == NULL)
@@ -732,8 +750,8 @@ PARSE_VAR *use_one_parse_token_exit(CHAR_DATA *looker, PARSE_TOKEN *tok,
 // tries to make a room parse var
 PARSE_VAR *use_one_parse_token_room(CHAR_DATA *looker, PARSE_TOKEN *tok,
 				    const char *name) {
-  ROOM_DATA *room = generic_find(looker, name, FIND_TYPE_ROOM, FIND_SCOPE_WORLD,
-				 FALSE, NULL);
+  ROOM_DATA *room = find_specific(looker, name, "", "", FIND_TYPE_ROOM, 
+				  FIND_SCOPE_WORLD, FALSE, NULL);
 
   // did we find something?
   if(room == NULL)
@@ -825,7 +843,7 @@ PARSE_VAR *use_one_parse_token(CHAR_DATA *looker, PARSE_TOKEN *tok,
     arg = one_arg(arg, buf);
     var = use_one_parse_token_char(looker, tok, buf);
     if(var == NULL) {
-      sprintf(err_buf, "Could not find person, '%s'.", buf);
+      sprintf(err_buf, "The person, %s, could not be found.", buf);
       *error = TRUE;
     }
     break;
@@ -835,7 +853,7 @@ PARSE_VAR *use_one_parse_token(CHAR_DATA *looker, PARSE_TOKEN *tok,
     arg = one_arg(arg, buf);
     var = use_one_parse_token_obj(looker, tok, buf);
     if(var == NULL) {
-      sprintf(err_buf, "Could not find object, '%s'.", buf);
+      sprintf(err_buf, "The object, %s, could not be found.", buf);
       *error = TRUE;
     }
     break;
@@ -845,7 +863,7 @@ PARSE_VAR *use_one_parse_token(CHAR_DATA *looker, PARSE_TOKEN *tok,
     arg = one_arg(arg, buf);
     var = use_one_parse_token_room(looker, tok, buf);
     if(var == NULL) {
-      sprintf(err_buf, "Could not find room, '%s'.", buf);
+      sprintf(err_buf, "The room, %s, could not be found.", buf);
       *error = TRUE;
     }
     break;
@@ -855,7 +873,7 @@ PARSE_VAR *use_one_parse_token(CHAR_DATA *looker, PARSE_TOKEN *tok,
     arg = one_arg(arg, buf);
     var = use_one_parse_token_exit(looker, tok, buf);
     if(var == NULL) {
-      sprintf(err_buf, "Could not find door or direction named '%s'.", buf);
+      sprintf(err_buf, "The direction, %s, could not be found.", buf);
       *error = TRUE;
     }
     break;
@@ -942,6 +960,9 @@ PARSE_VAR *use_one_parse_token(CHAR_DATA *looker, PARSE_TOKEN *tok,
 //
 // gets the name of the type for printing in syntax error messages
 const char *get_datatype_format_error_mssg(PARSE_TOKEN *tok) {
+  if(tok->flavor)
+    return tok->flavor;
+
   switch(tok->type) {
   case PARSE_TOKEN_CHAR:
     return "person";

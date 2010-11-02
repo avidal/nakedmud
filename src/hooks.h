@@ -22,7 +22,10 @@
 
 //
 // random character we use for denoting the beginning/end of a string
-#define HOOK_STR_MARKER '\033'
+//
+// THIS NEEDS TO BE CHANGED TO SOMETHING LESS INSIDIOUS! If we're building
+// strings with escape sequences, this could be deadly.
+#define HOOK_STR_MARKER '\032'
 
 //
 // prepare hooks for use

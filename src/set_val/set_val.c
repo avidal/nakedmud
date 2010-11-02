@@ -165,7 +165,7 @@ COMMAND(cmd_set) {
     CHAR_DATA *tgt = get_player(name);
     if(tgt == NULL)
       send_to_char(ch, "No pfile for %s exists!\r\n", name);
-    else if(!charHasMoreUserGroups(ch, tgt)) {
+    else if(ch != tgt && bitIsSet(charGetUserGroups(tgt), "admin")) {
       send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
 		   HESHE(tgt));
       unreference_player(tgt);
@@ -200,7 +200,7 @@ COMMAND(cmd_set) {
     if(tgt == NULL)
       send_to_char(ch, "What was the target you were trying to modify?\r\n");
     else if(found == FOUND_CHAR) {
-      if(ch != tgt && !charHasMoreUserGroups(ch, tgt))
+      if(ch != tgt && bitIsSet(charGetUserGroups(tgt), "admin"))
 	send_to_char(ch, "Sorry, %s has just as many priviledges as you.\r\n", 
 		     HESHE(tgt));
       else
@@ -209,8 +209,9 @@ COMMAND(cmd_set) {
     else if(found == FOUND_OBJ)
       try_set(ch, tgt, obj_set_table, field, val);
     else if(found == FOUND_ROOM) {
-      if(!canEditZone(worldGetZone(gameworld,get_key_locale(roomGetClass(tgt))),
-		      ch))
+      ZONE_DATA *zone = worldGetZone(gameworld, get_key_locale(roomGetClass(tgt)));
+
+      if(zone != NULL && !canEditZone(zone, ch))
 	send_to_char(ch, "You are not authorized to edit that zone.\r\n");
       else
 	try_set(ch, tgt, room_set_table, field, val);

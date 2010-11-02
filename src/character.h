@@ -90,6 +90,9 @@ const char  *charGetLoadroom  (CHAR_DATA *ch);
 OBJ_DATA    *charGetFurniture (CHAR_DATA *ch);
 int          charGetPos       (CHAR_DATA *ch);
 int          charGetUID       (const CHAR_DATA *ch);
+time_t       charGetBirth     (const CHAR_DATA *ch);
+int          charGetHidden    (const CHAR_DATA *ch);
+double       charGetWeight    (const CHAR_DATA *ch);
 void        *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name);
 BITVECTOR   *charGetPrfs      (CHAR_DATA *ch);
 BITVECTOR   *charGetUserGroups(CHAR_DATA *ch);
@@ -112,6 +115,8 @@ void         charSetUID       (CHAR_DATA *ch, int uid);
 void         charSetLoadroom  (CHAR_DATA *ch, const char *key);
 void         charSetFurniture (CHAR_DATA *ch, OBJ_DATA *furniture);
 void         charSetPos       (CHAR_DATA *ch, int pos);
+void         charSetHidden    (CHAR_DATA *ch, int amnt);
+void         charSetWeight    (CHAR_DATA *ch, double amnt);
 
 
 
@@ -141,7 +146,7 @@ int  sexGetNum(const char *sex);
 // Positions
 //*****************************************************************************
 #define POS_NONE                (-1)
-#define POS_UNCONSCIOUS            0
+#define POS_UNCONSCIOUS           0
 #define POS_SLEEPING              1
 #define POS_SITTING               2
 #define POS_STANDING              3

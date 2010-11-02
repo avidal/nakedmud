@@ -193,13 +193,13 @@ PyObject *PyHooks_ParseInfo(PyObject *self, PyObject *args) {
       ROOM_DATA *rm = propertyTableGet(room_table, id);
       PyTuple_SetItem(list, i, (rm ? roomGetPyForm(rm) : Py_None));
     }
-    else if(startswith(token, "ex")) {
-      sscanf(token, "ex.%d", &id);
+    else if(startswith(token, "exit")) {
+      sscanf(token, "exit.%d", &id);
       EXIT_DATA *ex = propertyTableGet(exit_table, id);
       PyTuple_SetItem(list, i, (ex ? newPyExit(ex) : Py_None));
     }
-    else if(startswith(token, "exit")) {
-      sscanf(token, "exit.%d", &id);
+    else if(startswith(token, "ex")) {
+      sscanf(token, "ex.%d", &id);
       EXIT_DATA *ex = propertyTableGet(exit_table, id);
       PyTuple_SetItem(list, i, (ex ? newPyExit(ex) : Py_None));
     }

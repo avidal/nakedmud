@@ -20,6 +20,14 @@
 
 
 //*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../editor/editor.h"
+#include "script_editor.h"
+
+
+
+//*****************************************************************************
 // local structures and defines
 //*****************************************************************************
 
@@ -117,6 +125,15 @@ PyObject *PySocket_getchar(PySocket *self, void *closure) {
   }
 }
 
+PyObject *PySocket_getcmdread(PySocket *self, void *closure) { 
+  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
+  if(sock == NULL)
+    return NULL;
+  else {
+    return Py_BuildValue("i", socketHasCommand(sock));
+  }
+}
+
 PyObject *PySocket_get_outbound_text(PySocket *self, void *closure) {
   SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
   if(sock == NULL)
@@ -151,6 +168,32 @@ PyObject *PySocket_get_can_use(PySocket *self, void *closure) {
 			       TRUE : FALSE));
 }
 
+PyObject *PySocket_getstate(PySocket *self, void *closure) {
+  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
+  if(sock == NULL)
+    return NULL;
+  else
+    return Py_BuildValue("s", socketGetState(sock));
+}
+
+PyObject *PySocket_getidletime(PySocket *self, void *closure) {
+  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
+  if(sock == NULL)
+    return NULL;
+  else
+    return Py_BuildValue("f", socketGetIdleTime(sock));
+}
+
+PyObject *PySocket_gethostname(PySocket *self, void *closure) {
+  SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
+  if(sock == NULL)
+    return NULL;
+  else if(socketGetDNSLookupStatus(sock) == TSTATE_DONE)
+    return Py_BuildValue("s", socketGetHostname(sock));
+  else
+    return Py_BuildValue("s", "unresolved");
+}
+
 PyObject *PySocket_bust_prompt(PySocket *self, PyObject *closure) {
   SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
   if(sock == NULL) {
@@ -166,17 +209,18 @@ PyObject *PySocket_push_ih(PySocket *self, PyObject *args) {
   SOCKET_DATA *sock = PySocket_AsSocket((PyObject *)self);
   PyObject *handler = NULL;
   PyObject  *prompt = NULL;
+  char       *state = NULL;
 
   if(sock == NULL)
     return NULL;
 
-  if (!PyArg_ParseTuple(args, "OO", &handler, &prompt)) {
+  if (!PyArg_ParseTuple(args, "OO|s", &handler, &prompt, &state)) {
     PyErr_Format(PyExc_TypeError, "handler and prompt function must "
 		 "be supplied.");
     return NULL;
   }
 
-  socketPushPyInputHandler(sock, handler, prompt);
+  socketPushPyInputHandler(sock, handler, prompt, (state ? state : ""));
   return Py_BuildValue("i", 1);
 }
 
@@ -236,6 +280,35 @@ PyObject *PySocket_close(PySocket *self) {
     return NULL;
   close_socket(sock, FALSE);
   return Py_BuildValue("i", 1);
+}
+
+PyObject *PySocket_edit_text(PyObject *self, PyObject *args) {
+  PyObject *on_complete = NULL;
+  char            *text = NULL;
+  char            *type = NULL;
+  SOCKET_DATA     *sock = NULL;
+  EDITOR        *editor = text_editor;
+
+  if(!PyArg_ParseTuple(args, "sO|s", &text, &on_complete, &type)) {
+    PyErr_Format(PyExc_TypeError, "invalid arguments to sock.edit_text");
+    return NULL;
+  }
+
+  if(!PySocket_Check(self)) {
+    PyErr_Format(PyExc_TypeError, "Owner of edit_text not a socket");
+    return NULL;
+  }
+  else if( (sock = PySocket_AsSocket(self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "sock.edit_text called on non-existent socket.");
+    return NULL;
+  }
+
+  if(type != NULL && compares(type, "script"))
+    editor = script_editor;
+  
+  // begin the editor
+  socketStartPyEditorFunc(sock, editor, text, on_complete);
+  return Py_BuildValue("O", Py_None);
 }
 
 
@@ -397,6 +470,8 @@ init_PySocket(void) {
 			   "the socket's character.");
     PySocket_addGetSetter("ch",   PySocket_getchar, NULL,
 			   "the socket's character.");
+    PySocket_addGetSetter("has_input", PySocket_getcmdread, NULL,
+			  "Have we read any input this iteration?");
     PySocket_addGetSetter("outbound_text",
 			  PySocket_get_outbound_text,PySocket_set_outbound_text,
 			  "the socket's outbound text.");
@@ -404,9 +479,17 @@ init_PySocket(void) {
 			  PySocket_get_can_use, NULL,
 			  "Returns whether or not the socket is ready for use. "
 			  "Sockets become available after their dns resolves.");
+    PySocket_addGetSetter("state", PySocket_getstate, NULL,
+			  "Returns the state that the socket is in.");
+    PySocket_addGetSetter("idle_time", PySocket_getidletime, NULL,
+			  "Returns how long (seconds) we've been idle.");
+    PySocket_addGetSetter("hostname", PySocket_gethostname, NULL,
+			  "return where we are connected from.");
 
     // add all of the basic methods
     PySocket_addMethod("getAuxiliary", PySocket_get_auxiliary, METH_VARARGS,
+		       "gets the socket auxiliary data with given key.");
+    PySocket_addMethod("aux", PySocket_get_auxiliary, METH_VARARGS,
 		       "gets the socket auxiliary data with given key.");
     PySocket_addMethod("send", PySocket_send, METH_VARARGS,
 		       "sends text to the socket with appended newline.");
@@ -422,6 +505,8 @@ init_PySocket(void) {
 		       "closes the socket.");
     PySocket_addMethod("bust_prompt", PySocket_bust_prompt, METH_NOARGS,
 		       "busts the socket's prompt so it will be displayed.");
+    PySocket_addMethod("edit_text", PySocket_edit_text, METH_VARARGS, 
+		       "enter the text editor and begin editing something.");
 
     // add in all the getsetters and methods
     makePyType(&PySocket_Type, pysocket_getsetters, pysocket_methods);

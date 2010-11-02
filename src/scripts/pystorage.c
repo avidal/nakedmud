@@ -72,8 +72,8 @@ int PyStorageList_init(PyStorageList *self, PyObject *args, PyObject *kwds) {
 // return a python list of the sets in our storage list
 PyObject *PyStorageList_sets(PyObject *self, PyObject *args) {
   STORAGE_SET_LIST *set_list = ((PyStorageList *)self)->list;
-  STORAGE_SET           *set = NULL;
   PyObject             *list = PyList_New(0);
+  STORAGE_SET           *set = NULL;
 
   // add in all of the elements
   while( (set = storage_list_next(set_list)) != NULL) {
@@ -83,9 +83,7 @@ PyObject *PyStorageList_sets(PyObject *self, PyObject *args) {
   }
 
   // return the new list
-  PyObject *retval = Py_BuildValue("O", list);
-  Py_DECREF(list);
-  return retval;
+  return list;
 }
 
 //
@@ -276,13 +274,8 @@ PyObject *PyStorageSet_readList  (PyObject *self, PyObject *args) {
   char *key = PyStorageSet_readParseKey(args);
   if(key == NULL)
     return NULL;
-  else {
-    PyObject *pylist =
-      newPyStorageList(read_list(((PyStorageSet*)self)->set, key));
-    PyObject *retval = Py_BuildValue("O", pylist);
-    Py_DECREF(pylist);
-    return retval;
-  }
+  else
+      return newPyStorageList(read_list(((PyStorageSet*)self)->set, key));
 }
 
 //
@@ -291,13 +284,8 @@ PyObject *PyStorageSet_readSet   (PyObject *self, PyObject *args) {
   char *key = PyStorageSet_readParseKey(args);
   if(key == NULL)
     return NULL;
-  else {
-    PyObject *pyset = 
-      newPyStorageSet(read_set(((PyStorageSet *)self)->set, key));
-    PyObject *retval = Py_BuildValue("O", pyset);
-    Py_DECREF(pyset);
-    return retval;
-  }
+  else
+    return newPyStorageSet(read_set(((PyStorageSet *)self)->set, key));
 }
 
 
@@ -441,6 +429,8 @@ PyMethodDef PyStorageSet_class_methods[] = {
     "Close a storage set. MUST be called when the storage set is done "
     "being used. Garbage collection will not delete the set." },
   { "contains",    PyStorageSet_contains,    METH_VARARGS,
+    "Returns True if the set contains the given key, and false otherwise." },
+  { "__contains__",    PyStorageSet_contains,    METH_VARARGS,
     "Returns True if the set contains the given key, and false otherwise." },
 
   {NULL, NULL, 0, NULL}  /* Sentinel */

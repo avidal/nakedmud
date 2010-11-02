@@ -8,7 +8,7 @@
 ################################################################################
 from mud import *
 from mudsys import add_cmd, add_cmd_check
-import inform, hooks
+import inform, hooks, mudsock, history
 
 
 
@@ -22,7 +22,7 @@ def cmd_ask(ch, cmd, arg):
        '''
     try:
         tgt, question = parse_args(ch, True, cmd, arg,
-                                   "ch.room.noself [about] string")
+                                   "ch.room.noself [about] string(question)")
     except: return
 
     question = question.replace("$", "$$")
@@ -39,16 +39,21 @@ def cmd_tell(ch, cmd, arg):
 
        This command sends a message to another character. Primarily intended
        for player-to-player communication. Players can tell other players
-       things even if they are not in the same room.'''
+       things even if they are not in the same room.
+
+       see also: reply'''
     try:
-        tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string")
+        tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string(message)")
     except: return
 
-    mssg = mssg.replace("$", "$$")
-    message(ch, tgt, None, None, False, "to_vict",
-            "{r$n tells you, '" + mssg + "'{n")
-    message(ch, tgt, None, None, False, "to_char",
-            "{rYou tell $N, '" + mssg + "'{n")
+    mssg   = mssg.replace("$", "$$")
+    tovict = "{r$n tells you, '" + mssg + "'{n"
+    toch   = "{rYou tell $N, '" + mssg + "'{n"
+    message(ch, tgt, None, None, False, "to_vict", tovict)
+    message(ch, tgt, None, None, False, "to_char", toch)
+    history.add_history(ch,   "tell", "{r%-10s: %s{n" % (ch.name, mssg))
+    history.add_history(tgt,  "tell", "{r%-10s: %s{n" % (ch.name, mssg))
+    hooks.run("tell", hooks.build_info("ch ch", (ch, tgt)))
 
 def cmd_chat(ch, cmd, arg):
     '''Usage: chat <message>
@@ -58,11 +63,20 @@ def cmd_chat(ch, cmd, arg):
     if arg == '':
         ch.send("Chat what?")
     else:
-        arg = arg.replace("$", "$$")
-        message(ch, None, None, None, False, "to_world",
-                "{y$n chats, '" + arg + "'{n")
-        message(ch, None, None, None, False, "to_char",
-                "{yyou chat, '" + arg + "'{n")
+        arg  = arg.replace("$", "$$")
+        mssg = "{y$n chats, '" + arg + "'{n"
+        message(ch, None, None, None, False, "to_world", mssg)
+        message(ch, None, None, None,False,"to_char", "{yyou chat, '"+arg+"'{n")
+        history.add_history(ch, "chat", "{y%-10s: %s{n" % (ch.name, arg))
+
+def cmd_wiz(ch, cmd, arg):
+    if arg == '':
+        ch.send("WizChat what?")
+    else:
+        mssg = "{b%s WizChats, '{c%s{b'{n" % (ch.name, arg)
+        for sock in mudsock.socket_list():
+            if sock.ch != None and sock.ch.isInGroup("wizard"):
+                sock.ch.send(mssg)
 
 def cmd_say(ch, cmd, arg):
     '''Usage: say <message>
@@ -95,7 +109,8 @@ def cmd_greet(ch, cmd, arg):
     message(ch, tgt, None, None, False, "to_room", "$n greets $N.")
 
     # run greet hooks
-    hooks.run("greet", hooks.build_info("ch ch", (ch, tgt)))
+    hooks.run("greet",      hooks.build_info("ch ch", (ch, tgt)))
+    hooks.run("post_greet", hooks.build_info("ch ch", (ch, tgt)))
 
 def cmd_emote(ch, cmd, arg):
     '''Usage: emote <text>
@@ -138,10 +153,10 @@ def cmd_page(ch, cmd, arg):
        anyone in the mud, regardless if you are in the same room as them or not.
        '''
     try:
-        tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string")
+        tgt, mssg = parse_args(ch, True, cmd, arg, "ch.world.noself string(message)")
     except: return
-    ch.send("\007\007You page " + inform.see_char_as(ch, tgt))
-    tgt.send("\007\007*" + inform.see_char_as(tgt, ch) + "* " + mssg)
+    ch.send("\007\007You page " + ch.see_as(tgt))
+    tgt.send("\007\007*" + tgt.see_as(ch) + "* " + mssg)
 
 
 
@@ -153,6 +168,7 @@ add_cmd("say",     None, cmd_say,   "player", False)
 add_cmd("'",       None, cmd_say,   "player", False)
 add_cmd("tell",    None, cmd_tell,  "player", False)
 add_cmd("chat",    None, cmd_chat,  "player", False)
+add_cmd("wizchat", "wiz",cmd_wiz,   "wizard", False)
 add_cmd("gossip",  None, cmd_chat,  "player", False)
 add_cmd("\"",      None, cmd_chat,  "player", False)
 add_cmd("page",    None, cmd_page,  "player", False)
@@ -163,9 +179,14 @@ add_cmd("gemote",  None, cmd_gemote,"player", False)
 add_cmd(":",       None, cmd_emote, "player", False)
 
 def chk_room_communication(ch, cmd):
-    if ch.pos in ["sleeping", "unconscious"]:
+    if ch.pos in ("sleeping", "unconscious"):
         ch.send("You cannot do that while " + ch.pos + ".")
         return False
 
 for cmd in ["ask", "say", "'", "greet", "approach", "emote", ":"]:
     add_cmd_check(cmd, chk_room_communication)
+
+# register our history handling
+history.register_comm_history("chat", lambda ch: "chat")
+# history.register_comm_history("say",  lambda ch: ch.name)
+history.register_comm_history("tell", lambda ch: ch.name)

@@ -101,6 +101,13 @@ const char *portalGetDest(OBJ_DATA *obj) {
   return data->dest;
 }
 
+const char *portalGetSmartDest(OBJ_DATA *obj) {
+  PORTAL_DATA *data = objGetTypeData(obj, "portal");
+  if(objGetRoom(obj))
+    return get_fullkey_relative(data->dest, get_key_locale(roomGetClass(objGetRoom(obj))));
+  return get_fullkey_relative(data->dest, get_key_locale(objGetClass(obj)));
+}
+
 const char *portalGetLeaveMssg(OBJ_DATA *obj) {
   PORTAL_DATA *data = objGetTypeData(obj, "portal");
   return data->leave_mssg;
@@ -144,9 +151,10 @@ COMMAND(cmd_enter) {
 
   // we're trying to enter a portal
   if(!objIsType(obj, "portal"))
-    send_to_char(ch, "You cannot seem to find an enterance.\r\n");
+    send_to_char(ch, "You cannot seem to find an entrance.\r\n");
   else {
-    ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(obj));
+    ROOM_DATA *dest = worldGetRoom(gameworld, portalGetSmartDest(obj));
+    //get_fullkey_relative(portalGetDest(obj), get_key_locale(objGetClass(obj))));
     if(dest == NULL)
       send_to_char(ch, "There is nothing on the other side...\r\n");
     else {
@@ -165,6 +173,7 @@ COMMAND(cmd_enter) {
       else
 	message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
 		"$n arrives after travelling through $o.");
+      hookRun("enter_portal", hookBuildInfo("ch obj", ch, obj));
       hookRun("enter", hookBuildInfo("ch rm", ch, dest));
     }
   }
@@ -245,7 +254,7 @@ PyObject *PyObj_getportaldest(PyObject *self, void *closure) {
   if(obj == NULL)
     return NULL;
   else if(objIsType(obj, "portal"))
-    return Py_BuildValue("s", portalGetDest(obj));
+    return Py_BuildValue("s", portalGetSmartDest(obj));
   else {
     PyErr_Format(PyExc_TypeError, "Can only get destination for portals.");
     return NULL;
@@ -358,9 +367,10 @@ void portal_look_hook(const char *info) {
   hookParseInfo(info, &obj, &ch);
 
   if(objIsType(obj, "portal")) {
-    ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(obj));
+    ROOM_DATA *dest = worldGetRoom(gameworld, portalGetSmartDest(obj));
+    //get_fullkey_relative(portalGetDest(obj), get_key_locale(objGetClass(obj))));
     if(dest != NULL) {
-      send_to_char(ch, "You peer inside %s.\r\n", see_obj_as(ch, obj));
+      send_to_char(ch, "You peer inside %s:\r\n\r\n", see_obj_as(ch, obj));
       look_at_room(ch, dest);
     }
   }

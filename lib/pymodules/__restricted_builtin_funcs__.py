@@ -12,7 +12,7 @@ def r_import(name, globals = {}, locals = {}, fromlist = []):
     '''Restricted __import__ only allows importing of specific modules'''
 
     ok_modules = ("mud", "obj", "char", "room", "exit", "account", "mudsock",
-                  "event", "action", "random", "traceback",
+                  "event", "action", "random", "traceback", "utils",
                   "__restricted_builtin__")
     if name not in ok_modules:
         raise ImportError, "Untrusted module, %s" % name

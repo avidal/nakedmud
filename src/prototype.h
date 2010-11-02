@@ -21,7 +21,7 @@ bool           protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc,
 CHAR_DATA  *protoMobRun(PROTO_DATA *proto);
 OBJ_DATA   *protoObjRun(PROTO_DATA *proto);
 ROOM_DATA *protoRoomRun(PROTO_DATA *proto);
-
+ROOM_DATA *protoRoomInstance(PROTO_DATA *proto, const char *as);
 
 //
 // setters

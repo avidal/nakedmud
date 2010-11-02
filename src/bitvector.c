@@ -93,6 +93,8 @@ void init_bitvectors() {
   bitvectorAddBit("user_groups", "builder");
   bitvectorAddBit("user_groups", "player");
   bitvectorAddBit("user_groups", "playtester");
+  bitvectorAddBit("user_groups", "wizard");
+  bitvectorAddBit("user_groups", "empty");
 }
 
 void bitvectorAddBit(const char *name, const char *bit) {

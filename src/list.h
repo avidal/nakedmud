@@ -25,7 +25,7 @@ LIST *newList();
 //
 // Delete an existing list
 //
-void deleteList();
+void deleteList(LIST *L);
 
 
 //
@@ -65,7 +65,7 @@ int listRemove(LIST *L, const void *elem);
 // Remove the element in the list at the specified place,
 // and return it
 //
-void *listRemoveNum(LIST *L, int num);
+void *listRemoveNum(LIST *L, unsigned int num);
 
 
 //
@@ -94,7 +94,7 @@ int isListEmpty(LIST *L);
 //
 // get the element with the specific number
 //
-void *listGet(LIST *L, int num);
+void *listGet(LIST *L, unsigned int num);
 
 
 //

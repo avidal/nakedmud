@@ -21,10 +21,9 @@ def cmd_inventory(ch, cmd, arg):
     if len(ch.inv) == 0:
         ch.send("You are not carrying anything.")
     else:
-        ch.send("{gYou are carrying:")
+        ch.send("You are carrying:")
         visible = utils.find_all_objs(ch, ch.inv, "", None, True)
         utils.show_list(ch, visible, lambda(x): x.name, lambda(x): x.mname)
-
 
 def cmd_equipment(ch, cmd, arg):
     '''Displays all of the equipment you are currently wearing.'''
@@ -33,7 +32,7 @@ def cmd_equipment(ch, cmd, arg):
 
 def cmd_who(ch, cmd, arg):
     '''List all of the players currently online.'''
-    ch.page(build_who())
+    ch.page(build_who(ch))
     
 def cmd_look(ch, cmd, arg):
     '''allows players to examine just about anything in the game'''
@@ -62,7 +61,7 @@ def cmd_look(ch, cmd, arg):
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("inventory", "inv", cmd_inventory, "player", False)
+add_cmd("inventory", "i",   cmd_inventory, "player", False)
 add_cmd("equipment", "eq",  cmd_equipment, "player", False)
 add_cmd("worn",      None,  cmd_equipment, "player", False)
 add_cmd("who",       None,  cmd_who,       "player", False)

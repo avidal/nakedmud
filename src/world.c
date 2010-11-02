@@ -18,6 +18,15 @@
 
 
 //*****************************************************************************
+// optional modules
+//*****************************************************************************
+#ifdef MODULE_PERSISTENT
+#include "persistent/persistent.h"
+#endif
+
+
+
+//*****************************************************************************
 // defines, structures, local functions
 //*****************************************************************************
 
@@ -138,7 +147,6 @@ bool worldSave(WORLD_DATA *world, const char *dirpath) {
   return TRUE;
 }
 
-
 void worldInit(WORLD_DATA *world) {
   char buf[MAX_BUFFER];
   sprintf(buf, "%s/world", world->path);
@@ -199,7 +207,7 @@ LIST *worldGetZoneKeys(WORLD_DATA *world) {
 
 const char *worldGetZonePath(WORLD_DATA *world, const char *key) {
   static char buf[SMALL_BUFFER];
-  sprintf(buf, "%s/%s", world->path, key);
+  sprintf(buf, "%s/zones/%s", world->path, key);
   return buf;
 }
 
@@ -220,15 +228,21 @@ ROOM_DATA *worldGetRoom(WORLD_DATA *world, const char *key) {
   ROOM_DATA *room = NULL;
   // see if we have it in the room hashtable
   if( (room = hashGet(world->rooms, key)) == NULL) {
-    char name[SMALL_BUFFER], locale[SMALL_BUFFER];
-    if(parse_worldkey(key, name, locale)) {
-      ZONE_DATA *zone = hashGet(world->zones, locale);
-      if(zone != NULL) {
-	PROTO_DATA *rproto = zoneGetType(zone, "rproto", name);
-	if(rproto != NULL && (room = protoRoomRun(rproto)) != NULL)
-	  worldPutRoom(world, protoGetKey(rproto), room);
+#ifdef MODULE_PERSISTENT
+    if( (room = worldGetPersistentRoom(world, key)) == NULL) {
+#endif
+      char name[SMALL_BUFFER], locale[SMALL_BUFFER];
+      if(parse_worldkey(key, name, locale)) {
+	ZONE_DATA *zone = hashGet(world->zones, locale);
+	if(zone != NULL) {
+	  PROTO_DATA *rproto = zoneGetType(zone, "rproto", name);
+	  if(rproto != NULL && (room = protoRoomRun(rproto)) != NULL)
+	    worldPutRoom(world, protoGetKey(rproto), room);
+	}
       }
+#ifdef MODULE_PERSISTENT
     }
+#endif
   }
   return room;
 }

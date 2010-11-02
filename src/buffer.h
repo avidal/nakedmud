@@ -35,7 +35,10 @@ const char *bufferString(BUFFER *buf);
 int bufferLength(BUFFER *buf);
 
 // do a formatted print onto the buffer (concats it)
-int bprintf(BUFFER *buf, char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
+int bprintf(BUFFER *buf, const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
+
+// bprintf with a variable list and format supplied
+int vbprintf(BUFFER *buf, const char *fmt, va_list va);
 
 // replace 'a' with 'b'. Return back how many occurences were replaced. If
 // all is FALSE, then only the first occurence is replaced.

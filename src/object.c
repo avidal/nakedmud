@@ -19,15 +19,11 @@
 #include "auxiliary.h"
 #include "object.h"
 
-
-// obj UIDs (unique IDs) start at a million and go 
-// up by one every time a new object is created
-int next_obj_uid = 1000000;
-
-
 struct object_data {
   int      uid;                  // our unique identifier
   double   weight;               // how much do we weigh, minus contents
+  int      hidden;               // how hard is it to see this object?
+  time_t   birth;                // the time at which we were created
   
   char *name;                    // our name - e.g. "a shirt"
   char *prototypes;              // a list of the types we're instances of
@@ -50,14 +46,14 @@ struct object_data {
 
   EDESC_SET  *edescs;            // special descriptions that can be seen on us
 
-  HASHTABLE  *auxiliary_data;    // data modules have installed in us
+  AUX_TABLE  *auxiliary_data;    // data modules have installed in us
 };
 
 
 OBJ_DATA *newObj() {
   OBJ_DATA *obj = calloc(1, sizeof(OBJ_DATA));
-  obj->uid            = next_obj_uid++;
-
+  obj->uid            = next_uid();
+  obj->birth          = current_time;
   obj->weight         = 0.1;
 
   obj->bits           = bitvectorInstanceOf("obj_bits");
@@ -114,11 +110,15 @@ OBJ_DATA *objRead(STORAGE_SET *set) {
   objSetDesc(obj,            read_string(set, "desc"));
   objSetMultiName(obj,       read_string(set, "multiname"));
   objSetMultiRdesc(obj,      read_string(set, "multirdesc"));
+  objSetHidden(obj,          read_int   (set, "hidden"));   
   objSetEdescs(obj,   edescSetRead(read_set(set, "edescs")));
   bitSet(obj->bits,read_string(set, "obj_bits"));
   deleteAuxiliaryData(obj->auxiliary_data);
   obj->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
 					  AUXILIARY_TYPE_OBJ);
+
+  if(storage_contains(set, "birth"))
+    obj->birth = read_long(set, "birth");
 
   // parse all of our contents
   STORAGE_SET_LIST *contents = read_list(set, "contents");
@@ -148,6 +148,8 @@ STORAGE_SET *objStore(OBJ_DATA *obj) {
   store_string(set, "obj_bits",  bitvectorGetBits(obj->bits));
   store_set   (set, "auxiliary", auxiliaryDataStore(obj->auxiliary_data));
   store_list  (set, "contents",  gen_store_list(obj->contents, objStore));
+  store_int   (set, "hidden",    obj->hidden);
+  store_long  (set, "birth",     obj->birth);
 
   return set;
 }
@@ -163,9 +165,11 @@ void objCopyTo(OBJ_DATA *from, OBJ_DATA *to) {
   objSetDesc      (to, objGetDesc(from));
   objSetMultiName (to, objGetMultiName(from));
   objSetMultiRdesc(to, objGetMultiRdesc(from));
+  objSetHidden    (to, objGetHidden(from));
   edescSetCopyTo  (objGetEdescs(from), objGetEdescs(to));
   bitvectorCopyTo (from->bits, to->bits);
   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
+  to->birth = from->birth;
 }
 
 OBJ_DATA *objCopy(OBJ_DATA *obj) {
@@ -271,6 +275,10 @@ int objGetUID(OBJ_DATA *obj) {
   return obj->uid;
 }
 
+time_t objGetBirth(OBJ_DATA *obj) {
+  return obj->birth;
+}
+
 double objGetWeightRaw(OBJ_DATA *obj) {
   return obj->weight;
 }
@@ -288,12 +296,16 @@ double objGetWeight(OBJ_DATA *obj) {
   return tot_weight;
 }
 
+int objGetHidden(OBJ_DATA *obj) {
+  return obj->hidden;
+}
+
 BITVECTOR *objGetBits(OBJ_DATA *obj) {
   return obj->bits;
 }
 
 void *objGetAuxiliaryData(const OBJ_DATA *obj, const char *name) {
-  return hashGet(obj->auxiliary_data, name);
+  return auxiliaryGet(obj->auxiliary_data, name);
 }
 
 void objSetKeywords(OBJ_DATA *obj, const char *keywords) {
@@ -363,4 +375,8 @@ void objSetRoom(OBJ_DATA *obj, ROOM_DATA *room) {
 
 void objSetWeightRaw(OBJ_DATA *obj, double weight) {
   obj->weight = weight;
+}
+
+void objSetHidden(OBJ_DATA *obj, int amnt) {
+  obj->hidden = amnt;
 }

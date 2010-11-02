@@ -21,4 +21,8 @@ PyObject *newPyStorageSet (STORAGE_SET *set);
 // return the storage set that is contained within it.
 STORAGE_SET *PyStorageSet_AsSet(PyObject *set);
 
+//
+// checks to see of the object is a PyStorageSet
+int PyStorageSet_Check(PyObject *value);
+
 #endif // PYSTORAGE_H

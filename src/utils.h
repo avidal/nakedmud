@@ -62,6 +62,16 @@ const char *numth(int num);
 #define HESHE(ch)             (charGetSex(ch) == SEX_MALE ? "he" : \
 			       (charGetSex(ch) == SEX_FEMALE ? "she" : "it"))
 
+#define YESNO(val)            (val == FALSE ? "no" : "yes")
+
+#define TOGGLE(val)           (val == FALSE ? TRUE : FALSE)
+
+//
+// register a check that's performed when can_see_char/obj/exit is called.
+// Returns True if the target is visible, and False if it is not.
+void  register_char_see   ( bool (* check)(CHAR_DATA *ch, CHAR_DATA *target));
+void  register_obj_see    ( bool (* check)(CHAR_DATA *ch, OBJ_DATA *target));
+void  register_exit_see   ( bool (* check)(CHAR_DATA *ch, EXIT_DATA *target));
 bool  can_see_char        ( CHAR_DATA *ch, CHAR_DATA *target);
 bool  can_see_obj         ( CHAR_DATA *ch, OBJ_DATA  *target);
 bool  can_see_exit        ( CHAR_DATA *ch, EXIT_DATA *exit);
@@ -74,6 +84,7 @@ int   can_see_invis       ( CHAR_DATA *ch);
 // and returns SOMEONE/SOMETHING otherwise.
 const char *see_char_as (CHAR_DATA *ch, CHAR_DATA *target);
 const char *see_obj_as  (CHAR_DATA *ch, OBJ_DATA  *target);
+const char *see_exit_as (CHAR_DATA *ch, EXIT_DATA *target);
 
 void     show_prompt(SOCKET_DATA *socket);
 const char *custom_prompt (CHAR_DATA *ch);
@@ -85,10 +96,10 @@ const char *custom_prompt (CHAR_DATA *ch);
 //*****************************************************************************
 #define BITS_PER_BITVECTOR                   32
 
-#define IS_SET(flag,bit)        ((flag) & (bit))
-#define SET_BIT(var,bit)        ((var) |= (bit))
-#define REMOVE_BIT(var,bit)    ((var) &= ~(bit))
-#define TOGGLE_BIT(var,bit)     ((var) ^= (bit))
+#define IS_SET(flag,bit)       (((flag) &  (bit)) != 0)
+#define SET_BIT(var,bit)        ((var) |=  (bit))
+#define REMOVE_BIT(var,bit)     ((var) &= ~(bit))
+#define TOGGLE_BIT(var,bit)     ((var) ^=  (bit))
 
 bitvector_t parse_bits(const char *string);
 const char *write_bits(bitvector_t bits);
@@ -124,7 +135,23 @@ void center_string        (char *buf, const char *string, int linelen,
 int next_space_in         (const char *string);
 int next_letter_in        (const char *string, char marker);
 int is_paragraph_marker   (const char *string, int index);
-int string_hash           (const char *key);
+
+//
+// four unique hash functions for 8-bit hashing. They can be concatinated
+// to do higher-order hashing as would be typically desired
+unsigned long    pearson_hash8(const char *string, int *table);
+unsigned long  pearson_hash8_1(const char *string);
+unsigned long  pearson_hash8_2(const char *string);
+unsigned long  pearson_hash8_3(const char *string);
+unsigned long  pearson_hash8_4(const char *string);
+unsigned long pearson_hash16_1(const char *string);
+unsigned long pearson_hash16_2(const char *string);
+unsigned long   pearson_hash32(const char *string);
+
+//
+// aliases pearson_hash32
+unsigned long string_hash(const char *key);
+
 bool endswith             (const char *string, const char *end);
 bool startswith           (const char *string, const char *start);
 const char *strcpyto      (char *to, const char *from, char end);
@@ -154,6 +181,13 @@ CHAR_DATA  *check_reconnect( const char *player );
 // transfers things from one room to another
 void do_mass_transfer(ROOM_DATA *from, ROOM_DATA *to, bool chars, bool mobs, 
 		      bool objs);
+
+// handles relative exits. If an exit destination does not have a locale, 
+// append the one for its room.
+const char *exitGetToFull(EXIT_DATA *exit);
+
+// find the root room of an object; traverse its containers and carriers
+ROOM_DATA *objGetRootRoom(OBJ_DATA *obj);
 
 
 
@@ -201,6 +235,16 @@ const char *get_fullkey_relative(const char *key, const char *locale);
 // If they have separate locales, return the fullkey of key. If they have the
 // same locale, just return the first portion of the key
 const char *get_shortkey(const char *key, const char *to);
+
+//
+// return whether the key is malformed in some way. Keys can only contain
+// letters, numbers, underscores, and a single @ sign
+bool key_malformed(const char *key);
+
+//
+// returns whether a key locale is malformed. This is true if it contains any
+// non-alphanumeric characters
+bool locale_malformed(const char *locale);
 
 //
 // Returns whether or not the command matches the pattern. Patterns are just

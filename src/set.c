@@ -129,14 +129,19 @@ void setPut(SET *set, void *elem) {
   set->size++;
 }
 
-void setRemove(SET *set, void *elem) {
+void *setRemove(SET *set, void *elem) {
   // find out what bucket we belong to
   int hash_bucket = set->hash(elem) % set->num_buckets;
 
   // see if the bucket exists
-  if(set->buckets[hash_bucket] != NULL)
-    if(listRemoveWith(set->buckets[hash_bucket], elem, set->cmp))
+  if(set->buckets[hash_bucket] != NULL) {
+    if(listRemoveWith(set->buckets[hash_bucket], elem, set->cmp)) {
       set->size--;
+      return elem;
+    }
+  }
+
+  return NULL;
 }
 
 int setIn(SET *set, const void *elem) {

@@ -19,12 +19,6 @@
 #include "storage.h"
 #include "character.h"
 
-
-// mob UIDs (unique IDs) start at a million and go 
-// up by one every time a new NPC is created
-#define START_MOB_UID       1000000
-int next_mob_uid  =   START_MOB_UID;
-
 const char *sex_names[NUM_SEXES] = {
   "male",
   "female",
@@ -92,6 +86,7 @@ struct char_data {
 
   // shared data for PCs and NPCs
   int                    uid;
+  time_t                 birth;
 
   BODY_DATA            * body;
   char                 * race;
@@ -107,9 +102,11 @@ struct char_data {
   char                 * name;
   int                    sex;
   int                    position;
+  int                    hidden;
+  double                 weight;
 
   LIST                 * inventory;
-  HASHTABLE            * auxiliary_data;
+  AUX_TABLE            * auxiliary_data;
   BITVECTOR            * prfs;
   BITVECTOR            * user_groups;
 
@@ -126,6 +123,7 @@ CHAR_DATA *newChar() {
 
   ch->loadroom      = strdup("");
   ch->uid           = NOBODY;
+  ch->birth         = current_time;
 
   ch->race          = strdup(raceDefault());
   ch->body          = raceCreateBody(ch->race);
@@ -180,7 +178,7 @@ bool charIsInstance(CHAR_DATA *ch, const char *prototype) {
 }
 
 bool charIsNPC( CHAR_DATA *ch) {
-  return (ch->uid >= START_MOB_UID);
+  return (ch->uid >= START_UID);
 }
 
 bool charIsName( CHAR_DATA *ch, const char *name) {
@@ -246,24 +244,36 @@ const char  *charGetMultiName( CHAR_DATA *ch) {
   return ch->multi_name;
 }
 
-int         charGetSex        ( CHAR_DATA *ch) {
+int charGetSex(CHAR_DATA *ch) {
   return ch->sex;
 }
 
-int         charGetPos        ( CHAR_DATA *ch) {
+int charGetPos(CHAR_DATA *ch) {
   return ch->position;
 }
 
-BODY_DATA   *charGetBody      ( CHAR_DATA *ch) {
+int charGetHidden(const CHAR_DATA *ch) {
+  return ch->hidden;
+}
+
+double charGetWeight(const CHAR_DATA *ch) {
+  return ch->weight;
+}
+
+BODY_DATA *charGetBody(CHAR_DATA *ch) {
   return ch->body;
 }
 
-const char  *charGetRace  ( CHAR_DATA *ch) {
+const char *charGetRace(CHAR_DATA *ch) {
   return ch->race;
 }
 
-int          charGetUID   ( const CHAR_DATA *ch) {
+int charGetUID(const CHAR_DATA *ch) {
   return ch->uid;
+}
+
+time_t       charGetBirth ( const CHAR_DATA *ch) {
+  return ch->birth;
 }
 
 const char *charGetLoadroom (CHAR_DATA *ch) {
@@ -271,7 +281,7 @@ const char *charGetLoadroom (CHAR_DATA *ch) {
 }
 
 void *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name) {
-  return hashGet(ch->auxiliary_data, name);
+  return auxiliaryGet(ch->auxiliary_data, name);
 }
 
 OBJ_DATA *charGetFurniture(CHAR_DATA *ch) {
@@ -325,6 +335,14 @@ void         charSetPos       ( CHAR_DATA *ch, int pos) {
   ch->position = pos;
 }
 
+void         charSetHidden    ( CHAR_DATA *ch, int amnt) {
+  ch->hidden = amnt;
+}
+
+void charSetWeight(CHAR_DATA *ch, double amnt) {
+  ch->weight = amnt;
+}
+
 void         charSetDesc      ( CHAR_DATA *ch, const char *desc) {
   bufferClear(ch->desc);
   bufferCat(ch->desc, (desc ? desc : ""));
@@ -367,7 +385,7 @@ void charSetFurniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
 //*****************************************************************************
 CHAR_DATA *newMobile() {
   CHAR_DATA *mob = newChar();
-  mob->uid = next_mob_uid++;
+  mob->uid = next_uid();
   return mob;
 };
 
@@ -415,6 +433,8 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
   bitSet(mob->user_groups, read_string(set, "user_groups"));
   charSetLoadroom(mob,     read_string(set, "loadroom"));
   charSetPos(mob,          read_int   (set, "position"));
+  charSetHidden(mob,       read_int   (set, "hidden"));
+  charSetWeight(mob,       read_double(set, "weight"));
 
   // make sure we always have the default group assigned
   if(!*bitvectorGetBits(mob->user_groups))
@@ -423,6 +443,9 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
   // read in PC data if it exists
   if(storage_contains(set, "uid"))
     charSetUID(mob,        read_int   (set, "uid"));
+
+  if(storage_contains(set, "birth"))
+    mob->birth = read_long(set, "birth");
 
   deleteAuxiliaryData(mob->auxiliary_data);
   mob->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
@@ -453,10 +476,13 @@ STORAGE_SET *charStore(CHAR_DATA *mob) {
   store_string(set, "race",       mob->race);
   store_string(set, "prfs",       bitvectorGetBits(mob->prfs));
   store_string(set, "user_groups",bitvectorGetBits(mob->user_groups));
+  store_int   (set, "position",   mob->position);
+  store_int   (set, "hidden",     mob->hidden);
+  store_double(set, "weight",     mob->weight);
+  store_long  (set, "birth",      mob->birth);
 
   // PC-only data
   if(!charIsNPC(mob)) {
-    store_int   (set, "position",   mob->position);
     store_int   (set, "uid",        mob->uid);
     store_string(set, "loadroom",   mob->loadroom);
   }
@@ -477,10 +503,13 @@ void charCopyTo( CHAR_DATA *from, CHAR_DATA *to) {
   charSetMultiName  (to, charGetMultiName(from));
   charSetSex        (to, charGetSex(from));
   charSetPos        (to, charGetPos(from));
+  charSetHidden     (to, charGetHidden(from));
+  charSetWeight     (to, charGetWeight(from));
   charSetRace       (to, charGetRace(from));
   charSetBody       (to, bodyCopy(charGetBody(from)));
   bitvectorCopyTo   (from->prfs, to->prfs);
   bitvectorCopyTo   (from->prfs, to->prfs);
+  to->birth = from->birth;
 
   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
 }

@@ -78,8 +78,9 @@ CMD_CHK_DATA *cmdCheckCopy(CMD_CHK_DATA *data) {
 
 void cmdCheckCopyTo(CMD_CHK_DATA *from, CMD_CHK_DATA *to) {
   Py_XDECREF(to->pyfunc);
-  Py_XINCREF(from->pyfunc);
-  *to = *from;
+  to->func   = from->func;
+  to->pyfunc = from->pyfunc;
+  Py_XINCREF(to->pyfunc);
 }
 
 
@@ -89,27 +90,40 @@ void cmdCheckCopyTo(CMD_CHK_DATA *from, CMD_CHK_DATA *to) {
 //*****************************************************************************
 CMD_DATA *newCmd(const char *name, COMMAND(func), const char *user_group, 
 		 bool interrupts) {
-  CMD_DATA *cmd   = malloc(sizeof(CMD_DATA));
-  cmd->name       = strdupsafe(name);
-  cmd->func       = func;
-  cmd->user_group = strdupsafe(user_group);
-  cmd->interrupts = interrupts;
-  cmd->checks     = newList();
-  cmd->pyfunc     = NULL;
+  CMD_DATA *cmd = calloc(1, sizeof(CMD_DATA));
+  cmd->name     = strdupsafe(name);
+  cmd->checks   = newList();
+  cmdUpdate(cmd, func, user_group, interrupts);
   return cmd;
 }
 
 CMD_DATA *newPyCmd(const char *name, void *pyfunc, const char *user_group, 
 		   bool interrupts) {
-  CMD_DATA *cmd   = malloc(sizeof(CMD_DATA));
+  CMD_DATA *cmd   = calloc(1, sizeof(CMD_DATA));
   cmd->name       = strdupsafe(name);
+  cmd->checks     = newList();
+  cmdPyUpdate(cmd, pyfunc, user_group, interrupts);
+  return cmd;
+}
+
+void cmdUpdate(CMD_DATA *cmd, COMMAND(func), const char *user_group, 
+	       bool interrupts) {
+  if(cmd->pyfunc)     { Py_DECREF(cmd->pyfunc); cmd->pyfunc = NULL; }
+  if(cmd->user_group) free(cmd->user_group);
+  cmd->func       = func;
+  cmd->user_group = strdupsafe(user_group);
+  cmd->interrupts = interrupts;
+}
+
+void cmdPyUpdate(CMD_DATA *cmd, void *pyfunc, const char *user_group,
+		 bool interrupts) {
+  if(cmd->pyfunc)     { Py_DECREF(cmd->pyfunc); cmd->pyfunc = NULL; }
+  if(cmd->user_group) free(cmd->user_group);
   cmd->func       = NULL;
   cmd->user_group = strdupsafe(user_group);
   cmd->interrupts = interrupts;
-  cmd->checks     = newList();
   cmd->pyfunc     = pyfunc;
-  Py_INCREF(cmd->pyfunc);
-  return cmd;
+  Py_XINCREF(cmd->pyfunc);
 }
 
 void deleteCmd(CMD_DATA *cmd) {
@@ -122,10 +136,10 @@ void deleteCmd(CMD_DATA *cmd) {
 
 CMD_DATA *cmdCopy(CMD_DATA *cmd) {
   CMD_DATA *newcmd = NULL;
-  if(cmd->func)
-    newcmd = newCmd(cmd->name, cmd->func, cmd->user_group, cmd->interrupts);
-  else
+  if(cmd->pyfunc)
     newcmd = newPyCmd(cmd->name, cmd->pyfunc, cmd->user_group, cmd->interrupts);
+  else
+    newcmd = newCmd(cmd->name, cmd->func, cmd->user_group, cmd->interrupts);
   
   // copy over the checks
   deleteList(newcmd->checks);
@@ -139,9 +153,12 @@ void cmdCopyTo(CMD_DATA *from, CMD_DATA *to) {
   if(to->pyfunc)     { Py_DECREF(to->pyfunc); }
   to->name         = strdup(from->name);
   to->user_group   = strdup(from->user_group);
-  if(from->pyfunc)   { Py_INCREF(from->pyfunc); }
+  to->pyfunc       = from->pyfunc;
+  if(to->pyfunc)     { Py_INCREF(to->pyfunc); }
   to->func         = from->func;
   to->interrupts   = from->interrupts;
+  if(to->checks)     { deleteListWith(to->checks, deleteCmdCheck); }
+  to->checks       = listCopyWith(from->checks, cmdCheckCopy);
 }
 
 const char *cmdGetName(CMD_DATA *cmd) {
@@ -264,7 +281,11 @@ bool cmdTryChecks(CHAR_DATA *ch, CMD_DATA *cmd) {
   return cmd_ok;
 }
 
-bool charTryCmd(CHAR_DATA *ch, CMD_DATA *cmd, char *arg) {
+bool cmdHasFunc(CMD_DATA *cmd) {
+  return (cmd->func != NULL || cmd->pyfunc != NULL);
+}
+
+int charTryCmd(CHAR_DATA *ch, CMD_DATA *cmd, char *arg) {
   // first, go through all of our checks
   if(!cmdTryChecks(ch, cmd))
     return FALSE;
@@ -281,9 +302,11 @@ bool charTryCmd(CHAR_DATA *ch, CMD_DATA *cmd, char *arg) {
       interrupt_action(ch, 1);
 #endif
     }
-    if(cmd->func)
+    if(cmd->func) {
       (cmd->func)(ch, cmd->name, arg);
-    else {
+      return TRUE;
+    }
+    else if(cmd->pyfunc) {
       PyObject *arglist = Py_BuildValue("Oss", charGetPyFormBorrowed(ch), 
 					cmd->name, arg);
       PyObject *retval  = PyEval_CallObject(cmd->pyfunc, arglist);
@@ -294,8 +317,11 @@ bool charTryCmd(CHAR_DATA *ch, CMD_DATA *cmd, char *arg) {
       // garbage collection
       Py_XDECREF(retval);
       Py_XDECREF(arglist);
+      return TRUE;
     }
-    return TRUE;
+    // command is null (but there might have been checks)
+    else
+      return -1;
   }
 }
 

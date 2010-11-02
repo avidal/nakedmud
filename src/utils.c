@@ -36,6 +36,16 @@
 
 
 
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "items/items.h"
+
+
+
+//*****************************************************************************
+// implementation of utils.h
+//*****************************************************************************
 void  extract_obj_final(OBJ_DATA *obj) {
   obj_from_game(obj);
   deleteObj(obj);
@@ -44,11 +54,11 @@ void  extract_obj_final(OBJ_DATA *obj) {
 void extract_obj(OBJ_DATA *obj) {
   // make sure we're not attached to anything
   CHAR_DATA *sitter = NULL;
-  while( (sitter = listGet(objGetUsers(obj), 0)) != NULL)
+  while( (sitter = (CHAR_DATA *)listGet(objGetUsers(obj), 0)) != NULL)
     char_from_furniture(sitter);
 
   OBJ_DATA *content = NULL;
-  while( (content = listGet(objGetContents(obj), 0)) != NULL)
+  while( (content = (OBJ_DATA *)listGet(objGetContents(obj), 0)) != NULL)
     extract_obj(content);
 
   if(objGetRoom(obj))
@@ -66,7 +76,7 @@ void extract_obj(OBJ_DATA *obj) {
 
 void extract_mobile_final(CHAR_DATA *ch) {
   char_from_game(ch);
-  if(charIsNPC(ch))
+  if(charIsNPC(ch) || !player_exists(charGetName(ch)))
     deleteChar(ch);
   else
     unreference_player(ch);
@@ -105,6 +115,8 @@ void extract_room_final(ROOM_DATA *room) {
 }
 
 void extract_room(ROOM_DATA *room) {
+  roomSetExtracted(room);
+
   // extract all of the objects characters in us
   CHAR_DATA *ch = NULL;
   while( (ch = listGet(roomGetCharacters(room), 0)) != NULL)
@@ -139,24 +151,8 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
     bug("Communicate: Bad Range %d.", range);
     return;
 
-    // to everyone in the same room
-  case COMM_LOCAL:
-    mssgprintf(dMob, NULL, NULL, NULL, FALSE, TO_CHAR,
-	       "{yYou say, '%s'{n", txt);
-    mssgprintf(dMob, NULL, NULL, NULL, FALSE, TO_ROOM, 
-	       "{y$n says, '%s'{n", txt);
-    break;
-
-    // to everyone in the world
-  case COMM_GLOBAL:
-    mssgprintf(dMob, NULL, NULL, NULL, FALSE, TO_CHAR,
-	       "{cYou chat, '%s'{n", txt);
-    mssgprintf(dMob, NULL, NULL, NULL, FALSE, TO_WORLD, 
-	       "{c$n chats, '%s'{n", txt);
-    break;
-
   case COMM_LOG:
-    send_to_groups("admin", "[LOG: %s]\r\n", txt);
+    send_to_groups("admin, scripter", "[LOG: %s]\r\n", txt);
     break;
   }
 }
@@ -278,49 +274,175 @@ void do_mass_transfer(ROOM_DATA *from, ROOM_DATA *to, bool chars, bool mobs,
   }
 }
 
+const char *exitGetToFull(EXIT_DATA *exit) {
+  if(exitGetRoom(exit) == NULL)
+    return exitGetTo(exit);
+  else
+    return get_fullkey_relative(exitGetTo(exit), get_key_locale(roomGetClass(exitGetRoom(exit))));
+}
 
-int   can_see_hidden          ( CHAR_DATA *ch) {
+ROOM_DATA *objGetRootRoom(OBJ_DATA *obj) {
+  if(objGetCarrier(obj))
+    return charGetRoom(objGetCarrier(obj));
+  else if(objGetWearer(obj))
+    return charGetRoom(objGetWearer(obj));
+  else if(objGetContainer(obj))
+    return objGetRootRoom(objGetContainer(obj));
+  return objGetRoom(obj);
+}
+
+
+int can_see_hidden(CHAR_DATA *ch) {
   return 0;
 }
 
-int   can_see_invis           ( CHAR_DATA *ch) {
+int can_see_invis(CHAR_DATA *ch) {
   return 0;
 }
 
-bool  can_see_char          ( CHAR_DATA *ch, CHAR_DATA *target) {
+LIST *char_see_checks = NULL;
+LIST *obj_see_checks  = NULL;
+LIST *exit_see_checks = NULL;
+
+void register_char_see( bool (* check)(CHAR_DATA *ch, CHAR_DATA *target)) {
+  if(char_see_checks == NULL)
+    char_see_checks = newList();
+  listPut(char_see_checks, check);
+}
+
+void register_obj_see( bool (* check)(CHAR_DATA *ch, OBJ_DATA *target)) {
+  if(obj_see_checks == NULL)
+    obj_see_checks = newList();
+  listPut(obj_see_checks, check);
+}
+
+void register_exit_see(bool (* check)(CHAR_DATA *ch, EXIT_DATA *target)) {
+  if(exit_see_checks == NULL)
+    exit_see_checks = newList();
+  listPut(exit_see_checks, check);
+}
+
+bool  can_see_char(CHAR_DATA *ch, CHAR_DATA *target) {
   if(ch == target)
     return TRUE;
   if(poscmp(charGetPos(ch), POS_SLEEPING) <= 0)
     return FALSE;
 
-  return TRUE;
+  bool ret = TRUE;
+  if(char_see_checks != NULL) {
+    LIST_ITERATOR *chk_i = newListIterator(char_see_checks);
+    bool (*chk)(CHAR_DATA *, CHAR_DATA *) = NULL;
+    ITERATE_LIST(chk, chk_i) {
+      ret = chk(ch, target);
+      if(ret == FALSE)
+	break;
+    } deleteListIterator(chk_i);
+  }
+  return ret;
 }
 
-bool  can_see_obj             ( CHAR_DATA *ch, OBJ_DATA  *target) {
+bool can_see_obj(CHAR_DATA *ch, OBJ_DATA  *target) {
   if(poscmp(charGetPos(ch), POS_SLEEPING) <= 0)
     return FALSE;
 
-  return TRUE;
+  bool ret = TRUE;
+  if(obj_see_checks != NULL) {
+    LIST_ITERATOR *chk_i = newListIterator(obj_see_checks);
+    bool (*chk)(CHAR_DATA *, OBJ_DATA *) = NULL;
+    ITERATE_LIST(chk, chk_i) {
+      ret = chk(ch, target);
+      if(ret == FALSE)
+	break;
+    } deleteListIterator(chk_i);
+  }
+  return ret;
 }
 
-bool  can_see_exit         ( CHAR_DATA *ch, EXIT_DATA *exit) {
+bool can_see_exit(CHAR_DATA *ch, EXIT_DATA *target) {
   if(poscmp(charGetPos(ch), POS_SLEEPING) <= 0)
     return FALSE;
-  if(exitGetHidden(exit) > can_see_hidden(ch))
-    return FALSE;
-  return TRUE;
+
+  bool ret = TRUE;
+  if(exit_see_checks != NULL) {
+    LIST_ITERATOR *chk_i = newListIterator(exit_see_checks);
+    bool (*chk)(CHAR_DATA *, EXIT_DATA *) = NULL;
+    ITERATE_LIST(chk, chk_i) {
+      ret = chk(ch, target);
+      if(ret == FALSE)
+	break;
+    } deleteListIterator(chk_i);
+  }
+  return ret;
 }
 
-const char *see_char_as (CHAR_DATA *ch, CHAR_DATA *target) {
-  if(can_see_char(ch, target))
+const char *see_exit_as(CHAR_DATA *ch, EXIT_DATA *target) {
+  if(!can_see_exit(ch, target))
+    return SOMEWHERE;
+  else {
+    BUFFER     *buf = newBuffer(1);
+    const char *dir = NULL;
+    ROOM_DATA *dest = NULL;
+
+    if(exitGetRoom(target))
+      dir = roomGetExitDir(exitGetRoom(target), target);
+
+    // build up what the exit looks like
+    if(exitIsClosed(target)) {
+      if(*exitGetName(target))
+	bprintf(buf, exitGetName(target));
+      else
+	bprintf(buf, "closed");
+    }
+    else if( (dest = worldGetRoom(gameworld, exitGetToFull(target))) != NULL)
+      bprintf(buf, "%s", roomGetName(dest));
+    else
+      bprintf(buf, "%s", SOMEWHERE);
+
+    listPush(bufs_to_delete, buf);
+    return bufferString(buf);
+  }
+}
+
+const char *see_char_as(CHAR_DATA *ch, CHAR_DATA *target) {
+  if(!can_see_char(ch, target))
+    return SOMEONE;
+  // put the interaction commands around our name
+  else
     return charGetName(target);
-  return SOMEONE;
 }
 
-const char *see_obj_as  (CHAR_DATA *ch, OBJ_DATA  *target) {
-  if(can_see_obj(ch, target))
+//
+// finds the UID of the room the object is in
+int find_obj_room(OBJ_DATA *obj) {
+  if(objGetRoom(obj))
+    return roomGetUID(objGetRoom(obj));
+  else if(objGetCarrier(obj))
+    return roomGetUID(charGetRoom(objGetCarrier(obj)));
+  else if(objGetWearer(obj))
+    return roomGetUID(charGetRoom(objGetWearer(obj)));
+  else if(objGetContainer(obj))
+    return find_obj_room(objGetContainer(obj));
+  return NOWHERE;
+}
+
+const char *see_obj_as(CHAR_DATA *ch, OBJ_DATA  *target) {
+  if(!can_see_obj(ch, target))
+    return SOMETHING;
+  else 
     return objGetName(target);
-  return SOMETHING;
+}
+
+//
+// returns a name as a UID, or -1 if it does not translate
+int name_as_uid(const char *name) {
+  if(name == NULL)
+    return NOBODY;
+  int i = 0, uid = NOBODY;
+  for(; name[i] != '\0'; i++)
+    if(!isdigit(name[i]))
+      return NOBODY;
+  sscanf(name, "%d", &uid);
+  return uid;
 }
 
 int count_objs(CHAR_DATA *looker, LIST *list, const char *name, 
@@ -328,12 +450,13 @@ int count_objs(CHAR_DATA *looker, LIST *list, const char *name,
   LIST_ITERATOR *obj_i = newListIterator(list);
   OBJ_DATA *obj;
   int count = 0;
+  int   uid = name_as_uid(name);
 
   ITERATE_LIST(obj, obj_i) {
     if(must_see && !can_see_obj(looker, obj))
       continue;
     // if we have a name, search by it
-    if(name && *name && objIsName(obj, name))
+    if(objGetUID(obj) == uid || (name && *name && objIsName(obj, name)))
       count++;
     // otherwise search by prototype
     else if(prototype && *prototype && objIsInstance(obj, prototype))
@@ -343,41 +466,48 @@ int count_objs(CHAR_DATA *looker, LIST *list, const char *name,
   return count;
 }
 
-
 int count_chars(CHAR_DATA *looker, LIST *list, const char *name,
 		const char *prototype, bool must_see) {
   LIST_ITERATOR *char_i = newListIterator(list);
   CHAR_DATA *ch;
   int count = 0;
+  int   uid = name_as_uid(name);
 
   ITERATE_LIST(ch, char_i) {
     if(must_see && !can_see_char(looker, ch))
       continue;
     // if we have a name, search by it
-    if(name && *name && charIsName(ch, name))
+    if((name && *name && charIsName(ch, name)) || charGetUID(ch) == uid)
       count++;
     // otherwise, search by prototype
     else if(prototype && *prototype && charIsInstance(ch, prototype))
       count++;
-  }
-  deleteListIterator(char_i);
+  } deleteListIterator(char_i);
 
   return count;
 }
 
-
 //
 // find the numth occurance of the character with name, "name"
-// if name is not supplied, search by prototype
+// if name is not supplied, search by prototype. If name is supplied as m.XXX,
+// then search by the mob's UID
 //
 CHAR_DATA *find_char(CHAR_DATA *looker, LIST *list, int num, const char *name,
 		     const char *prototype, bool must_see) {
   if(num <= 0)
     return NULL;
+  CHAR_DATA *ch = NULL;
+
+  // is everything in the description a number? Search by UID
+  int uid = name_as_uid(name);
+  if(uid != NOBODY) {
+    ch = propertyTableGet(mob_table, uid);
+    if(listIn(list, ch) && can_see_char(looker, ch))
+      return ch;
+    return NULL;
+  }
 
   LIST_ITERATOR *char_i = newListIterator(list);
-  CHAR_DATA *ch;
-
   ITERATE_LIST(ch, char_i) {
     if(must_see && !can_see_char(looker, ch))
       continue;
@@ -389,8 +519,7 @@ CHAR_DATA *find_char(CHAR_DATA *looker, LIST *list, int num, const char *name,
       num--;
     if(num == 0)
       break;
-  }
-  deleteListIterator(char_i);
+  } deleteListIterator(char_i);
   return ch;
 }
 
@@ -403,10 +532,18 @@ OBJ_DATA *find_obj(CHAR_DATA *looker, LIST *list, int num,
 		   const char *name, const char *prototype, bool must_see) {
   if(num == 0)
     return NULL;
+  OBJ_DATA *obj = NULL;
+
+  // is everything in the description a number? Search by UID
+  int uid = name_as_uid(name);
+  if(uid != NOTHING) {
+    obj = propertyTableGet(obj_table, uid);
+    if(listIn(list, obj) && can_see_obj(looker, obj))
+      return obj;
+    return NULL;
+  }
 
   LIST_ITERATOR *obj_i = newListIterator(list);
-  OBJ_DATA *obj;
-
   ITERATE_LIST(obj, obj_i) {
     if(must_see && !can_see_obj(looker, obj))
       continue;
@@ -418,8 +555,7 @@ OBJ_DATA *find_obj(CHAR_DATA *looker, LIST *list, int num,
       num--;
     if(num == 0)
       break;
-  }
-  deleteListIterator(obj_i);
+  } deleteListIterator(obj_i);
   return obj;
 }
 
@@ -432,17 +568,17 @@ LIST *find_all_chars(CHAR_DATA *looker, LIST *list, const char *name,
 		     const char *prototype, bool must_see) {
   LIST_ITERATOR *char_i = newListIterator(list);
   LIST *char_list = newList();
+  int         uid = name_as_uid(name);
   CHAR_DATA *ch;
 
   ITERATE_LIST(ch, char_i) {
     if(must_see && !can_see_char(looker, ch))
       continue;
-    if(name && (!*name || charIsName(ch, name)))
+    if((name && (!*name || charIsName(ch, name))) || charGetUID(ch) == uid)
       listPut(char_list, ch);
     else if(prototype && *prototype && charIsInstance(ch, prototype))
       listPut(char_list, ch);
-  }
-  deleteListIterator(char_i);
+  } deleteListIterator(char_i);
   return char_list;
 }
 
@@ -455,18 +591,18 @@ LIST *find_all_objs(CHAR_DATA *looker, LIST *list, const char *name,
 		    const char *prototype, bool must_see) {
 
   LIST_ITERATOR *obj_i = newListIterator(list);
-  LIST *obj_list = newList();
+  LIST       *obj_list = newList();
+  int              uid = name_as_uid(name);
   OBJ_DATA *obj;
 
   ITERATE_LIST(obj, obj_i) {
     if(must_see && !can_see_obj(looker, obj))
       continue;
-    if(name && (!*name || objIsName(obj, name)))
+    if((name && (!*name || objIsName(obj, name))) || objGetUID(obj) == uid)
       listPut(obj_list, obj);
     else if(prototype && *prototype && objIsInstance(obj, prototype))
       listPut(obj_list, obj);
-  }
-  deleteListIterator(obj_i);
+  } deleteListIterator(obj_i);
   return obj_list;
 }
 
@@ -477,7 +613,8 @@ LIST *find_all_objs(CHAR_DATA *looker, LIST *list, const char *name,
 void get_count(const char *buf, char *target, int *count) {
   // hmmm... we can probably condense these two checks into one, non?
   if(!strncasecmp(buf, "all.", 4)) {
-    sscanf(buf, "all.%s", target);
+    //sscanf(buf, "all.%s", target);
+    strcpyto(target, buf+4, '\0');
     *count = COUNT_ALL;
   }
   else if(!strcasecmp(buf, "all")) {
@@ -485,11 +622,16 @@ void get_count(const char *buf, char *target, int *count) {
     *count = COUNT_ALL;
   }
   else if(!strstr(buf, ".")) {
-    sscanf(buf, "%s", target);
+    strcpyto(target, buf, '\0');
+    //sscanf(buf, "%s", target);
     *count = 1;
   }
-  else
-    sscanf(buf, "%d.%s", count, target);
+  else {
+    //*count = 1;
+    //strcpyto(target, buf, '\0');
+    sscanf(buf, "%d", count);
+    strcpyto(target, buf+next_letter_in(buf, '.')+1, '\0');
+  }
 }
 
 
@@ -549,17 +691,59 @@ int is_paragraph_marker(const char *string, int index) {
 }
 
 //
+// hashing array 1 for pearson hashing
+int pearson_table1[] = { 66, 93, 11, 153, 155, 113, 214, 132, 91, 193, 240, 82, 175, 145, 84, 34, 76, 217, 250, 230, 139, 172, 65, 254, 196, 56, 165, 116, 48, 219, 199, 142, 35, 27, 210, 149, 45, 127, 41, 150, 85, 87, 253, 100, 234, 216, 192, 226, 154, 106, 78, 146, 131, 38, 120, 151, 177, 29, 50, 231, 68, 168, 227, 161, 126, 141, 36, 191, 110, 81, 197, 190, 9, 236, 140, 0, 20, 162, 23, 189, 42, 130, 117, 86, 243, 123, 237, 249, 64, 135, 61, 167, 39, 57, 96, 148, 118, 13, 235, 188, 19, 71, 49, 115, 21, 182, 15, 200, 179, 251, 75, 77, 204, 32, 180, 16, 218, 22, 171, 88, 30, 248, 47, 238, 105, 94, 92, 67, 28, 69, 33, 215, 1, 7, 241, 109, 209, 98, 12, 208, 156, 52, 195, 89, 185, 55, 170, 104, 17, 173, 122, 138, 4, 202, 136, 247, 169, 222, 163, 211, 144, 252, 2, 186, 201, 40, 207, 107, 18, 24, 46, 129, 44, 14, 174, 26, 124, 194, 37, 223, 102, 183, 99, 114, 70, 158, 53, 111, 147, 119, 73, 152, 79, 203, 157, 221, 10, 97, 133, 62, 229, 178, 205, 184, 164, 176, 198, 80, 58, 245, 31, 59, 128, 101, 60, 181, 246, 232, 63, 143, 121, 213, 187, 206, 43, 134, 6, 225, 228, 72, 54, 233, 224, 5, 8, 239, 112, 244, 255, 137, 3, 74, 108, 159, 83, 125, 103, 51, 220, 25, 166, 90, 160, 212, 95, 242 };
+
+int pearson_table2[] = { 202, 142, 134, 22, 233, 237, 13, 31, 41, 97, 141, 148, 74, 165, 7, 162, 53, 117, 210, 226, 174, 88, 5, 163, 17, 49, 170, 99, 93, 39, 69, 108, 207, 244, 254, 101, 159, 30, 188, 67, 235, 150, 24, 136, 208, 221, 234, 43, 96, 12, 78, 10, 25, 81, 239, 120, 37, 21, 42, 183, 121, 213, 14, 161, 137, 23, 9, 255, 245, 209, 222, 236, 119, 199, 216, 71, 115, 110, 63, 107, 173, 70, 20, 89, 91, 102, 227, 1, 177, 113, 104, 111, 253, 181, 95, 243, 72, 6, 124, 131, 190, 86, 164, 85, 251, 3, 50, 154, 217, 155, 8, 105, 82, 28, 75, 147, 0, 80, 252, 140, 29, 2, 242, 160, 57, 34, 247, 167, 47, 126, 144, 168, 18, 231, 44, 58, 206, 77, 125, 171, 36, 76, 98, 26, 241, 180, 61, 151, 194, 15, 45, 84, 212, 32, 196, 92, 192, 139, 112, 229, 100, 109, 189, 248, 156, 94, 153, 145, 127, 146, 175, 138, 215, 195, 198, 128, 182, 218, 19, 250, 132, 40, 214, 103, 83, 73, 106, 133, 135, 186, 123, 219, 158, 38, 152, 232, 116, 64, 172, 52, 200, 204, 240, 224, 203, 249, 59, 157, 114, 191, 230, 48, 166, 122, 65, 228, 184, 4, 205, 220, 225, 62, 169, 79, 27, 197, 11, 87, 193, 179, 223, 56, 68, 178, 187, 149, 143, 16, 55, 35, 201, 118, 185, 51, 66, 33, 54, 176, 60, 46, 211, 246, 238, 130, 90, 129 };
+
+int pearson_table3[] = { 44, 181, 139, 127, 174, 243, 236, 14, 5, 200, 235, 180, 195, 185, 193, 116, 161, 110, 72, 121, 9, 3, 104, 224, 136, 182, 15, 94, 222, 84, 186, 20, 239, 147, 21, 34, 183, 93, 61, 164, 189, 89, 17, 226, 56, 205, 176, 51, 128, 201, 73, 75, 190, 163, 96, 178, 102, 33, 150, 130, 98, 76, 120, 240, 79, 158, 24, 196, 78, 4, 202, 168, 48, 255, 227, 97, 138, 101, 207, 170, 58, 27, 45, 225, 179, 215, 251, 123, 209, 38, 63, 36, 6, 175, 62, 208, 86, 65, 107, 188, 249, 146, 198, 194, 254, 230, 253, 103, 46, 133, 192, 26, 108, 219, 191, 77, 137, 81, 145, 66, 91, 106, 7, 10, 29, 95, 165, 88, 119, 151, 40, 22, 1, 122, 114, 134, 37, 214, 217, 68, 0, 83, 199, 70, 80, 156, 140, 144, 90, 118, 42, 173, 111, 157, 204, 171, 212, 241, 53, 11, 148, 135, 206, 172, 23, 109, 13, 220, 245, 197, 177, 47, 59, 210, 49, 74, 54, 25, 234, 115, 43, 169, 218, 50, 87, 31, 143, 248, 69, 92, 160, 141, 41, 228, 184, 233, 117, 2, 231, 252, 28, 216, 125, 153, 18, 100, 166, 8, 52, 124, 250, 132, 67, 244, 12, 246, 32, 64, 213, 242, 247, 223, 82, 131, 112, 221, 113, 155, 71, 211, 60, 129, 149, 237, 30, 85, 55, 152, 229, 35, 232, 187, 19, 105, 203, 39, 159, 238, 167, 162, 57, 126, 99, 154, 142, 16 };
+
+int pearson_table4[] = { 231, 223, 174, 160, 113, 173, 104, 49, 122, 229, 13, 8, 232, 81, 38, 90, 64, 131, 123, 176, 33, 84, 166, 241, 16, 190, 159, 144, 189, 193, 66, 137, 163, 162, 111, 26, 15, 9, 1, 119, 255, 136, 167, 178, 94, 130, 114, 32, 110, 99, 78, 153, 239, 179, 243, 249, 133, 76, 86, 242, 165, 169, 19, 155, 152, 67, 215, 220, 36, 24, 213, 105, 117, 168, 128, 204, 248, 238, 177, 161, 222, 205, 108, 186, 116, 51, 230, 68, 181, 58, 39, 47, 71, 211, 209, 101, 251, 164, 60, 10, 12, 83, 180, 50, 172, 55, 158, 20, 70, 107, 147, 170, 91, 118, 40, 140, 3, 252, 184, 34, 146, 127, 28, 254, 150, 57, 228, 126, 192, 14, 253, 45, 227, 225, 30, 4, 17, 44, 95, 201, 18, 149, 124, 65, 129, 154, 195, 102, 212, 219, 6, 75, 132, 244, 52, 187, 240, 198, 85, 217, 185, 224, 208, 21, 250, 87, 216, 183, 245, 203, 79, 61, 100, 200, 246, 80, 138, 109, 120, 92, 247, 143, 202, 72, 134, 156, 207, 233, 218, 37, 23, 125, 82, 234, 56, 151, 106, 112, 197, 41, 88, 96, 171, 31, 175, 93, 182, 188, 135, 48, 148, 5, 226, 103, 29, 97, 139, 115, 0, 77, 89, 74, 35, 42, 157, 59, 69, 2, 62, 236, 142, 196, 145, 7, 54, 237, 206, 194, 73, 121, 98, 199, 27, 235, 11, 221, 46, 141, 43, 63, 25, 22, 210, 53, 191, 214 };
+
+unsigned long pearson_hash8(const char *string, int *table) {
+  unsigned long h = 0;
+  for(; *string; string++)
+    h = table[h ^ tolower(*string)];
+  return h;
+}
+
+unsigned long pearson_hash8_1(const char *string) {
+  return pearson_hash8(string, pearson_table1);
+}
+
+unsigned long pearson_hash8_2(const char *string) {
+  return pearson_hash8(string, pearson_table2);
+}
+
+unsigned long pearson_hash8_3(const char *string) {
+  return pearson_hash8(string, pearson_table3);
+}
+
+unsigned long pearson_hash8_4(const char *string) {
+  return pearson_hash8(string, pearson_table4);
+}
+
+// concatinate two strings of 8 bits
+unsigned long pearson_hash16_1(const char *string) {
+  return pearson_hash8_1(string)  | (pearson_hash8_2(string) << 8);
+}
+
+// again, different hashing functions
+unsigned long pearson_hash16_2(const char *string) {
+  return pearson_hash8_3(string)  | (pearson_hash8_4(string) << 8);
+}
+
+// concatinate four strings of 8 bits
+unsigned long pearson_hash32(const char *string) {
+  return ((pearson_hash8_1(string))       | (pearson_hash8_2(string) << 8) |
+	  (pearson_hash8_3(string) << 16) | (pearson_hash8_4(string) << 24));
+}
+
+//
 // just a generic function for hashing a string. This could be 
 // sped up tremendously if it's performance becoming a problem.
-int string_hash(const char *key) {
-  const int BASE = 2;
-  int base = 1;
-  int hvalue = 0;
-  for (; *key; key++) {
-    base *= BASE;
-    hvalue += tolower(*key) * base;
-  }
-  return (hvalue < 0 ? hvalue * -1 : hvalue);
+unsigned long string_hash(const char *key) {
+  return pearson_hash32(key);
 }
 
 bool endswith(const char *string, const char *end) {
@@ -850,13 +1034,13 @@ void center_string(char *buf, const char *string, int linelen, int buflen,
 
   if(border) {
     int i, buf_i = 0;
-    sprintf(fmt, "{g%%-%ds[{c", spaces-2);
+    sprintf(fmt, "{n%%-%ds[{c", spaces-2);
     buf_i  = snprintf(buf, buflen, fmt, " ");
     // replace all of the spaces with -
     for(i = 0; buf[i] != '\0'; i++) if(buf[i] == ' ') buf[i] = '-';
 
     buf_i += snprintf(buf+buf_i, buflen-buf_i, " %s ", string);
-    sprintf(fmt, "{g]%%-%ds\r\n", 
+    sprintf(fmt, "{n]%%-%ds\r\n", 
 	    spaces-2 + (((linelen-str_len) % 2) == 1 ? 1 : 0));
 
     i = buf_i;
@@ -1104,8 +1288,7 @@ char *print_list(LIST *list, void *descriptor, void *multi_descriptor) {
 	break;
       }
     }
-  }
-  deleteListIterator(thing_i);
+  } deleteListIterator(thing_i);
 
 
   // now, print everything to the buffer
@@ -1165,8 +1348,7 @@ void show_list(CHAR_DATA *ch, LIST *list, void *descriptor,
 	break;
       }
     }
-  }
-  deleteListIterator(thing_i);
+  } deleteListIterator(thing_i);
 
 
   // print out all of the things
@@ -1176,12 +1358,12 @@ void show_list(CHAR_DATA *ch, LIST *list, void *descriptor,
       break;
     else {
       if(counts[i] == 1)
-	send_to_char(ch, "{g%s\r\n", desc_func(things[i]));
+	send_to_char(ch, "{n%s\r\n", desc_func(things[i]));
       else if(multi_desc == NULL || !*multi_desc(things[i]))
-	send_to_char(ch, "{g(%d) %s\r\n", counts[i], desc_func(things[i]));
+	send_to_char(ch, "{n(%d) %s\r\n", counts[i], desc_func(things[i]));
       else {
 	char fmt[SMALL_BUFFER];
-	sprintf(fmt, "{g%s\r\n", multi_desc(things[i]));
+	sprintf(fmt, "{n%s\r\n", multi_desc(things[i]));
 	send_to_char(ch, fmt, counts[i]);
       }
     }
@@ -1201,8 +1383,7 @@ LIST *get_unused_items(CHAR_DATA *ch, LIST *list, bool invis_ok) {
       continue;
 
     listPut(newlist, obj);
-  }
-  deleteListIterator(obj_i);
+  } deleteListIterator(obj_i);
   return newlist;
 }
 
@@ -1217,8 +1398,7 @@ LIST *get_used_items(CHAR_DATA *ch, LIST *list, bool invis_ok) {
     if(!(invis_ok || can_see_obj(ch, obj)))
       continue;
     listPut(newlist, obj);
-  }
-  deleteListIterator(obj_i);
+  } deleteListIterator(obj_i);
   return newlist;
 }
 
@@ -1336,6 +1516,28 @@ const char *get_shortkey(const char *key, const char *to) {
   return key;
 }
 
+bool key_malformed(const char *key) {
+  int at_count = 0;
+  for(; *key; *key++) {
+    if(*key == '@') {
+      if(at_count > 0)
+	return TRUE;
+      at_count++;
+    }
+    else if(!(*key == '_' || isalpha(*key) || isdigit(*key)))
+      return TRUE;
+  }
+  return FALSE;
+}
+
+bool locale_malformed(const char *key) {
+  for(; *key; *key++) {
+    if(!(isalpha(*key) || isdigit(*key) || *key == '_'))
+      return TRUE;
+  }
+  return FALSE;
+}
+
 bool cmd_matches(const char *pattern, const char *cmd) {
   int len = next_letter_in(pattern, '*');
   // we have to match exactly
@@ -1400,6 +1602,8 @@ bool do_delete(CHAR_DATA *ch, const char *type, void *deleter, const char *arg){
   
   if(!arg || !*arg)
     send_to_char(ch, "Which %s did you want to delete?\r\n", type);
+  else if(key_malformed(arg))
+    send_to_char(ch, "The %s key you entered was malformed.\r\n", type);
   else if(zone == NULL)
     send_to_char(ch, "No such zone exists.\r\n");
   else if(!canEditZone(zone, ch))
@@ -1419,6 +1623,11 @@ bool do_delete(CHAR_DATA *ch, const char *type, void *deleter, const char *arg){
 // generic xxxlist for builders.
 void do_list(CHAR_DATA *ch, const char *locale, const char *type, 
 	     const char *header, void *informer) {
+  if(locale_malformed(locale)) {
+    send_to_char(ch, "You supplied a malformed zone name.\r\n");
+    return;
+  }
+
   ZONE_DATA *zone = worldGetZone(gameworld, locale);
   if(zone == NULL)
     send_to_char(ch, "No such zone exists.\r\n");
@@ -1452,8 +1661,11 @@ bool do_rename(CHAR_DATA *ch,const char *type,const char *from,const char *to) {
   void           *tgt = NULL;
   ZONE_DATA     *zone = NULL;
 
+  // make sure everything is formed properly
+  if(key_malformed(from) || key_malformed(to))
+    send_to_char(ch, "You entered a malformed %s key.\r\n", type);
   // make sure "to" does not already exist, and that we have zone editing privs
-  if((zone = worldGetZone(gameworld, 
+  else if((zone = worldGetZone(gameworld, 
 	     get_key_locale(get_fullkey_relative(to, locale)))) == NULL)
     send_to_char(ch, "Destination zone does not exist!\r\n");
   else if(!canEditZone(zone, ch))

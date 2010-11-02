@@ -13,6 +13,7 @@
 #include "../room.h"
 #include "../exit.h"
 #include "../world.h"
+#include "../hooks.h"
 
 #include "scripts.h"
 #include "pyroom.h"
@@ -103,10 +104,17 @@ PyObject *PyExit_getkey(PyObject *self, void *closure) {
 PyObject *PyExit_getdest(PyObject *self, void *closure) {
   EXIT_DATA *ex = PyExit_AsExit((PyObject *)self);
   if(ex == NULL) return NULL;
-  else {
-    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(ex));
-    return Py_BuildValue("O", (dest ? roomGetPyFormBorrowed(dest) : Py_None));
-  }
+  ROOM_DATA *dest = worldGetRoom(gameworld, exitGetToFull(ex));
+  if(dest == NULL)
+    return Py_BuildValue("");
+  return Py_BuildValue("O", roomGetPyFormBorrowed(dest));
+}
+
+PyObject *PyExit_getdestproto(PyObject *self, void *closure) {
+  EXIT_DATA *ex = PyExit_AsExit((PyObject *)self);
+  if(ex == NULL) 
+    return NULL;
+  return Py_BuildValue("s", exitGetToFull(ex));
 }
 
 PyObject *PyExit_getspotdiff(PyObject *self, void *closure) {
@@ -464,6 +472,25 @@ PyObject *PyExit_makedoor(PyExit *self, PyObject *value) {
   return Py_BuildValue("i", 1);
 }
 
+PyObject *PyExit_filldoor(PyExit *self, void *closure) {
+  EXIT_DATA *ex = PyExit_AsExit((PyObject *)self);
+  if(ex == NULL) {
+    PyErr_Format(PyExc_StandardError, "Tried to edit nonexistant exit, %d.",
+		 self->uid);
+    return NULL;
+  }
+
+  exitSetClosable(ex, FALSE);
+  exitSetClosed(ex, FALSE);
+  exitSetLocked(ex, FALSE);
+  exitSetKeywords(ex, "");
+  exitSetName(ex, "");
+  exitSetKey(ex, "");
+
+  // success!
+  return Py_BuildValue("i", 1);
+}
+
 
 PyObject *PyExit_open(PyExit *self, PyObject *value) {
   EXIT_DATA *ex = PyExit_AsExit((PyObject *)self);
@@ -473,8 +500,14 @@ PyObject *PyExit_open(PyExit *self, PyObject *value) {
     return NULL;
   }
 
+  bool was_closed = exitIsClosed(ex);
+
   exitSetClosed(ex, FALSE);
   exitSetLocked(ex, FALSE);
+
+  if(was_closed && exitGetRoom(ex))
+    hookRun("room_change", hookBuildInfo("rm", exitGetRoom(ex)));
+
   return Py_BuildValue("i", 1);
 }
 
@@ -487,7 +520,13 @@ PyObject *PyExit_close(PyExit *self, PyObject *value) {
     return NULL;
   }
 
+  bool was_open = !exitIsClosed(ex);
+
   exitSetClosed(ex, TRUE);
+
+  if(was_open && exitGetRoom(ex))
+    hookRun("room_change", hookBuildInfo("rm", exitGetRoom(ex)));
+
   return Py_BuildValue("i", 1);
 }
 
@@ -499,8 +538,15 @@ PyObject *PyExit_lock(PyExit *self, PyObject *value) {
     return NULL;
   }
 
+  bool was_open     = !exitIsClosed(ex);
+  bool was_unlocked = !exitIsLocked(ex);
+
   exitSetClosed(ex, TRUE);
   exitSetLocked(ex, TRUE);
+
+  if((was_open || was_unlocked) && exitGetRoom(ex))
+    hookRun("room_change", hookBuildInfo("rm", exitGetRoom(ex)));
+
   return Py_BuildValue("i", 1);
 }
 
@@ -512,7 +558,13 @@ PyObject *PyExit_unlock(PyExit *self, PyObject *value) {
     return NULL;
   }
 
+  bool was_locked = exitIsLocked(ex);
+
   exitSetLocked(ex, FALSE);
+
+  if(was_locked && exitGetRoom(ex))
+    hookRun("room_change", hookBuildInfo("rm", exitGetRoom(ex)));
+
   return Py_BuildValue("i", 1);
 }
 
@@ -609,12 +661,16 @@ init_PyExit(void) {
 			"returns the exit's universal ID nubmer");
     PyExit_addGetSetter("spot_diff", PyExit_getspotdiff, PyExit_setspotdiff,
 			"integer value representing how hidden the exit is.");
+    PyExit_addGetSetter("hidden", PyExit_getspotdiff, PyExit_setspotdiff,
+			"integer value representing how hidden the exit is.");
     PyExit_addGetSetter("pick_diff", PyExit_getpickdiff, PyExit_setpickdiff,
 			"integer value representing how hard lock is to pick.");
     PyExit_addGetSetter("key", PyExit_getkey, PyExit_setkey,
 			"String or Obj value for obj class that unlocks exit.");
     PyExit_addGetSetter("dest", PyExit_getdest, PyExit_setdest,
 			"String or Room value for room this exit leads to.");
+    PyExit_addGetSetter("destproto", PyExit_getdestproto, NULL,
+			"return the class name of our our destiantion.");
     PyExit_addGetSetter("name", PyExit_getname, PyExit_setname,
 			"The name of the door on the exit.");
     PyExit_addGetSetter("keywords", PyExit_getkeywords, PyExit_setkeywords,
@@ -641,6 +697,8 @@ init_PyExit(void) {
     PyExit_addMethod("makedoor", PyExit_makedoor, METH_VARARGS,
 		     "Make a door on the exit. Takes name, keywords, and "
 		     "optionally opposite, closed, locked, and key.");
+    PyExit_addMethod("filldoor", PyExit_filldoor, METH_NOARGS,
+		     "remove a door that was made on the exit.");
     PyExit_addMethod("open", PyExit_open, METH_VARARGS,
 		     "Opens the exit if there's a door. Also unlocks.");
     PyExit_addMethod("close", PyExit_close, METH_VARARGS,

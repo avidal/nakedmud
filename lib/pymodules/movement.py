@@ -7,7 +7,7 @@
 ################################################################################
 from mud import *
 from mudsys import add_cmd, add_cmd_check
-import inform, hooks
+import inform, hooks, mudsys, mud
 
 
 
@@ -70,7 +70,7 @@ def try_change_pos(ch, pos):
         return True
 
 def cmd_sit(ch, cmd, arg):
-    '''If standing, attempts to sit instead.'''
+    '''If standing, attempts to sit on the ground.'''
     try:
         obj, = parse_args(ch, True, cmd, arg, "| [on] obj.room")
     except: return
@@ -80,7 +80,7 @@ def cmd_sit(ch, cmd, arg):
     elif obj.istype("furniture"):
         try_use_furniture(ch, obj, "sitting")
     else:
-        ch.send("You cannot sit on " + inform.see_obj_as(ch, obj) + ".")
+        ch.send("You cannot sit on " + ch.see_as(obj) + ".")
 
 def cmd_sleep(ch, cmd, arg):
     '''If awake, attempts to lay down and sleep.'''
@@ -93,17 +93,23 @@ def cmd_sleep(ch, cmd, arg):
     elif obj.istype("furniture"):
         try_use_furniture(ch, obj, "sleeping")
     else:
-        ch.send("You cannot sleep on " + inform.see_obj_as(ch, obj) + ".")
+        ch.send("You cannot sleep on " + ch.see_as(obj) + ".")
 
 def cmd_stand(ch, cmd, arg):
     '''If sitting, attempts to stand. If flying, attempts to land.'''
     try_change_pos(ch, "standing")
 
 def cmd_wake(ch, cmd, arg):
-    '''If sleeping, attempts to wake up and sit.'''
+    '''If sleep, attempts to wake up and sit.'''
     message(ch,None,None,None,True, "to_char", "You stop sleeping and sit up.")
     message(ch,None,None,None,True, "to_room", "$n stops sleeping and sits up.")
     ch.pos = "sitting"
+
+def dir_opposite(dir):
+    '''returns the opposite direction of the specified one, or None if none.'''
+    try:
+        return dir_name[dir_opp[dir_index(dir)]]
+    except: return None
 
 def dir_index(dir):
     '''returns the index of the direction name'''
@@ -119,67 +125,69 @@ def try_move_mssg(ch, dir):
     '''Handles all moving of characters from one room to another, through
        commands. Attempts a move. If successful, returns the exit left through.
        Informs people of our moving'''
-    old_room = ch.room
-    ex       = try_move(ch, dir)
-    dirnum   = dir_index(dir)
-
-    # did we successfully move?
-    if ex != None:
-        new_room = ch.room
-        ch.room  = old_room
-
-        # send out our leave messages as needed
-        if ex.leave_mssg != '':
-            message(ch, None, None, None, True, "to_room", ex.leave_mssg)
-        elif dirnum == -1:
-            message(ch, None, None, None, True, "to_room", "$n leaves.")
-        else:
-            message(ch, None, None, None, True, "to_room",
-                    "$n leaves " + dir_name[dirnum] + ".")
-
-        # send out our enter messages as needed
-        ch.room = new_room
-        if ex.enter_mssg != '':
-            message(ch, None, None, None, True, "to_room", ex.enter_mssg)
-        elif dirnum == -1:
-            message(ch, None, None, None, True, "to_room", "$n has arrived.")
-        else:
-            message(ch, None, None, None, True, "to_room",
-                    "$n arrives from the " + dir_name[dir_opp[dirnum]] + ".")
-
-    # return our exit, whether it existed or not
+    ex, success = try_move(ch, dir, True)
     return ex
 
-def try_move(ch, dir):
+def try_move(ch, dir, mssg = False):
     '''Handles all moving of characters from one room to another, through
        commands. Attempts a move. If successful, returns the exit left
        through.'''
-    ex = ch.room.exit(dir)
+    ex      = ch.room.exit(dir)
+    success = False
 
+    exname = "it"
+    if ex != None and ex.name != "":
+        exname = ex.name
+    
     # did we find an exit?
     if ex == None or not ch.cansee(ex):
         ch.send("Alas, there is no exit in that direction.")
     elif ex.is_closed:
-        exname = ex.name
-        if exname == '':
-            exname = "it"
         ch.send("You will have to open " + exname + " first.")
     elif ex.dest == None:
         ch.send("It doesn't look like " + exname + " leads anywhere!")
     else:
         old_room = ch.room
+        dirnum   = dir_index(dir)
+
+        # send out our leave messages as needed. Is anyone in the old room?
+        if mssg == True:
+            if ex.leave_mssg != '':
+                message(ch, None, None, None, True, "to_room", ex.leave_mssg)
+            elif dirnum == -1:
+                message(ch, None, None, None, True, "to_room", "$n leaves.")
+            else:
+                message(ch, None, None, None, True, "to_room",
+                        "$n leaves " + dir_name[dirnum] + ".")
 
         # run our leave hooks
         hooks.run("exit", hooks.build_info("ch rm ex", (ch, ch.room, ex)))
 
-        ch.room = ex.dest
+        # if a hook hasn't moved us, go through with going through the exit
+        if ch.room == old_room:
+            ch.room = ex.dest
+
+        # stuff that happens before we 'look'
+        hooks.run("pre_enter", hooks.build_info("ch rm", (ch, ch.room)))
+            
         ch.act("look")
+
+        # send out our enter messages as needed
+        if mssg == True:
+            if ex.enter_mssg != '':
+                message(ch, None, None, None, True, "to_room", ex.enter_mssg)
+            elif dirnum == -1:
+                message(ch, None, None, None, True, "to_room","$n has arrived.")
+            else:
+                message(ch, None, None, None, True, "to_room",
+                        "$n arrives from the " + dir_name[dir_opp[dirnum]] +".")
 
         # run our enter hooks
         hooks.run("enter", hooks.build_info("ch rm", (ch, ch.room)))
+        success = True
 
     # return the exit we found (if we found any)
-    return ex
+    return ex, success
 
 def cmd_move(ch, cmd, arg):
     '''A basic movement command, relocating you to another room in the
@@ -215,7 +223,10 @@ add_cmd("land",      None, cmd_stand,"player", True)
 add_cmd("sit",       None, cmd_sit,  "player", True)
 
 # The mud needs to know our command for movement as well
-set_cmd_move(cmd_move)
+mudsys.set_cmd_move(cmd_move)
+
+# useful mud methods
+mud.dir_opposite = dir_opposite
 
 def chk_can_move(ch, cmd):
     if not ch.pos in ["standing", "flying"]:
@@ -224,7 +235,8 @@ def chk_can_move(ch, cmd):
 
 for cmd in ["north", "west", "east", "south", "up", "down", "northwest",
             "northeast", "southwest", "southeast", "nw", "ne", "sw", "se"]:
-    add_cmd_check(cmd, chk_can_move)
+    mudsys.register_dflt_move_cmd(cmd)
+mudsys.register_move_check(chk_can_move)
 
 def chk_wake(ch, cmd):
     if not ch.pos == "sleeping":

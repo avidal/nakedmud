@@ -114,7 +114,7 @@ BODYPART *bodypartCopy(BODYPART *P) {
 char *list_postypes(const BODY_DATA *B, const char *posnames) {
   LIST           *names = parse_keywords(posnames);
   LIST_ITERATOR *name_i = newListIterator(names);
-  BUFFER           *buf = newBuffer(MAX_BUFFER);
+  BUFFER           *buf = newBuffer(100);
   char            *name = NULL;
   char          *retval = NULL;
   int             found = 0;
@@ -465,8 +465,7 @@ const char *bodyEquippedWhere(BODY_DATA *B, OBJ_DATA *obj) {
 	strcat(buf, ", ");
       strcat(buf, part->name);
     }
-  }
-  deleteListIterator(part_i);
+  } deleteListIterator(part_i);
   return buf;
 }
 
@@ -485,8 +484,7 @@ bool bodyUnequip(BODY_DATA *B, const OBJ_DATA *obj) {
       part->equipment = NULL;
       found = TRUE;
     }
-  }
-  deleteListIterator(part_i);
+  } deleteListIterator(part_i);
 
   return found;
 }
@@ -496,10 +494,10 @@ LIST *bodyGetAllEq(BODY_DATA *B) {
   LIST_ITERATOR *part_i = newListIterator(B->parts);
   BODYPART *part = NULL;
 
-  ITERATE_LIST(part, part_i)
+  ITERATE_LIST(part, part_i) {
     if(part->equipment && !listIn(equipment, part->equipment))
       listPut(equipment, part->equipment);
-  deleteListIterator(part_i);
+  } deleteListIterator(part_i);
   return equipment;
 }
 
@@ -513,8 +511,7 @@ LIST *bodyUnequipAll(BODY_DATA *B) {
       listPut(equipment, part->equipment);
       part->equipment = NULL;
     }
-  }
-  deleteListIterator(part_i);
+  } deleteListIterator(part_i);
   return equipment;
 }
 

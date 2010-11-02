@@ -62,13 +62,17 @@ binary = 'NakedMud'
 modules = ['dyn_vars', 'set_val', 'olc2', 'editor', 'items', 'scripts']
 
 # Optional modules
-modules += ['time', 'socials', 'alias', 'help']
+modules += ['time', 'socials', 'alias', 'help2']
 
 # Compiler flags
 nakedmud.Append(CCFLAGS=['-Wall', '-g', '-ggdb', '-O2'])
 
 # Required libraries
-nakedmud.Append(LIBS=['z', 'pthread', 'crypt'])
+nakedmud.Append(LIBS=['z', 'pthread'])
+
+# non-darwin OSes need to include crypt
+if platform != 'darwin':
+   nakedmud.Append(LIBS=['crypt'])
 
 # The big list of source files.
 nakedmud['NAKEDMUD_SOURCES'] = glob('*.c')

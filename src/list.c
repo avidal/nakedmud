@@ -39,7 +39,7 @@ struct list {
   LIST_NODE *tail;         // last element in the list
   int size;                // how many elements are in the list?
   int iterators;           // how many iterators are going over us?
-  int remove_pending;      // do we have to do a remove when the iterators die?
+  char remove_pending;     // do we have to do a remove when the iterators die?
 };
 
 
@@ -258,7 +258,7 @@ int listRemove(LIST *L, const void *elem) {
   return FALSE;
 };
 
-void *listRemoveNum(LIST *L, int num) {
+void *listRemoveNum(LIST *L, unsigned int num) {
   void *elem = listGet(L, num);
   if(elem) listRemove(L, elem);
   return elem;
@@ -268,9 +268,9 @@ int listSize(LIST *L) {
   return L->size;
 }
 
-void *listGet(LIST *L, int num) {
+void *listGet(LIST *L, unsigned int num) {
   LIST_NODE *node = L->head;
-  int i;
+  unsigned int i;
 
   // move up to our first non-removed node
   while(node && node->removed)

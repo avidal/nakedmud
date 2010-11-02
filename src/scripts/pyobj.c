@@ -27,6 +27,7 @@
 #include "pyroom.h"
 #include "pyobj.h"
 #include "pyauxiliary.h"
+#include "pystorage.h"
 
 
 
@@ -171,6 +172,24 @@ PyObject *PyObj_get_weight_raw(PyObj *self, void *closure) {
   else            return NULL;
 }
 
+PyObject *PyObj_gethidden(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj != NULL) return Py_BuildValue("i", objGetHidden(obj));
+  else            return NULL;  
+}
+
+PyObject *PyObj_getbirth(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj != NULL) return Py_BuildValue("i", objGetBirth(obj));
+  else            return NULL;  
+}
+
+PyObject *PyObj_getage(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj != NULL) return Py_BuildValue("d", difftime(current_time, objGetBirth(obj)));
+  else            return NULL;  
+}
+
 PyObject *PyObj_getcontents(PyObj *self, PyObject *args) {
   OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
   if(obj == NULL) 
@@ -214,6 +233,15 @@ PyObject *PyObj_getcarrier(PyObj *self, void *closure) {
   if(objGetCarrier(obj) == NULL)
     return Py_BuildValue("O", Py_None);
   return Py_BuildValue("O", charGetPyFormBorrowed(objGetCarrier(obj)));
+}
+
+PyObject *PyObj_getwearer(PyObj *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj((PyObject *)self);
+  if(obj == NULL)
+    return NULL;
+  if(objGetWearer(obj) == NULL)
+    return Py_BuildValue("O", Py_None);
+  return Py_BuildValue("O", charGetPyFormBorrowed(objGetWearer(obj)));
 }
 
 PyObject *PyObj_getroom(PyObj *self, void *closure) {
@@ -414,6 +442,24 @@ int PyObj_setweight(PyObj *self, PyObject *value, void *closure) {
   return 0;
 }
 
+int PyObj_sethidden(PyObject *self, PyObject *value, void *closure) {
+  OBJ_DATA *obj = NULL;
+  PYOBJ_CHECK_OBJ_EXISTS(PyObj_AsUid(self), obj);
+
+  if(value == NULL || value == Py_None)
+    objSetHidden(obj, 0);
+  else if(PyInt_Check(value))
+    objSetHidden(obj, PyInt_AsLong(value));
+  else {
+    PyErr_Format(PyExc_TypeError,
+		"Tried to change obj %d's spot difficulty to an invalid type.",
+		 objGetUID(obj));
+    return -1;
+  }
+
+  return 0;
+}
+
 int PyObj_setcarrier(PyObj *self, PyObject *value, void *closure) {
   if (value == NULL) {
     PyErr_Format(PyExc_TypeError, "Cannot delete object's carrier");
@@ -421,8 +467,7 @@ int PyObj_setcarrier(PyObj *self, PyObject *value, void *closure) {
   }
 
   if (!PyChar_Check(value)) {
-    PyErr_Format(PyExc_TypeError, 
-                    "Carrier must be a character!");
+    PyErr_Format(PyExc_TypeError, "Carrier must be a character!");
     return -1;
   }
 
@@ -791,6 +836,45 @@ PyObject *PyObj_setvar(PyObj *self, PyObject *args) {
   }
 }
 
+PyObject *PyObj_fromall(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_TypeError, "Tried to fromall() nonexistant obj, %d",
+		 PyObj_AsUid(self));
+    return NULL;
+  }
+
+  // remove us from whatever we're currently in
+  if(objGetRoom(obj))
+    obj_from_room(obj);
+  if(objGetCarrier(obj))
+    obj_from_char(obj);
+  if(objGetContainer(obj))
+    obj_from_obj(obj);
+  if(objGetWearer(obj)) {
+    // weird... we couldn't unequip the item from the current wearer
+    if(!try_unequip(objGetWearer(obj), obj)) {
+      PyErr_Format(PyExc_StandardError, "Could not unequip previous wearer.");
+      return NULL;
+    }
+  }
+
+  return Py_BuildValue("");
+}
+
+PyObject *PyObj_store(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL) {
+    PyErr_Format(PyExc_TypeError, "failed to store nonexistent object.");
+    return NULL;
+  }
+  PyObject *set = newPyStorageSet(objStore(obj));
+  PyObject *ret = Py_BuildValue("O", set);
+  Py_DECREF(set);
+  return ret;
+}
+
+
 
 
 //*****************************************************************************
@@ -845,13 +929,13 @@ PyTypeObject PyObj_Type = {
 //*****************************************************************************
 PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
   char          *key = NULL;
-  PyObject       *in = NULL;
+  PyObject       *in = Py_None;
   ROOM_DATA    *room = NULL; // are we loading to a room?
   OBJ_DATA     *cont = NULL; // are we loading to a container?
   CHAR_DATA      *ch = NULL; // are we loading to a character?
   char     *equip_to = NULL; // are we trying to equip the character?
 
-  if (!PyArg_ParseTuple(args, "sO|s", &key, &in, &equip_to)) {
+  if (!PyArg_ParseTuple(args, "s|Os", &key, &in, &equip_to)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Load obj failed - it needs a key and destination.");
     return NULL;
@@ -865,11 +949,11 @@ PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
   else if(PyObj_Check(in))
     cont = propertyTableGet(obj_table, PyObj_AsUid(in));
   else if(PyChar_Check(in))
-      ch = propertyTableGet(mob_table, PyChar_AsUid(in));
+    ch = propertyTableGet(mob_table, PyChar_AsUid(in));
 
   // make sure a destination exists
-  if(room == NULL && cont == NULL && ch == NULL) {
-    PyErr_Format(PyExc_TypeError, 
+  if(room == NULL && cont == NULL && ch == NULL && in != Py_None) {
+    PyErr_Format(PyExc_TypeError,
 		 "Load obj failed: destination does not exist.");
     return NULL;
   }
@@ -1086,8 +1170,37 @@ PyObject *PyObj_find_obj_key(PyObject *self, PyObject *args) {
   }
 }
 
+PyObject *PyObj_all_objs(PyObject *self) {
+  PyObject      *list = PyList_New(0);
+  LIST_ITERATOR *obj_i = newListIterator(object_list);
+  OBJ_DATA        *obj = NULL;
+  ITERATE_LIST(obj, obj_i) {
+    PyList_Append(list, objGetPyFormBorrowed(obj));
+  } deleteListIterator(obj_i);
+  return list;
+}
+
+PyObject *PyObj_read(PyObject *self, PyObject *args) {
+  PyObject *pyset = NULL;
+  if(!PyArg_ParseTuple(args, "O", &pyset)) {
+    PyErr_Format(PyExc_TypeError, "failed to read object from storage set.");
+    return NULL;
+  }
+  else if(!PyStorageSet_Check(pyset)) {
+    PyErr_Format(PyExc_TypeError, "storage set must be supplied to read.");
+    return NULL;
+  }
+
+  OBJ_DATA *obj = objRead(PyStorageSet_AsSet(pyset));
+  obj_to_game(obj);
+  return Py_BuildValue("O", objGetPyFormBorrowed(obj));
+}
 
 PyMethodDef obj_module_methods[] = {
+  { "read",     PyObj_read, METH_VARARGS,
+    "read an object from a storage set." },
+  { "obj_list", (PyCFunction)PyObj_all_objs, METH_NOARGS,
+    "Return a python list containing an entry for every object in game." },
   { "load_obj", PyObj_load_obj, METH_VARARGS,
     "load a object with the specified oproto to a room." },
   { "count_objs", PyObj_count_objs, METH_VARARGS,
@@ -1169,12 +1282,20 @@ init_PyObj(void) {
 		       "the object's basic bitvector.");
     PyObj_addGetSetter("carrier", PyObj_getcarrier, PyObj_setcarrier,
 		       "the person carrying the object");
+    PyObj_addGetSetter("wearer", PyObj_getwearer, NULL,
+		       "the person wearing this object");
     PyObj_addGetSetter("room", PyObj_getroom, PyObj_setroom,
 		       "The room this object is in. "
 		       "None if on a character or in another object");
     PyObj_addGetSetter("container", PyObj_getcontainer, PyObj_setcontainer,
 		       "The container this object is in. "
 		       "None if on a character or in a room");
+    PyObj_addGetSetter("hidden", PyObj_gethidden, PyObj_sethidden,
+		       "integer value representing how hidden the object is.");
+    PyObj_addGetSetter("age", PyObj_getage, NULL,
+		       "how old, in seconds, are we");
+    PyObj_addGetSetter("birth", PyObj_getbirth, NULL,
+		       "when were we created");
 
     // methods
     PyObj_addMethod("attach", PyObj_attach, METH_VARARGS,
@@ -1187,6 +1308,8 @@ init_PyObj(void) {
 		    "adds an extra description to the object.");
     PyObj_addMethod("getAuxiliary", PyObj_get_auxiliary, METH_VARARGS,
 		    "get's the specified piece of aux data from the obj");
+    PyObj_addMethod("aux", PyObj_get_auxiliary, METH_VARARGS,
+		    "get's the specified piece of aux data from the obj");
     PyObj_addMethod("getvar", PyObj_getvar, METH_VARARGS,
 		    "get the value of a special variable the object has.");
     PyObj_addMethod("setvar", PyObj_setvar, METH_VARARGS,
@@ -1197,6 +1320,10 @@ init_PyObj(void) {
 		    "delete a variable from the object's variable table.");
     PyObj_addMethod("delvar", PyObj_deletevar, METH_VARARGS,
 		    "delete a variable from the object's variable table.");
+    PyObj_addMethod("fromall", PyObj_fromall, METH_NOARGS,
+		    "remove from room, character, and containers.");
+    PyObj_addMethod("store", PyObj_store, METH_NOARGS,
+		    "return a storage set for the object.");
 
     makePyType(&PyObj_Type, pyobj_getsetters, pyobj_methods);
     deleteListWith(pyobj_getsetters, free); pyobj_getsetters = NULL;

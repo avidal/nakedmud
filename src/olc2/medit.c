@@ -17,6 +17,7 @@
 #include "../character.h"
 #include "../prototype.h"
 #include "../handler.h"
+#include "../room.h"
 
 #include "olc.h"
 #include "olc_extender.h"
@@ -52,10 +53,16 @@ CHAR_OLC *newCharOLC(void) {
   charSetRace(data->ch, "");
   data->extra_code = newBuffer(1);
   charSetSex(data->ch, SEX_NONE);
+
+  // so python olc extensions can get at us
+  char_exist(data->ch);
+
   return data;
 }
 
 void deleteCharOLC(CHAR_OLC *data) {
+  char_unexist(data->ch);
+
   if(data->key)        free(data->key);
   if(data->parents)    free(data->parents);
   if(data->extra_code) deleteBuffer(data->extra_code);
@@ -109,8 +116,7 @@ CHAR_OLC *charOLCFromProto(PROTO_DATA *proto) {
   charOLCSetAbstract(data, protoIsAbstract(proto));
 
   // build it from the prototype
-  olc_from_proto(proto, charOLCGetExtraCode(data), ch, charGetPyFormBorrowed,
-		 char_exist, char_unexist);
+  olc_from_proto(proto, charOLCGetExtraCode(data), ch, charGetPyFormBorrowed);
   bufferFormatFromPy(charGetDescBuffer(ch));
   bufferFormat(charGetDescBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
 
@@ -361,6 +367,8 @@ COMMAND(cmd_medit) {
   // we need a key
   if(!arg || !*arg)
     send_to_char(ch, "What is the name of the mob you want to edit?\r\n");
+  else if(key_malformed(arg))
+    send_to_char(ch, "You entered an invalid content key.\r\n");
   else {
     char locale[SMALL_BUFFER];
     char   name[SMALL_BUFFER];

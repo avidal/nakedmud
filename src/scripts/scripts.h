@@ -187,6 +187,11 @@ void expand_dynamic_descs_dict(BUFFER *desc, PyObject *dict,const char *locale);
 const char *get_script_locale(void);
 
 //
+// returns a smart locale for a script. If there is a locale on the script
+// stack, return that. Otherwise, return the locale for the character's room
+const char *get_smart_locale(CHAR_DATA *ch);
+
+//
 // returns true if the last script ran without any errors
 bool last_script_ok(void);
 

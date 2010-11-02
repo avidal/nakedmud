@@ -289,6 +289,8 @@ init_PyAccount(void) {
 			"lists names of all characters tied to the account.");
     PyAccount_addMethod("getAuxiliary", PyAccount_get_auxiliary, METH_VARARGS,
 			"gets the account auxiliary data with given key.");
+    PyAccount_addMethod("aux", PyAccount_get_auxiliary, METH_VARARGS,
+			"gets the account auxiliary data with given key.");
 
     // add in all the getsetters and methods
     makePyType(&PyAccount_Type, pyaccount_getsetters, pyaccount_methods);

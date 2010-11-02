@@ -59,15 +59,15 @@ def cmd_give(ch, cmd, arg):
 def do_get(ch, obj, cont):
     '''transfers an item from the ground to the character'''
     if is_keyword(obj.bits, "notake"):
-        ch.send("You cannot take " + see_obj_as(ch, obj) + ".")
+        ch.send("You cannot take " + ch.see_as(obj) + ".")
     elif cont != None:
+        obj.carrier = ch
         message(ch, None, obj, cont, True, "to_char", "You get $o from $O.")
         message(ch, None, obj, cont, True, "to_room", "$n gets $o from $O.")
-        obj.carrier = ch
     else:
+        obj.carrier = ch
         message(ch, None, obj, None, True, "to_char", "You get $o.")
         message(ch, None, obj, None, True, "to_room", "$n gets $o.")
-        obj.carrier = ch
 
         # run get hooks
         hooks.run("get", hooks.build_info("ch obj", (ch, obj)))
@@ -88,9 +88,13 @@ def try_get_from(ch, cont, arg):
             for obj in list:
                 do_get(ch, obj, cont)
         else:
-            obj = find_obj(ch, cont.objs, num, name)
+            # obj = find_obj(ch, cont.objs, num, name)
+            obj = mudobj.find_obj(arg, cont, ch)
             if obj != None:
                 do_get(ch, obj, cont)
+            else:
+                message(ch, None, cont, None, True, "to_char",
+                        "You could not find what you were looking for in $o.")
 
 def cmd_get(ch, cmd, arg):
     '''Usage: get [the] <item> [[from] <other item>]
@@ -100,7 +104,7 @@ def cmd_get(ch, cmd, arg):
        instead tries to move an object from the container to your inventory.'''
     try:
         arg, cont = parse_args(ch, True, cmd, arg,
-                               "[the] word | [from] obj.room.inv.eq")
+                               "[the] word(object) | [from] obj.room.inv.eq")
     except: return
     
     # are we doing get, or get-from?
@@ -121,9 +125,10 @@ def cmd_get(ch, cmd, arg):
 
 def do_drop(ch, obj):
     '''handles object dropping'''
+    obj.room = ch.room
+
     message(ch, None, obj, None, True, "to_char", "You drop $o.")
     message(ch, None, obj, None, True, "to_room", "$n drops $o.")
-    obj.room = ch.room
 
     # run our drop hook
     hooks.run("drop", hooks.build_info("ch obj", (ch, obj)))
@@ -150,7 +155,7 @@ def do_remove(ch, obj):
 
     # make sure it succeeded
     if obj.carrier != ch:
-        ch.send("You were unable to remove " + see_obj_as(ch, obj) + ".")
+        ch.send("You were unable to remove " + ch.see_as(obj) + ".")
     else:
         message(ch, None, obj, None, True, "to_char", "You remove $o.")
         message(ch, None, obj, None, True, "to_room", "$n removes $o.")
@@ -189,15 +194,14 @@ def cmd_remove(ch, cmd, arg):
 def do_wear(ch, obj, where):
     '''handles object wearing'''
     if not obj.istype("worn"):
-        ch.send("But " + see_obj_as(ch, obj) + " is not wearable.")
+        ch.send("But " + ch.see_as(obj) + " is not equippable.")
+        
     elif ch.equip(obj, where):
         message(ch, None, obj, None, True, "to_char", "You wear $o.")
         message(ch, None, obj, None, True, "to_room", "$n wears $o.")
 
         # run our wear hook
         hooks.run("wear", hooks.build_info("ch obj", (ch, obj)))
-    else:
-        message(ch, None, obj, None, True, "to_char", "You could not equip $o.")
 
 def cmd_wear(ch, cmd, arg):
     '''Usage: wear <item> [where]
@@ -215,8 +219,19 @@ def cmd_wear(ch, cmd, arg):
        > wear gloves left hand, right hand'''
     try:
         found, multi, where = parse_args(ch, True, cmd, arg,
-                                         "[the] obj.inv.multiple | [on] string")
+                                         "[the] obj.inv.multiple | [on] string(bodyparts)")
     except: return
+
+    # Are the things we're looking for not body positions? Try to catch this!
+    # it will happen when someone enters multiple arguments for the name without
+    # supplying ' and ' around it. The mud will misinterpret it as an item
+    if not multi and where != None and not "," in where:
+        # reparse what we want!
+        if not where in ch.bodyparts:
+            where = None
+            try:
+                found, = parse_args(ch,True,cmd,"'"+arg+"'","[the] obj.inv")
+            except: return
 
     # are we wearing one thing, or multiple things?
     if multi == False:
@@ -228,11 +243,11 @@ def cmd_wear(ch, cmd, arg):
 def do_put(ch, obj, cont):
     '''handles the putting of objects'''
     if obj == cont:
-        ch.send("You cannot put " + see_obj_as(ch, obj) + " into itself.")
+        ch.send("You cannot put " + ch.see_as(obj) + " into itself.")
     # make sure we have enough room 
     elif obj.weight > cont.container_capacity - cont.weight + cont.weight_raw:
-        ch.send("There is not enough room in " + see_obj_as(ch, cont) +
-                " for " + see_obj_as(ch, obj) + ".")
+        ch.send("There is not enough room in " + ch.see_as(cont) +
+                " for " + ch.see_as(obj) + ".")
     # do the move
     else:
         obj.container = cont
@@ -248,14 +263,14 @@ def cmd_put(ch, cmd, arg):
     try:
         found, multi, cont = parse_args(ch, True, cmd, arg,
                                         "[the] obj.inv.multiple " +
-                                        "[in the] obj.room.inv")
+                                        "[in] [the] obj.room.inv")
     except: return
 
     # make sure we have a container
     if not cont.istype("container"):
-        ch.send(see_obj_as(ch, cont) + " is not a container.")
+        ch.send(ch.see_as(cont) + " is not a container.")
     elif cont.container_is_closed:
-        ch.send(see_obj_as(ch, cont) + " is currently closed.")
+        ch.send(ch.see_as(cont) + " is currently closed.")
     # do we have one or multiple items?
     elif multi == False:
         do_put(ch, found, cont)
@@ -306,6 +321,9 @@ def try_manip_other_exit(room, ex, closed, locked):
         elif not locked and opp_ex.is_locked:
             opp_ex.unlock()
             ex.dest.send(name + " unlocks from the other side.")
+        else:
+            return
+        # hooks.run("room_change", hooks.build_info("rm", (opp_ex.room, )))
 
 def cmd_lock(ch, cmd, arg):
     '''Usage: lock <direction | door | container>
@@ -319,33 +337,38 @@ def cmd_lock(ch, cmd, arg):
     # what did we find?
     if type == "exit":
         ex = found
+        name = ex.name
+        if ex.name == "":
+            name = "the exit"
+        
         if not ex.is_closed:
-            ch.send(ex.name + " must be closed first.")
+            ch.send(name + " must be closed first.")
         elif ex.is_locked:
-            ch.send(ex.name + " is already locked.")
+            ch.send(name + " is already locked.")
         elif ex.key == '':
-            ch.send("You cannot figure out how " + ex.name +" would be locked.")
+            ch.send("You cannot figure out how " + name +" would be locked.")
         elif not has_proto(ch, ex.key):
             ch.send("You cannot seem to find the key.")
         else:
             message(ch, None, None, None, True, "to_char",
-                    "You lock " + ex.name + ".")
+                    "You lock " + name + ".")
             message(ch, None, None, None, True, "to_room",
-                    "$n locks " + ex.name + ".")
+                    "$n locks " + name + ".")
             ex.lock()
+            # hooks.run("room_change", hooks.build_info("rm", (ch.room, )))
             try_manip_other_exit(ch.room, ex, ex.is_closed, True)
 
     # type must be object
     else:
         obj = found
         if not obj.istype("container"):
-            ch.send(see_obj_as(ch, obj) + " is not a container.")
+            ch.send(ch.see_as(obj) + " is not a container.")
         elif not obj.container_is_closed:
-            ch.send(see_obj_as(ch, obj) + " is not closed.")
+            ch.send(ch.see_as(obj) + " is not closed.")
         elif obj.container_is_locked:
-            ch.send(see_obj_as(ch, obj) + " is already locked.")
+            ch.send(ch.see_as(obj) + " is already locked.")
         elif obj.container_key == '':
-            ch.send("You cannot figure out how to lock " + see_obj_as(ch, obj))
+            ch.send("You cannot figure out how to lock " + ch.see_as(obj))
         elif not has_proto(ch, obj.container_key):
             ch.send("You cannot seem to find the key.")
         else:
@@ -364,34 +387,39 @@ def cmd_unlock(ch, cmd, arg):
     # what did we find?
     if type == "exit":
         ex = found
+        name = ex.name
+        if ex.name == "":
+            name = "the exit"
+        
         if not ex.is_closed:
-            ch.send(ex.name + " is already open.")
+            ch.send(name + " is already open.")
         elif not ex.is_locked:
-            ch.send(ex.name + " is already unlocked.")
+            ch.send(name + " is already unlocked.")
         elif ex.key == '':
-            ch.send("You cannot figure out how " + ex.name +
+            ch.send("You cannot figure out how " + name +
                     " would be unlocked.")
         elif not has_proto(ch, ex.key):
             ch.send("You cannot seem to find the key.")
         else:
             message(ch, None, None, None, True, "to_char",
-                    "You unlock " + ex.name + ".")
+                    "You unlock " + name + ".")
             message(ch, None, None, None, True, "to_room",
-                    "$n unlocks " + ex.name + ".")
+                    "$n unlocks " + name + ".")
             ex.unlock()
+            # hooks.run("room_change", hooks.build_info("rm", (ch.room, )))
             try_manip_other_exit(ch.room, ex, ex.is_closed, False)
 
     # must be an object
     else:
         obj = found
         if not obj.istype("container"):
-            ch.send(see_obj_as(ch, obj) + " is not a container.")
+            ch.send(ch.see_as(obj) + " is not a container.")
         elif not obj.container_is_closed:
-            ch.send(see_obj_as(ch, obj) + " is already open.")
+            ch.send(ch.see_as(obj) + " is already open.")
         elif not obj.container_is_locked:
-            ch.send(see_obj_as(ch, obj) + " is already unlocked.")
+            ch.send(ch.see_as(obj) + " is already unlocked.")
         elif obj.container_key == '':
-            ch.send("You cannot figure out how to unlock "+see_obj_as(ch, obj))
+            ch.send("You cannot figure out how to unlock "+ ch.see_as(obj))
         elif not has_proto(ch, obj.container_key):
             ch.send("You cannot seem to find the key.")
         else:
@@ -410,18 +438,23 @@ def cmd_open(ch, cmd, arg):
     # is it an exit?
     if type == "exit":
         ex = found
+        name = ex.name
+        if name == "":
+            name = "the exit"
+        
         if not ex.is_closed:
-            ch.send(ex.name + " is already open.")
+            ch.send(name + " is already open.")
         elif ex.is_locked:
-            ch.send(ex.name + " must be unlocked first.")
+            ch.send(name + " must be unlocked first.")
         elif not ex.is_closable:
-            ch.send(ex.name + " cannot be opened.")
+            ch.send(name + " cannot be opened.")
         else:
             message(ch, None, None, None, True, "to_char",
-                    "You open " + ex.name + ".")
+                    "You open " + name + ".")
             message(ch, None, None, None, True, "to_room",
-                    "$n opens " + ex.name + ".")
+                    "$n opens " + name + ".")
             ex.open()
+            # hooks.run("room_change", hooks.build_info("rm", (ch.room, )))
             try_manip_other_exit(ch.room, ex, False, ex.is_locked)
             hooks.run("open_door", hooks.build_info("ch ex", (ch, ex)))
 
@@ -429,13 +462,13 @@ def cmd_open(ch, cmd, arg):
     else:
         obj = found
         if not obj.istype("container"):
-            ch.send(see_obj_as(ch, obj) + " is not a container.")
+            ch.send(ch.see_as(obj) + " is not a container.")
         elif not obj.container_is_closed:
-            ch.send(see_obj_as(ch, obj) + " is already open.")
+            ch.send(ch.see_as(obj) + " is already open.")
         elif obj.container_is_locked:
-            ch.send(see_obj_as(ch, obj) + " must be unlocked first.")
+            ch.send(ch.see_as(obj) + " must be unlocked first.")
         elif not obj.container_is_closable:
-            ch.send(see_obj_as(ch, obj) + " cannot be opened.")
+            ch.send(ch.see_as(obj) + " cannot be opened.")
         else:
             message(ch, None, obj, None, True, "to_char", "You open $o.")
             message(ch, None, obj, None, True, "to_room", "$n opens $o.")
@@ -453,33 +486,40 @@ def cmd_close(ch, cmd, arg):
     # is it an exit?
     if type == "exit":
         ex = found
+        name = ex.name
+        if name == "":
+            name = "the exit"
+
         if ex.is_closed:
-            ch.send(ex.name + " is already closed.")
+            ch.send(name + " is already closed.")
         elif ex.is_locked:
-            ch.send(ex.name + " must be unlocked first.")
+            ch.send(name + " must be unlocked first.")
         elif not ex.is_closable:
-            ch.send(ex.name + " cannot be closed.")
+            ch.send(name + " cannot be closed.")
         else:
             message(ch, None, None, None, True, "to_char",
-                    "You close " + ex.name + ".")
+                    "You close " + name + ".")
             message(ch, None, None, None, True, "to_room",
-                    "$n closes " + ex.name + ".")
+                    "$n closes " + name + ".")
             ex.close()
+            # hooks.run("room_change", hooks.build_info("rm", (ch.room, )))
             try_manip_other_exit(ch.room, ex, True, ex.is_locked) 
+            hooks.run("open_door", hooks.build_info("ch ex", (ch, ex)))
 
     # must be an object
     else:
         obj = found
         if not obj.istype("container"):
-            ch.send(see_obj_as(ch, obj) + " is not a container.")
+            ch.send(ch.see_as(obj) + " is not a container.")
         elif obj.container_is_closed:
-            ch.send(see_obj_as(ch, obj) + " is already closed.")
+            ch.send(ch.see_as(obj) + " is already closed.")
         elif not obj.container_is_closable:
-            ch.send(see_obj_as(ch, obj) + " cannot be closed.")
+            ch.send(ch.see_as(obj) + " cannot be closed.")
         else:
             message(ch, None, obj, None, True, "to_char", "You close $o.")
             message(ch, None, obj, None, True, "to_room", "$n closes $o.")
             obj.container_is_closed = True
+            hooks.run("close_obj", hooks.build_info("ch obj", (ch, obj)))
 
 
 

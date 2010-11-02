@@ -87,7 +87,7 @@ void hookRun(const char *type, const char *info) {
   LIST_ITERATOR *mon_i = newListIterator(monitors);
   void (* mon)(const char *, const char *) = NULL;
   ITERATE_LIST(mon, mon_i) {
-    mon(type, info);
+    mon(type, info_dup);
   } deleteListIterator(mon_i);
   free(info_dup);
 }

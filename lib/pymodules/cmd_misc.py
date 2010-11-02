@@ -54,8 +54,11 @@ def cmd_motd(ch, cmd, arg):
 def cmd_save(ch, cmd, arg):
     '''Attempt to save your character and all recent changes made to it, to
        disk. This automatically happens when logging out.'''
-    mudsys.do_save(ch)
-    ch.send("Saved.")
+    if mudsys.do_save(ch):
+        ch.send("Saved.")
+    else:
+        ch.send("Your character was not saved.")
+    
 
 def cmd_quit(ch, cmd, arg):
     '''Attempts to save and log out of the game.'''
@@ -75,6 +78,6 @@ add_cmd("motd",  None, cmd_motd,  "player", False)
 add_cmd("save",  None, cmd_save,  "player", False)
 add_cmd("quit",  None, cmd_quit,  "player", True)
 
-chk_can_save = lambda ch, cmd: ch.is_pc
+chk_can_save = lambda ch, cmd: not ch.is_npc
 add_cmd_check("save", chk_can_save)
 add_cmd_check("quit", chk_can_save)

@@ -11,6 +11,7 @@
 //
 //******************************************************************************
 
+#include <time.h>
 #include "mud.h"
 #include "utils.h"    // trim
 #include "storage.h"
@@ -57,9 +58,9 @@ void delete_storage_data(STORAGE_DATA *data);
 bool list_is_empty(STORAGE_SET_LIST *list);
 bool set_is_empty (STORAGE_SET *set);
 
-void write_storage_set(STORAGE_SET *set, FILE *fl, int indent);
-void write_storage_list(STORAGE_SET_LIST *list, FILE *fl, int indent);
-void write_storage_data(STORAGE_DATA *data, FILE *fl, int key_width,int indent);
+void write_storage_set(STORAGE_SET *set, FILEBUF *fb, int indent);
+void write_storage_list(STORAGE_SET_LIST *list, FILEBUF *fb, int indent);
+void write_storage_data(STORAGE_DATA *data, FILEBUF *fb, int key_width,int indent);
 
 
 void delete_storage_set(STORAGE_SET *set) {
@@ -125,26 +126,26 @@ STORAGE_DATA    *new_data_bool(bool val, const char *key) {
 }
 
 STORAGE_DATA    *new_data_int(int val, const char *key) {
-  char str_val[20]; sprintf(str_val, "%d", val);
+  char str_val[20]; snprintf(str_val, 20, "%d", val);
   return new_data_string(str_val, key);
 }
 
 STORAGE_DATA    *new_data_long(long val, const char *key) {
-  char str_val[20]; sprintf(str_val, "%ld", val);
+  char str_val[20]; snprintf(str_val, 20, "%ld", val);
   return new_data_string(str_val, key);
 }
 
 STORAGE_DATA *new_data_double(double val, const char *key) {
-  char str_val[20]; sprintf(str_val, "%lf", val);
+  char str_val[20]; snprintf(str_val, 20, "%lf", val);
   return new_data_string(str_val, key);
 }
 
 
-void print_indent(FILE *fl, int indent) {
+void print_indent(FILEBUF *fb, int indent) {
   if(indent > 0) {
     char fmt[20];
     sprintf(fmt, "%%%ds", indent);
-    fprintf(fl, fmt, " ");
+    fbprintf(fb, fmt, " ");
   }
 }
 
@@ -152,17 +153,17 @@ void print_indent(FILE *fl, int indent) {
 //
 // Print a key and the key delimeter to file
 //
-void print_key(FILE *fl, const char *key, int key_width, int indent) {
+void print_key(FILEBUF *fb, const char *key, int key_width, int indent) {
   char fmt[30];
   sprintf(fmt, "%%-%ds:", key_width);
-  print_indent(fl, indent);
-  fprintf(fl, fmt, key);
+  print_indent(fb, indent);
+  fbprintf(fb, fmt, key);
 }
 
 //
 // write a string containing newlines to a file
 //
-void write_string_data(const char *string, FILE *fl, int indent) {
+void write_string_data(const char *string, FILEBUF *fb, int indent) {
   static char buf[SMALL_BUFFER];
   int i, str_i, do_indent;
   *buf = '\0';
@@ -172,11 +173,11 @@ void write_string_data(const char *string, FILE *fl, int indent) {
     buf[i++] = string[str_i];
     if(i == SMALL_BUFFER-1 || string[str_i] == '\n') {
       if(do_indent == TRUE) {
-	print_indent(fl, indent);
+	print_indent(fb, indent);
 	do_indent = FALSE;
       }
       buf[i] = '\0';
-      fprintf(fl, "%s", buf);
+      fbprintf(fb, "%s", buf);
       i = 0;
       if(string[str_i] == '\n')
 	do_indent = TRUE;
@@ -229,34 +230,34 @@ bool list_is_empty(STORAGE_SET_LIST *list) {
 }
 
 
-void write_storage_data(STORAGE_DATA *data, FILE *fl, int key_width,int indent){
+void write_storage_data(STORAGE_DATA *data, FILEBUF *fb, int key_width,int indent){
   // first, we see if we have a string value. If we do, print it
   if(*data->str_val) {
-    print_key(fl, data->key, key_width, indent);
+    print_key(fb, data->key, key_width, indent);
     // if we have a newline in our string, we have to write
     // it in a special way so as to preserve the lines
     if(count_letters(data->str_val, '\n', strlen(data->str_val)) > 0) {
       // first, print the string marker and skip down to a newline
-      fprintf(fl, "%c\n", STRING_MARKER);
+      fbprintf(fb, "%c\n", STRING_MARKER);
       // now, write the string
-      write_string_data(data->str_val, fl, indent+2);
+      write_string_data(data->str_val, fb, indent+2);
     }
     else
-      fprintf(fl, "%c%s\n", TYPELESS_MARKER, data->str_val);
+      fbprintf(fb, "%c%s\n", TYPELESS_MARKER, data->str_val);
   }
 
   // If that fails, check if we have a set value. If we do, print it
   else if(!set_is_empty(data->set_val)) {
-    print_key(fl, data->key, key_width, indent);
-    fprintf(fl, "%c\n", SET_MARKER);
-    write_storage_set(data->set_val, fl, indent+2);
+    print_key(fb, data->key, key_width, indent);
+    fbprintf(fb, "%c\n", SET_MARKER);
+    write_storage_set(data->set_val, fb, indent+2);
   }
 
   // otherwise, check if we have a list value. If we do, print it
   else if(!list_is_empty(data->list_val)) {
-    print_key(fl, data->key, key_width, indent);
-    fprintf(fl, "%c\n", LIST_MARKER);
-    write_storage_list(data->list_val, fl, indent+2);
+    print_key(fb, data->key, key_width, indent);
+    fbprintf(fb, "%c\n", LIST_MARKER);
+    write_storage_list(data->list_val, fb, indent+2);
   }
 }
 
@@ -275,7 +276,7 @@ int cmp_storage_vars(STORAGE_DATA *data1, STORAGE_DATA *data2) {
 }
 
 
-void write_storage_set(STORAGE_SET *set, FILE *fl, int indent) {
+void write_storage_set(STORAGE_SET *set, FILEBUF *fb, int indent) {
   // collect all of the items in our hashtable
   LIST           *elems = newList();
   HASH_ITERATOR *hash_i = newHashIterator(set->entries);
@@ -291,21 +292,21 @@ void write_storage_set(STORAGE_SET *set, FILE *fl, int indent) {
 
   // now, for each one, print it
   while( (data = listPop(elems)) != NULL)
-    write_storage_data(data, fl, set->longest_key, indent);
+    write_storage_data(data, fb, set->longest_key, indent);
   deleteList(elems);
 
   // print our indent and the end-of-set marker
-  print_indent(fl, indent);
-  fprintf(fl, "%c\n", SET_MARKER);
+  print_indent(fb, indent);
+  fbprintf(fb, "%c\n", SET_MARKER);
 }
 
 
-void write_storage_list(STORAGE_SET_LIST *list, FILE *fl, int indent) {
+void write_storage_list(STORAGE_SET_LIST *list, FILEBUF *fb, int indent) {
   LIST_ITERATOR *list_i = newListIterator(list->list);
   STORAGE_SET      *set = NULL;
 
   ITERATE_LIST(set, list_i)
-    write_storage_set(set, fl, indent);
+    write_storage_set(set, fb, indent);
   deleteListIterator(list_i);
 }
 
@@ -318,25 +319,25 @@ void write_storage_list(STORAGE_SET_LIST *list, FILE *fl, int indent) {
 //*****************************************************************************
 
 /* local functions */
-STORAGE_SET      *parse_storage_set(FILE *fl, int indent);
-STORAGE_SET_LIST *parse_storage_list(FILE *fl, int indent);
+STORAGE_SET      *parse_storage_set(FILEBUF *fb, int indent);
+STORAGE_SET_LIST *parse_storage_list(FILEBUF *fb, int indent);
 
 
 //
 // skip ahead in our indent. If we can skip that far ahead,
 // return TRUE. otherwise, return FALSE.
 //
-bool skip_indent(FILE *fl, int indent) {
+bool skip_indent(FILEBUF *fb, int indent) {
   int i;
   char c;
   for(i = 0; i < indent; i++) {
-    c = fgetc(fl);
+    c = fbgetc(fb);
     if(c != ' ')
       break;
   }
 
   if(i != indent) {
-    fseek(fl, -(i+1), SEEK_CUR);
+    fbseek(fb, -(i+1), SEEK_CUR);
     return FALSE;
   }
   else
@@ -348,15 +349,15 @@ bool skip_indent(FILE *fl, int indent) {
 // Check to see if we're at the end of a storage entry. If we are,
 // return true. otherwise, return false.
 //
-bool storage_end(FILE *fl) {
-  char c = fgetc(fl);
+bool storage_end(FILEBUF *fb) {
+  char c = fbgetc(fb);
   if(c == SET_MARKER) {
     // also skip the newline that comes after us
-    fgetc(fl);
+    fbgetc(fb);
     return TRUE;
   }
   else {
-    fseek(fl, -1, SEEK_CUR);
+    fbseek(fb, -1, SEEK_CUR);
     return FALSE;
   }
 }
@@ -366,20 +367,20 @@ bool storage_end(FILE *fl) {
 // return the type of the data we're dealing with. It is assumed
 // this will be called IMMEDIATELY after parse_key is called
 //
-char parse_type(FILE *fl) {
-  return getc(fl);
+char parse_type(FILEBUF *fb) {
+  return fbgetc(fb);
 }
 
 
 //
 // Parse the name of the key that is immediately in front of us
 //
-char *parse_key(FILE *fl) {
+char *parse_key(FILEBUF *fb) {
   static char buf[SMALL_BUFFER];
   char c;
   int  i = 0;
   // parse up to the colon, which is the marker for the end of the key
-  while((c = fgetc(fl)) != EOF) {
+  while((c = fbgetc(fb)) != EOF) {
     if(c == ':') {
       buf[i] = '\0';
       break;
@@ -395,7 +396,7 @@ char *parse_key(FILE *fl) {
 //
 // Read until we hit a newline. Return a copy of what we find
 //
-char *parse_line(FILE *fl) {
+char *parse_line(FILEBUF *fb) {
   static BUFFER *buf = NULL;
   static char   sbuf[SMALL_BUFFER];
   int              i = 0;
@@ -405,12 +406,12 @@ char *parse_line(FILE *fl) {
   *sbuf = 0;
 
   // fill up our small buffer to max, then copy it over
-  for(i = 0; (sbuf[i] = getc(fl)) != EOF && sbuf[i] != '\n';) {
+  for(i = 0; (sbuf[i] = fbgetc(fb)) != EOF && sbuf[i] != '\n';) {
     if(i < SMALL_BUFFER-2)
       i++;
     else {
       sbuf[++i] = '\0';
-      bprintf(buf, "%s", sbuf);
+      bufferCat(buf, sbuf);
       i = 0;
       sbuf[i] = '\0';
     }
@@ -419,7 +420,7 @@ char *parse_line(FILE *fl) {
   // we found the newline
   if(sbuf[i] == '\n')
     sbuf[i] = '\0';
-  bprintf(buf, "%s", sbuf);
+  bufferCat(buf, sbuf);
   return strdup(bufferString(buf));
 }
 
@@ -427,7 +428,7 @@ char *parse_line(FILE *fl) {
 //
 // read in a string that may possibly have multiple newlines in it
 //
-char *parse_string(FILE *fl, int indent) {
+char *parse_string(FILEBUF *fb, int indent) {
   static BUFFER *buf = NULL;
   char          *ptr = NULL;
   if(buf == NULL)
@@ -437,9 +438,10 @@ char *parse_string(FILE *fl, int indent) {
   // as long as we can skip up our indent, we can read in data and
   // all is good. Once we can no longer skip up our indent, then
   // we have come to the end of our string
-  while(skip_indent(fl, indent)) {
-    ptr = parse_line(fl);
-    bprintf(buf, "%s\n", ptr);
+  while(skip_indent(fb, indent)) {
+    ptr = parse_line(fb);
+    bufferCat(buf, ptr);
+    bufferCat(buf, "\n");
     free(ptr);
   }
 
@@ -450,12 +452,12 @@ char *parse_string(FILE *fl, int indent) {
 //
 // Read in a list of storage sets. Return what we find.
 //
-STORAGE_SET_LIST *parse_storage_list(FILE *fl, int indent) {
+STORAGE_SET_LIST *parse_storage_list(FILEBUF *fb, int indent) {
   STORAGE_SET_LIST *list = new_storage_list();
   STORAGE_SET       *set = NULL;
 
   // read in each set in our list
-  while( (set = parse_storage_set(fl, indent)) != NULL)
+  while( (set = parse_storage_set(fb, indent)) != NULL)
     storage_list_put(list, set);
   return list;
 }
@@ -464,42 +466,42 @@ STORAGE_SET_LIST *parse_storage_list(FILE *fl, int indent) {
 //
 // Parse one storage set and return it
 //
-STORAGE_SET *parse_storage_set(FILE *fl, int indent) {
+STORAGE_SET *parse_storage_set(FILEBUF *fb, int indent) {
   STORAGE_SET *set = new_storage_set();
   int        loops = 0;
 
-  while(skip_indent(fl, indent)) {
+  while(skip_indent(fb, indent)) {
     loops++;
-    if(storage_end(fl))
+    if(storage_end(fb))
       break;
 
-    char *key = parse_key(fl);
-    char type = parse_type(fl);
+    char *key = parse_key(fb);
+    char type = parse_type(fb);
 
     switch(type) {
     case TYPELESS_MARKER: {
-      char *line = parse_line(fl);
+      char *line = parse_line(fb);
       store_string(set, key, line);
       free(line);
       break;
     }
 
     case STRING_MARKER: {
-      fgetc(fl); // kill the newline
-      char *string = parse_string(fl, indent+2);
+      fbgetc(fb); // kill the newline
+      char *string = parse_string(fb, indent+2);
       store_string(set, key, string);
       free(string);
       break;
     }
 
     case SET_MARKER:
-      fgetc(fl); // kill the newline
-      store_set(set, key, parse_storage_set(fl, indent+2));
+      fbgetc(fb); // kill the newline
+      store_set(set, key, parse_storage_set(fb, indent+2));
       break;
 
     case LIST_MARKER:
-      fgetc(fl); // kill the newline
-      store_list(set, key, parse_storage_list(fl, indent+2));
+      fbgetc(fb); // kill the newline
+      store_list(set, key, parse_storage_list(fb, indent+2));
       break;
     }
     free(key);
@@ -522,12 +524,12 @@ STORAGE_SET *parse_storage_set(FILE *fl, int indent) {
 //
 //*****************************************************************************
 void storage_write(STORAGE_SET *set, const char *fname) {
-  FILE *fl = NULL;
+  FILEBUF *fb = NULL;
   // we wanted to open a file, but we couldn't ... abort
-  if((fl = fopen(fname, "w+")) == NULL)
+  if((fb = fbopen(fname, "w+")) == NULL)
     return;
-  write_storage_set(set, fl, 0);
-  fclose(fl);
+  write_storage_set(set, fb, 0);
+  fbclose(fb);
 }
 
 
@@ -546,12 +548,25 @@ void storage_close(STORAGE_SET *set) {
 
 
 STORAGE_SET *storage_read(const char *fname) {
-  FILE *fl = NULL;
+  FILEBUF *fb = NULL;
   // we wanted to open a file, but we couldn't ... return an empty set
-  if((fl = fopen(fname, "r")) == NULL)
+  if((fb = fbopen(fname, "r")) == NULL)
     return NULL;//    return new_storage_set();
-  STORAGE_SET *set = parse_storage_set(fl, 0);
-  fclose(fl);
+
+  // track how long it takes us to parse a storage set
+  // struct timeval start_time;
+  // gettimeofday(&start_time, NULL);
+
+  STORAGE_SET *set = parse_storage_set(fb, 0);
+
+  // finish tracking
+  // struct timeval end_time;
+  // gettimeofday(&end_time, NULL);
+  // int usecs = (int)(end_time.tv_usec - start_time.tv_usec);
+  // int secs  = (int)(end_time.tv_sec  - start_time.tv_sec);
+  // log_string("storage read time %d %s", (int)(secs*1000000 + usecs), fname);
+
+  fbclose(fb);
   return set;
 }
 
@@ -615,7 +630,7 @@ void store_long(STORAGE_SET *set, const char *key, long val) {
   storage_put(set, new_data_long(val, key));
 }
 
-STORAGE_SET    *read_set(STORAGE_SET *set, const char *key) {
+STORAGE_SET *read_set(STORAGE_SET *set, const char *key) {
   STORAGE_DATA *data = hashGet(set->entries, key);
   if(data) 
     return data->set_val;
@@ -625,7 +640,7 @@ STORAGE_SET    *read_set(STORAGE_SET *set, const char *key) {
   }
 }
 
-STORAGE_SET_LIST    *read_list(STORAGE_SET *set, const char *key) {
+STORAGE_SET_LIST *read_list(STORAGE_SET *set, const char *key) {
   STORAGE_DATA *data = hashGet(set->entries, key);
   if(data) 
     return data->list_val;

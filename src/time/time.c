@@ -96,6 +96,17 @@ PyObject *PyMud_GetHour(PyObject *self) {
   return Py_BuildValue("i", get_hour());
 }
 
+PyObject *PyMud_GetTime(PyObject *self) {
+  if(is_morning())
+    return Py_BuildValue("s", "morning");
+  else if(is_afternoon())
+    return Py_BuildValue("s", "afternoon");
+  else if(is_evening())
+    return Py_BuildValue("s", "evening");
+  else
+    return Py_BuildValue("s", "night");
+}
+
 PyObject *PyMud_IsMorning(PyObject *self) {
   return Py_BuildValue("i", is_morning());
 }
@@ -181,6 +192,7 @@ void init_time() {
 
   // add our mud methods
   PyMud_addMethod("get_hour",     PyMud_GetHour,     METH_NOARGS, NULL);
+  PyMud_addMethod("get_time",     PyMud_GetTime,     METH_NOARGS, NULL);
   PyMud_addMethod("is_morning",   PyMud_IsMorning,   METH_NOARGS, NULL);
   PyMud_addMethod("is_afternoon", PyMud_IsAfternoon, METH_NOARGS, NULL);
   PyMud_addMethod("is_evening",   PyMud_IsEvening,   METH_NOARGS, NULL);

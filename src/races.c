@@ -23,7 +23,7 @@
 //*****************************************************************************
 
 // how big is hour hashtable for holding race data?
-#define RACE_TABLE_SIZE    10
+#define RACE_TABLE_SIZE    55
 HASHTABLE *race_table = NULL;
 
 
@@ -40,7 +40,7 @@ RACE_DATA *newRace(const char *name, const char *abbrev, BODY_DATA *body,
   RACE_DATA *data = malloc(sizeof(RACE_DATA));
   data->name   = strdupsafe(name);
   data->abbrev = strdupsafe(abbrev);
-  data->body   = body;
+  data->body   = bodyCopy(body);
   data->pc_ok  = pc_ok;
   return data;
 }

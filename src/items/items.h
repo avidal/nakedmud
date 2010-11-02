@@ -50,7 +50,7 @@ void init_items(void);
 // of itemdata. The function should take a form as follows:
 //    itemdata *itemDataRead(STORAGE_SET *set)
 void item_add_type(const char *type, 
-		   void *new,    void *delete,
+		   void *newfunc,void *deleter,
 		   void *copyTo, void *copy, 
 		   void *store,  void *read);
 

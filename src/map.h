@@ -16,14 +16,15 @@ typedef struct map_iterator               MAP_ITERATOR;
 // functions are used.
 //
 // hash_func is expected to be a function that takes the key type used in
-// this map, and returns an integer based on that key.
+// this map, and returns a long value based on that key.
 //
 // compares is expected to be a function that takes two keys and compares
 // them togher. If they are equal, 0 is returned. if key1 is less than key2,
 // -1 is returned. otherwise, 1 is returned. If this function is NULL, a
 // generic comparator is used that compares memory address of the two keys.
-MAP *newMap(void *hash_func, void *compares);
-void deleteMap(MAP *map);
+MAP     *newMap(void *hash_func, void *compares);
+MAP *newMapSize(void *hash_func, void *compares, int size);
+void  deleteMap(MAP *map);
 
 int   mapPut    (MAP *map, const void *key, void *val);
 void *mapGet    (MAP *map, const void *key);

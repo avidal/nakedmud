@@ -149,6 +149,21 @@ void scriptEditorInsert(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   }
 }
 
+//
+// same deal as scriptEditorInsert
+void scriptEditorEditLine(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
+  char tmp[SMALL_BUFFER];
+  arg = one_arg(arg, tmp);
+  int line = atoi(tmp);
+  if(!isdigit(*tmp) || !bufferReplaceLine(buf, arg, line))
+    text_to_buffer(sock, "Line does not exist.\r\n");
+  else {
+    text_to_buffer(sock, "Line replaced.\r\n");
+    bufferReplace(buf, "\r", "", TRUE);
+  }
+}
+
+
 
 //*****************************************************************************
 // implementation of script_editor.h
@@ -169,6 +184,8 @@ void init_script_editor() {
 		   scriptEditorFormat);
   editorAddCommand(script_editor, "i", "# <txt> Insert new text at the specified line number",
 		   scriptEditorInsert);
+  editorAddCommand(script_editor, "e", "# <txt> Sets the text at the specified line to the new text", 
+		   scriptEditorEditLine);
 
   auxiliariesInstall("script_editor_aux_data", 
 		     newAuxiliaryFuncs(AUXILIARY_TYPE_SOCKET,

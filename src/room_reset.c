@@ -754,35 +754,55 @@ bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type,
 //*****************************************************************************
 
 //
-// room reset hook. Whenever a room is reset, apply all of its reset rules
+// run all of the resets for a specified room
+void do_resets(ROOM_DATA *room) {
+  // first apply all of our prototype resets
+  LIST            *protos = parse_keywords(roomGetPrototypes(room));
+  LIST_ITERATOR  *proto_i = newListIterator(protos);
+  char             *proto = NULL;
+  RESET_LIST        *list = NULL;
+
+  // try to run each parent reset, and finally our own
+  ITERATE_LIST(proto, proto_i) {
+    if((list = worldGetType(gameworld, "reset", proto)) != NULL)
+      resetRunOn(resetListGetResets(list), room, INITIATOR_ROOM, get_key_locale(proto));
+  } deleteListIterator(proto_i);
+  deleteListWith(protos, free);
+}
+
+//
+// room reset hook. Whenever a room is reset, apply all of the reset rules for
+// it and its parent.
 void room_reset_hook(const char *info) {
+  ROOM_DATA *room = NULL;
+  hookParseInfo(info, &room);
+  if(room != NULL)
+    do_resets(room);
+}
+
+//
+// zone reset hook. Whenever a zone is reset, apply all of its reset rules for
+// each room in the zone.
+void zone_reset_hook(const char *info) {
   char  *zone_key = NULL;
   hookParseInfo(info, &zone_key);
   ZONE_DATA *zone = worldGetZone(gameworld, zone_key);
-  free(zone_key);
 
   LIST_ITERATOR *res_i = newListIterator(zoneGetResettable(zone));
   char           *name = NULL;
-  const char   *locale = zoneGetKey(zone);
-  RESET_LIST     *list = NULL;
+  const char   *locale = zone_key;
   ROOM_DATA      *room = NULL;
   ITERATE_LIST(name, res_i) {
     if((room = worldGetRoom(gameworld, get_fullkey(name, locale))) != NULL) {
-      // first apply all of our prototype resets
-      LIST            *protos = parse_keywords(roomGetPrototypes(room));
-      LIST_ITERATOR  *proto_i = newListIterator(protos);
-      char             *proto = NULL;
-
-      // try to run each parent reset, and finally our own
-      ITERATE_LIST(proto, proto_i) {
-	if((list = worldGetType(gameworld, "reset", proto)) != NULL)
-	  resetRunOn(resetListGetResets(list), room, INITIATOR_ROOM, locale);
-      } deleteListIterator(proto_i);
-      deleteListWith(protos, free);
+      do_resets(room);
     }
   } deleteListIterator(res_i);
+
+  // garbage collection
+  free(zone_key);
 }
 
 void init_room_reset(void) {
-  hookAdd("reset", room_reset_hook);
+  hookAdd("reset_zone", zone_reset_hook);
+  hookAdd("reset_room", room_reset_hook);
 }

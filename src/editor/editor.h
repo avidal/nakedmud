@@ -80,6 +80,14 @@ void editorRemoveCommand(EDITOR *editor, const char *cmd);
 void socketStartEditor(SOCKET_DATA *sock, EDITOR *editor, BUFFER *buf);
 
 //
+// begin editing text. Instead of copying the results to a buffer after
+// completion, call a function which will pass in the resulting text.
+void socketStartEditorFunc(SOCKET_DATA *sock, EDITOR *editor, const char *dflt,
+			   void (* on_complete)(SOCKET_DATA *, const char *));
+void socketStartPyEditorFunc(SOCKET_DATA *sock, EDITOR *editor,const char *dflt,
+			     void *py_complete);
+
+//
 // get a pointer to the current editor the socket is using, if any
 EDITOR *socketGetEditor(SOCKET_DATA *sock);
 

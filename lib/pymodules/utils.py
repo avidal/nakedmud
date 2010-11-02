@@ -5,7 +5,13 @@
 # Various utility functions used by other Python modules.
 #
 ################################################################################
+import mud
 
+
+
+################################################################################
+# utility functions
+################################################################################
 def parse_keywords(kw):
     '''turns a comma-separated list of strings to a list of keywords'''
     list = kw.lower().split(",")
@@ -39,6 +45,32 @@ def has_proto(ch, proto):
         if obj.isinstance(proto):
             return True
     return False
+
+def find_all_chars(looker, list, name, proto = None, must_see = True):
+    '''returns a list of all the chars that match the supplied constraints'''
+    found = []
+    for ch in list:
+        if must_see and not looker.cansee(ch):
+            continue
+        elif name != None and is_keyword(ch.keywords, name, True):
+            found.append(ch)
+        elif proto != None and ch.isinstance(proto):
+            found.append(ch)
+    return found
+
+def find_char(looker, list, num, name, proto = None, must_see = True):
+    '''returns the numth char to match the supplied constraints'''
+    count = 0
+    for ch in list:
+        if must_see and not looker.cansee(ch):
+            continue
+        elif name != None and is_keyword(ch.keywords, name, True):
+            count = count + 1
+        elif proto != None and ch.isinstance(proto):
+            count = count + 1
+        if count == num:
+            return ch
+    return None
 
 def find_all_objs(looker, list, name, proto = None, must_see = True):
     '''returns a list of all the objects that match the supplied constraints'''
@@ -83,10 +115,14 @@ def get_count(str):
     except:
         return 1, str
 
-def show_list(ch, list, s_func, m_func = None):
-    '''shows a list of things to the character. s_func is the description if
+def build_show_list(ch, list, s_func, m_func = None, joiner = "\r\n",
+                    and_end=False):
+    '''builds a list of things to show a character. s_func is the description if
        there is only a single item of the type. m_func is the description if
        there are multiple occurences of the thing in the list'''
+
+    # the outbound info
+    buf = [ ]
 
     # maps descriptions to counts
     counts = { }
@@ -106,12 +142,24 @@ def show_list(ch, list, s_func, m_func = None):
 
             # display our item(s)
             if count == 1:
-                ch.send(s_func(thing))
+                buf.append(s_func(thing))
             elif m_func == None or m_func(thing) == "":
-                ch.send("(" + str(count) + ") " + s_func(thing))
+                buf.append("(" + str(count) + ") " + s_func(thing))
             else:
-                ch.send(m_func(thing) % count)
+                buf.append(m_func(thing) % count)
         else: pass
+
+    # do we have to put "and" at the end?
+    if and_end and len(buf) > 1:
+        last = buf.pop()
+        return joiner.join(buf) + " and " + last
+    return joiner.join(buf)
+
+def show_list(ch, list, s_func, m_func = None):
+    '''shows a list of things to the character. s_func is the description if
+       there is only a single item of the type. m_func is the description if
+       there are multiple occurences of the thing in the list'''
+    ch.send(build_show_list(ch, list, s_func, m_func, "\r\n"))
 
 def olc_display_table(sock, list, num_cols, disp = lambda x: x):
     '''used by OLC functions to display a list of options in a table form.
@@ -131,3 +179,14 @@ def olc_display_table(sock, list, num_cols, disp = lambda x: x):
     # do we need to end this with a newline?
     if i % num_cols != 0:
         sock.send_raw("\r\n")
+
+def aan(word):
+    '''return "a" or "an", depending on the word.'''
+    if len(word) == 0 or not word[0].lower() in "aeiou":
+        return "a " + word
+    return "an " + word
+
+def chk_conscious(ch, cmd):
+    if ch.pos in ["sleeping", "unconscious"]:
+        ch.send("You cannot do that while " + ch.pos + "!")
+        return False

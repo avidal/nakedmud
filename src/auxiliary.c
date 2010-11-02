@@ -18,6 +18,7 @@
 #include "auxiliary.h"
 
 
+
 //*****************************************************************************
 //
 // local variables, datastructures, and functions
@@ -97,9 +98,9 @@ auxiliariesGetFuncs(const char *name) {
 }
 
 
-HASHTABLE *
+AUX_TABLE *
 newAuxiliaryData(bitvector_t aux_type) {
-  HASHTABLE        *data = newHashtable();
+  AUX_TABLE        *data = newHashtable();
   HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
@@ -121,7 +122,7 @@ newAuxiliaryData(bitvector_t aux_type) {
 
 
 void
-auxiliaryEnsureDataComplete(HASHTABLE *data, bitvector_t aux_type) {
+auxiliaryEnsureDataComplete(AUX_TABLE *data, bitvector_t aux_type) {
   HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
@@ -142,7 +143,7 @@ auxiliaryEnsureDataComplete(HASHTABLE *data, bitvector_t aux_type) {
 
 
 void
-deleteAuxiliaryData(HASHTABLE *data) {
+deleteAuxiliaryData(AUX_TABLE *data) {
   // go across all of the data in the hashtable, and delete it
   AUXILIARY_FUNCS *funcs  = NULL;
   HASH_ITERATOR   *hash_i = newHashIterator(data);
@@ -158,7 +159,7 @@ deleteAuxiliaryData(HASHTABLE *data) {
 
 
 STORAGE_SET *
-auxiliaryDataStore(HASHTABLE *data) {
+auxiliaryDataStore(AUX_TABLE *data) {
   STORAGE_SET *set = new_storage_set();
   AUXILIARY_FUNCS *funcs  = NULL;
   HASH_ITERATOR   *hash_i = newHashIterator(data);
@@ -174,9 +175,9 @@ auxiliaryDataStore(HASHTABLE *data) {
 }
 
 
-HASHTABLE *
+AUX_TABLE *
 auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type) {
-  HASHTABLE        *data = newHashtable();
+  AUX_TABLE       *data = newHashtable();
   HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
@@ -206,7 +207,7 @@ auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type) {
 
 
 void
-auxiliaryDataCopyTo(HASHTABLE *from, HASHTABLE *to) {
+auxiliaryDataCopyTo(AUX_TABLE *from, AUX_TABLE *to) {
   AUXILIARY_FUNCS *funcs = NULL;
   HASH_ITERATOR  *hash_i = NULL;
   void            *entry = NULL;
@@ -232,9 +233,13 @@ auxiliaryDataCopyTo(HASHTABLE *from, HASHTABLE *to) {
 }
 
 
-HASHTABLE *
-auxiliaryDataCopy(HASHTABLE *data) {
-  HASHTABLE *newdata = newHashtableSize(hashSize(data));
+AUX_TABLE *
+auxiliaryDataCopy(AUX_TABLE *data) {
+  AUX_TABLE *newdata = newHashtableSize(hashSize(data));
   auxiliaryDataCopyTo(data, newdata);
   return newdata;
+}
+
+void *auxiliaryGet(AUX_TABLE *table, const char *key) {
+  return hashGet(table, key);
 }

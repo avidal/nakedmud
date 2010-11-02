@@ -28,7 +28,7 @@ struct account_data {
   char          *name; // the name of our account
   char      *password; // our password to log on
   LIST    *characters; // our list of character names
-  HASHTABLE      *aux; // auxiliary data we have installed
+  AUX_TABLE      *aux; // auxiliary data we have installed
 };
 
 
@@ -123,7 +123,7 @@ LIST *accountGetChars(ACCOUNT_DATA *account) {
 }
 
 void *accountGetAuxiliaryData(ACCOUNT_DATA *account, const char *data) {
-  return hashGet(account->aux, data);
+  return auxiliaryGet(account->aux, data);
 }
 
 void accountSetPassword(ACCOUNT_DATA *account, const char *password) {

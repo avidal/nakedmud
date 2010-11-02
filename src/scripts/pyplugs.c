@@ -136,7 +136,7 @@ void init_py_modules() {
     // two cases: it's a package, or it's a module file. Packages will
     // be directories, and modules will be .py files. Check for both cases,
     // and then ignore all of the rest:
-    int nlen = strlen(entry->d_name);
+    int    nlen = strlen(entry->d_name);
     sprintf(fname, "%s/%s", PYMOD_LIB, entry->d_name);
 
     // skip hidden files, ourself, and our parent

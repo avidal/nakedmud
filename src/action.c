@@ -53,28 +53,6 @@ struct action_data {
 
 
 //*****************************************************************************
-// A small test for delayed actions ... proof of concept
-//*****************************************************************************
-void do_dsay(CHAR_DATA *ch, void *data, bitvector_t where, char *arg) {
-  communicate(ch, arg, COMM_LOCAL);
-}
-
-void dsay_interrupt(CHAR_DATA *ch, void *data, bitvector_t where, char *arg) {
-  send_to_char(ch, "Your delayed say was interrupted.\r\n");
-}
-
-COMMAND(cmd_dsay) {
-  if(!*arg)
-    send_to_char(ch, "What did you want to delay-say?\r\n");
-  else {
-    send_to_char(ch, "You start a delayed say.\r\n");
-    start_action(ch, 3 SECOND, 1, do_dsay, dsay_interrupt, NULL, arg);
-  }
-}
-
-
-
-//*****************************************************************************
 // single action handling
 //*****************************************************************************
 ACTION_DATA *newAction(int delay, 	
@@ -128,9 +106,6 @@ void init_actions() {
   // use the standard pointer hasher and comparator
   actors = newMap(NULL, NULL);
 
-  // add in our example delayed action
-  add_cmd("dsay", NULL, cmd_dsay, "admin", FALSE);
-
   // make sure the character does not continue actions after being extracted
   hookAdd("char_from_game", stop_actions_hook);
 }
@@ -151,8 +126,7 @@ bool is_acting(void *ch, bitvector_t where) {
       action_found = TRUE;
       break;
     }
-  }
-  deleteListIterator(act_i);
+  } deleteListIterator(act_i);
 
   return action_found;
 }
@@ -176,14 +150,21 @@ void interrupt_action(void *ch, bitvector_t where) {
 	listRemove(actions, action);
 	deleteAction(action);
       }
-    }
-    deleteListIterator(act_i);
+    } deleteListIterator(act_i);
   }
 
   // if all of the actions are gone, delete the list
   if(listSize(actions) == 0) {
+    /*
+     * Nope! We can't do this. If we interrupt an action midway through
+     * processing actions and the list gets deleted, the iterator over it will
+     * blow up when we try to delete it. Instead, deletion will now occur when
+     * we try to process actions and realize there is nothing in the list to
+     * process.
+     *
     mapRemove(actors, ch);
     deleteList(actions);
+    */
   }
 }
 
@@ -210,7 +191,7 @@ void start_action(void           *ch,
 }
 
 void pulse_actions(int time) {
-  MAP_ITERATOR   *ch_i = newMapIterator(actors);
+  MAP_ITERATOR    *ch_i = newMapIterator(actors);
   ACTION_DATA   *action = NULL;
   LIST_ITERATOR  *act_i = NULL;
   LIST         *actions = NULL;
@@ -220,8 +201,13 @@ void pulse_actions(int time) {
   ITERATE_MAP(map_actor, actions, ch_i) {
     actions = mapIteratorCurrentVal(ch_i);
 
+    // weird, we shouldn't be in here
+    if(listSize(actions) == 0) {
+      mapRemove(actors, map_actor);
+      deleteList(actions);
+    }
     // if we have actions, then go through 'em all
-    if(listSize(actions) > 0) {
+    else {
       // eek... small problem. The key for maps is constant, but we need
       // a non-constant character to send to run_action. Let's get the char's
       // UID, and re-look him up in the player table

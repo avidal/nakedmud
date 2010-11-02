@@ -30,7 +30,7 @@
 #include "items/container.h"
 #include "items/worn.h"
 #include "scripts/scripts.h"
-#include "scripts/pymud.h"
+#include "scripts/pymudsys.h"
 
 
 
@@ -85,9 +85,16 @@ bool obj_exists(OBJ_DATA *obj) {
 }
 
 void obj_to_game(OBJ_DATA *obj) {
+  if(setIn(object_set, obj))
+    return;
+
+  // property table, for lookup by python
   if(!obj_exists(obj))
     obj_exist(obj);
+
+  // set and list storage, for objects physically 'in' the game
   listPut(object_list, obj);
+  setPut(object_set, obj);
 
   // execute all of our to_game hooks
   hookRun("obj_to_game", hookBuildInfo("obj", obj));
@@ -169,8 +176,13 @@ bool room_exists(ROOM_DATA *room) {
 }
 
 void room_to_game(ROOM_DATA *room) {
+  if(setIn(room_set, room))
+    return;
+
   if(!room_exists(room))
     room_exist(room);
+
+  setPut(room_set, room);
   listPut(room_list, room);
 
   // execute all of our to_game hooks
@@ -200,13 +212,23 @@ void room_to_game(ROOM_DATA *room) {
   char           *dir = NULL;
   ITERATE_LIST(dir, ex_i) {
     exit_to_game(roomGetExit(room, dir));
-    if(get_cmd_move() != NULL && dirGetNum(dir) == DIR_NONE) {
-      CMD_DATA *old_cmd = nearMapRemove(roomGetCmdTable(room), dir);
-      CMD_DATA     *cmd = newPyCmd(dir, get_cmd_move(), "player", TRUE);
-      if(old_cmd != NULL)
-	deleteCmd(old_cmd);
-      cmdAddCheck(cmd, chk_can_move);
-      nearMapPut(roomGetCmdTable(room), dir, NULL, cmd);
+    // if we already have a command for this direction in place, ignore
+    if(roomHasCmd(room, dir))
+      continue;
+    // if it is a special exit and we have a registered movement command,
+    // add a special command to the room to use this exit
+    else if(dirGetNum(dir) == DIR_NONE && get_cmd_move() != NULL) {
+      CMD_DATA *cmd = newPyCmd(dir, get_cmd_move(), "player", TRUE);
+
+      // add all of our movement checks
+      LIST_ITERATOR *chk_i = newListIterator(get_move_checks());
+      PyObject        *chk = NULL;
+      ITERATE_LIST(chk, chk_i) {
+	cmdAddPyCheck(cmd, chk);
+      } deleteListIterator(chk_i);
+
+      //cmdAddCheck(cmd, chk_can_move);
+      roomAddCmd(room, dir, NULL, cmd);
     }
   } deleteListIterator(ex_i);
   deleteListWith(ex_list, free);
@@ -266,8 +288,13 @@ bool char_exists(CHAR_DATA *ch) {
 }
 
 void char_to_game(CHAR_DATA *ch) {
+  if(setIn(mobile_set, ch))
+    return;
+
   if(!char_exists(ch))
     char_exist(ch);
+  
+  setPut(mobile_set, ch);
   listPut(mobile_list, ch);
 
   // execute all of our to_game hooks
@@ -311,7 +338,8 @@ void obj_from_game(OBJ_DATA *obj) {
     deleteListIterator(cont_i);
   }
 
-  listRemove(object_list, obj);
+  if(setRemove(object_set, obj))
+    listRemove(object_list, obj);
   propertyTableRemove(obj_table, objGetUID(obj));
 }
 
@@ -346,7 +374,8 @@ void room_from_game(ROOM_DATA *room) {
   deleteListIterator(ex_i);
   deleteListWith(ex_list, free);
 
-  listRemove(room_list, room);
+  if(setRemove(room_set, room))
+    listRemove(room_list, room);
   propertyTableRemove(room_table, roomGetUID(room));
 }
 
@@ -374,58 +403,72 @@ void char_from_game(CHAR_DATA *ch) {
   }
   deleteList(eq);
 
-  listRemove(mobile_list, ch);
+  if(setRemove(mobile_set, ch))
+    listRemove(mobile_list, ch);
   propertyTableRemove(mob_table, charGetUID(ch));
 }
 
 void obj_from_char(OBJ_DATA *obj) {
   if(objGetCarrier(obj)) {
+    CHAR_DATA *ch = objGetCarrier(obj);
     listRemove(charGetInventory(objGetCarrier(obj)), obj);
     objSetCarrier(obj, NULL);
+    hookRun("obj_from_char", hookBuildInfo("obj ch", obj, ch));
   }
 }
 
 void obj_from_obj(OBJ_DATA *obj) {
   if(objGetContainer(obj)) {
+    OBJ_DATA *container = objGetContainer(obj);
     listRemove(objGetContents(objGetContainer(obj)), obj);
     objSetContainer(obj, NULL);
+    hookRun("obj_from_obj", hookBuildInfo("obj obj", obj, container));
   }
 }
 
 void obj_from_room(OBJ_DATA *obj) {
   if(objGetRoom(obj)) {
+    ROOM_DATA *room = objGetRoom(obj);
     listRemove(roomGetContents(objGetRoom(obj)), obj);
     objSetRoom(obj, NULL);
+    hookRun("obj_from_room", hookBuildInfo("obj rm", obj, room));
   }
 }
 
 void obj_to_char(OBJ_DATA *obj, CHAR_DATA *ch) {
   listPut(charGetInventory(ch), obj);
   objSetCarrier(obj, ch);
+  hookRun("obj_to_char", hookBuildInfo("obj ch", obj, ch));
 }
 
 void obj_to_obj(OBJ_DATA *obj, OBJ_DATA *to) {
   listPut(objGetContents(to), obj);
   objSetContainer(obj, to);
+  hookRun("obj_to_obj", hookBuildInfo("obj obj", obj, to));
 }
 
 void obj_to_room(OBJ_DATA *obj, ROOM_DATA *room) {
   listPut(roomGetContents(room), obj);
   objSetRoom(obj, room);
+  hookRun("obj_to_room", hookBuildInfo("obj rm", obj, room));
 }
 
 void char_from_room(CHAR_DATA *ch) {
-  charSetLastRoom(ch, charGetRoom(ch));
-  roomRemoveChar(charGetRoom(ch), ch);
-  charSetRoom(ch, NULL);
+  if(charGetRoom(ch) != NULL) {
+    ROOM_DATA *room = charGetRoom(ch);
+    hookRun("char_from_room", hookBuildInfo("ch rm", ch, room));
+    charSetLastRoom(ch, charGetRoom(ch));
+    roomRemoveChar(charGetRoom(ch), ch);
+    charSetRoom(ch, NULL);
+  }
 }
 
 void char_to_room(CHAR_DATA *ch, ROOM_DATA *room) {
   if(charGetRoom(ch))
     char_from_room(ch);
-
   roomAddChar(room, ch);
   charSetRoom(ch, room);
+  hookRun("char_to_room", hookBuildInfo("ch rm", ch, room));
 }
 
 void char_from_furniture(CHAR_DATA *ch) {
@@ -877,6 +920,7 @@ void *find_one(CHAR_DATA *looker,
     if(count >= at_count) {
       if(found_type)
 	*found_type = FOUND_OBJ;
+
       OBJ_DATA *obj = find_obj(looker, equipment, at_count, at, NULL, 
 			       (IS_SET(find_scope, FIND_SCOPE_VISIBLE)));
       deleteList(equipment);
@@ -1068,6 +1112,29 @@ void *generic_find(CHAR_DATA *looker, const char *arg,
   char working_arg[SMALL_BUFFER];
   strcpy(working_arg, arg);
 
+  char *at = NULL;
+  char *in = NULL;
+  char *on = NULL;
+
+  // are we trying to look "at" something or "on" something?
+  if(!parse_args(looker,FALSE,"",working_arg,
+		 "[at] [the] word | <on> [the] word",&at,&on)) {
+    // try again with "in"
+    strcpy(working_arg, arg);
+    if(!parse_args(looker,FALSE,"",working_arg,
+		   "[at] [the] word | <in> [the] word",&at,&in)) {
+      // try one last time using the whole argument
+      strcpy(working_arg, arg);
+      if(!parse_args(looker,FALSE,"",working_arg,
+		     "[at] [the] string", &at)) {
+	at = NULL;
+	in = NULL;
+	on = NULL;
+      }
+    }
+  }
+
+  /*
   strip_word(working_arg, "the");
 
   char *at = at_arg(working_arg);
@@ -1091,12 +1158,13 @@ void *generic_find(CHAR_DATA *looker, const char *arg,
     at = strtok(working_arg, " ");
     at = strdupsafe(at);
   }
+  */
 
   // make sure at, in, and on are never NULL
   // we always want to search by name, and never vnum
-  if(!at) at = strdup("");
-  if(!on) on = strdup("");
-  if(!in) in = strdup("");
+  at = strdupsafe(at);
+  on = strdupsafe(on);
+  in = strdupsafe(in);
 
   // do the finding
   void *val = find_specific(looker, 
@@ -1141,7 +1209,6 @@ void *find_specific(CHAR_DATA *looker,
 
   if(found_type)
     *found_type = FOUND_NONE;
-
 
   // are we trying to find all of something?
   if(all_ok && at_count == COUNT_ALL && !*on && !*in)

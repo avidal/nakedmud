@@ -89,6 +89,8 @@ void gen_cmd_protoedit(CHAR_DATA *ch, const char *type, const char *arg,
   // we need a key
   if(!arg || !*arg)
     send_to_char(ch, "What is the name of the %s you want to edit?\r\n", type);
+  else if(key_malformed(arg))
+    send_to_char(ch, "You entered an invalid content key.\r\n");
   else {
     char locale[SMALL_BUFFER];
     char   name[SMALL_BUFFER];

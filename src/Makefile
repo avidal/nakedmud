@@ -39,7 +39,7 @@ LIBS    := -lz -lpthread -lcrypt
 
 # each module will add to this from its module.mk file
 SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c \
-	   action.c mccp.c save.c socket.c io.c strings.c event.c \
+	   action.c save.c socket.c io.c strings.c event.c \
 	   \
 	   races.c \
 	   \
@@ -50,7 +50,7 @@ SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c \
 	   \
 	   list.c property_table.c hashtable.c map.c storage.c set.c \
 	   buffer.c bitvector.c numbers.c prototype.c hooks.c parse.c \
-	   near_map.c command.c
+	   near_map.c command.c filebuf.c
 
 
 
@@ -68,7 +68,7 @@ O_FILES := $(patsubst %.c,%.o, $(filter %.c, $(SRC)))
 ################################################################################
 
 # when performing a backup, these are the directories we'd like to include
-BACKUP_DIRS := src lib doc
+BACKUP_DIRS := src lib doc html
 
 # the name of the backup file we will be creating (time-stamping added)
 BACKUP_FILE := backup/$(PROJECT)-$(shell date +%Y-%m-%d-%Hh%Mm).tar.tgz

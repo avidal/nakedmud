@@ -156,12 +156,19 @@ void save_zone(ZONE_DATA *zone) {
 COMMAND(cmd_zedit) {
   // we want to create a new zone?
   if(!strncasecmp(arg, "new ", 4)) {
+    if(!bitIsSet(charGetUserGroups(ch), "admin")) {
+      send_to_char(ch, "You are not authorized to create new zones.\r\n");
+      return;
+    }
+
     char key[100];
 
     // scan for the parameters
     sscanf(arg+4, "%s", key);
 
-    if(worldGetZone(gameworld, key))
+    if(locale_malformed(key))
+      send_to_char(ch, "The zone name you entered was malformed.");
+    else if(worldGetZone(gameworld, key))
       send_to_char(ch, "A zone already exists with that key.\r\n");
     else {
       char buf[MAX_BUFFER];
@@ -179,6 +186,8 @@ COMMAND(cmd_zedit) {
   }
 
   // we want to edit a preexisting zone
+  else if(locale_malformed(arg))
+    send_to_char(ch, "The zone name you entered was malformed.");
   else {
     ZONE_DATA *zone = 
       (*arg ? worldGetZone(gameworld, arg) : 

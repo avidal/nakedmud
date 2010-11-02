@@ -46,14 +46,14 @@ void list_one_furniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
   listRemove(can_see, ch);
 
   char *chars = print_list(can_see, charGetName, charGetMultiName);
-  if(*chars) send_to_char(ch, "{g%s %s %s %s%s.\r\n",
+  if(*chars) send_to_char(ch, "{n%s %s %s %s%s.\r\n",
 			  chars, (listSize(can_see) == 1 ? "is" : "are"),
 			  (furnitureGetType(furniture)==FURNITURE_AT?"at":"on"),
 			  objGetName(furniture),
 			  (charGetFurniture(ch) == furniture ?" with you": ""));
   // everyone was invisible to us... we should still show the furniture though
   else
-    send_to_char(ch, "{g%s\r\n", objGetRdesc(furniture));
+    send_to_char(ch, "{n%s\r\n", objGetRdesc(furniture));
   deleteList(can_see);
   free(chars);
 }
@@ -140,15 +140,15 @@ void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj) {
   hookRun("append_obj_desc", hookBuildInfo("obj ch", obj, ch));
 
   // colorize all of the edescs
-  edescTagDesc(charGetLookBuffer(ch), objGetEdescs(obj), "{c", "{g");
+  edescTagDesc(charGetLookBuffer(ch), objGetEdescs(obj), "{c", "{n");
 
   // format the desc, and send it
   bufferFormat(charGetLookBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
 
   if(bufferLength(charGetLookBuffer(ch)) == 0)
-    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
+    send_to_char(ch, "{n%s\r\n", NOTHING_SPECIAL);
   else
-    send_to_char(ch, "{g%s", bufferString(charGetLookBuffer(ch)));
+    send_to_char(ch, "{n%s", bufferString(charGetLookBuffer(ch)));
 
   hookRun("look_at_obj", hookBuildInfo("obj ch", obj, ch));
   send_to_char(ch, "{n");
@@ -168,16 +168,16 @@ void look_at_exit(CHAR_DATA *ch, EXIT_DATA *exit) {
 
   // colorize all of the edescs
   edescTagDesc(charGetLookBuffer(ch), roomGetEdescs(exitGetRoom(exit)), 
-	       "{c", "{g");
+	       "{c", "{n");
 
   // format our description
   bufferFormat(charGetLookBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
 
   // if the buffer has nothing in it, send a "nothing special" message
   if(bufferLength(charGetLookBuffer(ch)) == 0)
-    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
+    send_to_char(ch, "{n%s\r\n", NOTHING_SPECIAL);
   else
-    send_to_char(ch, "{g%s", bufferString(charGetLookBuffer(ch)));
+    send_to_char(ch, "{n%s", bufferString(charGetLookBuffer(ch)));
 
   hookRun("look_at_exit", hookBuildInfo("ex ch", exit, ch));
   send_to_char(ch, "{n");
@@ -187,12 +187,12 @@ void look_at_exit(CHAR_DATA *ch, EXIT_DATA *exit) {
 // shows a single exit to a character
 void list_one_exit(CHAR_DATA *ch, EXIT_DATA *exit, const char *dir) {
   char   buf[100] = "\0"; // for the room class
-  ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(exit));
+  ROOM_DATA *dest = worldGetRoom(gameworld, exitGetToFull(exit));
 
   if(bitIsOneSet(charGetUserGroups(ch), "builder"))
-    sprintf(buf, "[%s] ", roomGetClass(dest));
+    snprintf(buf, 100, " [%s]", roomGetClass(dest));
 
-  send_to_char(ch, "{g  %-10s :: %s%s\r\n", dir, buf, 
+  send_to_char(ch, "{n  %-10s :: %s%s\r\n", dir, buf, 
 	       (exitIsClosed(exit) ? 
 		// if it's closed, print the exit name
 		(*exitGetName(exit) ? exitGetName(exit) : "closed" ) :
@@ -213,7 +213,7 @@ void list_room_exits(CHAR_DATA *ch, ROOM_DATA *room) {
   for(i = 0; i < NUM_DIRS; i++) {
     if( (exit = roomGetExit(room, dirGetName(i))) != NULL) {
       // make sure the destination exists
-      if( (to = worldGetRoom(gameworld, exitGetTo(exit))) == NULL)
+      if( (to = worldGetRoom(gameworld, exitGetToFull(exit))) == NULL)
 	log_string("ERROR: room %s heads %s to room %s, which does not exist.",
 		   roomGetClass(room), dirGetName(i), exitGetTo(exit));
       else if(can_see_exit(ch, exit))
@@ -226,7 +226,7 @@ void list_room_exits(CHAR_DATA *ch, ROOM_DATA *room) {
     if(dirGetNum(dir) == DIR_NONE) {
       exit = roomGetExit(room, dir);
       // make sure the destination exists
-      if( (to = worldGetRoom(gameworld, exitGetTo(exit))) == NULL)
+      if( (to = worldGetRoom(gameworld, exitGetToFull(exit))) == NULL)
 	log_string("ERROR: room %s heads %s to room %s, which does not exist.",
 		   roomGetClass(room), dir, exitGetTo(exit));
       else if(can_see_exit(ch, exit))
@@ -251,10 +251,10 @@ void look_at_char(CHAR_DATA *ch, CHAR_DATA *vict) {
   bufferFormat(charGetLookBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
 
   if(bufferLength(charGetLookBuffer(ch)) == 0)
-    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
+    send_to_char(ch, "{n%s\r\n", NOTHING_SPECIAL);
   else
-    send_to_char(ch, "{g%s{n", bufferString(charGetLookBuffer(ch)));
-  
+    send_to_char(ch, "{n%s{n", bufferString(charGetLookBuffer(ch)));
+
   hookRun("look_at_char", hookBuildInfo("ch ch", vict, ch));
 }
 
@@ -269,6 +269,7 @@ void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
   // make the working copy of the description, and fill it up with info
   bufferClear(charGetLookBuffer(ch));
   bufferCat(charGetLookBuffer(ch), roomGetDesc(room));
+
   // do all of our preprocessing of the description before we show it
   hookRun("preprocess_room_desc", hookBuildInfo("rm ch", room, ch));
 
@@ -276,15 +277,18 @@ void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
   hookRun("append_room_desc", hookBuildInfo("rm ch", room, ch));
 
   // colorize all of the edescs
-  edescTagDesc(charGetLookBuffer(ch), roomGetEdescs(room), "{c", "{g");
+  edescTagDesc(charGetLookBuffer(ch), roomGetEdescs(room), "{c", "{n");
 
   // format our description
   bufferFormat(charGetLookBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
 
+  // do any post-processing we might have
+  hookRun("postprocess_room_desc", hookBuildInfo("rm ch", room, ch));
+
   if(bufferLength(charGetLookBuffer(ch)) == 0)
-    send_to_char(ch, "{g%s\r\n", NOTHING_SPECIAL);
+    send_to_char(ch, "{n%s\r\n", NOTHING_SPECIAL);
   else
-    send_to_char(ch, "{g%s", bufferString(charGetLookBuffer(ch)));
+    send_to_char(ch, "{n%s", bufferString(charGetLookBuffer(ch)));
 
   hookRun("look_at_room", hookBuildInfo("rm ch", room, ch));
   send_to_char(ch, "{n");
@@ -475,9 +479,9 @@ COMMAND(cmd_look) {
     else if(found_type == FOUND_EDESC) {
       EDESC_SET *set = edescGetSet(found);
       BUFFER  *edesc = bufferCopy(edescGetDescBuffer(found));
-      edescTagDesc(edesc, set, "{c", "{g");
+      edescTagDesc(edesc, set, "{c", "{n");
       bufferFormat(edesc, SCREEN_WIDTH, PARA_INDENT);
-      send_to_char(ch, "{g%s", bufferString(edesc));
+      send_to_char(ch, "%s", bufferString(edesc));
       deleteBuffer(edesc);
     }
 
@@ -496,6 +500,7 @@ COMMAND(cmd_look) {
     // couldn't find anything. too bad!
     else
       send_to_char(ch, "What did you want to at?\r\n");
+
   }
 }
 
@@ -539,8 +544,9 @@ void send_message(CHAR_DATA *to,
 		  const char *str,
 		  CHAR_DATA *ch, CHAR_DATA *vict,
 		  OBJ_DATA *obj, OBJ_DATA *vobj) {
-  char buf[MAX_BUFFER];
+  static char buf[MAX_BUFFER];
   int i, j;
+  *buf = '\0';
 
   // if there's nothing to send the message to, don't go through all
   // the work it takes to parse the string
@@ -628,7 +634,7 @@ void send_message(CHAR_DATA *to,
   }
 
   //  buf[0] = toupper(buf[0]);
-  sprintf(buf+j, "\r\n");
+  sprintf(buf+j, "{n\r\n");
   text_to_char(to, buf);
 }
 
@@ -657,7 +663,7 @@ void message(CHAR_DATA *ch,  CHAR_DATA *vict,
   // check if the scope of this message is everyone in the world
   if(IS_SET(range, TO_WORLD))
     recipients = mobile_list;
-  else if(IS_SET(range, TO_ROOM))
+  else if(IS_SET(range, TO_ROOM) && charGetRoom(ch) != NULL)
     recipients = roomGetCharacters(charGetRoom(ch));
 
   // if we have a list to send the message to, do it
@@ -718,7 +724,7 @@ void exit_append_room_hook(BUFFER *buf, ROOM_DATA *room, CHAR_DATA *ch) {
   // or different-room-name destinations.
   ITERATE_LIST(ex, ex_i) {
     EXIT_DATA *exit = roomGetExit(room, ex);
-    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(exit));
+    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetToFull(exit));
     if(dest && can_see_exit(ch, exit) && dirGetNum(ex) != DIR_NONE) {
       if(exitIsClosed(exit))
 	listPut(ex_closed, ex);
@@ -741,7 +747,7 @@ void exit_append_room_hook(BUFFER *buf, ROOM_DATA *room, CHAR_DATA *ch) {
   // append info for dirs that exit to other room names
   ex_i = newListIterator(ex_diff);
   ITERATE_LIST(ex, ex_i) {
-    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetTo(roomGetExit(room, ex)));
+    ROOM_DATA *dest = worldGetRoom(gameworld, exitGetToFull(roomGetExit(room, ex)));
     bprintf(buf, " Continuing %s would take you to %s.", ex, roomGetName(dest));
   } deleteListIterator(ex_i);
 
@@ -776,7 +782,7 @@ void exit_append_hook(const char *info) {
 
   BUFFER         *buf = charGetLookBuffer(ch);
   ROOM_DATA     *room = exitGetRoom(exit);
-  ROOM_DATA     *dest = worldGetRoom(gameworld, exitGetTo(exit));
+  ROOM_DATA     *dest = worldGetRoom(gameworld, exitGetToFull(exit));
   LIST       *exnames = roomGetExitNames(room);
   LIST_ITERATOR *ex_i = newListIterator(exnames);
   char            *ex = NULL;
@@ -818,7 +824,7 @@ void exit_look_hook(const char *info) {
   hookParseInfo(info, &exit, &ch);
   // the door is not closed, list off the people we can see as well
   if(!exitIsClosed(exit)) {
-    ROOM_DATA *room = worldGetRoom(gameworld, exitGetTo(exit));
+    ROOM_DATA *room = worldGetRoom(gameworld, exitGetToFull(exit));
     if(room != NULL)
       list_room_contents(ch, room);
   }
@@ -842,6 +848,6 @@ void init_inform(void) {
   hookAdd("append_exit_desc", exit_append_hook);
   // enable if you want exits to append to the end of room descs
   //  hookAdd("append_room_desc", exit_append_room_hook);
-  hookAdd("look_at_exit", exit_look_hook);
-  hookAdd("look_at_room", room_look_hook);
+  //  hookAdd("look_at_exit", exit_look_hook);
+  //  hookAdd("look_at_room", room_look_hook);
 }

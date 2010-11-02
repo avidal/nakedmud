@@ -48,6 +48,7 @@ void deleteTrigger(TRIGGER_DATA *trigger) {
   if(trigger->key)  free(trigger->key);
   deleteBuffer(trigger->code);
   Py_XDECREF(trigger->pycode);
+  free(trigger);
 }
 
 STORAGE_SET *triggerStore(TRIGGER_DATA *trigger) {
@@ -124,13 +125,12 @@ BUFFER *triggerGetCodeBuffer(TRIGGER_DATA *trigger) {
 void triggerRun(TRIGGER_DATA *trigger, PyObject *dict) {
   // if we haven't yet run the trigger, compile the source code
   if(trigger->pycode == NULL)
-    trigger->pycode = 
-      run_script_forcode(dict, bufferString(trigger->code),
-			 get_key_locale(triggerGetKey(trigger)));
+    trigger->pycode = run_script_forcode(dict, bufferString(trigger->code),
+					 get_key_locale(triggerGetKey(trigger)));
   // run right from the code
   else {
     run_code(trigger->pycode, dict, get_key_locale(triggerGetKey(trigger)));
-    
+
     if(!last_script_ok())
       log_pyerr("Trigger %s terminated with an error:\r\n%s",
 		trigger->key, bufferString(trigger->code));

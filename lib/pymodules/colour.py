@@ -10,7 +10,7 @@ import mud, mudsock, hooks
 
 # symbols and values we need for processing colours
 base_colour_marker   = '{'
-colour_start         = '\x1B['
+colour_start         = '\x1b['
 cDARK                = '0'
 cLIGHT               = '1'
 

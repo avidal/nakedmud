@@ -138,8 +138,9 @@ BUFFER *protoGetScriptBuffer(PROTO_DATA *data) {
   return data->script;
 }
 
-bool protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc, 
-	      void *protoaddfunc, void *protoclassfunc, void *me) {
+bool protoRunAs(PROTO_DATA *proto, const char *type, const char *as, 
+		void *pynewfunc, void *protoaddfunc, void *protoclassfunc, 
+		void *me) {
   // parse and run all of our parents
   LIST           *parents = parse_keywords(proto->parents);
   LIST_ITERATOR *parent_i = newListIterator(parents);
@@ -183,18 +184,18 @@ bool protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc,
   if(protoaddfunc)
     ((void (*)(void *, const char *))protoaddfunc)(me, protoGetKey(proto));
   if(protoclassfunc)
-    ((void (*)(void *, const char *))protoclassfunc)(me, protoGetKey(proto));
+    ((void (*)(void *, const char *))protoclassfunc)(me, as);
 
   PyDict_SetItemString(dict, "me", pyme);
 
   // do we have our own code already, or do we need to compile from source?
   if(proto->code == NULL) {
-    proto->code = run_script_forcode(dict, bufferString(proto->script),
-				     get_key_locale(protoGetKey(proto)));
+    proto->code = run_script_forcode(dict, bufferString(proto->script), 
+				     get_key_locale(as));
   }
   // we already have a code object. Evaluate it.
   else {
-    run_code(proto->code, dict, get_key_locale(protoGetKey(proto)));
+    run_code(proto->code, dict, get_key_locale(as));
     
     if(!last_script_ok())
       log_pyerr("Prototype %s terminated with an error:\r\n%s",
@@ -206,9 +207,16 @@ bool protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc,
   PyDict_DelItemString(dict, "me");
   // PyDict_SetItemString(dict, "me", Py_None);
 
+  // garbage collection
   Py_DECREF(dict);
-  Py_DECREF(pyme);
+  // Py_DECREF(pyme);
   return last_script_ok();
+}
+
+bool protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc, 
+	      void *protoaddfunc, void *protoclassfunc, void *me) {
+  const char *as = protoGetKey(proto);
+  return protoRunAs(proto,type,as,pynewfunc,protoaddfunc,protoclassfunc,me);
 }
 
 CHAR_DATA *protoMobRun(PROTO_DATA *proto) {
@@ -216,7 +224,7 @@ CHAR_DATA *protoMobRun(PROTO_DATA *proto) {
     return NULL;
   CHAR_DATA *ch = newMobile();
   char_exist(ch);
-  if(protoRun(proto, "mproto", charGetPyForm, charAddPrototype, charSetClass, ch))
+  if(protoRun(proto, "mproto", charGetPyFormBorrowed, charAddPrototype, charSetClass, ch))
     char_to_game(ch);
   else {
     // should this be char_unexist? Check to see what difference it makes
@@ -232,7 +240,7 @@ OBJ_DATA *protoObjRun(PROTO_DATA *proto) {
     return NULL;
   OBJ_DATA *obj = newObj();
   obj_exist(obj);
-  if(protoRun(proto, "oproto", newPyObj, objAddPrototype, objSetClass, obj))
+  if(protoRun(proto, "oproto", objGetPyFormBorrowed, objAddPrototype, objSetClass, obj))
     obj_to_game(obj);
   else {
     // should this be obj_unexist? Check to see what difference it makes
@@ -248,8 +256,27 @@ ROOM_DATA *protoRoomRun(PROTO_DATA *proto) {
     return NULL;
   ROOM_DATA *room = newRoom();
   room_exist(room);
-  if(protoRun(proto, "rproto", newPyRoom, roomAddPrototype,roomSetClass,room))
+  if(protoRun(proto, "rproto", roomGetPyFormBorrowed, roomAddPrototype,roomSetClass,room))
     room_to_game(room);
+  else {
+    // should this be room_unexist? Check to see what difference it makes
+    extract_room(room);
+    room = NULL;
+  }
+
+  return room;
+}
+
+ROOM_DATA *protoRoomInstance(PROTO_DATA *proto, const char *as) {
+  if(protoIsAbstract(proto))
+    return NULL;
+  ROOM_DATA *room = newRoom();
+  room_exist(room);
+  if(protoRun(proto, "rproto", roomGetPyFormBorrowed, roomAddPrototype, 
+	      roomSetClass, room)) {
+    roomSetClass(room, as);
+    room_to_game(room);
+  }
   else {
     // should this be room_unexist? Check to see what difference it makes
     extract_room(room);

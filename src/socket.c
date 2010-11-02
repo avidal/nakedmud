@@ -24,6 +24,7 @@
 #include "hooks.h"
 #include "scripts/scripts.h"
 #include "scripts/pyplugs.h"
+#include "dyn_vars/dyn_vars.h"
 
 
 
@@ -54,6 +55,7 @@ struct socket_data {
   int             lookup_status;
   int             control;
   int             uid;
+  double          idle;          // how many pulses have we been idle for?
 
   char          * page_string;   // the string that has been paged to us
   int             curr_page;     // the current page we're on
@@ -70,7 +72,7 @@ struct socket_data {
   z_stream      * out_compress;                /* MCCP support */
   unsigned char * out_compress_buf;            /* MCCP support */
 
-  HASHTABLE     * auxiliary;     // auxiliary data installed by other modules
+  AUX_TABLE     * auxiliary;     // auxiliary data installed by other modules
 };
 
 
@@ -82,6 +84,7 @@ typedef struct input_handler_data {
   void *handler; // (* handler)(SOCKET_DATA *, char *);
   void  *prompt; // (*  prompt)(SOCKET_DATA *);
   bool   python;
+  char   *state; // what state does this input handler represent?
 } IH_PAIR;
 
 
@@ -102,6 +105,15 @@ fd_set        rFd;
 const unsigned char compress_will   [] = { IAC, WILL, TELOPT_COMPRESS,  '\0' };
 const unsigned char compress_will2  [] = { IAC, WILL, TELOPT_COMPRESS2, '\0' };
 
+// used to delete an input handler pair
+void deleteInputHandler(IH_PAIR *pair) {
+  if(pair->python) {
+    Py_XDECREF((PyObject *)pair->handler);
+    Py_XDECREF((PyObject *)pair->prompt);
+  }
+  if(pair->state) free(pair->state);
+  free(pair);
+}
 
 /*
  * Init_socket()
@@ -209,11 +221,11 @@ SOCKET_DATA *new_socket(int sock)
   }
 
   /* negotiate compression */
-  text_to_buffer(sock_new, (char *) compress_will2);
-  text_to_buffer(sock_new, (char *) compress_will);
+  // text_to_buffer(sock_new, (char *) compress_will2);
+  // text_to_buffer(sock_new, (char *) compress_will);
 
   /* send the greeting */
-  text_to_buffer(sock_new, bufferString(greeting));
+  // text_to_buffer(sock_new, bufferString(greeting));
 
   /* everything went as it was supposed to */
   return sock_new;
@@ -431,6 +443,7 @@ void text_to_buffer(SOCKET_DATA *dsock, const char *txt)
 
 void next_cmd_from_buffer(SOCKET_DATA *dsock) {
   // do we have stuff in our input list? If so, use that instead of inbuf
+  dsock->cmd_read = FALSE;
   if(listSize(dsock->input) > 0) {
     char *cmd = listPop(dsock->input);
     strncpy(dsock->next_command, cmd, MAX_BUFFER);
@@ -439,12 +452,15 @@ void next_cmd_from_buffer(SOCKET_DATA *dsock) {
     free(cmd);
   }
   else {
-    int size = 0, i = 0, j = 0, telopt = 0;
-
+    int size = 0, i = 0, j = 0; //, telopt = 0;
+    static char iacopt[MAX_BUFFER];
+    bool found_iac = FALSE;
+    iacopt[0] = '\0';
+    
     // if theres already a command ready, we return
     if(dsock->next_command[0] != '\0')
       return;
-
+    
     // if there is nothing pending, then return
     if(dsock->inbuf[0] == '\0')
       return;
@@ -455,17 +471,69 @@ void next_cmd_from_buffer(SOCKET_DATA *dsock) {
       size++;
 
     /* we only deal with real commands */
+    // I'm not really sure what this means, or does! -- Geoff
     if(dsock->inbuf[size] == '\0')
       return;
 
     // copy the next command into next_command
     for(; i < size; i++) {
+      // we have a system command. Try to parse it out
+      if(dsock->inbuf[i] == (signed char) IAC) {
+	int iac_i       = 0;
+	iacopt[iac_i++] = (signed char) dsock->inbuf[i++];
+	
+	// IAC escape sequence: IAC IAC
+	if(dsock->inbuf[i] == (signed char) IAC)
+	  iacopt[iac_i++] = (signed char) dsock->inbuf[i];
+	
+	// subnegotiation, read until the end of the sequence
+	if(dsock->inbuf[i] == (signed char) SB) {
+	  while(dsock->inbuf[i] != (signed char) SE)
+	    iacopt[iac_i++] = (signed char) dsock->inbuf[i++];
+	  iacopt[iac_i++] = (signed char) dsock->inbuf[i];
+	}
+
+	// basic three-character command
+	else if(dsock->inbuf[i] == (signed char) WILL || 
+		dsock->inbuf[i] == (signed char) WONT || 
+		dsock->inbuf[i] == (signed char) DO   || 
+		dsock->inbuf[i] == (signed char) DONT) {
+	  iacopt[iac_i++] = (signed char) dsock->inbuf[i++];
+	  iacopt[iac_i++] = (signed char) dsock->inbuf[i];
+	}
+	
+	// not sure what happened here! Something got busted in transit
+	else {
+	  iacopt[iac_i++] = dsock->inbuf[i];
+	}
+
+	// close off the command
+	iacopt[iac_i++] = '\0';
+
+	// did we find an IAC command? Notify the world!
+	if(*iacopt) {
+	  found_iac = TRUE;
+	  hookRun("receive_iac", hookBuildInfo("sk str", dsock, iacopt));
+	  //*iacopt = '\0';
+	}
+      }
+      
+      else if(isprint(dsock->inbuf[i]) && isascii(dsock->inbuf[i])) {
+	dsock->next_command[j++] = dsock->inbuf[i];
+      }
+      else {
+	// log_string("BAD CHARACTER %d", (unsigned int)dsock->inbuf[i]); 
+      }
+
+      /*
+       * THE OLD HANDLER
+       *
       if(dsock->inbuf[i] == (signed char) IAC)
 	telopt = 1;
       else if(telopt == 1 && (dsock->inbuf[i] == (signed char) DO || 
 			      dsock->inbuf[i] == (signed char) DONT))
 	telopt = 2;
-
+    
       // check for compression format
       else if(telopt == 2) {
 	unsigned char compress_opt = dsock->inbuf[i];
@@ -484,16 +552,18 @@ void next_cmd_from_buffer(SOCKET_DATA *dsock) {
       else if(isprint(dsock->inbuf[i]) && isascii(dsock->inbuf[i])) {
 	dsock->next_command[j++] = dsock->inbuf[i];
       }
+      */
     }
+    
     dsock->next_command[j] = '\0';
-
+    
     // skip forward to the next line
     while(dsock->inbuf[size] == '\n' || dsock->inbuf[size] == '\r') {
-      dsock->cmd_read = TRUE;
-      dsock->bust_prompt = TRUE;   // seems like a good place to check
+      dsock->cmd_read    = TRUE;
+      dsock->bust_prompt = TRUE;
       size++;
     }
-
+    
     // use i as a static pointer
     i = size;
     
@@ -510,6 +580,7 @@ void next_cmd_from_buffer(SOCKET_DATA *dsock) {
 
 bool flush_output(SOCKET_DATA *dsock) {
   bool  success = TRUE;
+  BUFFER   *buf = NULL;
 
   // run any hooks prior to flushing our text
   hookRun("flush", hookBuildInfo("sk", dsock));
@@ -519,11 +590,14 @@ bool flush_output(SOCKET_DATA *dsock) {
      (!dsock->bust_prompt || !socketHasPrompt(dsock)))
     return success;
 
+  buf = newBuffer(1);
+
   // send our outbound text
   if(bufferLength(dsock->outbuf) > 0) {
     hookRun("process_outbound_text",  hookBuildInfo("sk", dsock));
     hookRun("finalize_outbound_text", hookBuildInfo("sk", dsock));
-    success = text_to_socket(dsock, bufferString(dsock->outbuf));
+    //success = text_to_socket(dsock, bufferString(dsock->outbuf));
+    bufferCat(buf, bufferString(dsock->outbuf));
     bufferClear(dsock->outbuf);
   }
 
@@ -532,10 +606,14 @@ bool flush_output(SOCKET_DATA *dsock) {
     socketShowPrompt(dsock);
     hookRun("process_outbound_prompt",  hookBuildInfo("sk", dsock));
     hookRun("finalize_outbound_prompt", hookBuildInfo("sk", dsock));
-    success = text_to_socket(dsock, bufferString(dsock->outbuf));
+    //success = text_to_socket(dsock, bufferString(dsock->outbuf));
+    bufferCat(buf, bufferString(dsock->outbuf));
     bufferClear(dsock->outbuf);
     dsock->bust_prompt = FALSE;
   }
+
+  success = text_to_socket(dsock, bufferString(buf));
+  deleteBuffer(buf);
 
   // return our success
   return success;
@@ -553,14 +631,14 @@ bool flush_output(SOCKET_DATA *dsock) {
 //
 //*****************************************************************************
 void deleteSocket(SOCKET_DATA *sock) {
-  if(sock->hostname)         free(sock->hostname);
-  if(sock->page_string)      free(sock->page_string);
-  if(sock->text_editor)      deleteBuffer(sock->text_editor);
-  if(sock->outbuf)           deleteBuffer(sock->outbuf);
-  if(sock->input_handlers)   deleteListWith(sock->input_handlers, free);
-  if(sock->input)            deleteListWith(sock->input, free);
-  if(sock->command_hist)     deleteListWith(sock->command_hist, free);
-  if(sock->auxiliary)        deleteAuxiliaryData(sock->auxiliary);
+  if(sock->hostname)      free(sock->hostname);
+  if(sock->page_string)   free(sock->page_string);
+  if(sock->text_editor)   deleteBuffer(sock->text_editor);
+  if(sock->outbuf)        deleteBuffer(sock->outbuf);
+  if(sock->input_handlers)deleteListWith(sock->input_handlers,deleteInputHandler);
+  if(sock->input)         deleteListWith(sock->input, free);
+  if(sock->command_hist)  deleteListWith(sock->command_hist, free);
+  if(sock->auxiliary)     deleteAuxiliaryData(sock->auxiliary);
   free(sock);
 }
 
@@ -569,7 +647,7 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
   if(sock_new->page_string)    free(sock_new->page_string);
   if(sock_new->text_editor)    deleteBuffer(sock_new->text_editor);
   if(sock_new->outbuf)         deleteBuffer(sock_new->outbuf);
-  if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, free);
+  if(sock_new->input_handlers) deleteListWith(sock_new->input_handlers, deleteInputHandler);
   if(sock_new->auxiliary)      deleteAuxiliaryData(sock_new->auxiliary);
   if(sock_new->input)          deleteListWith(sock_new->input, free);
   if(sock_new->command_hist)   deleteListWith(sock_new->command_hist, free);
@@ -583,7 +661,7 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
   sock_new->lookup_status  = TSTATE_LOOKUP;
   sock_new->uid            = next_sock_uid++;
 
-  sock_new->text_editor    = newBuffer(MAX_BUFFER);
+  sock_new->text_editor    = newBuffer(1);
   sock_new->outbuf         = newBuffer(MAX_OUTPUT);
 }
 
@@ -777,8 +855,12 @@ void input_handler() {
     /* Ok, check for a new command */
     next_cmd_from_buffer(sock);
     
+    // are we idling?
+    if(!sock->cmd_read)
+      sock->idle +=  1.0 / PULSES_PER_SECOND;
     /* Is there a new command pending ? */
-    if (sock->cmd_read) {
+    else if (sock->cmd_read) {
+      sock->idle = 0.0;
       IH_PAIR *pair = listGet(sock->input_handlers, 0);
       if(pair->python == FALSE) {
 	void (* handler)(SOCKET_DATA *, char *) = pair->handler;
@@ -804,7 +886,10 @@ void input_handler() {
       if(listSize(sock->command_hist) > 100)
 	free(listRemoveNum(sock->command_hist, 100));
       sock->next_command[0] = '\0';
-      sock->cmd_read = FALSE;
+
+      // we save whether or not we read a command until our next call to
+      // input_handler(), at which time it is reset to FALSE if we didn't read
+      // sock->cmd_read = FALSE;
     }
 
 #ifdef MODULE_ALIAS
@@ -824,6 +909,12 @@ void input_handler() {
 
 int count_pages(const char *string) {
   int num_newlines = count_letters(string, '\n', strlen(string));
+  
+  // if we just have one extra line, ignore the paging prompt and just send
+  // the entire thing
+  if(num_newlines <= NUM_LINES_PER_PAGE + 1)
+    return 1;
+
   return ((num_newlines / NUM_LINES_PER_PAGE) + 
 	  (num_newlines % NUM_LINES_PER_PAGE != 0));
 }
@@ -874,10 +965,15 @@ void  page_string(SOCKET_DATA *dsock, const char *string) {
     free(dsock->page_string);
   dsock->page_string = strdup(string);
   dsock->tot_pages   = count_pages(string);
-  dsock->curr_page   = 1;
-  show_page(dsock, 1);
-  if(dsock->tot_pages == 1)
+  
+  if(dsock->tot_pages == 1) {
+    text_to_buffer(dsock, dsock->page_string);
     delete_page(dsock);
+  }
+  else {
+    dsock->curr_page = 1;
+    show_page(dsock, 1);
+  }
 }
 
 void page_back(SOCKET_DATA *dsock) {
@@ -931,7 +1027,7 @@ void read_prompt(SOCKET_DATA *sock) {
 // a new handler that allows people to read long bits of text
 void  start_reader(SOCKET_DATA *dsock, const char *text) {
   // add a new input handler to control the reading
-  socketPushInputHandler(dsock, read_handler, read_prompt);
+  socketPushInputHandler(dsock, read_handler, read_prompt, "read text");
   
   // page the string
   page_string(dsock, text);
@@ -955,7 +1051,8 @@ void do_copyover(void) {
   ITERATE_LIST(sock, sock_i) {
     compressEnd(sock, sock->compressing, FALSE);
     // kick off anyone who hasn't yet logged in a character
-    if (!socketGetChar(sock) || !charGetRoom(socketGetChar(sock))) {
+    if (!socketGetChar(sock) || !socketGetAccount(sock) || 
+	!charGetRoom(socketGetChar(sock))) {
       text_to_socket(sock, "\r\nSorry, we are rebooting. Come back in a few minutes.\r\n");
       close_socket(sock, FALSE);
     }
@@ -1019,27 +1116,32 @@ BUFFER *socketGetOutbound    ( SOCKET_DATA *sock) {
 
 void socketPushInputHandler  ( SOCKET_DATA *socket, 
 			       void handler(SOCKET_DATA *socket, char *input),
-			       void prompt (SOCKET_DATA *socket)) {
+			       void prompt (SOCKET_DATA *socket),
+			       const char *state) {
   IH_PAIR *pair = malloc(sizeof(IH_PAIR));
   pair->handler = handler;
   pair->prompt  = prompt;
   pair->python  = FALSE;
+  pair->state   = strdupsafe(state);
   listPush(socket->input_handlers, pair);
 }
 
-void socketPushPyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt) {
+void socketPushPyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt,
+			      const char *state) {
   IH_PAIR *pair = malloc(sizeof(IH_PAIR));
   pair->handler = handler;
   pair->prompt  = prompt;
   pair->python  = TRUE;
+  pair->state   = strdupsafe(state);
   Py_XINCREF((PyObject *)handler);
   Py_XINCREF((PyObject *)prompt);
   listPush(sock->input_handlers, pair);
 }
 
-void socketReplacePyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt){
+void socketReplacePyInputHandler(SOCKET_DATA *sock, void *handler,void *prompt,
+				 const char *state){
   socketPopInputHandler(sock);
-  socketPushPyInputHandler(sock, handler, prompt);
+  socketPushPyInputHandler(sock, handler, prompt, state);
 }
 
 const char *socketGetLastCmd(SOCKET_DATA *sock) {
@@ -1051,22 +1153,24 @@ const char *socketGetLastCmd(SOCKET_DATA *sock) {
 
 void socketPopInputHandler   ( SOCKET_DATA *socket) {
   IH_PAIR *pair = listPop(socket->input_handlers);
-  if(pair->python) {
-    Py_XDECREF((PyObject *)pair->handler);
-    Py_XDECREF((PyObject *)pair->prompt);
-  }
-  free(pair);
+  if(pair != NULL)
+    deleteInputHandler(pair);
 }
 
 void socketReplaceInputHandler( SOCKET_DATA *socket,
 				void handler(SOCKET_DATA *socket, char *input),
-				void prompt (SOCKET_DATA *socket)) {
+				void prompt (SOCKET_DATA *socket),
+				const char *state) {
   socketPopInputHandler(socket);
-  socketPushInputHandler(socket, handler, prompt);
+  socketPushInputHandler(socket, handler, prompt, state);
 }
 
 void socketQueueCommand( SOCKET_DATA *sock, const char *cmd) {
   listQueue(sock->input, strdup(cmd));
+}
+
+bool socketHasCommand(SOCKET_DATA *sock) {
+  return sock->cmd_read;
 }
 
 int socketGetUID( SOCKET_DATA *dsock) {
@@ -1099,7 +1203,7 @@ void socketShowPrompt( SOCKET_DATA *sock) {
 }
 
 void *socketGetAuxiliaryData  ( SOCKET_DATA *sock, const char *name) {
-  return hashGet(sock->auxiliary, name);
+  return auxiliaryGet(sock->auxiliary, name);
 }
 
 const char *socketGetHostname(SOCKET_DATA *sock) {
@@ -1112,6 +1216,18 @@ int socketGetDNSLookupStatus(SOCKET_DATA *sock) {
 
 void socketBustPrompt(SOCKET_DATA *sock) {
   sock->bust_prompt = TRUE;
+}
+
+const char *socketGetState(SOCKET_DATA *sock) {
+  IH_PAIR *pair = listGet(sock->input_handlers, 0);
+  if(pair == NULL) 
+    return "";
+  else
+    return pair->state;
+}
+
+double socketGetIdleTime(SOCKET_DATA *sock) {
+  return sock->idle;
 }
 
 
@@ -1284,7 +1400,6 @@ bool processCompressed(SOCKET_DATA *dsock)
   /* success */
   return TRUE;
 }
-
 
 //
 // compress output

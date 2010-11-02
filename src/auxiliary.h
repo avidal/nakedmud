@@ -22,6 +22,10 @@
 #define AUXILIARY_TYPE_ACCOUNT   (1 << 5)
 
 
+//
+// how do we store auxiliary data?
+typedef HASHTABLE AUX_TABLE;
+
 
 //
 // A structure containing 6 functions that are needed for storing and saving
@@ -61,7 +65,7 @@ void init_auxiliaries();
 // create a new set of functions for handling auxiliary data
 //
 AUXILIARY_FUNCS *
-newAuxiliaryFuncs(bitvector_t aux_type, void *new, void *delete, 
+newAuxiliaryFuncs(bitvector_t aux_type, void *newfunc, void *deleter, 
 		  void *copyTo, void *copy, void *store, void *read);
 
 
@@ -116,7 +120,7 @@ auxiliariesGetFuncs(const char *name);
 // Create a new hashtable of auxiliary data for the 
 // datatype specified in aux_type 
 //
-HASHTABLE *
+AUX_TABLE *
 newAuxiliaryData(bitvector_t aux_type);
 
 
@@ -125,20 +129,20 @@ newAuxiliaryData(bitvector_t aux_type);
 // data is passed into here and we handle it.
 //
 void
-deleteAuxiliaryData(HASHTABLE *data);
+deleteAuxiliaryData(AUX_TABLE *data);
 
 
 //
 // Put all of the auxiliary data into a storage set
 //
 STORAGE_SET *
-auxiliaryDataStore(HASHTABLE *data);
+auxiliaryDataStore(AUX_TABLE *data);
 
 
 //
 // read the auxiliary data for a specified datatype in from the set
 //
-HASHTABLE *
+AUX_TABLE *
 auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type);
 
 
@@ -146,14 +150,18 @@ auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type);
 // Copy the auxiliary data from one hashtable to another
 //
 void
-auxiliaryDataCopyTo(HASHTABLE *from, HASHTABLE *to);
+auxiliaryDataCopyTo(AUX_TABLE *from, AUX_TABLE *to);
 
 
 //
 // Make a copy of the auxiliary data
 //
-HASHTABLE *
-auxiliaryDataCopy(HASHTABLE *data);
+AUX_TABLE *
+auxiliaryDataCopy(AUX_TABLE *data);
 
+
+//
+// return data from the auxiliary table
+void *auxiliaryGet(AUX_TABLE *table, const char *key);
 
 #endif // __AUXILIARY_H

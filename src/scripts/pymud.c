@@ -41,9 +41,6 @@ PyObject  *globals = NULL;
 // a list of methods to add to the mud module
 LIST *pymud_methods = NULL;
 
-// a placeholder of the movement command, as set by one of our modules
-PyObject *py_cmd_move = NULL;
-
 
 
 //*****************************************************************************
@@ -109,9 +106,10 @@ PyObject *mud_erase_global(PyObject *self, PyObject *args) {
 PyObject *mud_format_string(PyObject *self, PyObject *args) {
   char *string = NULL;
   bool indent  = TRUE;
+  int  width   = SCREEN_WIDTH;
 
   // parse all of the values
-  if (!PyArg_ParseTuple(args, "s|b", &string, &indent)) {
+  if (!PyArg_ParseTuple(args, "s|bi", &string, &indent, &width)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Can not format non-string values.");
     return NULL;
@@ -120,7 +118,7 @@ PyObject *mud_format_string(PyObject *self, PyObject *args) {
   // dup the string so we can work with it and not intrude on the PyString data
   BUFFER *buf = newBuffer(MAX_BUFFER);
   bufferCat(buf, string);
-  bufferFormat(buf, SCREEN_WIDTH, (indent ? PARA_INDENT : 0));
+  bufferFormat(buf, width, (indent ? PARA_INDENT : 0));
   PyObject *ret = Py_BuildValue("s", bufferString(buf));
   deleteBuffer(buf);
   return ret;
@@ -382,6 +380,16 @@ PyObject *mud_extract(PyObject *self, PyObject *args) {
       return NULL;
     }
   }
+  else if(PyRoom_Check(thing)) {
+    ROOM_DATA *room = PyRoom_AsRoom(thing);
+    if(room != NULL)
+      extract_room(room);
+    else {
+      PyErr_Format(PyExc_StandardError,
+		   "Tried to extract nonexistent room!");
+      return NULL;
+    }
+  }
   
   // success
   return Py_BuildValue("i", 1);
@@ -432,6 +440,12 @@ PyObject *mud_get_motd(PyObject *self, PyObject *args) {
   return Py_BuildValue("s", bufferString(motd));
 }
 
+//
+// returns the mud's message of the day
+PyObject *mud_get_greeting(PyObject *self, PyObject *args) {
+  return Py_BuildValue("s", bufferString(greeting));
+}
+
 PyObject *mud_log_string(PyObject *self, PyObject *args) {
   char *mssg = NULL;
   if(!PyArg_ParseTuple(args, "s", &mssg)) {
@@ -445,24 +459,6 @@ PyObject *mud_log_string(PyObject *self, PyObject *args) {
   bufferReplace(buf, "%", "%%", TRUE);
   log_string(bufferString(buf));
   deleteBuffer(buf);
-  return Py_BuildValue("i", 1);
-}
-
-PyObject *mud_set_cmd_move(PyObject *self, PyObject *args) {
-  PyObject *cmd = NULL;
-  if(!PyArg_ParseTuple(args, "O", &cmd)) {
-    PyErr_Format(PyExc_TypeError, "a command must be suppled");
-    return NULL;
-  }
-
-  // make sure it's a function
-  if(!PyFunction_Check(cmd)) {
-    PyErr_Format(PyExc_TypeError, "a command must be suppled");
-    return NULL;
-  }
-
-  Py_XDECREF(py_cmd_move);
-  py_cmd_move = cmd;
   return Py_BuildValue("i", 1);
 }
 
@@ -536,10 +532,10 @@ init_PyMud(void) {
 		  "equivalent to parse_args written in C");
   PyMud_addMethod("get_motd", mud_get_motd, METH_VARARGS,
 		  "returns the mud's message of the day");
+  PyMud_addMethod("get_greeting", mud_get_greeting, METH_VARARGS,
+		  "returns the mud's login greeting");
   PyMud_addMethod("log_string", mud_log_string, METH_VARARGS,
 		  "adds a string to the mudlog");
-  PyMud_addMethod("set_cmd_move", mud_set_cmd_move, METH_VARARGS,
-		  "sets the movement command");
   PyMud_addMethod("is_race", mud_is_race, METH_VARARGS,
 		  "returns whether or not the string is a valid race.");
   PyMud_addMethod("list_races", mud_list_races, METH_VARARGS,
@@ -552,8 +548,4 @@ init_PyMud(void) {
 
   globals = PyDict_New();
   Py_INCREF(globals);
-}
-
-void *get_cmd_move(void) {
-  return py_cmd_move;
 }

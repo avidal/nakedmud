@@ -126,7 +126,7 @@ STORAGE_SET *wornDataStore(WORN_DATA *data) {
 }
 
 WORN_DATA *wornDataRead(STORAGE_SET *set) {
-  WORN_DATA *data = newWornData();
+  WORN_DATA *data = malloc(sizeof(WORN_DATA));
   data->type = strdup(read_string(set, "type"));
   return data;
 }
@@ -231,6 +231,18 @@ void worn_to_proto(WORN_DATA *worn, BUFFER *buf) {
 //*****************************************************************************
 // python extentions
 //*****************************************************************************
+PyObject *PyObj_getwornlocs(PyObject *self, void *closure) {
+  OBJ_DATA *obj = PyObj_AsObj(self);
+  if(obj == NULL)
+    return NULL;
+  else if(objIsType(obj, "worn"))
+    return Py_BuildValue("s", wornGetPositions(obj));
+  else {
+    PyErr_Format(PyExc_TypeError, "Can only get wornlocs for wearable items.");
+    return NULL;
+  }
+}
+
 PyObject *PyObj_getworntype(PyObject *self, void *closure) {
   OBJ_DATA *obj = PyObj_AsObj(self);
   if(obj == NULL)
@@ -317,17 +329,18 @@ void init_worn(void) {
   hookAdd("append_obj_desc", append_worn_hook);
 
   // add our new python get/setters
+  PyObj_addGetSetter("worn_locs", PyObj_getwornlocs, NULL,
+		     "The positions this item must be equipped to.");
   PyObj_addGetSetter("worn_type", PyObj_getworntype, PyObj_setworntype,
 		     "The type of clothing this wearable item is.");
   PyMudSys_addMethod("add_worn_type", PyMudSys_AddWornType, METH_VARARGS,
 		     "Adds a new worn type to the game.");
   
   // add in our basic worn types
+  worn_add_type("shirt",              "torso, arm, arm");
   /*
     Removed as of v3.3 -- These can now be added via Python with the function,
     mudsys.add_worn_type(<type>, <position list>)
-
-  worn_add_type("shirt",                        "torso");
   worn_add_type("gloves",       "left hand, right hand");
   worn_add_type("left glove",               "left hand");
   worn_add_type("right glove",             "right hand");

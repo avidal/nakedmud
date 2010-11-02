@@ -546,7 +546,9 @@ void unlink_social(const char *cmd) {
     remove_keyword(data->cmds, cmd);
 
     // remove the command from the command table
-    remove_cmd(cmd);
+    CMD_DATA *cdata = remove_cmd(cmd);
+    if(cdata != NULL)
+      deleteCmd(cdata);
 
     // if no links are left, delete the social
     if(!*data->cmds)

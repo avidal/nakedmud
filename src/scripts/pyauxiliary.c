@@ -17,6 +17,7 @@
 #include "../auxiliary.h"
 
 #include "pystorage.h"
+#include "pyplugs.h"
 
 
 
@@ -45,6 +46,8 @@ PyObject *newPyAuxiliaryData(const char *keyword) {
   else {
     // create a new instance of the proto
     PyObject *instance = PyInstance_New(proto, NULL, NULL);
+    if(instance == NULL)
+      log_pyerr("Error with Python auxiliary new");
     return instance;
   }
 }
@@ -55,16 +58,22 @@ void deletePyAuxiliaryData(PyObject *data) {
 
 void pyAuxiliaryDataCopyTo(PyObject *from, PyObject *to) {
   PyObject *retval = PyObject_CallMethod(from, "copyTo", "O", to);
+  if(retval == NULL)
+    log_pyerr("Error with Python auxiliary copyto");
   Py_XDECREF(retval);
 }
 
 PyObject *pyAuxiliaryDataCopy(PyObject *data) {
   PyObject *retval = PyObject_CallMethod(data, "copy", NULL);
+  if(retval == NULL)
+    log_pyerr("Error with Python auxiliary copy");
   return retval;
 }
 
 STORAGE_SET *pyAuxiliaryDataStore(PyObject *data) {
   PyObject  *pyset = PyObject_CallMethod(data, "store", NULL);
+  if(pyset == NULL)
+    log_pyerr("Error with Python auxiliary store");
   STORAGE_SET *set = NULL;
 
   // make sure the set exists
@@ -88,6 +97,8 @@ PyObject *pyAuxiliaryDataRead(const char *keyword, STORAGE_SET *set) {
     PyObject  *pystore = newPyStorageSet(set);
     PyObject     *args = Py_BuildValue("(O)", newPyStorageSet(set));
     PyObject *instance = PyInstance_New(proto, args, NULL);
+    if(instance == NULL)
+      log_pyerr("Error with Python auxiliary read");
     Py_DECREF(args);
     Py_DECREF(pystore);
     return instance;

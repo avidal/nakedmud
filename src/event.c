@@ -37,33 +37,6 @@ struct event_data {
 
 
 
-
-//******************************************************************************
-//
-// a small test for delayed events ... proof of concept
-//
-//******************************************************************************
-void devent_on_complete(CHAR_DATA *owner, void *data, char *arg) {
-  communicate(owner, arg, COMM_GLOBAL);
-}
-
-bool check_devent_involvement(void *thing, void *data) {
-  return (thing == data);
-}
-
-COMMAND(cmd_devent) {
-  if(!*arg)
-    send_to_char(ch, "What did you want to delay-chat?\r\n");
-  else {
-    start_event(ch,
-		5 SECONDS,
-		devent_on_complete, check_devent_involvement, 
-		ch, arg);
-  }
-}
-
-
-
 //*****************************************************************************
 //
 // event handling
@@ -122,9 +95,6 @@ void interrupt_events_room_hook(const char *info) {
 void init_events() {
   events = newList();
 
-  // add our proof of concept command
-  add_cmd("devent", NULL, cmd_devent, "admin", FALSE);
-
   // make sure all events involving the object/char are cancelled when
   // either is extracted from the game
   hookAdd("obj_from_game",  interrupt_events_obj_hook);
@@ -158,8 +128,15 @@ void start_event(void *owner,
 		 void *check_involvement,
 		 void *data,
 		 const char *arg) {
-  listPut(events, newEvent(owner, delay, on_complete, check_involvement,
-			   data, arg, FALSE));
+  // some events might cause other events to activate. This is signaled by
+  // providing a delay of 0. In this case, we queue events to the back of the
+  // event list instead of push them on to the front
+  EVENT_DATA *event = newEvent(owner, delay, on_complete, check_involvement,
+			       data, arg, FALSE);
+  if(delay == 0)
+    listQueue(events, event);
+  else
+    listPut(events, event);
 }
 
 void start_update(void *owner, 
@@ -201,6 +178,5 @@ void pulse_events(int time) {
       else
 	deleteEvent(event);
     }
-  }
-  deleteListIterator(ev_i);
+  } deleteListIterator(ev_i);
 }

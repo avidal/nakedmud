@@ -13,13 +13,8 @@
 
 #define EX_CLOSED            (1 << 0)
 #define EX_LOCKED            (1 << 1)
+#define EX_CLOSABLE          (1 << 2)
 // lockable is handled if the exit has a key
-
-
-// exit UIDs (unique IDs) start at a million and go 
-// up by one every time a new exit is created
-#define START_EXIT_UID       1000000
-int next_exit_uid  =   START_EXIT_UID;
 
 struct exit_data {
   char *name;              // what is the name of our door for descriptions?
@@ -35,7 +30,6 @@ struct exit_data {
 
   bitvector_t status;      // closable, closed, locked, etc...
 
-  int closable;            // is the exit closable?
   int hide_lev;            // how hidden is this exit?
   int pick_lev;            // how hard is it to pick this exit?
   int uid;                 // our unique identification number
@@ -56,9 +50,8 @@ EXIT_DATA *newExit() {
   exit->hide_lev    = 0;
   exit->pick_lev    = 0;
   exit->status      = 0;
-  exit->closable    = FALSE;
   exit->room        = NULL;
-  exit->uid         = next_exit_uid++;
+  exit->uid         = next_uid();
   return exit;
 };
 
@@ -113,7 +106,9 @@ EXIT_DATA *exitRead(STORAGE_SET *set) {
   exitSetKey(exit,       read_string(set, "key"));
   exitSetHidden(exit,    read_int   (set, "hide_level"));
   exitSetPickLev(exit,   read_int   (set, "pick_level"));
-  exitSetClosable(exit,  read_int   (set, "closable"));
+  exitSetClosable(exit,  read_bool  (set, "closable"));
+  exitSetClosed(exit,    read_bool  (set, "closed"));
+  exitSetLocked(exit,    read_bool  (set, "locked"));
   return exit;
 }
 
@@ -129,7 +124,9 @@ STORAGE_SET *exitStore(EXIT_DATA *exit) {
   store_string(set, "key",        exit->key);
   store_int   (set, "hide_level", exit->hide_lev);
   store_int   (set, "pick_level", exit->pick_lev);
-  store_int   (set, "closable",   exit->closable);
+  store_bool  (set, "closable",   exitIsClosable(exit));
+  store_bool  (set, "closed",     exitIsClosed(exit));
+  store_bool  (set, "locked",     exitIsLocked(exit));
   return set;
 }
 
@@ -139,7 +136,7 @@ STORAGE_SET *exitStore(EXIT_DATA *exit) {
 // is, get and set functions
 //*****************************************************************************
 bool        exitIsClosable(const EXIT_DATA *exit) {
-  return exit->closable;
+  return IS_SET(exit->status, EX_CLOSABLE);
 };
 
 bool        exitIsClosed(const EXIT_DATA *exit) {
@@ -207,7 +204,8 @@ ROOM_DATA *exitGetRoom(const EXIT_DATA *exit) {
 }
 
 void        exitSetClosable(EXIT_DATA *exit, bool closable) {
-  exit->closable = (closable != 0);
+  if(closable) SET_BIT(exit->status, EX_CLOSABLE);
+  else         REMOVE_BIT(exit->status, EX_CLOSABLE);
 }
 
 void        exitSetClosed(EXIT_DATA *exit, bool closed) {

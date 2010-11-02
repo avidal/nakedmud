@@ -62,7 +62,7 @@ void        bufferClear (BUFFER *buf) {
 }
 
 BUFFER    *bufferCopy  (BUFFER *buf) {
-  BUFFER *newbuf = newBuffer(1);
+  BUFFER *newbuf = newBuffer(bufferLength(buf)+1);
   bufferCopyTo(buf, newbuf);
   return newbuf;
 }
@@ -80,21 +80,24 @@ int         bufferLength(BUFFER *buf) {
   return buf->len;
 }
 
-int bprintf(BUFFER *buf, char *fmt, ...) {  
+int vbprintf(BUFFER *buf, const char *fmt, va_list va) {
   static int printsize = 8192;
   char buftmp[printsize];
-  va_list va;
-  int res;
+  int res = vsnprintf(buftmp, printsize, fmt, va);
 
-  va_start(va, fmt);
-  res = vsnprintf(buftmp, printsize, fmt, va);
-  va_end(va);
-    
   if (res >= printsize - 1)
     *buftmp = '\0';
   else
     bufferCat(buf, buftmp);
    
+  return res;
+}
+
+int bprintf(BUFFER *buf, const char *fmt, ...) {  
+  va_list va;
+  va_start(va, fmt);
+  int res = vbprintf(buf, fmt, va);
+  va_end(va);
   return res;
 }
 
@@ -250,7 +253,7 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
       col = 0;
     }
 
-    char        ch = buf->data[buf_i];
+    char ch = buf->data[buf_i];
     int para_start = -1;
 
     // try to preserve our paragraph structure
@@ -266,7 +269,7 @@ void bufferFormat(BUFFER *buf, int max_width, int indent) {
     // no spaces on newlines or ends of lines
     else if(isspace(ch) && (col == 0 || col == max_width-1))
       continue;
-    // we will do our own sentence formatting
+    // we will do our own sentance formatting
     else if(needs_capital && isspace(ch))
       continue;
     // delete multiple spaces

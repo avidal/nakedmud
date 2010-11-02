@@ -22,8 +22,4 @@ init_PyMud(void);
 // new methods, see pymud.c
 void PyMud_addMethod(const char *name, void *f, int flags, const char *doc);
 
-//
-// returns the current defined cmd_move
-void *get_cmd_move(void);
-
 #endif //__PYMUD_H

@@ -70,13 +70,21 @@ int mudport       = -1;
 
 // global variables
 WORLD_DATA      *gameworld = NULL; // the gameworld, and ll the prototypes
+
 LIST          *object_list = NULL; // the list of all existing objects
 LIST          *socket_list = NULL; // the list of active sockets
 LIST          *mobile_list = NULL; // the list of existing mobiles
 LIST            *room_list = NULL; // the list of all existing rooms
+
+SET            *object_set = NULL; // same things, stored in a set
+SET            *mobile_set = NULL; // and mobiles
+SET              *room_set = NULL; // amd rooms
+
 LIST       *mobs_to_delete = NULL; // mobs pending final extraction
 LIST       *objs_to_delete = NULL; // objs pending final extraction
 LIST      *rooms_to_delete = NULL; // rooms pending final extraction
+LIST       *strs_to_delete = NULL; // strings waiting to be freed
+LIST       *bufs_to_delete = NULL; // buffers waiting to be freed
 PROPERTY_TABLE  *mob_table = NULL; // a table of mobs by UID, for quick lookup
 PROPERTY_TABLE  *obj_table = NULL; // a table of objs by UID, for quick lookup
 PROPERTY_TABLE *room_table = NULL; // a table of rooms by UID, for quick lookup
@@ -139,9 +147,16 @@ int main(int argc, char **argv)
   socket_list     = newList();
   mobile_list     = newList();
   room_list       = newList();
+
+  object_set      = newSet();
+  mobile_set      = newSet();
+  room_set        = newSet();
+
   mobs_to_delete  = newList();
   objs_to_delete  = newList();
   rooms_to_delete = newList();
+  strs_to_delete  = newList();
+  bufs_to_delete  = newList();
 
   // tables for quick lookup of mobiles and objects by UID.
   // For optimal speed, the table sizes should be roughly
@@ -300,12 +315,6 @@ int main(int argc, char **argv)
   /**********************************************************************/
   /*             START THE GAME UP, AND HANDLE ITS SHUTDOWN             */
   /**********************************************************************/
-
-  // Run our initialize hooks. Most C modules will have their own init
-  // functions, but some stuff may need to be set up after *all* modules are
-  // initialized
-  hookRun("initialize", "");
-
   // main game loop
   log_string("Entering game loop");
   game_loop(control);
@@ -346,14 +355,20 @@ void update_handler()
 
   // if we have final extractions pending, do them
   CHAR_DATA *ch = NULL;
-  while((ch = listPop(mobs_to_delete)) != NULL)
+  while((ch = (CHAR_DATA *)listPop(mobs_to_delete)) != NULL)
     extract_mobile_final(ch);
   OBJ_DATA *obj = NULL;
-  while((obj = listPop(objs_to_delete)) != NULL)
+  while((obj = (OBJ_DATA *)listPop(objs_to_delete)) != NULL)
     extract_obj_final(obj);
   ROOM_DATA *room = NULL;
-  while((room = listPop(rooms_to_delete)) != NULL)
+  while((room = (ROOM_DATA *)listPop(rooms_to_delete)) != NULL)
     extract_room_final(room);
+  char *str = NULL;
+  while((str = (char *)listPop(strs_to_delete)) != NULL)
+    free(str);
+  BUFFER *buf = NULL;
+  while((buf = (BUFFER *)listPop(bufs_to_delete)) != NULL)
+    deleteBuffer(buf);
 }
 
 

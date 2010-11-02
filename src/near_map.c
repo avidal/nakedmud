@@ -55,7 +55,6 @@ void deleteNearMapElem(NEAR_MAP_ELEM *elem) {
   free(elem);
 }
 
-
 //
 // returns the bucket that the key should map into
 int get_nearmap_bucket(const char *key) {
@@ -152,15 +151,29 @@ LIST *nearMapGetAllMatches(NEAR_MAP *map, const char *key) {
     NEAR_MAP_ELEM   *elem = NULL;
     ITERATE_LIST(elem, elem_i) {
       if(startswith(elem->key, key))
-	listQueue(matches, elem->data);
+	// changed to return keys instead of vals, 
+	// so this is a little more intuitive (if not a little slower)
+	listQueue(matches, strdup(elem->key)); // elem->data);
     } deleteListIterator(elem_i);
-    // did we find something?
+
+    // did we not find anything?
     if(listSize(matches) == 0) {
       deleteList(matches);
       matches = NULL;
     }
+
     return matches;
   }
+}
+
+// how big are we?
+int nearMapSize(NEAR_MAP *map) {
+  int size = 0, i;
+  for(i = 0; i < NUM_NEAR_MAP_BUCKETS; i++) {
+    if(map->bucket[i] != NULL)
+      size += listSize(map->bucket[i]);
+  }
+  return size;
 }
 
 

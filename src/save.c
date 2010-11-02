@@ -128,22 +128,12 @@ bool player_exists(const char *name) {
   // a character with that name, or there is a character with that name in
   // storage. We'll check both of these.
   const char *fname = get_save_filename(name, FILETYPE_PFILE);
-  FILE *fl = fopen(fname, "r");
-  if(fl != NULL) {
-    fclose(fl);
-    return TRUE;
-  }
-  return FALSE;
+  return file_exists(fname);
 }
 
 bool account_exists(const char *name) {
   const char *fname = get_save_filename(name, FILETYPE_ACCOUNT);
-  FILE *fl = fopen(fname, "r");
-  if(fl != NULL) {
-    fclose(fl);
-    return TRUE;
-  }
-  return FALSE;
+  return file_exists(fname);
 }
 
 void save_pfile(CHAR_DATA *ch) {

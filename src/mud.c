@@ -24,6 +24,19 @@
 // our storage set of mud settings
 STORAGE_SET *settings = NULL;
 
+//
+// for generating unique IDs to characters, rooms, objects, exits, etc
+int next_available_uid = START_UID;
+int next_uid(void) {
+  return next_available_uid++;
+}
+
+int top_uid(void) {
+  if(next_available_uid == START_UID)
+    return NOTHING;
+  return next_available_uid - 1;
+}
+
 
 
 //*****************************************************************************

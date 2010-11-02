@@ -183,6 +183,6 @@ COMMAND(cmd_hdelete) {
 //*****************************************************************************
 void init_hedit() {
   // add our commands
-  add_cmd("hedit",   NULL, cmd_hedit,   "admin", FALSE);
-  add_cmd("hdelete", NULL, cmd_hdelete, "admin", FALSE); 
+  add_cmd("hedit",   NULL, cmd_hedit,   "builder", FALSE);
+  add_cmd("hdelete", NULL, cmd_hdelete, "builder", FALSE); 
 }

@@ -83,6 +83,7 @@ typedef unsigned char                     bool;
 #include "bitvector.h"
 #include "parse.h"
 #include "command.h"
+#include "filebuf.h"
 
 
 
@@ -108,8 +109,8 @@ typedef unsigned char                     bool;
 #define SECONDS             SECOND                /* same as above */
 #define MINUTE              * 60 SECONDS          /* one minute */
 #define MINUTES             MINUTE
-#define MAX_INPUT_LEN      1024                   /* max length of a string someone can input */
-#define SMALL_BUFFER       1024
+#define MAX_INPUT_LEN      2048                   /* max length of a string someone can input */
+#define SMALL_BUFFER       2048
 #define MAX_BUFFER         8192                   /* seems like a decent amount         */
 #define MAX_SCRIPT         16384                  /* max length of a script */
 #define MAX_OUTPUT         8192                   /* well shoot me if it isn't enough   */
@@ -127,8 +128,6 @@ typedef unsigned char                     bool;
 #define TSTATE_CLOSED          3  /* Closed, ready to be recycled.   */
 
 /* Communication Ranges */
-#define COMM_LOCAL             0  /* same room only                  */
-#define COMM_GLOBAL            1  /* all over the game               */
 #define COMM_LOG              10  /* admins only                     */
 
 // these are there UIDs for things that have not yet been created
@@ -136,7 +135,7 @@ typedef unsigned char                     bool;
 #define NOTHING              (-1)
 #define NOWHERE              (-1)
 
-#define SOMWHERE        "somewhere"
+#define SOMEWHERE       "somewhere"
 #define SOMETHING       "something"
 #define SOMEONE         "someone"
 #define NOTHING_SPECIAL "you see nothing special."
@@ -154,7 +153,7 @@ typedef unsigned char                     bool;
 //*****************************************************************************
 void init_commands();
 void show_commands(CHAR_DATA *ch, const char *user_groups);
-void remove_cmd   (const char *cmd);
+CMD_DATA *remove_cmd(const char *cmd);
 void add_cmd      (const char *cmd, const char *sort_by, COMMAND(func),
 	           const char *user_group, bool interrupts);
 void add_py_cmd   (const char *cmd, const char *sort_by, void *pyfunc,
@@ -190,6 +189,12 @@ int         mudsettingGetInt   (const char *key);
 long        mudsettingGetLong  (const char *key);
 bool        mudsettingGetBool  (const char *key);
 
+//
+// returns the next available UID for mobs, objs, room, exits
+#define START_UID      1000000
+int next_uid(void);
+int  top_uid(void);
+
 
 
 //*****************************************************************************
@@ -200,9 +205,17 @@ extern  LIST             *socket_list; // all sockets currently conencted
 extern  LIST             *mobile_list; // all mobiles currently in the game
 extern  LIST               *room_list; // all rooms currently in the game
 
+extern  SET               *object_set; // objects, set form
+extern  SET               *mobile_set; // mobiles, set form
+extern  SET                 *room_set; // rooms, set form
+
 extern  LIST          *mobs_to_delete; // mobs/objs/rooms that have had
 extern  LIST          *objs_to_delete; // extraction and now need 
 extern  LIST         *rooms_to_delete; // extract_final
+extern  LIST          *strs_to_delete; // strings we didn't want deleted at 
+                                       // the time, but do now. This is for
+                                       // get_fullkey and see_xxx_as
+extern  LIST          *bufs_to_delete; // same for buffers
 
 extern  PROPERTY_TABLE     *mob_table; // a mapping between uid and mob
 extern  PROPERTY_TABLE     *obj_table; // a mapping between uid and obj
@@ -268,6 +281,11 @@ bool  compressEnd       ( SOCKET_DATA *dsock, unsigned char teleopt, bool forced
 void  page_string           ( SOCKET_DATA *dsock, const char *string);
 void  page_continue         ( SOCKET_DATA *dsock);
 void  page_back             ( SOCKET_DATA *dsock);
+
+// socket stuff
+#define charHasSplitScreen(ch)   (charGetInt(ch, "splitscreen") == TRUE)
+#define charGetPageLen(ch)       NUM_LINES_PER_PAGE
+#define charGetPageWidth(ch)     80
 
 //
 // adds a new input handler onto the stack that allows a person to read 

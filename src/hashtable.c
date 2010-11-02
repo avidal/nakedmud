@@ -12,12 +12,16 @@
 #include <string.h>
 #include "list.h"
 #include "hashtable.h"
+#include "mud.h"
+#include "utils.h"
+
+
 
 // how big of a size do our hashtables start out at?
 #define DEFAULT_HASH_SIZE        5
 
 struct hashtable_iterator {
-  int curr_bucket;
+  unsigned int curr_bucket;
   HASHTABLE *table;
   LIST_ITERATOR *bucket_i;
 };
@@ -35,29 +39,9 @@ struct hashtable {
 
 
 //
-// this is a fairly simple hashing function. It could do 
-// with some major speeding up.
-int hash(const char *key) {
-  const int BASE = 2;
-  int base = 1;
-  int hvalue = 0;
-
-  for (; *key; key++) {
-    base *= BASE;
-    if(!isalpha(*key))
-      hvalue += *key * base;
-    else
-      hvalue += tolower(*key) * base;
-  }
-
-  return (hvalue < 0 ? hvalue * -1 : hvalue);
-}
-
-
-//
 // an internal form of hashGet that returns the entire entry (key and val)
 HASH_ENTRY *hashGetEntry(HASHTABLE *table, const char *key){
-  int bucket = hash(key) % table->num_buckets;
+  unsigned int bucket = string_hash(key) % table->num_buckets;
 
   if(table->buckets[bucket] == NULL)
     return NULL;
@@ -85,7 +69,6 @@ void deleteHashtableEntry(HASH_ENTRY *entry) {
   if(entry->key) free(entry->key);
   free(entry);
 }
-
 
 //
 // Collect all of the HASH_ENTRYs in a hashtable into a single list
@@ -136,6 +119,10 @@ void  deleteHashtable(HASHTABLE *table) {
   free(table);
 }
 
+void deleteHashtableWith(HASHTABLE *table, void *func) {
+  hashClearWith(table, func);
+  deleteHashtable(table);
+}
 
 //
 // expand a hashtable to the new size
@@ -158,7 +145,7 @@ void hashExpand(HASHTABLE *table, int size) {
 
   // now, we put all of our entries back into the new buckets
   while((entry = listPop(entries)) != NULL) {
-    int bucket = hash(entry->key) % table->num_buckets;
+    unsigned int bucket = string_hash(entry->key) % table->num_buckets;
     if(table->buckets[bucket] == NULL) table->buckets[bucket] = newList();
     listPut(table->buckets[bucket], entry);
   }
@@ -166,7 +153,7 @@ void hashExpand(HASHTABLE *table, int size) {
 }
 
 
-int  hashPut    (HASHTABLE *table, const char *key, void *val) {
+int hashPut(HASHTABLE *table, const char *key, void *val) {
   HASH_ENTRY *elem = hashGetEntry(table, key);
 
   // if it's already in, update the value
@@ -179,7 +166,7 @@ int  hashPut    (HASHTABLE *table, const char *key, void *val) {
     if((table->size * 80)/100 > table->num_buckets)
       hashExpand(table, (table->num_buckets * 150)/100);
 
-    int bucket = hash(key) % table->num_buckets;
+    unsigned int bucket = string_hash(key) % table->num_buckets;
 
     // if the bucket doesn't exist yet, create it
     if(table->buckets[bucket] == NULL)
@@ -192,7 +179,7 @@ int  hashPut    (HASHTABLE *table, const char *key, void *val) {
   }
 }
 
-void *hashGet    (HASHTABLE *table, const char *key) {
+void *hashGet(HASHTABLE *table, const char *key) {
   HASH_ENTRY *elem = hashGetEntry(table, key);
   if(elem != NULL)
     return elem->val;
@@ -200,8 +187,8 @@ void *hashGet    (HASHTABLE *table, const char *key) {
     return NULL;
 }
 
-void *hashRemove (HASHTABLE *table, const char *key) {
-  int bucket = hash(key) % table->num_buckets;
+void *hashRemove(HASHTABLE *table, const char *key) {
+  unsigned int bucket = string_hash(key) % table->num_buckets;
 
   if(table->buckets[bucket] == NULL)
     return NULL;

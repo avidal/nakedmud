@@ -4,7 +4,7 @@ account_handler.py
 The login and creation of accounts, and handles all account procedures, loading
 and deleting, of characters.
 '''
-import mud, mudsys, char, hooks, account, socket, event, telnetlib
+import mud, mudsys, char, hooks, account, socket, event, telnetlib, utils
 
 # control sequences for squelching passwords
 squelch   = telnetlib.IAC + telnetlib.WILL + telnetlib.ECHO
@@ -17,101 +17,110 @@ def check_acct_name(name):
     return (len(name) > 3 and len(name) < 13 and
             name[0].isalpha() and name.isalnum())
 
-def acct_name_prompt(sock):
-    sock.send_raw("What is your account name? ")
+def login_method_prompt(sock):
+    sock.send_raw("Choose an option: ")
 
 def acct_new_password_prompt(sock):
-    sock.send_raw("What is your new password? " + squelch)
+    sock.send_raw("\r\nWhat is your new password? " + squelch)
 
 def acct_password_prompt(sock):
     sock.send_raw("What is your password? " + squelch)
 
-def acct_confirm_password_prompt(sock):
-    sock.send_raw("\r\nVerify your password? " + squelch)
-
 def acct_wait_dns_prompt(sock):
-    sock.send_raw("Resolving your internet address, have patience... ")
+    sock.send_raw(" Resolving your internet address, please have patience... ")
 
-def acct_finish_prompt(sock):
-    sock.send_raw("{c\r\n*** Press enter to finish account creation:{n ") 
+def try_create_account(sock, name, psswd):
+    if mudsys.account_exists(name):
+        return False
+    elif mudsys.account_creating(name):
+        return False
+    elif not check_acct_name(name):
+        return False
+    else:
+        # creating a new account
+        mud.log_string("Account '" + name + "' is trying to create.")
 
-def acct_finish_handler(sock, arg):
-    # pop our input handler for finishing account generation
-    sock.pop_ih()
+        # create our new account
+        acct = mudsys.create_account(name)
+        if acct == None:
+            return False
+        else:
+            mudsys.attach_account_socket(acct, sock)
+            mudsys.set_password(acct, psswd)
+            sock.pop_ih()
+            sock.push_ih(acct_menu_handler, acct_main_menu)
 
-    # log that the account created
-    mud.log_string("New account '" + sock.account.name + "' has created.")
+            #sock.push_ih(acct_finish_handler, acct_finish_prompt)
 
-    # register and save the account to disk
-    mudsys.do_register(sock.account)
+            # log that the account created
+            mud.log_string("New account '" + acct.name + "' has created.")
+
+            # register and save the account to disk
+            mudsys.do_register(acct)
+
+            return True
+    return False
+
+def try_load_account(sock, name, psswd):
+    '''Attempt to load an account with the given name and password.'''
+    if not mudsys.account_exists(name):
+        return False
+    else:
+        acct = mudsys.load_account(name)
+        if not mudsys.password_matches(acct, psswd):
+            return False
+
+        # successful load
+        mudsys.attach_account_socket(acct, sock)
+        sock.pop_ih()
+        sock.push_ih(acct_menu_handler, acct_main_menu)
+        return True
+    return False
+
+def login_method_handler(sock, arg):
+    args = arg.split()
+    if len(args) == 0:
+        return
+    args[0] = args[0].lower()
+
+    if "create".startswith(args[0]):
+        if len(args) != 3:
+            return
+        elif mudsys.account_exists(args[1]):
+            sock.send("{cAn account by that name already exists.{n\r\n")
+        elif not check_acct_name(args[1]):
+            txt = "{cThat is an invalid account name. Your account name must "\
+                  "only consist of characters and numbers, and it must be " \
+                  "4 and 12 characters in length. The first character MUST be "\
+                  "a letter. Please pick another.{n"
+            sock.send(mud.format_string(txt, False))
+
+        elif not try_create_account(sock, args[1], args[2]):
+            sock.send("Your account was unable to be created.")
+
+    elif "load".startswith(args[0]):
+        if len(args) != 3:
+            return
+        elif not try_load_account(sock, args[1], args[2]):
+            sock.send("{cInvalid account name or password.{n\r\n")
+    elif "guest".startswith(args[0]):
+        if (mudsys.sys_getval("lockdown") != '' and
+            not utils.is_keyword(mudsys.sys_getval("lockdown"), "player")):
+            sock.send("{cThe mud is currently locked out to new players.{n\r\n")
+        else:
+            sock.pop_ih()
+            hooks.run("create_guest", hooks.build_info("sk", (sock,)))
 
 def acct_wait_dns_handler(sock, arg):
     # do nothing
     return
 
-def acct_name_handler(sock, arg):
-    '''the first prompt a socket encounters; enter a name of an account or
-       a new name of an account to create one'''
-    if arg and mudsys.account_exists(arg):
-        # logging on to an already existing account
-        mud.log_string("Account '" + arg + "' is trying to connect.")
-        acct = mudsys.load_account(arg)
-
-        # attach our account to our socket. Put in mudsys to prevent scripts
-        # from messing around with account and socket connections
-        mudsys.attach_account_socket(acct, sock)
-        sock.pop_ih()
-        sock.push_ih(acct_menu_handler, acct_main_menu)
-        sock.push_ih(acct_password_handler, acct_password_prompt)
-
-    elif not check_acct_name(arg):
-        sock.send(mud.format_string("That is an invalid account name. Your " \
-                                    "account name must only consist of " \
-                                    "characters and numbers, and it must be " \
-                                    "4 and 12 characters in length. The first "\
-                                    "character MUST be a letter. Please pick "\
-                                    "another.", False))
-
-    elif mudsys.account_creating(arg):
-        sock.send("An account with that name is already creating.")
-
-    else:
-        # creating a new account
-        mud.log_string("Account '" + arg + "' is trying to create.")
-
-        # create our new account
-        acct = mudsys.create_account(arg)
-        if acct == None:
-            sock.send("Could not create an account with that name.")
-        else:
-            mudsys.attach_account_socket(acct, sock)
-            sock.pop_ih()
-            sock.push_ih(acct_menu_handler, acct_main_menu)
-            sock.push_ih(acct_finish_handler, acct_finish_prompt)
-            sock.push_ih(acct_confirm_password_handler, acct_confirm_password_prompt)
-            sock.push_ih(acct_new_password_handler, acct_new_password_prompt)
-
-
 def acct_new_password_handler(sock, arg):
     '''asks a new account for a password'''
+    sock.send_raw(unsquelch)
     if len(arg) > 0:
         # put in mudsys to prevent scripts from messing with passwords
         mudsys.set_password(sock.account, arg)
-        sock.pop_ih()
-
-def acct_confirm_password_handler(sock, arg):
-    '''checks to see if our argument matches our password; if not, we re-enter
-       our old password'''
-    # password functions put in mudsys to prevent scripts from
-    # messing with passwords
-    if not mudsys.password_matches(sock.account, arg):
-        sock.send("Passwords do not match.")
-        sock.pop_ih()
-        sock.push_ih(acct_confirm_password_handler,acct_confirm_password_prompt)
-        sock.push_ih(acct_password_handler, acct_password_prompt)
-    else:
-        # Password matches. Keep it and go down a level
-        sock.send_raw(unsquelch)
         sock.pop_ih()
 
 def acct_password_handler(sock, arg):
@@ -135,16 +144,14 @@ def find_reconnect(name):
             return ch
     return None
 
-def acct_load_char(sock, arg):
+def acct_load_char(sock, name):
     '''loads a character attached to the account. Argument supplied must be a
-       numeric value corresponding to the character'''
-    arg = int(arg)
-    if arg >= len(sock.account.characters()) or arg < 0:
-        sock.send("Invalid choice!")
+       name of the corresponding character'''
+    chars = sock.account.characters()
+    
+    if not name.lower() in [n.lower() for n in sock.account.characters()]:
+        sock.send("A character by that name does not exist on your account.")
     else:
-        # get the name
-        name = sock.account.characters()[arg]
-
         # first, try a reconnect
         ch = find_reconnect(name)
 
@@ -161,8 +168,11 @@ def acct_load_char(sock, arg):
             if old_sock != None:
                 old_sock.close()
             mud.log_string(ch.name + " has reconnected.")
+            # ch.act("clear")
             ch.send("You take over a body already in use.")
-            sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt)
+            ch.act("look")
+            hooks.run("reconnect", hooks.build_info("ch", (ch,)))
+            sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt, "playing")
 
         else:
             # load our character. Put in mudsys to prevent scripts from using it
@@ -179,7 +189,9 @@ def acct_load_char(sock, arg):
                 mudsys.attach_char_socket(ch, sock)
                 if mudsys.try_enter_game(ch):
                     mud.log_string(ch.name + " has entered the game.")
-                    sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt)
+                    sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt,
+                                 "playing")
+                    # ch.act("clear")
                     ch.page(mud.get_motd())
                     ch.act("look")
                     hooks.run("enter", hooks.build_info("ch rm", (ch, ch.room)))
@@ -195,18 +207,31 @@ def acct_menu_handler(sock, arg):
     '''parses account commands (new character, enter game, quit, etc)'''
     if len(arg) == 0:
         return
-    arg = arg[0].upper()
-    if arg.isdigit():
-        acct_load_char(sock, arg)
-    elif arg == 'Q':
+
+    args = arg.split()
+    args[0] = args[0].upper()
+    
+    if args[0].isdigit():
+        opts = sock.account.characters()
+        arg  = int(args[0])
+        if arg < 0 or arg >= len(opts):
+            sock.send("Invalid choice!")
+        else:
+            acct_load_char(sock, opts[arg])
+    elif args[0] == 'L':
+        if len(args) == 1:
+            sock.send("Which character would you like to load?")
+        else:
+            acct_load_char(sock, args[1])
+    elif args[0] == 'Q' or "QUIT".startswith(args[0]):
         sock.send("Come back soon!")
         mudsys.do_save(sock.account)
         sock.close()
-    elif arg == 'P':
-        sock.push_ih(acct_confirm_password_handler,acct_confirm_password_prompt)
+    elif args[0] == 'P':
+        # sock.push_ih(acct_confirm_password_handler,acct_confirm_password_prompt)
         sock.push_ih(acct_new_password_handler, acct_new_password_prompt)
         sock.push_ih(acct_password_handler, acct_password_prompt)
-    elif arg == 'N':
+    elif args[0] == 'N':
         if "player" in [x.strip() for x in mudsys.sys_getval("lockdown").split(",")]:
             sock.send("New characters are not allowed to be created at this time.")
         else:
@@ -219,7 +244,7 @@ def display_acct_chars(sock):
        has attached. Prints three names per line.'''
     num_cols   = 3
     print_room = (80 - 10*num_cols)/num_cols
-    fmt        = "  {c%2d{g) %-" + str(print_room) + "s"
+    fmt        = "  {c%2d{n) %-" + str(print_room) + "s"
 
     sock.send("{w\r\nPlay a Character:")
     i = 0
@@ -234,27 +259,89 @@ def display_acct_chars(sock):
 
 def acct_main_menu(sock):
     '''displays the main menu for the account and asks for a command'''
-    if len(sock.account.characters()) > 0:
-        display_acct_chars(sock)
+    line_buf = "%-38s" % " "
 
-    sock.send("\r\n{wAdditional Options:")
-    sock.send("  {g[{cP{g]assword change")
-    sock.send("  {g[{cN{g]new character\r\n")
-    sock.send_raw("Enter choice, or Q to quit:{n ")
+    # make the account menu look pretty
+    img = ["+--------------------------------------+",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|               I M A G E              |",
+           "|                H E R E               |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "|                                      |",
+           "+--------------------------------------+"]
+
+    # the lines for displaying our account options
+    opts  = [ ]
+    chars = sock.account.characters()
+    chars.sort()
+    if len(chars) > 0:
+        opts.append("  {wPlay A Character:                   ")
+        for i in range(len(chars)):
+            opts.append("    {n[{c%1d{n] %-30s" % (i,chars[i]))
+        opts.append(line_buf)
+
+    # append our other displays
+    opts.append("  {wAccount Management:                 ")
+    opts.append("    {n[{cP{n]assword change                 ")
+    opts.append("    {n[{cN{n]ew character                   ")
+    opts.append("    {n[{cL{n]oad character <name>           ")
+    opts.append(line_buf)
+    opts.append(line_buf)
+    opts.append(line_buf)
+
+    # fill up our height to be in line with the image
+    while len(opts) < len(img) - 2:
+        opts.insert(0, line_buf)
+
+    # append our title
+    opts.insert(1, "            {nW E L C O M E  T O        ")
+    opts.insert(2, "             {nN A K E D M U D          ")
+            
+    # display all of our info
+    sock.send("")
+    for i in range(max(len(opts), len(img))):
+        if i < len(opts):
+            sock.send_raw(opts[i])
+        else:
+            sock.send_raw(line_buf)
+        if i < len(img):
+            sock.send_raw("{n%s" % img[i])
+        sock.send("")
+        
+    sock.send_raw("{nEnter choice, or Q to quit: ")
 
 
 
 ################################################################################
 # events for blocking action when dns lookup is in progress
 ################################################################################
-def dns_check_event(no_owner, unused, info):
+def dns_check_event(owner, void, info):
     sock, = hooks.parse_info(info)
-    if sock.can_use:
-        sock.send("Lookup complete.")
+    if sock != None and sock.can_use:
+        sock.send(" Lookup complete.")
+        sock.send("================================================================================")
+        sock.send(mud.get_greeting())
         sock.pop_ih()
         sock.bust_prompt()
+        # mud.log_string("new connection from " + sock.hostname)
     else:
-        event.start_event(None, 0.1, dns_check_event, None, info)
+        event.start_event(None, 0.2, dns_check_event, None, info)
 
 
 
@@ -264,14 +351,26 @@ def dns_check_event(no_owner, unused, info):
 def account_handler_hook(info):
     # put a nonfunctional prompt up while waiting for the DNS to resolve
     sock, = hooks.parse_info(info)
-    sock.push_ih(acct_name_handler, acct_name_prompt)
+    sock.push_ih(login_method_handler, login_method_prompt)
+    mud.log_string("new socket, %d, attempting to connect" % sock.uid)
+    sock.send(mud.get_greeting())
+    sock.send("== Options Are ================================================================")
+    sock.send("    Load account   : load   <account> <password>")
+    sock.send("    Create account : create <account> <password>")
+    sock.send("    Play as guest  : guest")
+    sock.send("===============================================================================")
+    sock.send("")
+
+    '''
     sock.push_ih(acct_wait_dns_handler, acct_wait_dns_prompt)
-    event.start_event(None, 0.1, dns_check_event, None, info)
+    sock.send("================================================================================")
+    event.start_event(None, 0.2, dns_check_event, None, info)
+    '''
 
 def copyover_complete_hook(info):
     sock, = hooks.parse_info(info)
     sock.push_ih(acct_menu_handler, acct_main_menu)
-    sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt)
+    sock.push_ih(mudsys.handle_cmd_input, mudsys.show_prompt, "playing")
 
 
 

@@ -298,7 +298,9 @@ COMMAND(cmd_load) {
     }
 
     sprintf(key, "%s@%s", name, locale);
-    if(!strncasecmp("mobile", type, strlen(type))) {
+    if(key_malformed(key))
+      send_to_char(ch, "You entered a malformed content key.\r\n");
+    else if(!strncasecmp("mobile", type, strlen(type))) {
       PROTO_DATA *proto = worldGetType(gameworld, "mproto", key);
       if(proto == NULL)
 	send_to_char(ch, "No mobile prototype exists with that key.\r\n");
@@ -362,9 +364,9 @@ COMMAND(cmd_purge) {
 	    "$n raises $s arms, and white flames engulf the entire room.");
 
     // purge all the objects. 
-    ITERATE_LIST(obj, list_i) {
+    ITERATE_LIST(obj, list_i)
       extract_obj(obj);
-    } deleteListIterator(list_i);
+    deleteListIterator(list_i);
 
     // and now all of the non-characters
     list_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
@@ -372,7 +374,8 @@ COMMAND(cmd_purge) {
       if(vict == ch || !charIsNPC(vict)) 
 	continue;
       extract_mobile(vict);
-    } deleteListIterator(list_i);
+    }
+    deleteListIterator(list_i);
   }
 
   // purge characters
@@ -416,7 +419,9 @@ COMMAND(cmd_rreload) {
     key = get_fullkey_relative(arg, get_key_locale(key));
 
   // make sure all of our requirements are met
-  if( (zone = worldGetZone(gameworld, get_key_locale(key))) == NULL)
+  if(key_malformed(arg))
+    send_to_char(ch, "You entered a malformed content key.\r\n");
+  else if( (zone = worldGetZone(gameworld, get_key_locale(key))) == NULL)
     send_to_char(ch, "That zone does not exist!\r\n");
   else if(!canEditZone(zone, ch))
     send_to_char(ch, "You are not authorized to edit that zone.\r\n");
@@ -449,6 +454,8 @@ COMMAND(cmd_zreset) {
 
   if(!arg || !*arg)
     zone= worldGetZone(gameworld,get_key_locale(roomGetClass(charGetRoom(ch))));
+  else if(locale_malformed(arg))
+    zone= NULL;
   else
     zone= worldGetZone(gameworld, arg);
 
@@ -533,6 +540,7 @@ COMMAND(cmd_rrename) {
   char *from = NULL, *to = NULL;
   if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
     return;
+
   if(do_rename(ch, "rproto", from, to)) {
     do_rename(ch, "reset", from, to);
     send_to_char(ch, "No not forget to purge any instances of %s already "
@@ -545,6 +553,44 @@ COMMAND(cmd_orename) {
   if(!parse_args(ch, TRUE, cmd, arg, "word word", &from, &to))
     return;
   do_rename(ch, "oproto", from, to);
+}
+
+void view_proto(CHAR_DATA *ch, const char *type, const char *key) {
+  if(!charGetSocket(ch))
+    return;
+  else if(key_malformed(key))
+    send_to_char(ch, "You entered a malformed %s key.\r\n", type);
+  else {
+    PROTO_DATA *proto = 
+      worldGetType(gameworld, type, get_fullkey_relative(key, 
+			      get_key_locale(roomGetClass(charGetRoom(ch)))));
+    if(proto == NULL)
+      send_to_char(ch, "No %s exists with that key.\r\n", type);
+    else {
+      send_to_socket(charGetSocket(ch),
+		     "--------------------------------------------------------------------------------\r\n"
+		     "Key          : %s\r\n"
+		     "Parents      : %s\r\n"
+		     "Abstract     : %s\r\n"
+		     "--------------------------------------------------------------------------------\r\n",
+		     protoGetKey(proto), 
+		     protoGetParents(proto),
+		     YESNO(protoIsAbstract(proto)));
+      script_display(charGetSocket(ch), protoGetScript(proto), FALSE);
+    }
+  }
+}
+
+COMMAND(cmd_mview) {
+  view_proto(ch, "mproto", arg);
+}
+
+COMMAND(cmd_rview) {
+  view_proto(ch, "rproto", arg);
+}
+
+COMMAND(cmd_oview) {
+  view_proto(ch, "oproto", arg);
 }
 
 COMMAND(cmd_zlist) {
@@ -614,8 +660,10 @@ void init_olc2() {
 
   add_cmd("dig",     NULL, cmd_dig,     "builder", TRUE);
   add_cmd("fill",    NULL, cmd_fill,    "builder", TRUE);
-  add_cmd("purge",   NULL, cmd_purge,   "builder", FALSE);
-  add_cmd("load",    NULL, cmd_load,    "builder", FALSE);
+  add_cmd("pack",    NULL, cmd_fill,    "builder", TRUE);
+  add_cmd("instantiate", NULL, cmd_instantiate, "builder", TRUE);
+  add_cmd("purge",   NULL, cmd_purge,   "wizard", FALSE);
+  add_cmd("load",    NULL, cmd_load,    "wizard", FALSE);
   add_cmd("rcopy",   NULL, cmd_instantiate,"builder", TRUE);
 
   add_cmd("mlist",   NULL, cmd_mlist,   "builder", FALSE);
@@ -630,6 +678,9 @@ void init_olc2() {
   add_cmd("rrename", NULL, cmd_rrename, "builder", FALSE);
   add_cmd("zlist",   NULL, cmd_zlist,   "builder", TRUE);
   add_cmd("zreset",  NULL, cmd_zreset,  "builder", FALSE);
+  add_cmd("mview",   NULL, cmd_mview,   "builder", TRUE);
+  add_cmd("rview",   NULL, cmd_rview,   "builder", TRUE);
+  add_cmd("oview",   NULL, cmd_oview,   "builder", TRUE);
 
   // build our basic OLC extenders
   medit_extend = newExtender();
@@ -657,11 +708,10 @@ void do_olc(SOCKET_DATA *sock,
 
   // if this is the only olc data on the stack, then enter the OLC handler
   if(listSize(aux_olc->olc_stack) == 1)
-    socketPushInputHandler(sock, olc_handler, olc_menu);
+    socketPushInputHandler(sock, olc_handler, olc_menu, "olc");
 }
 
-void olc_from_proto(PROTO_DATA *proto, BUFFER *extra, void *me, void *aspy,
-		    void *togame, void *fromgame) {
+void olc_from_proto(PROTO_DATA *proto, BUFFER *extra, void *me, void *aspy) {
   BUFFER *to_run = newBuffer(1);
   char line[MAX_BUFFER];
   const char *code = protoGetScript(proto);
@@ -685,12 +735,7 @@ void olc_from_proto(PROTO_DATA *proto, BUFFER *extra, void *me, void *aspy,
   } while(*code != '\0');
 
   // make all our arguments like functions
-  void    *(* aspy_func)(void *) = aspy;
-  void   (* togame_func)(void *) = togame;
-  void (* fromgame_func)(void *) = fromgame;
-
-  // add us to the game so we can run scripts over us
-  togame_func(me);
+  void *(* aspy_func)(void *) = aspy;
 
   // make our Python stuff
   PyObject *dict = restricted_script_dict();
@@ -704,10 +749,6 @@ void olc_from_proto(PROTO_DATA *proto, BUFFER *extra, void *me, void *aspy,
   if(!last_script_ok())
     log_pyerr("Error converting prototype to OLC editable structure: %s",
 	      protoGetKey(proto));
-
-
-  // remove us from the game
-  fromgame_func(me);
 
   // clean up our garbage
   deleteBuffer(to_run);

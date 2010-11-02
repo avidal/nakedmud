@@ -14,8 +14,17 @@
 #include "../character.h"
 #include "../socket.h"
 #include "../action.h"
+#include "../hooks.h"
 
 #include "alias.h"
+
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../scripts/scripts.h"
+#include "../scripts/pychar.h"
 
 
 
@@ -119,6 +128,13 @@ ALIAS_AUX_DATA *aliasAuxDataRead(STORAGE_SET *set) {
 //*****************************************************************************
 // functions for interacting with character aliases
 //*****************************************************************************
+LIST *charGetAliases(CHAR_DATA *ch) {
+  ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
+  if(data->aliases == NULL)
+    return newList();
+  return hashCollect(data->aliases);
+}
+
 const char *charGetAlias(CHAR_DATA *ch, const char *alias) {
   ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
   if(data->aliases == NULL)
@@ -126,6 +142,15 @@ const char *charGetAlias(CHAR_DATA *ch, const char *alias) {
   return hashGet(data->aliases, alias);
 }
 
+void charClearAliases(CHAR_DATA *ch) {
+  LIST *aliases = charGetAliases(ch);
+  LIST_ITERATOR *alias_i = newListIterator(aliases);
+  const char      *alias = NULL;
+  ITERATE_LIST(alias, alias_i) {
+    charSetAlias(ch, alias, NULL);
+  } deleteListIterator(alias_i);
+  deleteListWith(aliases, free);
+}
 
 void charSetAlias(CHAR_DATA *ch, const char *alias, const char *cmd){
   ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
@@ -135,11 +160,14 @@ void charSetAlias(CHAR_DATA *ch, const char *alias, const char *cmd){
 
   // pull out the last one
   char *oldcmd = hashRemove(data->aliases, alias);
+
   if(oldcmd != NULL)
     free(oldcmd);
+
   // put in the new one if it exists
-  if(cmd && *cmd)
+  if(cmd && *cmd) {
     hashPut(data->aliases, alias, strdup(cmd));
+  }
 }
 
 int charGetAliasesQueued(CHAR_DATA *ch) {
@@ -158,7 +186,7 @@ BUFFER *expand_alias(CHAR_DATA *ch, const char *alias, const char *arg) {
   BUFFER *cmd = newBuffer(SMALL_BUFFER);
   func_depth++;
 
-  BUFFER *filled_alias = newBuffer(MAX_BUFFER);
+  BUFFER *filled_alias = newBuffer(SMALL_BUFFER);
   bufferCat(filled_alias, alias);
   // now, replace all of our parameters 
   int i;
@@ -238,13 +266,15 @@ COMMAND(cmd_alias) {
     if(data->aliases == NULL || hashSize(data->aliases) == 0)
       send_to_char(ch, "  none\r\n");
     else {
-      HASH_ITERATOR *alias_i = newHashIterator(data->aliases);
-      const char      *alias = NULL;
-      const char        *cmd = NULL;
+      LIST             *keys = hashCollect(data->aliases);
+      listSortWith(keys, strcasecmp);
+      LIST_ITERATOR   *key_i = newListIterator(keys);
+      const char        *key = NULL;
 
-      ITERATE_HASH(alias, cmd, alias_i)
-	send_to_char(ch, "  %-20s %s\r\n", alias, cmd);
-      deleteHashIterator(alias_i);
+      ITERATE_LIST(key, key_i) {
+	send_to_char(ch, "  %-20s %s\r\n", key, (char *)hashGet(data->aliases, key));
+      } deleteListIterator(key_i);
+      deleteListWith(keys, free);
     }
   }
   else {
@@ -258,7 +288,6 @@ COMMAND(cmd_alias) {
 	send_to_char(ch, "You do not have such an alias.\r\n");
       else {
 	charSetAlias(ch, alias, arg);
-	send_to_char(ch, "Alias deleted.\r\n");
       }
     }
 
@@ -268,6 +297,68 @@ COMMAND(cmd_alias) {
       send_to_char(ch, "Alias set.\r\n");
     }
   }
+}
+
+
+
+//*****************************************************************************
+// Python extensions
+//*****************************************************************************
+PyObject *PyChar_GetAlias(PyObject *self, PyObject *args) {
+  char   *alias = NULL;
+  CHAR_DATA *ch = NULL;
+  if(!PyArg_ParseTuple(args, "s", &alias)) {
+    PyErr_Format(PyExc_TypeError, "aliases must be string names.");
+    return NULL;
+  }
+
+  if( (ch = PyChar_AsChar(self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Character %d does not exist.",
+		 PyChar_AsUid(self));
+    return NULL;
+  }
+
+  return Py_BuildValue("z", charGetAlias(ch, alias));
+}
+
+PyObject *PyChar_SetAlias(PyObject *self, PyObject *args) {
+  char     *cmd = NULL;
+  char   *alias = NULL;
+  CHAR_DATA *ch = NULL;
+  if(!PyArg_ParseTuple(args, "sz", &alias, &cmd)) {
+    PyErr_Format(PyExc_TypeError, "aliases and commands must be string names.");
+    return NULL;
+  }
+
+  if( (ch = PyChar_AsChar(self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Character %d does not exist.",
+		 PyChar_AsUid(self));
+    return NULL;
+  }
+
+  charSetAlias(ch, alias, cmd);
+  return Py_BuildValue("i", 1);
+}
+
+PyObject *PyChar_GetAliases(PyObject *self, void *closure) {
+  CHAR_DATA *ch = NULL;
+  if((ch = PyChar_AsChar(self)) == NULL) {
+    PyErr_Format(PyExc_TypeError, "Character %d does not exist.",
+		 PyChar_AsUid(self));
+    return NULL;
+  }
+
+  PyObject       *pylist = PyList_New(0);
+  LIST             *list = charGetAliases(ch);
+  LIST_ITERATOR *alias_i = newListIterator(list);
+  const char      *alias = NULL;
+  ITERATE_LIST(alias, alias_i) {
+    PyObject *str = Py_BuildValue("s", alias);
+    PyList_Append(pylist, str);
+    Py_DECREF(str);
+  } deleteListIterator(alias_i);
+  deleteListWith(list, free);
+  return pylist;
 }
 
 
@@ -285,6 +376,11 @@ void init_aliases() {
 
   // allow people to view their aliases
   add_cmd("alias", NULL, cmd_alias, "player", TRUE);
+
+  // Python extensions
+  PyChar_addMethod("get_alias", PyChar_GetAlias,   METH_VARARGS, NULL);
+  PyChar_addMethod("set_alias", PyChar_SetAlias,   METH_VARARGS, NULL);
+  PyChar_addGetSetter("aliases",PyChar_GetAliases, NULL,         NULL);
 }
 
 

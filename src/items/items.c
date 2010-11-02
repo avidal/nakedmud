@@ -369,6 +369,19 @@ PyObject *PyObj_istype(PyObject *self, PyObject *args) {
   }
 }
 
+PyObject *PyObj_get_types(PyObject *self) {  
+  // pull out the object and check the type
+  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
+  if(obj != NULL)
+    return Py_BuildValue("s", objGetTypes(obj));
+  else {
+    PyErr_Format(PyExc_StandardError, 
+		 "Tried to list types of nonexistent object, %d.", 
+		 PyObj_AsUid(self));
+    return NULL;
+  }
+}
+
 PyObject *PyObj_settype(PyObject *self, PyObject *args) {  
   char *type = NULL;
 
@@ -416,6 +429,8 @@ void init_items(void) {
 		  "checks to see if the object is of the specified type");
   PyObj_addMethod("settype", PyObj_settype, METH_VARARGS,
 		  "the object will become of the specified type");
+  PyObj_addMethod("get_types", PyObj_get_types, METH_NOARGS,
+		  "returns a list of the types this object is");
   // do we need a deltype as well?
   //***********
   // FINISH ME

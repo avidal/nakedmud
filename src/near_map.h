@@ -25,6 +25,7 @@ void             nearMapPut(NEAR_MAP *map, const char *key,
 bool       nearMapKeyExists(NEAR_MAP *map, const char *key);
 void         *nearMapRemove(NEAR_MAP *map, const char *key);
 LIST  *nearMapGetAllMatches(NEAR_MAP *map, const char *key);
+int             nearMapSize(NEAR_MAP *map);
 
 
 
