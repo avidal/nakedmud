@@ -127,8 +127,7 @@ bool new_socket(int sock)
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
   /* create and clear the socket */
-  sock_new = malloc(sizeof(*sock_new));
-  bzero(sock_new, sizeof(*sock_new));
+  sock_new = calloc(1, sizeof(SOCKET_DATA));
 
   /* attach the new connection to the socket list */
   FD_SET(sock, &fSet);
@@ -818,7 +817,7 @@ void copyover_recover()
   int desc;
       
   log_string("Copyover recovery initiated");
-   
+
   if ((fp = fopen(COPYOVER_FILE, "r")) == NULL) {  
     log_string("Copyover file not found. Exitting.");
     exit (1);
@@ -826,18 +825,22 @@ void copyover_recover()
       
   /* In case something crashes - doesn't prevent reading */
   unlink(COPYOVER_FILE);
-    
+
   for (;;) {  
     fscanf(fp, "%d %s %s\n", &desc, name, host);
     if (desc == -1)
       break;
 
-    dsock = malloc(sizeof(*dsock));
+    // Many thanks to Rhaelar for the help in finding this bug; clear_socket
+    // does not like receiving freshly malloc'd data. We have to make sure
+    // everything is zeroed before we pass it to clear_socket
+    //    dsock = malloc(sizeof(*dsock));
+    dsock = calloc(1, sizeof(*dsock));
     clear_socket(dsock, desc);
 
     dsock->hostname = strdup(host);
     listPut(socket_list, dsock);
- 
+
     /* load player data */
     if ((dMob = load_player(name)) != NULL)
     {
@@ -876,6 +879,7 @@ void copyover_recover()
   // now, set all of the sockets' control to the new fSet
   reconnect_copyover_sockets();
 }     
+
 
 void socket_handler() {
   LIST_ITERATOR *sock_i = newListIterator(socket_list);
@@ -1033,8 +1037,7 @@ void do_copyover(CHAR_DATA *ch) {
       save_player(dsock->player);
       text_to_socket(dsock, buf);
     }
-  }
-  deleteListIterator(sock_i);
+  } deleteListIterator(sock_i);
   
   fprintf (fp, "-1\n");
   fclose (fp);

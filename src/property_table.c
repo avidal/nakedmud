@@ -40,17 +40,15 @@ struct property_table_iterator {
 //
 // Find the bucket the key belongs to
 int find_bucket(int key, int num_buckets) {
-  // simple for now: just take the modulo
-  return key % num_buckets;
+  // simple for now: just take the modulo. Make sure it's always positive
+  return (key < 0 ? -key : key) % num_buckets;
 };
 
 
 
 //*****************************************************************************
-//
 // implementation of property_table.h
 // documentation in property_table.h
-//
 //*****************************************************************************
 PROPERTY_TABLE *newPropertyTable(void *key_function, int num_buckets) {
   int i;
@@ -154,14 +152,11 @@ bool propertyTableIn(PROPERTY_TABLE *table, int key) {
 
 
 //*****************************************************************************
-//
 // property table iterator
 //
 // we may sometimes want to iterate across all of the elements in a table.
 // this lets us do so.
-//
 //*****************************************************************************
-
 PROPERTY_TABLE_ITERATOR *newPropertyTableIterator(PROPERTY_TABLE *T) {
   PROPERTY_TABLE_ITERATOR *I = malloc(sizeof(PROPERTY_TABLE_ITERATOR));
 

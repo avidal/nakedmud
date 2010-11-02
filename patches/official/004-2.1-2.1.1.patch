@@ -1,0 +1,104 @@
+diff -ruN src/property_table.c ../../../nakedmudv2.1.unix/src/property_table.c
+--- versions/nakedmudv2.1/src/property_table.c	Sun Apr 24 23:47:57 2005
++++ src/property_table.c	Sun May  8 14:15:39 2005
+@@ -40,17 +40,15 @@
+ //
+ // Find the bucket the key belongs to
+ int find_bucket(int key, int num_buckets) {
+-  // simple for now: just take the modulo
+-  return key % num_buckets;
++  // simple for now: just take the modulo. Make sure it's always positive
++  return (key < 0 ? -key : key) % num_buckets;
+ };
+ 
+ 
+ 
+ //*****************************************************************************
+-//
+ // implementation of property_table.h
+ // documentation in property_table.h
+-//
+ //*****************************************************************************
+ PROPERTY_TABLE *newPropertyTable(void *key_function, int num_buckets) {
+   int i;
+@@ -154,14 +152,11 @@
+ 
+ 
+ //*****************************************************************************
+-//
+ // property table iterator
+ //
+ // we may sometimes want to iterate across all of the elements in a table.
+ // this lets us do so.
+-//
+ //*****************************************************************************
+-
+ PROPERTY_TABLE_ITERATOR *newPropertyTableIterator(PROPERTY_TABLE *T) {
+   PROPERTY_TABLE_ITERATOR *I = malloc(sizeof(PROPERTY_TABLE_ITERATOR));
+ 
+diff -ruN src/socket.c ../../../nakedmudv2.1.unix/src/socket.c
+--- versions/nakedmudv2.1/src/socket.c	Sun Apr 24 23:47:58 2005
++++ src/socket.c	Sun May  8 14:59:47 2005
+@@ -127,8 +127,7 @@
+   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+ 
+   /* create and clear the socket */
+-  sock_new = malloc(sizeof(*sock_new));
+-  bzero(sock_new, sizeof(*sock_new));
++  sock_new = calloc(1, sizeof(SOCKET_DATA));
+ 
+   /* attach the new connection to the socket list */
+   FD_SET(sock, &fSet);
+@@ -818,7 +817,7 @@
+   int desc;
+       
+   log_string("Copyover recovery initiated");
+-   
++
+   if ((fp = fopen(COPYOVER_FILE, "r")) == NULL) {  
+     log_string("Copyover file not found. Exitting.");
+     exit (1);
+@@ -826,18 +825,22 @@
+       
+   /* In case something crashes - doesn't prevent reading */
+   unlink(COPYOVER_FILE);
+-    
++
+   for (;;) {  
+     fscanf(fp, "%d %s %s\n", &desc, name, host);
+     if (desc == -1)
+       break;
+ 
+-    dsock = malloc(sizeof(*dsock));
++    // Many thanks to Rhaelar for the help in finding this bug; clear_socket
++    // does not like receiving freshly malloc'd data. We have to make sure
++    // everything is zeroed before we pass it to clear_socket
++    //    dsock = malloc(sizeof(*dsock));
++    dsock = calloc(1, sizeof(*dsock));
+     clear_socket(dsock, desc);
+ 
+     dsock->hostname = strdup(host);
+     listPut(socket_list, dsock);
+- 
++
+     /* load player data */
+     if ((dMob = load_player(name)) != NULL)
+     {
+@@ -877,6 +880,7 @@
+   reconnect_copyover_sockets();
+ }     
+ 
++
+ void socket_handler() {
+   LIST_ITERATOR *sock_i = newListIterator(socket_list);
+   SOCKET_DATA     *sock = NULL; 
+@@ -1033,8 +1037,7 @@
+       save_player(dsock->player);
+       text_to_socket(dsock, buf);
+     }
+-  }
+-  deleteListIterator(sock_i);
++  } deleteListIterator(sock_i);
+   
+   fprintf (fp, "-1\n");
+   fclose (fp);
