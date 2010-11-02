@@ -55,8 +55,8 @@ RESPONSE_DATA *responseRead(STORAGE_SET *set) {
 
 STORAGE_SET *responseStore(RESPONSE_DATA *data) {
   STORAGE_SET *set = new_storage_set();
-  store_string(set, "keywords", data->keywords, NULL);
-  store_string(set, "message",  data->message,  NULL);
+  store_string(set, "keywords", data->keywords);
+  store_string(set, "message",  data->message);
   return set;
 }
 
@@ -128,11 +128,10 @@ void deleteDialog(DIALOG_DATA *dialog) {
 
 STORAGE_SET *dialogStore(DIALOG_DATA *dialog) {
   STORAGE_SET *set = new_storage_set();
-  store_int   (set, "vnum",     dialog->vnum, NULL);
-  store_string(set, "name",     dialog->name, NULL);
-  store_string(set, "greet",    dialog->greet, NULL);
-  store_list(set, "responses", gen_store_list(dialog->responses, responseStore),
-	     NULL);
+  store_int   (set, "vnum",     dialog->vnum);
+  store_string(set, "name",     dialog->name);
+  store_string(set, "greet",    dialog->greet);
+  store_list(set, "responses", gen_store_list(dialog->responses,responseStore));
   return set;
 }
 

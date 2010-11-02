@@ -82,10 +82,10 @@ scriptAuxDataStore(SCRIPT_AUX_DATA *data) {
   STORAGE_SET_LIST *list = new_storage_list();
   LIST          *scripts = scriptSetList(data->scripts, SCRIPT_TYPE_ANY);
   SCRIPT_DATA    *script = NULL;
-  store_list(set, "scripts", list, NULL);
+  store_list(set, "scripts", list);
   while((script = listPop(scripts)) != NULL) {
     STORAGE_SET *scriptset = new_storage_set();
-    store_int(scriptset, "vnum", scriptGetVnum(script), NULL);
+    store_int(scriptset, "vnum", scriptGetVnum(script));
     storage_list_put(list, scriptset);
   }
   deleteList(scripts);
@@ -197,12 +197,12 @@ SCRIPT_DATA *scriptRead(STORAGE_SET *set) {
 
 STORAGE_SET *scriptStore(SCRIPT_DATA *script) {
   STORAGE_SET *set = new_storage_set();
-  store_int   (set, "vnum", script->vnum, NULL);
-  store_int   (set, "type", script->type, NULL);
-  store_int   (set, "narg", script->num_arg, NULL);
-  store_string(set, "name", script->name, NULL);
-  store_string(set, "args", script->args, NULL);
-  store_string(set, "code", script->code, NULL);
+  store_int   (set, "vnum", script->vnum);
+  store_int   (set, "type", script->type);
+  store_int   (set, "narg", script->num_arg);
+  store_string(set, "name", script->name);
+  store_string(set, "args", script->args);
+  store_string(set, "code", script->code);
   return set;
 }
 
@@ -343,7 +343,7 @@ void finalize_scripts() {
 
 
 void run_script(const char *script, void *me, int me_type,
-		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room, EXIT_DATA *exit, 
+		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room, 
 		const char *cmd, const char *arg, int narg) {
   static char buf[MAX_SCRIPT];
   *buf = '\0';
@@ -354,7 +354,6 @@ void run_script(const char *script, void *me, int me_type,
   i += snprintf(buf+i, MAX_SCRIPT - i - 1, "from char import *\n");
   i += snprintf(buf+i, MAX_SCRIPT - i - 1, "from room import *\n");
   i += snprintf(buf+i, MAX_SCRIPT - i - 1, "from obj import *\n");
-  //    i += snprintf(buf+i, MAX_SCRIPT - i - 1, "from exit import *\n");
 
   // print the different variables
   i += snprintf(buf+i, MAX_SCRIPT - i - 1, "cmd = '%s'\n", (cmd ? cmd : ""));
@@ -368,8 +367,6 @@ void run_script(const char *script, void *me, int me_type,
     i += snprintf(buf+i, MAX_SCRIPT - i - 1, "me = Obj(%d)\n", objGetUID(me));
   else if(me_type == SCRIPTOR_ROOM)
     i += snprintf(buf+i, MAX_SCRIPT - i - 1, "me = Room(%d)\n",roomGetVnum(me));
-  else if(me_type == SCRIPTOR_EXIT)
-    ;
 
   // print all of the other things involved
   if(ch)
@@ -562,7 +559,7 @@ void try_speech_script_with(CHAR_DATA *ch, CHAR_DATA *listener, char *speech) {
     if(is_keyword(scriptGetArgs(script), speech, FALSE)) {
       run_script(scriptGetCode(script),
 		 listener, SCRIPTOR_CHAR,
-		 ch, NULL, charGetRoom(listener), NULL, NULL, speech, 0);
+		 ch, NULL, charGetRoom(listener), NULL, speech, 0);
     }
   }
   deleteList(speech_scripts);
@@ -580,12 +577,11 @@ void try_speech_script(CHAR_DATA *ch, CHAR_DATA *listener, char *speech) {
 }
 
 
-void try_enterance_script(CHAR_DATA *ch, ROOM_DATA *room, 
-			  EXIT_DATA *exit, const char *dirname) {
+void try_enterance_script(CHAR_DATA *ch, ROOM_DATA *room, const char *dirname) {
   // check the room
   try_scripts(SCRIPT_TYPE_ENTER,
 	      room, SCRIPTOR_ROOM,
-	      ch, NULL, room, exit, dirname, NULL, 0);
+	      ch, NULL, room, dirname, NULL, 0);
 
   // check everyone in the room
   LIST_ITERATOR *char_i = newListIterator(roomGetCharacters(room));
@@ -595,18 +591,17 @@ void try_enterance_script(CHAR_DATA *ch, ROOM_DATA *room,
       continue;
     try_scripts(SCRIPT_TYPE_ENTER,
 		greeter, SCRIPTOR_CHAR,
-		ch, NULL, room, exit, dirname, NULL, 0);
+		ch, NULL, room, dirname, NULL, 0);
   }
   deleteListIterator(char_i);
 }
 
 
-void try_exit_script(CHAR_DATA *ch, ROOM_DATA *room, 
-		     EXIT_DATA *exit, const char *dirname) {
+void try_exit_script(CHAR_DATA *ch, ROOM_DATA *room, const char *dirname) {
   // check the room
   try_scripts(SCRIPT_TYPE_EXIT,
 	      room, SCRIPTOR_ROOM,
-	      ch, NULL, room, exit, dirname, NULL, 0);
+	      ch, NULL, room, dirname, NULL, 0);
 
   // check everyone in the room
   LIST_ITERATOR *char_i = newListIterator(roomGetCharacters(room));
@@ -617,7 +612,7 @@ void try_exit_script(CHAR_DATA *ch, ROOM_DATA *room,
       continue;
     try_scripts(SCRIPT_TYPE_EXIT,
 		watcher, SCRIPTOR_CHAR,
-		ch, NULL, room, exit, dirname, NULL, 0);
+		ch, NULL, room, dirname, NULL, 0);
   }
   deleteListIterator(char_i);
 }
@@ -630,7 +625,7 @@ int try_command_script(CHAR_DATA *ch, const char *cmd, const char *arg) {
   // to halt the normal command from going through
   if(try_scripts(SCRIPT_TYPE_COMMAND,
 		 charGetRoom(ch), SCRIPTOR_ROOM,
-		 ch, NULL, charGetRoom(ch), NULL, cmd, arg, 0))
+		 ch, NULL, charGetRoom(ch), cmd, arg, 0))
     retval = 1;
 
   // check everyone in the room
@@ -642,7 +637,7 @@ int try_command_script(CHAR_DATA *ch, const char *cmd, const char *arg) {
       continue;
     if(try_scripts(SCRIPT_TYPE_COMMAND,
 		   scriptor, SCRIPTOR_CHAR,
-		   ch, NULL, charGetRoom(ch), NULL, cmd, arg, 0))
+		   ch, NULL, charGetRoom(ch), cmd, arg, 0))
       retval = 1;
   }
   deleteListIterator(char_i);
@@ -652,7 +647,7 @@ int try_command_script(CHAR_DATA *ch, const char *cmd, const char *arg) {
 
 int try_scripts(int script_type,
 		void *me, int me_type,
-		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room, EXIT_DATA *exit,
+		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room,
 		const char *cmd, const char *arg, int narg) {
   int retval = 0;
   LIST *scripts = NULL;
@@ -700,8 +695,8 @@ int try_scripts(int script_type,
       break;
     }
 
-    run_script(scriptGetCode(script), me, me_type,
-	       ch, obj, room, exit, cmd, arg, narg);    
+    run_script(scriptGetCode(script), me, me_type, ch, obj, room, cmd, 
+	       arg, narg);    
   }
   deleteList(scripts);
   return retval;

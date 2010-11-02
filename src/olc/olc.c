@@ -67,6 +67,7 @@ void socedit_menu (SOCKET_DATA *sock, OLC_DATA *olc);
 #endif
 
 
+
 struct olc_data {
   bool complete;
   bool save;
@@ -100,7 +101,7 @@ void init_olc() {
 #endif
 #ifdef MODULE_SOCIALS
   add_cmd("socedit",    NULL, cmd_socedit,  0, POS_SITTING, POS_FLYING,
-	  LEVEL_PLAYER,  FALSE, TRUE );
+	  LEVEL_BUILDER,  FALSE, TRUE );
 #endif
 }
 
@@ -321,6 +322,7 @@ void save_olc(OLC_DATA *olc) {
     break;
   }
 #endif
+
 
   case OLC_RESEDIT:
   case OLC_RESPEDIT:
@@ -796,7 +798,7 @@ COMMAND(cmd_dedit) {
 
 
 COMMAND(cmd_wedit) {
-
+  send_to_char(ch, "Wedit has not been completed yet.\r\n");
 }
 
 

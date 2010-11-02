@@ -1,0 +1,203 @@
+helpfiles:=
+  keywords : write
+  editor   : Alister
+  timestamp: Jan 29 18:28:26
+  info     :~
+    usage: write
+    
+    With write, you can enter a text editor and compose messages. Write is useful
+    for writing helpfiles, sending mail to friends (coming soon), and posting
+    messages on bulletin boards (also coming soon).
+  -
+  keywords : socials, soclink, socunlink
+  editor   : Alister
+  timestamp: Jan 29 18:53:22
+  info     :~
+    There are 9 fields assocciated with social editing; two are for messages when
+    the social has no target. Two are for messages when the target is the character
+    performing the social. Three are for situations when a target other than the
+    character is provided for the social. The remaining two are the minimum and
+    maximum positions the socials can be used from. If a social is not to have a
+    target, the "target" fields can be left blank. Likewise, if the social is never
+    to have the character as a target, the assocciated fields can be left blank.
+    When trying to reference character information, the following symbols can be
+    used:
+    
+      $n character name
+      $N target name
+      $e character he/she
+      $E target he/she
+      $m character him/her
+      $M target him/her
+      $s character his/hers
+      $S target his/hers
+    
+    To see examples of how to write socials, check some of the pre-existing ones.
+    To generate a list of all socials, type "socials".
+    
+    If you would like more than one command to trigger the same social, you can
+    link a new command to a pre-existing social. Likewise, if you would like to
+    disable a social command, that is possible too.
+    
+    Commands:
+      soclink [new command] [old command]
+      socunlink [command]
+      socedit [social]
+      socials
+  -
+  keywords : MCCP
+  editor   : Alister
+  timestamp: Jan 29 18:14:22
+  info     :~
+    The Mud Client Compression Protocol has the purpose of reducing the bandwidth 
+    usage of the mudserver, by using an MCCP-complient mudclient, the data send to 
+    you will be compressed by 80-85%, and thus not only reducing the amount of data
+    processed by the server, but also greatly reduce the amount of data you need to
+    download (i.e. less lag for you).
+    
+    This MUD supports both version 1 and 2 of the compression protocol, and any 
+    client supporting either of those version can be used to enable compression. 
+    Most clients enables compression automaticly, but some require that you type 
+    'compress'. The same command can also be used to disable compression.
+    
+    MCCP was created by Oliver Jowett
+  -
+  keywords : look
+  editor   : Alister
+  timestamp: Jan 29 18:15:22
+  info     :~
+    Look allows you to glean extra information about your environment, as well as
+    people and items in it. Look can be used to peer into containers, glance at
+    your room, examine the finer details of an item, among other things.
+    
+    Usage: 
+      > look [at the <target>] [in the <container>] [on the <thing or person>]
+    
+    Examples: 
+      > look
+      > look bob
+      > look at bob
+      > look at the bob
+      > look at the mole on bob
+      > look in sheath
+      > look hilt on sword in sheath
+      > look at the hilt on the sword in the sheath
+    
+    Looking at an object that is a container will also peer inside and list its
+    contents (provided the container is opened).
+  -
+  keywords : Jobo
+  editor   : Alister
+  timestamp: Jan 29 18:13:11
+  info     :~
+    Jobo aka Brian Graversen is the author of SocketMud(tm), which is a bareboned 
+    mud codebase. The codebase was made mainly for fun and to learn from the 
+    experience itself.
+    
+    Feel free to use the codebase for whatever purposes you have in mind, and should
+    you ever make a real mud from it, send me a mail and tell me about it at 
+    jobo@daimi.au.dk
+    
+    Brian Graversen
+  -
+  keywords : help, hlink, hunlink, hupdate
+  editor   : Alister
+  timestamp: Jan 29 18:32:52
+  info     :~
+    There are various tools available for creating and editing helpfiles. You can
+    update the contents of any helpfile with the hupdate command. The contents of
+    your notepad (see: write) will be transferred to the helpfile. You can also
+    link a new word to an already existing helpfile with the hlink command.
+    Unlinking is also possible with the hunlink command.
+    
+    Commands:
+      hupdate [helpfile]
+      hlink [new topic] [old topic]
+      hunlink [topic]
+      help
+    
+    See also: WRITE
+  -
+  keywords : dig, fill
+  editor   : Alister
+  timestamp: Jan 29 18:35:30
+  info     :~
+    Dig allows you to link together two rooms. Fill allows you to close a down a
+    link between two rooms.
+    
+    Commands:
+      dig [direction] [room vnum]
+      fill [direction]
+  -
+  keywords : delay
+  editor   : Alister
+  timestamp: Jan 29 18:25:21
+  info     :~
+    usage: delay [seconds] [command]
+    
+    example:
+      delay 2 say hello, world!
+    
+    Allows the user to prepare a command to be executed in the future.
+  -
+  keywords : OLC, redit, oedit, medit, scedit, dedit, zedit, socedit
+  editor   : Alister
+  timestamp: Jan 29 18:12:02
+  info     :~
+    On-Line Creation (OLC) is a set of utilities designed to allow builders to
+    design their zones while on the MUD. OLC includes utilities for editing zones,
+    rooms, objects, mobiles, scripts, and dialogues. The following commands are
+    available to the online builder:
+    
+          edits                command                 listing command
+          rooms                redit                   rlist <zone vnum>
+          objects              oedit                   olist <zone vnum>
+          mobiles              medit                   mlist <zone vnum>
+          scripts              scedit                  sclist <zone vnum>
+          dialogs              dedit                   dlist <zone vnum>
+          socials              socedit                 socials
+          zones                zedit                   zlist
+    
+    To create a new zone, a special command must be used. It's format is:
+      zedit new [zone num] [min vnum] [max vnum]
+    
+    All other OLC commands can set up new things (rooms, objects, mobiles, etc..)
+    simply by using the corresponding edit command on a vnum that has not been used.
+  -
+  keywords : credits
+  editor   : Alister
+  timestamp: Jan 29 18:16:04
+  info     :~
+    Thanks go out to Brian Graversen for creating SocketMud(tm), which NakedMud(tm)
+    was built on top of. I know nothing (yet) about TCP/IP, and SocketMud(tm) made 
+    my life that much easier.
+  -
+  keywords : buildwalk
+  editor   : Alister
+  timestamp: Jan 29 18:36:38
+  info     :~
+    usage: buildwalk
+    
+    With buildwalk on, you can walk around in directions that do not exist to spawn
+    new exits. Buildwalk can be toggled on and off by simply typing buildwalk.
+  -
+  keywords : ANSI
+  editor   : Alister
+  timestamp: Jan 29 18:06:47
+  info     :~
+    NakedMud supports ANSI colors, and you can access them by using the '{{'
+    character, followed by the colorkey from the table below.
+    
+    Yellow    {yy {YY{n
+    Blue      {bb {BB{n
+    Green     {gg {GG{n
+    Red       {rr {RR{n
+    Cyan      {cc {CC{n
+    Purple    {pp {PP{n
+    Dark      {dd {DD{n
+    White     {ww {WW{n
+    
+    The 'n' key is the default NakedMud color, and the mudcolor will always
+    revert to this color at the end of a string.
+  -
+-

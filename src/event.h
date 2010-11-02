@@ -57,6 +57,19 @@ void start_event(void *owner,
  		 void *on_complete,
 		 void *check_involvement,
 		 void *data,
-		 char *arg);
+		 const char *arg);
+
+
+//
+// same deal as start_event, but will automatically re-queue the event
+// after it has fired. Useful for events that are currently running (e.g.
+// mudtime updating, ticks, zone reset timers).
+//
+void start_update(void *owner,
+		  int   delay,
+		  void *on_complete,
+		  void *check_involvement,
+		  void *data,
+		  const char *arg);
 
 #endif // __EVENT_H

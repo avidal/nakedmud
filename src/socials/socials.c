@@ -52,7 +52,7 @@ void save_socials() {
     listPut(soc_list, data);
   deleteHashIterator(hash_i);
 
-  store_list(set, "socials", gen_store_list(soc_list, socialStore), NULL);
+  store_list(set, "socials", gen_store_list(soc_list, socialStore));
   deleteList(soc_list);
 
   // write the set
@@ -123,16 +123,16 @@ void deleteSocial(SOCIAL_DATA *data) {
 
 STORAGE_SET *socialStore(SOCIAL_DATA *data) {
   STORAGE_SET *set = new_storage_set();
-  store_string(set, "cmds",          data->cmds,                NULL);
-  store_string(set, "to_char_notgt", data->to_char_notgt,       NULL);
-  store_string(set, "to_room_notgt", data->to_room_notgt,       NULL);
-  store_string(set, "to_char_self",  data->to_char_self,        NULL);
-  store_string(set, "to_room_self",  data->to_room_self,        NULL);
-  store_string(set, "to_char_tgt",   data->to_char_tgt,         NULL);
-  store_string(set, "to_vict_tgt",   data->to_vict_tgt,         NULL);
-  store_string(set, "to_room_tgt",   data->to_room_tgt,         NULL);
-  store_string(set, "min_pos",       posGetName(data->min_pos), NULL);
-  store_string(set, "max_pos",       posGetName(data->max_pos), NULL);
+  store_string(set, "cmds",          data->cmds);
+  store_string(set, "to_char_notgt", data->to_char_notgt);
+  store_string(set, "to_room_notgt", data->to_room_notgt);
+  store_string(set, "to_char_self",  data->to_char_self);
+  store_string(set, "to_room_self",  data->to_room_self);
+  store_string(set, "to_char_tgt",   data->to_char_tgt);
+  store_string(set, "to_vict_tgt",   data->to_vict_tgt);
+  store_string(set, "to_room_tgt",   data->to_room_tgt);
+  store_string(set, "min_pos",       posGetName(data->min_pos));
+  store_string(set, "max_pos",       posGetName(data->max_pos));
   return set;
 }
 

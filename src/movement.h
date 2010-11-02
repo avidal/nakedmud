@@ -28,5 +28,10 @@ bool try_move(CHAR_DATA *ch, int dir, const char *specdir);
 //
 bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir);
 
+//
+// Try creating a new room in the specified direction, drawn from the
+// zone we're currently in.
+//
+bool try_buildwalk(CHAR_DATA *ch, int dir);
 
 #endif // __MOVEMENT_H

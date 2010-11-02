@@ -70,11 +70,11 @@ void save_logkeys() {
   const char *log   = NULL;
   const char *words = NULL;
 
-  store_list(set, "logs", log_list, NULL);
+  store_list(set, "logs", log_list);
   ITERATE_HASH(log, words, hash_i) {
     STORAGE_SET *one_log = new_storage_set();
-    store_string(one_log, "log",      log,   NULL);
-    store_string(one_log, "keywords", words, NULL);
+    store_string(one_log, "log",      log);
+    store_string(one_log, "keywords", words);
     storage_list_put(log_list, one_log);
   }
   deleteHashIterator(hash_i);

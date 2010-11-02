@@ -34,6 +34,7 @@ struct socket_data
   bool            in_text_edit;  // are we doing text editing?
   BUFFER        * text_editor;   // where we do our actual work
   char         ** text_pointer;  // where the work will go to
+  char          * notepad;       // a buffer for writing messages of any type
   int             max_text_len;  // the max length we are allowed
   int             editor_mode;   // what mode are we running the editor under?
   int             indent;        // how far do we indent (script editing)

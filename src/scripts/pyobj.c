@@ -399,7 +399,7 @@ PyObj_load_obj(PyObject *self, PyObject *args) {
   // check for initialization scripts
   try_scripts(SCRIPT_TYPE_INIT,
 	      obj, SCRIPTOR_OBJ,
-	      ch, cont, room, NULL, NULL, NULL, 0);
+	      ch, cont, room, NULL, NULL, 0);
 
   // create a python object for the new obj, and return it
   PyObj *py_obj = (PyObj *)newPyObj(obj);

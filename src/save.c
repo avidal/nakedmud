@@ -79,8 +79,7 @@ void save_player(CHAR_DATA *ch) {
 void save_objfile(CHAR_DATA *ch) {
   STORAGE_SET *set = new_storage_set();
   // write all of the inventory
-  store_list(set, "inventory", gen_store_list(charGetInventory(ch), objStore),
-	     NULL);
+  store_list(set, "inventory", gen_store_list(charGetInventory(ch), objStore));
   
   // for equipped items, it's not so easy - we also have to record
   // whereabouts on the body the equipment was worn on
@@ -89,12 +88,12 @@ void save_objfile(CHAR_DATA *ch) {
   OBJ_DATA *obj = NULL;
   while((obj = listPop(eq_list)) != NULL) {
     STORAGE_SET *eq_set = objStore(obj);
-    store_string(set, "equipped", bodyEquippedWhere(charGetBody(ch), obj),NULL);
+    store_string(set, "equipped", bodyEquippedWhere(charGetBody(ch), obj));
     storage_list_put(list, eq_set);
   }
   deleteList(eq_list);
 
-  store_list(set, "equipment", list, NULL);
+  store_list(set, "equipment", list);
   storage_write(set, get_char_filename(charGetName(ch), FILETYPE_OFILE));
   storage_close(set);
 }
@@ -168,9 +167,9 @@ CHAR_DATA *load_profile(const char *player) {
  */
 void save_profile(CHAR_DATA *ch) {
   STORAGE_SET *set = new_storage_set();
-  store_string(set, "name",     charGetName(ch),     NULL);
-  store_string(set, "password", charGetPassword(ch), NULL);
-  store_int   (set, "uid",      charGetUID(ch),      NULL);
+  store_string(set, "name",     charGetName(ch));
+  store_string(set, "password", charGetPassword(ch));
+  store_int   (set, "uid",      charGetUID(ch));
   storage_write(set, get_char_filename(charGetName(ch), FILETYPE_PROFILE));
   storage_close(set);
 }

@@ -16,5 +16,7 @@
 
 void start_text_editor(SOCKET_DATA *sock, char **text, int max_len, int mode);
 void text_editor_loop (SOCKET_DATA *sock, char *arg);
+void start_notepad    (SOCKET_DATA *sock, const char *txt, int max_len, 
+		       int mode);
 
 #endif //__TEXT_EDITOR_H

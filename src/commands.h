@@ -10,10 +10,13 @@
 
 /* admin.c */
 COMMAND(cmd_goto);
+COMMAND(cmd_transfer);
 COMMAND(cmd_copyover);
 COMMAND(cmd_shutdown);
 COMMAND(cmd_linkdead);
 COMMAND(cmd_wizhelp);
+COMMAND(cmd_invis);
+COMMAND(cmd_visible);
 
 
 /* builder.c */
@@ -63,6 +66,8 @@ COMMAND(cmd_compress);
 COMMAND(cmd_tog_prf);
 COMMAND(cmd_more);
 COMMAND(cmd_back);
+COMMAND(cmd_stop);
+COMMAND(cmd_write);
 
 
 /* inform.c */
@@ -70,7 +75,6 @@ COMMAND(cmd_who);
 COMMAND(cmd_look);
 COMMAND(cmd_inventory);
 COMMAND(cmd_equipment);
-COMMAND(cmd_help);
 
 
 /* olc.c */

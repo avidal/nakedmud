@@ -9,12 +9,12 @@
 #include "mud.h"
 #include "character.h"
 #include "world.h"
+#include "zone.h"
 #include "room.h"
 #include "exit.h"
 #include "movement.h"
 #include "handler.h"
 #include "inform.h"
-#include "builder.h"
 #include "utils.h"
 #include "items.h"
 #include "object.h"
@@ -36,7 +36,7 @@ bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
 		 exitGetName(exit));
   else {
     if(*exitGetSpecLeave(exit))
-      message(ch, NULL, NULL, NULL, FALSE, TO_ROOM | TO_NOTCHAR,
+      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
 	      exitGetSpecLeave(exit));
     else if(dir != DIR_NONE)
       send_around_char(ch, TRUE, "%s leaves %s.\r\n",
@@ -63,6 +63,48 @@ bool try_exit(CHAR_DATA *ch, EXIT_DATA *exit, int dir) {
 }
 
 
+bool try_buildwalk(CHAR_DATA *ch, int dir) {
+  ZONE_DATA *zone = worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch)));
+  
+  if(!canEditZone(zone, ch))
+    send_to_char(ch, "You are not authorized to edit this zone.\r\n");
+  else if(roomGetExit(charGetRoom(ch), dir))
+    send_to_char(ch, "You try to buildwalk %s, but a room already exists in that direction!\r\n", dirGetName(dir));
+  else if(!zone) {
+    send_to_char(ch, "The room you are in is not attached to a zone!\r\n");
+    log_string("ERROR: %s tried to buildwalk %s, but room %d was not in a zone!", charGetName(ch), dirGetName(dir), roomGetVnum(charGetRoom(ch)));
+  }
+  else {
+    room_vnum vnum = getFreeRoomVnum(zone);
+    if(vnum == NOWHERE)
+      send_to_char(ch, 
+		   "Zone #%d has no free rooms left. "
+		   "Buildwalk could not be performed.\r\n", zoneGetVnum(zone));
+    else {
+      char desc[MAX_BUFFER];
+      ROOM_DATA *new_room = newRoom();
+      roomSetVnum(new_room, vnum);
+
+      roomSetName(new_room, "A New Buildwalk Room");
+      sprintf(desc, "This room was created by %s.\r\n", charGetName(ch));
+      roomSetDesc(new_room, desc);
+
+      zoneAddRoom(zone, new_room);
+      roomDigExit(charGetRoom(ch), dir, vnum);
+      roomDigExit(new_room, dirGetOpposite(dir), 
+		  roomGetVnum(charGetRoom(ch)));
+      try_move(ch, dir, NULL);
+      return TRUE;
+
+      // save the changes... this will get costly as our world gets bigger.
+      // But that should be alright once we make zone saving a bit smarter
+      worldSave(gameworld, WORLD_PATH);
+    }
+  }
+  return FALSE;
+}
+
+
 bool try_move(CHAR_DATA *ch, int dir, const char *specdir) {
   EXIT_DATA *exit = NULL;
   if(dir != DIR_NONE)      
@@ -84,9 +126,9 @@ bool try_move(CHAR_DATA *ch, int dir, const char *specdir) {
     ROOM_DATA *old_room = charGetRoom(ch);
     bool success = try_exit(ch, exit, dir);
     if(success) {
-      try_exit_script(ch, old_room, exit, 
+      try_exit_script(ch, old_room, 
 		      (dir != DIR_NONE ? dirGetName(dir) : specdir));
-      try_enterance_script(ch, charGetRoom(ch), exit, 
+      try_enterance_script(ch, charGetRoom(ch),
 			   (dir != DIR_NONE ? dirGetName(dir) : specdir));
     }
     return success;

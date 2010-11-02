@@ -36,6 +36,7 @@ void         putCharInventory (CHAR_DATA *ch, OBJ_DATA *obj);
 void         charResetBody    (CHAR_DATA *ch);
 
 
+
 //*****************************************************************************
 //
 // utility functions
@@ -70,12 +71,13 @@ bitvector_t  charGetBits      ( CHAR_DATA *ch, int field);
 char       **charGetDescPtr   ( CHAR_DATA *ch);
 LIST        *charGetInventory ( CHAR_DATA *ch);
 BODY_DATA   *charGetBody      ( CHAR_DATA *ch);
-int          charGetRace      ( CHAR_DATA *ch);
+const char  *charGetRace      ( CHAR_DATA *ch);
 int          charGetUID       ( CHAR_DATA *ch);
 room_vnum    charGetLoadroom  ( CHAR_DATA *ch);
 OBJ_DATA    *charGetFurniture ( CHAR_DATA *ch);
 int          charGetPos       ( CHAR_DATA *ch);
 void        *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name);
+int          charGetImmInvis  ( CHAR_DATA *ch);
 
 void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket);
 void         charSetRoom      ( CHAR_DATA *ch, ROOM_DATA *room);
@@ -88,11 +90,13 @@ void         charSetRdesc     ( CHAR_DATA *ch, const char *rdesc);
 void         charSetMultiRdesc( CHAR_DATA *ch, const char *multi_rdesc);
 void         charSetMultiName ( CHAR_DATA *ch, const char *multi_name);
 void         charSetBody      ( CHAR_DATA *ch, BODY_DATA *body);
-void         charSetRace      ( CHAR_DATA *ch, int race);
+void         charSetRace      ( CHAR_DATA *ch, const char *race);
 void         charSetUID       ( CHAR_DATA *ch, int uid);
 void         charSetLoadroom  ( CHAR_DATA *ch, room_vnum loadroom);
 void         charSetFurniture ( CHAR_DATA *ch, OBJ_DATA *furniture);
 void         charSetPos       ( CHAR_DATA *ch, int pos);
+void         charSetImmInvis  ( CHAR_DATA *ch, int level);
+
 
 
 //*****************************************************************************
@@ -120,9 +124,12 @@ void         charSetBit       ( CHAR_DATA *ch, int field, int bit);
 void         charRemoveBit    ( CHAR_DATA *ch, int field, int bit);
 bool         charIsBitSet     ( CHAR_DATA *ch, int field, int bit);
 
+// hmmm... we should really replace bitvectors with something a bit
+// more amenable to extention by modules. Perhaps use char_vars?
 #define BITFIELD_PRFS             0
 
 #define PRF_BUILDWALK             0    // (1 << 0)
+#define PRF_MAPWALK               1    // (1 << 1)
 
 
 
@@ -132,9 +139,9 @@ bool         charIsBitSet     ( CHAR_DATA *ch, int field, int bit);
 //
 //*****************************************************************************
 #define SEX_NONE                (-1)
-#define SEX_NEUTRAL               0
-#define SEX_MALE                  1
-#define SEX_FEMALE                2
+#define SEX_MALE                  0
+#define SEX_FEMALE                1
+#define SEX_NEUTRAL               2
 #define NUM_SEXES                 3
 
 const char *sexGetName(int sex);

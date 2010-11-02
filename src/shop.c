@@ -1,8 +1,14 @@
 //*****************************************************************************
 //
-// admin.h
+// shop.c
 //
-// special admin-only functions
+// Shops allow mobs or containers to act as stores for selling and buying
+// other objects.
 //
 //*****************************************************************************
+
+struct shop_data {
+
+};
+
 

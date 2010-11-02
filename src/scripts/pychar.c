@@ -261,7 +261,7 @@ PyChar_getrdesc(PyChar *self, void *closure) {
 static PyObject *
 PyChar_getrace(PyChar *self, void *closure) {
   CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
-  if(ch != NULL) return Py_BuildValue("s", raceGetName(charGetRace(ch)));
+  if(ch != NULL) return Py_BuildValue("s", charGetRace(ch));
   else           return NULL;
 }
 
@@ -434,8 +434,8 @@ PyChar_setrace(PyChar *self, PyObject *value, void *closure) {
     return -1;
   }
 
-  int race = raceGetNum(PyString_AsString(value));
-  if(race == RACE_NONE) {
+  const char *race = PyString_AsString(value);
+  if(!isRace(race)) {
     char buf[SMALL_BUFFER];
     sprintf(buf, "%s is an invalid race type", PyString_AsString(value));
     PyErr_Format(PyExc_TypeError, buf);
@@ -814,7 +814,7 @@ PyChar_load_mob(PyObject *self, PyObject *args) {
   // check for initialization scripts
   try_scripts(SCRIPT_TYPE_INIT,
 	      mob, SCRIPTOR_CHAR,
-	      mob, NULL, room, NULL, NULL, NULL, 0);
+	      mob, NULL, room, NULL, NULL, 0);
 
   // create a python object for the new char, and return it
   PyChar *py_mob = (PyChar *)newPyChar(mob);

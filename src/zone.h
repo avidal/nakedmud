@@ -99,7 +99,7 @@ CHAR_DATA   *zoneGetMob(ZONE_DATA *zone, mob_vnum room);
 OBJ_DATA   *zoneGetObj(ZONE_DATA *zone, obj_vnum obj);
 SCRIPT_DATA *zoneGetScript(ZONE_DATA *zone, script_vnum script);
 DIALOG_DATA *zoneGetDialog(ZONE_DATA *zone, dialog_vnum script);
-
+void        *zoneGetAuxiliaryData(const ZONE_DATA *zone, char *name);
 
 void zoneSetVnum(ZONE_DATA *zone, zone_vnum vnum);
 void zoneSetMinBound(ZONE_DATA *zone, room_vnum min);

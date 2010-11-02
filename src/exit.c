@@ -103,16 +103,16 @@ EXIT_DATA *exitRead(STORAGE_SET *set) {
 
 STORAGE_SET *exitStore(EXIT_DATA *exit) {
   STORAGE_SET *set = new_storage_set();
-  store_string(set, "name",       exit->name,       NULL);
-  store_string(set, "keywords",   exit->keywords,   NULL);
-  store_string(set, "desc",       exit->description,NULL);
-  store_string(set, "enter",      exit->spec_enter, NULL);
-  store_string(set, "leave",      exit->spec_leave, NULL);
-  store_int   (set, "to",         exit->to,         NULL);
-  store_int   (set, "key",        exit->key,        NULL);
-  store_int   (set, "hide_level", exit->hide_lev,   NULL);
-  store_int   (set, "pick_level", exit->pick_lev,   NULL);
-  store_int   (set, "closable",   exit->closable,   NULL);
+  store_string(set, "name",       exit->name);
+  store_string(set, "keywords",   exit->keywords);
+  store_string(set, "desc",       exit->description);
+  store_string(set, "enter",      exit->spec_enter);
+  store_string(set, "leave",      exit->spec_leave);
+  store_int   (set, "to",         exit->to);
+  store_int   (set, "key",        exit->key);
+  store_int   (set, "hide_level", exit->hide_lev);
+  store_int   (set, "pick_level", exit->pick_lev);
+  store_int   (set, "closable",   exit->closable);
   return set;
 }
 

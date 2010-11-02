@@ -24,12 +24,17 @@
 #include "inform.h"
 #include "log.h"
 
-
 // optional module headers
 #ifdef MODULE_TIME
 #include "time/mudtime.h"
 #endif
 
+
+//*****************************************************************************
+//
+// local functions
+//
+//*****************************************************************************
 
 //
 // Show a character who is all sitting at one piece of furniture
@@ -92,6 +97,37 @@ LIST *get_nofurniture_chars(CHAR_DATA *ch, LIST *list,
 }
 
 
+//
+// uhhh... "contents" isn't really the right word, since we list both
+// objects AND characters. Alas, my lexicon is not as verbose as it
+// could be.
+//
+void list_room_contents(CHAR_DATA *ch, ROOM_DATA *room) {
+  LIST *list = NULL;
+
+  list = get_nofurniture_chars(ch, roomGetCharacters(room), FALSE, FALSE);
+  show_list(ch, list, charGetRdesc, charGetMultiRdesc, charGetVnum);
+  deleteList(list);
+
+  // show all of the objects that have people using them
+  list = get_used_items(ch, roomGetContents(room), FALSE);
+  list_used_furniture(ch, list);
+  deleteList(list);
+
+  // show all of the objects that don't have people using them that we can see
+  list = get_unused_items(ch, roomGetContents(room), FALSE);
+  show_list(ch, list, objGetRdesc, objGetMultiRdesc, objGetVnum);
+  deleteList(list);
+}
+
+
+
+//*****************************************************************************
+//
+// implementaiton of inform.h
+// look_at_xxx and show_xxx functions.
+//
+//*****************************************************************************
 void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj) {
   char *new_desc = tagEdescs(objGetEdescs(obj),
 			     objGetDesc(obj),
@@ -113,7 +149,7 @@ void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj) {
       // make sure we can still see things
       if(listSize(vis_contents) > 0) {
 	send_to_char(ch, "It contains:\r\n");
-	show_list(ch, vis_contents, objGetName, objGetMultiName);
+	show_list(ch, vis_contents, objGetName, objGetMultiName, objGetVnum);
       }
       deleteList(vis_contents);
     }
@@ -151,8 +187,8 @@ void look_at_obj(CHAR_DATA *ch, OBJ_DATA *obj) {
 
 
 void look_at_exit(CHAR_DATA *ch, EXIT_DATA *exit) {
-  send_to_char(ch, "%s", (*exitGetDesc(exit) ? exitGetDesc(exit) :
-			  NOTHING_SPECIAL"\r\n"));
+  send_to_char(ch, "{g%s", (*exitGetDesc(exit) ? exitGetDesc(exit) :
+			    NOTHING_SPECIAL"\r\n"));
   // we have a door ... gotta print it's status
   if(exitIsClosable(exit)) {
     if(!*exitGetName(exit))
@@ -161,6 +197,13 @@ void look_at_exit(CHAR_DATA *ch, EXIT_DATA *exit) {
       send_to_char(ch, "You see %s. (%s)\r\n", 
 		   exitGetName(exit), (exitIsClosed(exit) ? "closed":"open"));
     }
+  }
+
+  // the door is not closed, list off the people we can see as well
+  if(!exitIsClosed(exit)) {
+    ROOM_DATA *room = worldGetRoom(gameworld, exitGetTo(exit));
+    if(room != NULL)
+      list_room_contents(ch, room);
   }
 }
 
@@ -178,11 +221,11 @@ void list_room_exits(CHAR_DATA *ch, ROOM_DATA *room) {
     if(!can_see_exit(ch, exit))
       continue;
     else if((to = worldGetRoom(gameworld, exitGetTo(exit))) == NULL) {
-       log_string("ERROR: room %d heads %s to room %d, which does not exist.",
+      log_string("ERROR: room %d heads %s to room %d, which does not exist.",
 		 roomGetVnum(room), dirGetName(i), exitGetTo(exit));
-       continue;
+      continue;
     }
-
+    
     if(charGetLevel(ch) > LEVEL_PLAYER)
       sprintf(buf, "[%d] ", roomGetVnum(to));
     else
@@ -201,7 +244,7 @@ void list_room_exits(CHAR_DATA *ch, ROOM_DATA *room) {
 
   // list special exits
   int num_spec_exits = 0;
-  char **names = roomGetExitNames(room, &num_spec_exits);
+  const char **names = roomGetExitNames(room, &num_spec_exits);
   for(i = 0; i < num_spec_exits; i++) {
     if((exit = roomGetExitSpecial(room, names[i])) == NULL)
       continue;
@@ -228,9 +271,8 @@ void list_room_exits(CHAR_DATA *ch, ROOM_DATA *room) {
 		  roomGetName(to)));
   }
 
+
   // clean up our mess
-  for(i = 0; i < num_spec_exits; i++)
-    free(names[i]);
   free(names);
 }
 
@@ -259,9 +301,8 @@ void look_at_char(CHAR_DATA *ch, CHAR_DATA *vict) {
   show_body(ch, charGetBody(vict));
 }
 
-void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
-  LIST *list = NULL;
 
+void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
   if(charGetLevel(ch) > LEVEL_PLAYER)
     send_to_char(ch, "{c[%d] ", roomGetVnum(room));
 
@@ -272,30 +313,24 @@ void look_at_room(CHAR_DATA *ch, ROOM_DATA *room) {
   if((is_evening() || is_night()) && *roomGetNightDesc(room))
     desc = roomGetNightDesc(room);
 #endif
-
   char *colorize_desc = tagEdescs(roomGetEdescs(room), desc, "{c", "{g");
   send_to_char(ch, "{g%s", colorize_desc);
-  if(colorize_desc) free(colorize_desc);
-
+  free(colorize_desc);
+    
   list_room_exits(ch, room);
-  list = get_nofurniture_chars(ch, roomGetCharacters(room), FALSE, FALSE);
-  show_list(ch, list, charGetRdesc, charGetMultiRdesc);
-  deleteList(list);
-
-  // show all of the objects that have people using them
-  list = get_used_items(ch, roomGetContents(room), FALSE);
-  list_used_furniture(ch, list);
-  deleteList(list);
-
-  // show all of the objects that don't have people using them that we can see
-  list = get_unused_items(ch, roomGetContents(room), FALSE);
-  show_list(ch, list, objGetRdesc, objGetMultiRdesc);
-  deleteList(list);
+  list_room_contents(ch, room);
 
   send_to_char(ch, "{n");
 };
 
 
+
+//*****************************************************************************
+//
+// implementaiton of inform.h
+// send_to_xxx functions
+//
+//*****************************************************************************
 void send_outdoors(const char *format, ...) {
   if(format && *format) {
     // form the message
@@ -309,7 +344,8 @@ void send_outdoors(const char *format, ...) {
     LIST_ITERATOR *list_i = newListIterator(mobile_list);
     CHAR_DATA *ch = NULL;
     ITERATE_LIST(ch, list_i)
-      if(roomGetTerrain(charGetRoom(ch)) != TERRAIN_INDOORS)
+      if(roomGetTerrain(charGetRoom(ch)) != TERRAIN_INDOORS &&
+	 roomGetTerrain(charGetRoom(ch)) != TERRAIN_CAVERN)
 	text_to_char(ch, buf);
     deleteListIterator(list_i);
   }
@@ -404,10 +440,10 @@ void send_to_list(LIST *list, const char *format, ...) {
 
 
 
-
 //*****************************************************************************
 //
-// commands included in inform.c
+// implementation of inform.h
+// game commands
 //
 //*****************************************************************************
 
@@ -503,7 +539,7 @@ COMMAND(cmd_look) {
 	send_to_char(ch, "You peer inside of %s:\r\n", objGetName(found));
 	LIST *vis_objs = find_all_objs(ch, objGetContents(found), "",
 				       NOTHING, TRUE);
-	show_list(ch, vis_objs, objGetName, objGetMultiName);
+	show_list(ch, vis_objs, objGetName, objGetMultiName, objGetVnum);
 	deleteList(vis_objs);
       }
     }
@@ -540,7 +576,7 @@ COMMAND(cmd_inventory) {
   else {
     send_to_char(ch, "You are carrying:\r\n");
     LIST *vis_objs = find_all_objs(ch, charGetInventory(ch), "", NOTHING, TRUE);
-    show_list(ch, vis_objs, objGetName, objGetMultiName);
+    show_list(ch, vis_objs, objGetName, objGetMultiName, objGetVnum);
     deleteList(vis_objs);
   }
 }
@@ -591,37 +627,6 @@ COMMAND(cmd_who)
   deleteListIterator(sock_i);
 }
 
-
-//
-// show the character the contents of a specific helpfile, or all the helpfiles
-// available if no argument is supplied.
-//
-COMMAND(cmd_help)
-{
-  if (arg[0] == '\0')
-  {
-    HELP_DATA *pHelp;
-    BUFFER *buf = buffer_new(MAX_BUFFER);
-    int col = 0;
-
-    bprintf(buf, "      - - - - - ----====//// HELP FILES  \\\\\\\\====---- - - - - -\n\n\r");
-    for (pHelp = help_list; pHelp; pHelp = pHelp->next)
-    {
-      bprintf(buf, " %-19.18s", pHelp->keyword);
-      if (!(++col % 4)) bprintf(buf, "\n\r");
-    }
-    if (col % 4) bprintf(buf, "\n\r");
-    bprintf(buf, "\n\r Syntax: help <topic>\n\r");
-    text_to_char(ch, buf->data);
-    buffer_free(buf);
-    return;
-  }
-  if (!check_help(ch, arg))
-  {
-    text_to_char(ch, "Sorry, no such helpfile.\n\r");
-    return;
-  }
-}
 
 
 //*****************************************************************************

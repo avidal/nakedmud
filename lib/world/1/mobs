@@ -11,37 +11,31 @@ list:=
     control.  There is always a bounce to her step, and fire in her eyes.  She 
     seems like she's quite the feisty one.
   level     : 2
-  sex       : 0
-  race      : 0
+  sex       : 1
+  race      : human
   dialog    : 100
   auxiliary :-
     stat_data        :-
       health          : 5
       curr_health     : 5
-      endurance       : 5
-      curr_endurance  : 0
       power           : 5
       curr_power      : 0
-      balance         : 5
-      curr_balance    : 0
-      courage         : 5
-      curr_courage    : 0
-      speed           : 5
-      curr_speed      : 0
-      control         : 5
-      curr_control    : 0
       awareness       : 5
       curr_awareness  : 0
+      courage         : 5
+      curr_courage    : 0
+      control         : 5
+      curr_control    : 0
+      speed           : 5
+      curr_speed      : 0
       personality     : 5
       curr_personality: 0
-      luck            : 5
-      curr_luck       : 0
       -
     script_aux_data  :-
       scripts:=
-        vnum: 140
-        -
         vnum: 150
+        -
+        vnum: 140
         -
       -
     -
@@ -57,36 +51,30 @@ list:=
     ladies walking by the bar.
   level     : 2
   sex       : 0
-  race      : 0
+  race      : human
   dialog    : 101
   auxiliary :-
     stat_data        :-
       health          : 5
       curr_health     : 5
-      endurance       : 5
-      curr_endurance  : 0
       power           : 5
       curr_power      : 0
-      balance         : 5
-      curr_balance    : 0
-      courage         : 5
-      curr_courage    : 0
-      speed           : 5
-      curr_speed      : 0
-      control         : 5
-      curr_control    : 0
       awareness       : 5
       curr_awareness  : 0
+      courage         : 5
+      curr_courage    : 0
+      control         : 5
+      curr_control    : 0
+      speed           : 5
+      curr_speed      : 0
       personality     : 5
       curr_personality: 0
-      luck            : 5
-      curr_luck       : 0
       -
     script_aux_data  :-
       scripts:=
-        vnum: 151
-        -
         vnum: 141
+        -
+        vnum: 151
         -
       -
     -
@@ -102,30 +90,24 @@ list:=
     has a large, bulbous nose and squinty, black eyes.
   level     : 1
   sex       : 0
-  race      : 0
+  race      : human
   dialog    : 102
   auxiliary :-
     stat_data        :-
       health          : 5
       curr_health     : 5
-      endurance       : 5
-      curr_endurance  : 0
       power           : 5
       curr_power      : 0
-      balance         : 5
-      curr_balance    : 0
-      courage         : 5
-      curr_courage    : 0
-      speed           : 5
-      curr_speed      : 0
-      control         : 5
-      curr_control    : 0
       awareness       : 5
       curr_awareness  : 0
+      courage         : 5
+      curr_courage    : 0
+      control         : 5
+      curr_control    : 0
+      speed           : 5
+      curr_speed      : 0
       personality     : 5
       curr_personality: 0
-      luck            : 5
-      curr_luck       : 0
       -
     -
   -
@@ -143,30 +125,24 @@ list:=
   multiname : a group of %d bar flies
   level     : 2
   sex       : 0
-  race      : 0
+  race      : human
   dialog    : -1
   auxiliary :-
     stat_data        :-
       health          : 5
       curr_health     : 5
-      endurance       : 5
-      curr_endurance  : 0
       power           : 5
       curr_power      : 0
-      balance         : 5
-      curr_balance    : 0
-      courage         : 5
-      curr_courage    : 0
-      speed           : 5
-      curr_speed      : 0
-      control         : 5
-      curr_control    : 0
       awareness       : 5
       curr_awareness  : 0
+      courage         : 5
+      curr_courage    : 0
+      control         : 5
+      curr_control    : 0
+      speed           : 5
+      curr_speed      : 0
       personality     : 5
       curr_personality: 0
-      luck            : 5
-      curr_luck       : 0
       -
     -
   -

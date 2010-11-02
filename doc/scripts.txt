@@ -60,7 +60,7 @@ ch.setvar('varname', value)
 example: ch.setvar('blackjack_winnings', 100)
 Allows you to store information on a character, regarding stuff that happened
 during the script. These variables save over reboots and crashes. The only
-restriction is that the variables must be numeric values, or strings.
+restriction is that the variables must be integer values.
 
 RETRIEVING SCRIPT DATA
 ch.getvar('varname')

@@ -44,6 +44,7 @@ struct property_table_iterator {
 // Find the bucket the key belongs to
 //
 int find_bucket(int key, int num_buckets) {
+  if(key < 0) key *= -1;
   // simple for now: just take the modulo
   return key % num_buckets;
 };

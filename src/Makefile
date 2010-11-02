@@ -14,7 +14,7 @@
 CC = gcc
 
 # the modules we have installed
-MODULES := time alias char_vars socials olc scripts
+MODULES := time alias char_vars socials olc scripts help
 
 # flags to use during compilation
 C_FLAGS := -Wall -g -ggdb -O2
@@ -26,16 +26,16 @@ LIBS    := -lz -lpthread -lcrypt
 SRC     := gameloop.c mud.c utils.c interpret.c handler.c inform.c movement.c \
 	   action.c mccp.c save.c socket.c io.c strings.c event.c \
 	   \
-	   cmd_comm.c cmd_manip.c cmd_misc.c \
+	   cmd_comm.c cmd_manip.c cmd_misc.c cmd_admin.c cmd_builder.c \
 	   \
-	   text_editor.c builder.c admin.c help.c \
+	   text_editor.c races.c \
 	   \
-	   items.c races.c log.c auxiliary.c \
+	   items.c log.c auxiliary.c \
 	   \
 	   world.c character.c room.c exit.c extra_descs.c object.c body.c \
 	   zone.c dialog.c room_reset.c \
 	   \
-	   list.c property_table.c hashtable.c hashmap.c storage.c
+	   list.c property_table.c hashtable.c hashmap.c storage.c set.c
 
 
 # include the description for each module. These will add to SRC

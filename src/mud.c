@@ -24,7 +24,7 @@ void init_mud_settings() {
 
 void save_mud_settings() {
   STORAGE_SET *set = storage_read(MUD_DATA);
-  store_int(set, "puid", top_char_uid, NULL);
+  store_int(set, "puid", top_char_uid);
   storage_write(set, MUD_DATA);
   storage_close(set);
 }

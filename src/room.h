@@ -32,27 +32,28 @@
 #define TERRAIN_INDOORS         0	
 #define TERRAIN_CITY            1	
 #define TERRAIN_ROAD            2
-#define TERRAIN_BRIDGE          3 
-#define TERRAIN_SHALLOW_WATER   4	
-#define TERRAIN_DEEP_WATER      5	
-#define TERRAIN_OCEAN           6
-#define TERRAIN_UNDERWATER	7	
-#define TERRAIN_FIELD           8	
-#define TERRAIN_PLAINS          9 
-#define TERRAIN_MEADOW         10
-#define TERRAIN_FOREST         11
-#define TERRAIN_DEEP_FOREST    12 
-#define TERRAIN_HILLS          13
-#define TERRAIN_HIGH_HILLS     14
-#define TERRAIN_MOUNTAIN       15
-#define TERRAIN_SWAMP          16 
-#define TERRAIN_DEEP_SWAMP     17
-#define TERRAIN_SAND           18 
-#define TERRAIN_DESERT         19
-#define TERRAIN_ICE            20
-#define TERRAIN_GLACIER        21
-#define TERRAIN_CAVERN         22
-#define NUM_TERRAINS           23
+#define TERRAIN_ALLEY           3
+#define TERRAIN_BRIDGE          4 
+#define TERRAIN_SHALLOW_WATER   5	
+#define TERRAIN_DEEP_WATER      6	
+#define TERRAIN_OCEAN           7
+#define TERRAIN_UNDERWATER	8	
+#define TERRAIN_FIELD           9	
+#define TERRAIN_PLAINS         10 
+#define TERRAIN_MEADOW         11
+#define TERRAIN_FOREST         12
+#define TERRAIN_DEEP_FOREST    13 
+#define TERRAIN_HILLS          14
+#define TERRAIN_HIGH_HILLS     15
+#define TERRAIN_MOUNTAIN       16
+#define TERRAIN_SWAMP          17 
+#define TERRAIN_DEEP_SWAMP     18
+#define TERRAIN_SAND           19 
+#define TERRAIN_DESERT         20
+#define TERRAIN_ICE            21
+#define TERRAIN_GLACIER        22
+#define TERRAIN_CAVERN         23
+#define NUM_TERRAINS           24
 
 
 //
@@ -122,7 +123,7 @@ char      **roomGetDescPtr     (ROOM_DATA *room);
 
 EXIT_DATA  *roomGetExit         (const ROOM_DATA *room, int dir);
 EXIT_DATA  *roomGetExitSpecial  (const ROOM_DATA *room, const char *dir);
-char      **roomGetExitNames    (const ROOM_DATA *room, int *num);
+const char **roomGetExitNames   (const ROOM_DATA *room, int *num);
 EDESC_SET  *roomGetEdescs       (const ROOM_DATA *room);
 const char *roomGetEdesc        (const ROOM_DATA *room, const char *keyword);
 void       *roomGetAuxiliaryData(const ROOM_DATA *room, const char *name);
@@ -165,13 +166,7 @@ int dirGetAbbrevNum(const char *dir);
 //
 //*****************************************************************************
 const char *terrainGetName(int terrain);
-const char *terrainGetDefaultRname(int terrain);
-const char *terrainGetDefaultRdesc(int terrain);
-const char *terrainGetMapSymbol(int terrain);
-double      terrainGetVisibility(int terrain); // [0, 1]
-double      terrainGetExhaustion(int terrain); // [0, 1]
-
-int terrainGetNum(const char *terrain);
+int  terrainGetNum(const char *terrain);
 
 
 #endif // __ROOM_H

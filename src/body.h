@@ -38,12 +38,6 @@
 
 #define NUM_BODYPOS              21
 
-#define BODYTYPE_NONE            -1
-#define BODYTYPE_HUMANOID         0
-#define BODYTYPE_DRAGON           1
-
-#define NUM_BODYTYPES             2
-
 #define BODYSIZE_NONE            -1
 #define BODYSIZE_DIMINUITIVE      0
 #define BODYSIZE_TINY             1
@@ -59,18 +53,6 @@
  * Return a list of the postypes for a list of posnames (comma-separated)
  */
 char *list_postypes(const BODY_DATA *B, const char *posnames);
-
-
-/**
- * return the name of the bodytype number
- */
-const char *bodytypeGetName(int bodytype);
-
-
-/**
- * return the number of the bodytype
- */
-int bodytypeGetNum(const char *bodytype);
 
 
 /**
@@ -98,12 +80,6 @@ int bodyposGetNum(const char *bodypos);
 
 
 /**
- * Create a specific bodytype
- */
-BODY_DATA *bodyCreate(int bodytype);
-
-
-/**
  * Create a new body
  */
 BODY_DATA *newBody();
@@ -127,6 +103,10 @@ BODY_DATA *bodyCopy(const BODY_DATA *B);
  */
 int bodyGetSize(const BODY_DATA *B);
 
+/**
+ * change the body's size
+ */
+void bodySetSize(BODY_DATA *B, int size);
 
 /**
  * Add a new position to the body. <type> is one of the basic

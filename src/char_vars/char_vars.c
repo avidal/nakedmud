@@ -179,13 +179,13 @@ STORAGE_SET *charVarAuxDataStore(CHAR_VAR_AUX_DATA *data) {
   const char        *key = NULL;
   CHAR_VAR          *val = NULL;
 
-  store_list(set, "variables", list, NULL);
+  store_list(set, "variables", list);
   // iterate across all the entries and add them
   ITERATE_HASH(key, val, hash_i) {
     STORAGE_SET *var_set = new_storage_set();
-    store_string(var_set, "key",  key,                       NULL);
-    store_string(var_set, "val",  val->str_val,              NULL);
-    store_string(var_set, "type", char_var_types[val->type], NULL);
+    store_string(var_set, "key",  key);
+    store_string(var_set, "val",  val->str_val);
+    store_string(var_set, "type", char_var_types[val->type]);
     storage_list_put(list, var_set);
   }
   deleteHashIterator(hash_i);

@@ -126,39 +126,37 @@ void deleteRoom(ROOM_DATA *room) {
 
 STORAGE_SET *roomStore(ROOM_DATA *room) {
   STORAGE_SET *set = new_storage_set();
-  store_string(set, "name",    room->name,                  NULL);
-  store_string(set, "desc",    room->desc,                  NULL);
-  store_int   (set, "vnum",    room->vnum,                  NULL);
-  store_int   (set, "terrain", room->terrain,               NULL);
-  store_set   (set, "edescs",  edescSetStore(room->edescs), NULL);
+  store_string(set, "name",    room->name);
+  store_string(set, "desc",    room->desc);
+  store_int   (set, "vnum",    room->vnum);
+  store_int   (set, "terrain", room->terrain);
+  store_set   (set, "edescs",  edescSetStore(room->edescs));
 
   STORAGE_SET_LIST *exits = new_storage_list();
-  store_list(set, "exits", exits, NULL);
+  store_list(set, "exits", exits);
 
   // save all of the normal directions
   int i;
   for(i = 0; i < NUM_DIRS; i++) {
     if(room->exits[i]) {
       STORAGE_SET *exit = exitStore(room->exits[i]);
-      store_string(exit, "direction", dirGetName(i), NULL);
+      store_string(exit, "direction", dirGetName(i));
       storage_list_put(exits, exit);
     }
   }
 
   // and now the special directions
   int num_special_exits = 0;
-  char **special_exits = roomGetExitNames(room, &num_special_exits);
+  const char **special_exits = roomGetExitNames(room, &num_special_exits);
   for(i = 0; i < num_special_exits; i++) {
     STORAGE_SET *exit = exitStore(roomGetExitSpecial(room, special_exits[i]));
-    store_string(exit, "direction", special_exits[i], NULL);
+    store_string(exit, "direction", special_exits[i]);
     storage_list_put(exits, exit);
   }
   if(special_exits) free(special_exits);
 
-  // and store our reset data
-  store_list(set, "reset",     gen_store_list(room->reset, resetStore), NULL);
-
-  store_set(set, "auxiliary",  auxiliaryDataStore(room->auxiliary_data), NULL);
+  store_list(set, "reset",     gen_store_list(room->reset, resetStore));
+  store_set(set, "auxiliary",  auxiliaryDataStore(room->auxiliary_data));
   return set;
 }
 
@@ -203,7 +201,7 @@ ROOM_DATA *roomCopy(ROOM_DATA *room) {
 
 void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
   int i, num_spec_exits;
-  char **spec_exits;
+  const char **spec_exits;
 
   // we just want to copy data ABOUT the room, and not stuff
   // contained in the particular instance (e.g. players, contents)
@@ -224,10 +222,8 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
 
   // free the special exits of the <to> room
   spec_exits = roomGetExitNames(to, &num_spec_exits);
-  for(i = 0; i < num_spec_exits; i++) {
+  for(i = 0; i < num_spec_exits; i++)
     roomSetExitSpecial(to, spec_exits[i], NULL);
-    free(spec_exits[i]);
-  }
   free(spec_exits);
   deleteHashtable(to->special_exits);
   to->special_exits = newHashtable(SPECIAL_EXIT_BUCKETS);
@@ -235,11 +231,9 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
 
   // set the special exits of the <to> room
   spec_exits = roomGetExitNames(from, &num_spec_exits);
-  for(i = 0; i < num_spec_exits; i++) {
+  for(i = 0; i < num_spec_exits; i++)
     roomSetExitSpecial(to, spec_exits[i], 
 		       exitCopy(roomGetExitSpecial(from, spec_exits[i])));
-    free(spec_exits[i]);
-  }
   free(spec_exits);
 
   
@@ -284,7 +278,7 @@ void roomReset(ROOM_DATA *room) {
 #ifdef MODULE_SCRIPTS
   try_scripts(SCRIPT_TYPE_INIT,
 	      room, SCRIPTOR_ROOM,
-	      NULL, NULL, room, NULL, NULL, NULL, 0);
+	      NULL, NULL, room, NULL, NULL, 0);
 #endif
 }
 
@@ -365,17 +359,17 @@ EXIT_DATA  *roomGetExitSpecial (const ROOM_DATA *room, const char *dir) {
   return hashGet(room->special_exits, dir);
 };
 
-char      **roomGetExitNames   (const ROOM_DATA *room, int *num) {
+const char      **roomGetExitNames   (const ROOM_DATA *room, int *num) {
   int i;
 
   *num = hashSize(room->special_exits);
-  char **names = malloc(sizeof(char *) * *num);
+  const char **names = malloc(sizeof(char *) * *num);
   HASH_ITERATOR *hash_i = newHashIterator(room->special_exits);
 
   for(i = 0; i < *num; i++, hashIteratorNext(hash_i))
-    names[i] = strdup(hashIteratorCurrentKey(hash_i));
-
+    names[i] = hashIteratorCurrentKey(hash_i);
   deleteHashIterator(hash_i);
+
   return names;
 };
 
@@ -503,210 +497,38 @@ int dirGetAbbrevNum(const char *dir) {
 //*****************************************************************************
 struct terrain_data {
   char   *name;
-  char   *default_rname;
-  char   *default_rdesc;
-  char   *map_symbol;
-  double  move_difficulty;
-  double  visibility;
 };
 
 const struct terrain_data terrain_types[NUM_TERRAINS] = {
-  { "Inside",             
-    "Inside", 
-    "You are not outside. This desc should never be seen.\r\n",
-    "{w.",      1.0,    1.0 },
-
-  { "City",               
-    "In the City", 
-    "You are in a city. This desc should never be seen.\r\n",
-    "{g.",      1.0,    0.6 },
-
-  { "Road", 
-    "On a Road", 
-    "The road beneath your feet is quite well made, and looks like it is "
-    "taken care of on a regular basis. The foundation is a thick mortar, and "
-    "there are virtually no cracks in it. You see the occasionally band of "
-    "travellers pass you by, or a merchant riding a wagon hitched up to a "
-    "horse heading in the opposite direction as you.\r\n",
-    "{w.",      1.0,    1.0 },  
-
-  { "Bridge",             
-    "On a Bridge", 
-    "The bridge appears to be quite sturdy; its foundation is a solid stone, "
-    "and it looks like it was crafted by master builders. To either side of "
-    "the bridge, you see a road continuing on for quite some ways.\r\n",
-    "{g#",      1.0,    1.0 },
-
-  { "Shallow Water",       
-    "In Shallow Water", 
-    "The water is refreshingly cool on your skin, and it is shallow enough "
-    "that you are able to wade in it without relative ease. Occasionally, you "
-    "will see a glint of color under the water, which is probably a fish "
-    "swimming by you.\r\n",
-    "{B~",      0.5,    1.0 },
-
-  { "Deep Water",    
-    "In Deep Waters", 
-    "The water here is much too deep to wade into. Ripples undulate around "
-    "you on the water's surface, spreading out in a beautiful rippling "
-    "pattern. Occasionally, you see a bird dive down into the water and "
-    "snatch up a fish.\r\n",
-    "{bw",      0.2,    1.0 },
-
-  { "Ocean",
-    "On The Ocean",
-    "Water, water everywhere! On all sides, you are surrounded by an endless "
-    "view of water. At least the water is calm; occasionally, small waves "
-    "rock you back and forth, but other than that there is very little "
-    "disturbance of the water. Occasionally, you see a group of sea birds "
-    "flying overhead, or a blurry figure swimming slightly below the surface "
-    "of the water.\r\n",
-    "{bo",      0.1,    0.8 },
-
-  { "Underwater",         
-    "Underwater", 
-    "Your vision is somewhat obscured by the water around you, but you manage "
-    "to make out shapes of various water creatures around you; hoards of "
-    "fish, sponges, and seaweed. Many more exotic creatures swim about as "
-    "well, but you are hard pressed to name any of them.\r\n",
-    "{bu",      0.1,    0.5 },
-
-  { "Field",              
-    "In a Field", 
-    "You are in a field. Occasionally, you hear birds chirping, and "
-    "you see the occasional one fly overhead. The wilderness is quite "
-    "peaceful.\r\n",
-    "{g\"",    1.0,     1.0 },
-
-  { "Plains",             
-    "On The Plains", 
-    "You are on the open plains. Occasionally, You see the occasional hawk "
-    "fly overhead, and you spot many small rodents as you walk. The plains "
-    "are quite flat, and you can literally see for miles.\r\n",
-    "#Yp",    1.0,      1.0 },
-
-  { "Meadow",
-    "In A Meadow",
-    "The meadow is a sea of tall, dried yellowish grass. There is a slight "
-    "breeze, and the grass is bent in the direction the wind is blowing. You "
-    "see the occasional grasshopper leap past you as you make your way "
-    "through the meadow. Birds circle in the air above - they look like tiny "
-    "specks from where you are.\r\n",
-    "#Ym",    1.0,      1.0 },
-
-  { "Forest",             
-    "In a Wooded Forest",
-    "Trees surround you on all sides. Poplar, fur, birch - all kinds. "
-    "The trees are not so thick that you have a hard time seeing, but "
-    "your vision is definitely impeded slightly by the trees.\r\n",
-    "{Gf",    0.8,      0.7 },
-
-  { "Deep Forest",        
-    "In a Deep Forest", 
-    "Trees surround you on all sides. Poplar, fur, birch - all kinds. "
-    "The trees get quite thick here, and it becomes rather hard to see "
-    "anything that is not in your immediate vicinity.\r\n",
-    "{gD",    0.5,      0.4 },
-
-  { "Hills",              
-    "On Rolling Hills", 
-    "Small hills cover the ground here, in wavy patterns. The ground is "
-    "fairly nondescript - dirt and grass. Occasionally, you spot a hole "
-    "in the ground. You would guess it to be the home of some small rodent. "
-    "\r\n",
-    "{yh",    0.7,      0.8 },
-
-  { "High Hills",
-    "Amidst High Hills",
-    "The hills here are steep and plentiful. They are scattered across the "
-    "terrain like waves in the ocean. The ground here is rather hard, and "
-    "very rough. You spot the occasional patch of grass, but for the most "
-    "part, the ground is simply dirt. You spot holes in the ground every now "
-    "and then. Occasionally, a small rodent pokes its head in one, and then "
-    "scurries back into its shelter.\r\n",
-    "{yH",   0.4,        0.5 },
-
-  { "Mountains",         
-    "In the Mountains", 
-    "The mountain is quite rocky, and here and there you see patches of snow "
-    "on the ground. Are visible here and there, but you notice they start to "
-    "thin out as the mountain rises up.\r\n",
-    "{w^",   0.1,        0.1 },
-
-  { "Swamp",              
-    "In a Swamp", 
-    "The odor of the swamp is reminiscent of mold and rotting materials. "
-    "The ground is quite moist, and occasionally large bubbles float up to "
-    "the surface of it and pop, letting out rather noxious fumes. The air "
-    "is also quite damp, and very warm. Occasionally, you will hear the cry "
-    "of a bird off in the distance, or what sounds like twigs snapping.\r\n",
-    "#rs",   0.3,        0.5 },
-
-  { "Deep Swamp",
-    "Deep in the Swamp",
-    "The air here is humid, and a very musky smell lingers about. The ground "
-    "here is quite moist - dirty, murky water rises up to your ankles. Your "
-    "surroundings are ominously quiet, except for the occasional shrill cry "
-    "of a bird off in the distance. Rotten pieces of wood float in the water "
-    "beneath your feet. Some drift as if they are a live. But, of course, "
-    "driftwood doesn't live. Or maybe that's not driftwood.\r\n",
-    "#rS",   0.1,        0.3 },
-
-  { "Sand",               
-    "On Sand", 
-    "The sand is a bright golden yellow, and have a very fine grain. You "
-    "see the occasional rock sticking out of the sand at an odd angle, and "
-    "a small crab here or there, scurrying along.\r\n",
-    "{y\"",  0.8,        1.0 },
-
-  { "Desert",
-    "In A Desert",
-    "Sand streches out around you for miles in every direction. The air is "
-    "unbearably hot, and very dry. Your lips are getting more and more "
-    "chapped with every passing moment. The sun beams down on you with its "
-    "relentless gaze, burning your skin and making you slightly lightheaded. "
-    "It is a wonder even the most hearty of animals can live out here.\r\n",
-    "{yD",   0.7,        1.0 },
-
-  { "Ice",
-    "On Ice",
-    "Ice needs a description.\r\n",
-    "{CI",   0.5,        0.7 },
-
-  { "Glacier",
-    "Amidst Glaciers",
-    "Glaciers need a description.\r\n",
-    "{cG",   0.3,        0.3 },
-
-  { "Cavern",
-    "Within a Cavern",
-    "Caverns need a description.\r\n",
-    " ",   1.0,        0.7 }
+  { "Inside"        },
+  { "City"          },
+  { "Road"          },
+  { "Alley"         },
+  { "Bridge"        },
+  { "Shallow Water" },
+  { "Deep Water"    },
+  { "Ocean"         },
+  { "Underwater"    },
+  { "Field"         },
+  { "Plains"        },
+  { "Meadow"        },
+  { "Forest"        },
+  { "Deep Forest"   },
+  { "Hills"         },
+  { "High Hills"    },
+  { "Mountains"     },
+  { "Swamp"         },
+  { "Deep Swamp"    },
+  { "Sand"          },
+  { "Desert"        }, 
+  { "Ice"           },
+  { "Glacier"       },
+  { "Cavern"        },
 };
 
 
 const char *terrainGetName(int terrain) {
   return terrain_types[terrain].name;
-}
-
-const char *terrainGetDefaultRname(int terrain) {
-  return terrain_types[terrain].default_rname;
-}
-
-const char *terrainGetDefaultRdesc(int terrain) {
-  return terrain_types[terrain].default_rdesc;
-}
-
-const char *terrainGetMapSymbol(int terrain) {
-  return terrain_types[terrain].map_symbol;
-}
-
-double      terrainGetVisibility(int terrain) {
-  return terrain_types[terrain].visibility;
-}
-
-double      terrainGetMoveDifficulty(int terrain) {
-  return terrain_types[terrain].move_difficulty;
 }
 
 int terrainGetNum(const char *terrain) {
@@ -716,4 +538,3 @@ int terrainGetNum(const char *terrain) {
       return i;
   return TERRAIN_NONE;
 }
-

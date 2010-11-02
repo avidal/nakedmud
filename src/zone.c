@@ -13,9 +13,10 @@
 #include "object.h"
 #include "character.h"
 #include "room.h"
-#include "zone.h"
 #include "utils.h"
+#include "auxiliary.h"
 #include "dialog.h"
+#include "zone.h"
 
 #ifdef MODULE_SCRIPTS
 #include "scripts/script.h"
@@ -40,7 +41,10 @@ struct zone_data {
 
   int pulse_timer;  // the timer duration
   int pulse;        // how far down have we gone?
+
+  HASHTABLE            * auxiliary_data; // additional data installed on us
 };
+
 
 ZONE_DATA *newZone(zone_vnum vnum, room_vnum min, room_vnum max) {
   ZONE_DATA *zone = malloc(sizeof(ZONE_DATA));
@@ -64,6 +68,8 @@ ZONE_DATA *newZone(zone_vnum vnum, room_vnum min, room_vnum max) {
   zone->mob_protos = newPropertyTable(charGetVnum,    1 + (max-min)/5);
   zone->obj_protos = newPropertyTable(objGetVnum,    1 + (max-min)/5);
 
+  zone->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_ZONE);
+
   return zone;
 }
 
@@ -82,6 +88,7 @@ void zoneCopyTo(ZONE_DATA *from, ZONE_DATA *to) {
   to->max  = from->max;
   to->pulse_timer = from->pulse_timer;
   to->pulse = from->pulse;
+  auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
 }
 
 void deleteZone(ZONE_DATA *zone){ 
@@ -94,6 +101,8 @@ void deleteZone(ZONE_DATA *zone){
   deletePropertyTable(zone->dialogs);
   deletePropertyTable(zone->mob_protos);
   deletePropertyTable(zone->obj_protos);
+
+  deleteAuxiliaryData(zone->auxiliary_data);
 
   //*******************************************************************
   // The only time we're deleting a zone is when we're editing the copy
@@ -158,6 +167,11 @@ ZONE_DATA *zoneLoad(const char *dirpath) {
   zoneSetName(zone,   read_string(set, "name"));
   zoneSetDescription(zone,   read_string(set, "desc"));
   zoneSetEditors(zone,read_string(set, "editors"));
+
+  deleteAuxiliaryData(zone->auxiliary_data);
+  zone->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
+					   AUXILIARY_TYPE_ZONE);
+
   storage_close(set);
 
   // now, load all of the content data
@@ -204,7 +218,7 @@ STORAGE_SET *zoneStoreData(ZONE_DATA *zone, void *getter, void *storer) {
   STORAGE_SET       *set = new_storage_set();
   STORAGE_SET_LIST *list = new_storage_list();
   void             *data = NULL;
-  store_list(set, "list", list, NULL);
+  store_list(set, "list", list);
 
   int i = zoneGetMinBound(zone);
   for(; i <= zoneGetMaxBound(zone); i++) {
@@ -225,13 +239,14 @@ bool zoneSave(ZONE_DATA *zone, const char *dirpath) {
   // first, for our zone data
   sprintf(fname, "%s/zone", dirpath);
   STORAGE_SET *set = new_storage_set();
-  store_int   (set, "vnum",        zone->vnum,        NULL);
-  store_int   (set, "min",         zone->min,         NULL);
-  store_int   (set, "max",         zone->max,         NULL);
-  store_int   (set, "pulse_timer", zone->pulse_timer, NULL);
-  store_string(set, "name",        zone->name,        NULL);
-  store_string(set, "desc",        zone->desc,        NULL);
-  store_string(set, "editors",     zone->editors,     NULL);
+  store_int   (set, "vnum",        zone->vnum);
+  store_int   (set, "min",         zone->min);
+  store_int   (set, "max",         zone->max);
+  store_int   (set, "pulse_timer", zone->pulse_timer);
+  store_string(set, "name",        zone->name);
+  store_string(set, "desc",        zone->desc);
+  store_string(set, "editors",     zone->editors);
+  store_set   (set, "auxiliary",   auxiliaryDataStore(zone->auxiliary_data));
   storage_write(set, fname);
   storage_close(set);
 
@@ -371,6 +386,10 @@ room_vnum zoneGetMaxBound(ZONE_DATA *zone) {
   return zone->max;
 }
 
+void *zoneGetAuxiliaryData(const ZONE_DATA *zone, char *name) {
+  return hashGet(zone->auxiliary_data, name);
+}
+
 room_vnum getFreeRoomVnum(ZONE_DATA *zone) {
   zone_vnum i;
   for(i = zone->min; i <= zone->max; i++)
@@ -457,6 +476,9 @@ void zoneSetMaxBound(ZONE_DATA *zone, room_vnum max) {
 }
 
 void zoneSetPulseTimer(ZONE_DATA *zone, int timer) { 
+  // if we normally do not reset, change that
+  if(zone->pulse_timer < 0)
+    zone->pulse = timer;
   zone->pulse_timer = timer;
 }
 

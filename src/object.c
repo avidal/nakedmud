@@ -148,26 +148,26 @@ OBJ_DATA *objRead(STORAGE_SET *set) {
 
 STORAGE_SET *objStore(OBJ_DATA *obj) {
   STORAGE_SET *set = new_storage_set();
-  store_int   (set, "vnum",      obj->vnum,                 NULL);
-  store_int   (set, "type",      obj->type,                 NULL);
-  store_int   (set, "subtype",   obj->subtype,              NULL);
-  store_int   (set, "value 0",   objGetVal(obj, 0),         NULL);
-  store_int   (set, "value 1",   objGetVal(obj, 1),         NULL);
-  store_int   (set, "value 2",   objGetVal(obj, 2),         NULL);
-  store_int   (set, "value 3",   objGetVal(obj, 3),         NULL);
-  store_int   (set, "value 4",   objGetVal(obj, 4),         NULL);
-  store_double(set, "weight",    obj->weight,               NULL);
-  store_double(set, "capacity",  obj->capacity,             NULL);
-  store_string(set, "name",      obj->name,                 NULL);
-  store_string(set, "keywords",  obj->keywords,             NULL);
-  store_string(set, "rdesc",     obj->rdesc,                NULL);
-  store_string(set, "desc",      obj->desc,                 NULL);
-  store_string(set, "multiname", obj->multi_name,           NULL);
-  store_string(set, "multirdesc",obj->multi_rdesc,          NULL);
-  store_string(set, "bits",      write_bits(obj->bits),     NULL);
-  store_set   (set, "edescs",    edescSetStore(obj->edescs),NULL);
-  store_set   (set, "auxiliary", auxiliaryDataStore(obj->auxiliary_data), NULL);
-  store_list  (set, "contents",  gen_store_list(obj->contents, objStore), NULL);
+  store_int   (set, "vnum",      obj->vnum);
+  store_int   (set, "type",      obj->type);
+  store_int   (set, "subtype",   obj->subtype);
+  store_int   (set, "value 0",   objGetVal(obj, 0));
+  store_int   (set, "value 1",   objGetVal(obj, 1));
+  store_int   (set, "value 2",   objGetVal(obj, 2));
+  store_int   (set, "value 3",   objGetVal(obj, 3));
+  store_int   (set, "value 4",   objGetVal(obj, 4));
+  store_double(set, "weight",    obj->weight);
+  store_double(set, "capacity",  obj->capacity);
+  store_string(set, "name",      obj->name);
+  store_string(set, "keywords",  obj->keywords);
+  store_string(set, "rdesc",     obj->rdesc);
+  store_string(set, "desc",      obj->desc);
+  store_string(set, "multiname", obj->multi_name);
+  store_string(set, "multirdesc",obj->multi_rdesc);
+  store_string(set, "bits",      write_bits(obj->bits));
+  store_set   (set, "edescs",    edescSetStore(obj->edescs));
+  store_set   (set, "auxiliary", auxiliaryDataStore(obj->auxiliary_data));
+  store_list  (set, "contents",  gen_store_list(obj->contents, objStore));
   return set;
 }
 

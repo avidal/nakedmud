@@ -43,8 +43,8 @@ EDESC_DATA *edescRead(STORAGE_SET *set) {
 
 STORAGE_SET *edescStore(EDESC_DATA *data) {
   STORAGE_SET *set = new_storage_set();
-  store_string(set, "keywords", data->keywords, NULL);
-  store_string(set, "desc",     data->desc,     NULL);
+  store_string(set, "keywords", data->keywords);
+  store_string(set, "desc",     data->desc);
   return set;
 }
 
@@ -64,7 +64,7 @@ EDESC_SET *edescSetRead(STORAGE_SET *set) {
 
 STORAGE_SET *edescSetStore(EDESC_SET *edescs) {
   STORAGE_SET *set             = new_storage_set();
-  store_list(set, "list", gen_store_list(edescs->edescs, edescStore), NULL);
+  store_list(set, "list", gen_store_list(edescs->edescs, edescStore));
   return set;
 }
 

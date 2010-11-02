@@ -81,22 +81,6 @@ void bug(const char *txt, ...)
   communicate(NULL, buf, COMM_LOG);
 }
 
-/*
- * This function will return the time of
- * the last modification made to helpfile.
- */
-time_t last_modified(char *helpfile)
-{
-  char fHelp[256];
-  struct stat sBuf;
-  time_t mTime = 0;
-
-  sprintf(fHelp, "../help/%s", helpfile);
-  if (stat(fHelp, &sBuf) >= 0)
-    mTime = sBuf.st_mtime;
-
-  return mTime;
-}
 
 char *read_file(const char *file) {
   FILE *fl;
@@ -115,44 +99,6 @@ char *read_file(const char *file) {
   return strdup(contents);
 }
 
-
-char *read_help_entry(const char *helpfile)
-{
-  FILE *fp;
-  static char entry[MAX_BUFFER];
-  char fHelp[256];
-  int c, ptr = 0;
-
-  /* location of the help file */
-  sprintf(fHelp, "../help/%s", helpfile);
-
-  /* if there is no help file, return NULL */
-  if ((fp = fopen(fHelp, "r")) == NULL)
-    return NULL;
-
-  /* just to have something to work with */
-  c = getc(fp);
-
-  /* read the file in the buffer */
-  while (c != EOF)
-  {
-    if (c == '\n')
-      entry[ptr++] = '\r';
-    entry[ptr] = c;
-    if (++ptr > MAX_BUFFER - 2)
-    {
-      bug("Read_help_entry: String to long.");
-      abort();
-    }
-    c = getc(fp);
-  }
-  entry[ptr] = '\0';
-
-  fclose(fp);
-
-  /* return a pointer to the static buffer */
-  return entry;
-}
 
 /*
  * Reads one line from a file, and returns a

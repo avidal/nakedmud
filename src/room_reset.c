@@ -27,7 +27,7 @@ struct reset_data {
   int        type; // what kind of reset are we?
   int       times; // how many times should it be executed?
   int      chance; // what is our chance of success?
-  int         max; // what is the max number of us that ca nbe in the game?
+  int         max; // what is the max number of us that can be in the game?
   int    room_max; // what is the max number of us that can be in the room?
   char       *arg; // what is our reset arg (e.g. mob vnum, direction name)
   LIST        *in; // what resets do we put into ourself?
@@ -108,15 +108,15 @@ RESET_DATA    *resetCopy        (RESET_DATA *reset) {
 
 STORAGE_SET   *resetStore       (RESET_DATA *reset) {
   STORAGE_SET *set = new_storage_set();
-  store_int   (set, "type",     reset->type,     NULL);
-  store_int   (set, "times",    reset->times,    NULL);
-  store_int   (set, "chance",   reset->chance,   NULL);
-  store_int   (set, "max",      reset->max,      NULL);
-  store_int   (set, "room_max", reset->room_max, NULL);
-  store_string(set, "arg",      reset->arg,      NULL);
-  store_list  (set, "in",       gen_store_list(reset->in,   resetStore), NULL);
-  store_list  (set, "on",       gen_store_list(reset->on,   resetStore), NULL);
-  store_list  (set, "then",     gen_store_list(reset->then, resetStore), NULL);
+  store_int   (set, "type",     reset->type);
+  store_int   (set, "times",    reset->times);
+  store_int   (set, "chance",   reset->chance);
+  store_int   (set, "max",      reset->max);
+  store_int   (set, "room_max", reset->room_max);
+  store_string(set, "arg",      reset->arg);
+  store_list  (set, "in",       gen_store_list(reset->in,   resetStore));
+  store_list  (set, "on",       gen_store_list(reset->on,   resetStore));
+  store_list  (set, "then",     gen_store_list(reset->then, resetStore));
   return set;
 }
 
@@ -568,14 +568,14 @@ bool try_reset_lock(RESET_DATA *reset, void *initiator, int initiator_type) {
 bool resetRun(RESET_DATA *reset, void *initiator, int initiator_type) {
   //
   // possible problem: how do we know what to return if we're
-  // running it multiple times? 
+  // running the reset data multiple times? 
   //
   bool ret_val = FALSE;
 
   // go through for however many times we need to
   int i;
   for(i = 0; i < resetGetTimes(reset); i++) {
-    // check our chance
+    // If we don't make our reset chance, continue onto the next check
     if(rand_number(1, 100) > resetGetChance(reset))
       continue;
     switch(resetGetType(reset)) {

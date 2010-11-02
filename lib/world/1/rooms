@@ -14,15 +14,15 @@ list:=
   terrain  : 0
   edescs   :-
     list:=
-      keywords: stage
-      desc    :~
-           There is stage not too far to the north.  Currently, it appears to 
-        be empty.
-      -
       keywords: fireplace
       desc    :~
            The fireplace looks to be blazing quite brightly.  There are a few groups 
         of people at tables scattered around it.
+      -
+      keywords: stage
+      desc    :~
+           There is stage not too far to the north.  Currently, it appears to 
+        be empty.
       -
     -
   exits    :=
@@ -69,6 +69,13 @@ list:=
     direction : southwest
     -
   reset    :=
+    type    : 0
+    times   : 4
+    chance  : 100
+    max     : 0
+    room_max: 4
+    arg     : 120
+    -
     type    : 1
     times   : 1
     chance  : 100
@@ -81,22 +88,15 @@ list:=
       chance  : 100
       max     : 0
       room_max: 0
-      arg     : 100
+      arg     : 101
       -
       type    : 0
       times   : 1
       chance  : 100
       max     : 0
       room_max: 0
-      arg     : 101
+      arg     : 100
       -
-    -
-    type    : 0
-    times   : 4
-    chance  : 100
-    max     : 0
-    room_max: 4
-    arg     : 120
     -
   -
   name     : At the Bar
@@ -113,15 +113,15 @@ list:=
   terrain  : 0
   edescs   :-
     list:=
-      keywords: stage
-      desc    :~
-           You can see an entertainment stage on the far north end of the bar.
-          It appears to be empty, currently.
-      -
       keywords: fireplace
       desc    :~
            There is a fireplace burning to the northwest.  Many people seem to 
         be scattered around it, chatting.
+      -
+      keywords: stage
+      desc    :~
+           You can see an entertainment stage on the far north end of the bar.
+          It appears to be empty, currently.
       -
     -
   exits    :=
@@ -158,21 +158,6 @@ list:=
     direction : northwest
     -
   reset    :=
-    type    : 1
-    times   : 1
-    chance  : 100
-    max     : 1
-    room_max: 0
-    arg     : 101
-    in      :=
-      type    : 0
-      times   : 5
-      chance  : 100
-      max     : 0
-      room_max: 0
-      arg     : 141
-      -
-    -
     type    : 0
     times   : 1
     chance  : 100
@@ -186,6 +171,21 @@ list:=
       max     : 0
       room_max: 8
       arg     : 130
+      -
+    -
+    type    : 1
+    times   : 1
+    chance  : 100
+    max     : 1
+    room_max: 0
+    arg     : 101
+    in      :=
+      type    : 0
+      times   : 5
+      chance  : 100
+      max     : 0
+      room_max: 0
+      arg     : 141
       -
     -
   -
@@ -308,7 +308,7 @@ list:=
       -
     -
   -
-  name     : A New Buildwalk Room
+  name     : By the Fireplace
   desc     :~
        There is a large fireplace here, burning away merrily.  Many people are 
     here, scattered around it at various tables.  The warmth of the fire is 
@@ -322,15 +322,10 @@ list:=
   terrain  : 0
   edescs   :-
     list:=
-      keywords: fire, fireplace
+      keywords: stage
       desc    :~
-           It blazes bright and warm.  The heat it gives off is rather soothing, 
-        and you can't help but feel relaxed around it.
-      -
-      keywords: bar
-      desc    :~
-           You see the bar off to the southeast.  It looks like it is filling 
-        up rather quickly.
+           There is a small entertainment stage to the northeast.  It looks empty at 
+        the moment.
       -
       keywords: corner
       desc    :~
@@ -338,10 +333,15 @@ list:=
         sitting over there, but most are alone and do not look like they want to 
         be disturbed.
       -
-      keywords: stage
+      keywords: bar
       desc    :~
-           There is a small entertainment stage to the northeast.  It looks empty at 
-        the moment.
+           You see the bar off to the southeast.  It looks like it is filling 
+        up rather quickly.
+      -
+      keywords: fire, fireplace
+      desc    :~
+           It blazes bright and warm.  The heat it gives off is rather soothing, 
+        and you can't help but feel relaxed around it.
       -
     -
   exits    :=

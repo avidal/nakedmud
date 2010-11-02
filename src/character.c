@@ -93,12 +93,14 @@ struct char_data {
   char                 * password;
   bitvector_t            prfs;  
   room_vnum              loadroom;
+  int                    imm_invis;
 
   // shared data for PCs and NPCs
   int                    uid;
 
   BODY_DATA            * body;
-  int                    race;
+  char                 * race;
+  //  int                    race;
 
   SOCKET_DATA          * socket;
   ROOM_DATA            * room;
@@ -128,11 +130,12 @@ CHAR_DATA *newChar() {
 
   ch->password      = strdup("");
   ch->prfs          = 0;
+  ch->imm_invis     = 0;
 
   ch->loadroom      = NOWHERE;
   ch->uid           = NOBODY;
 
-  ch->race          = RACE_HUMAN;
+  ch->race          = strdup(raceDefault());//RACE_HUMAN;
   ch->body          = raceCreateBody(ch->race);
   ch->room          = NULL;
   ch->furniture     = NULL;
@@ -281,7 +284,7 @@ BODY_DATA   *charGetBody      ( CHAR_DATA *ch) {
   return ch->body;
 }
 
-int          charGetRace  ( CHAR_DATA *ch) {
+const char  *charGetRace  ( CHAR_DATA *ch) {
   return ch->race;
 }
 
@@ -299,6 +302,10 @@ void *charGetAuxiliaryData(const CHAR_DATA *ch, const char *name) {
 
 OBJ_DATA *charGetFurniture(CHAR_DATA *ch) {
   return ch->furniture;
+}
+
+int charGetImmInvis(CHAR_DATA *ch) {
+  return ch->imm_invis;
 }
 
 void         charSetSocket    ( CHAR_DATA *ch, SOCKET_DATA *socket) {
@@ -344,8 +351,9 @@ void         charSetBody      ( CHAR_DATA *ch, BODY_DATA *body) {
   ch->body = body;
 }
 
-void         charSetRace  (CHAR_DATA *ch, int race) {
-  ch->race = race;
+void         charSetRace  (CHAR_DATA *ch, const char *race) {
+  if(ch->race) free(ch->race);
+  ch->race = strdup(race);
 }
 
 void         charSetUID(CHAR_DATA *ch, int uid) {
@@ -364,6 +372,9 @@ void charSetFurniture(CHAR_DATA *ch, OBJ_DATA *furniture) {
   ch->furniture = furniture;
 }
 
+void charSetImmInvis(CHAR_DATA *ch, int level) {
+  ch->imm_invis = level;
+}
 
 
 //*****************************************************************************
@@ -401,20 +412,21 @@ void deleteChar( CHAR_DATA *mob) {
 CHAR_DATA *charRead(STORAGE_SET *set) {
   CHAR_DATA *mob = newMobile();
 
-  charSetVnum(mob,          read_int   (set, "vnum"));
+  charSetVnum(mob,         read_int   (set, "vnum"));
   charSetName(mob,         read_string(set, "name"));
-  charSetKeywords(mob,      read_string(set, "keywords"));
+  charSetKeywords(mob,     read_string(set, "keywords"));
   charSetRdesc(mob,        read_string(set, "rdesc"));
   charSetDesc(mob,         read_string(set, "desc"));
   charSetMultiRdesc(mob,   read_string(set, "multirdesc"));
   charSetMultiName(mob,    read_string(set, "multiname"));
   charSetLevel(mob,        read_int   (set, "level"));
   charSetSex(mob,          read_int   (set, "sex"));
-  charSetRace(mob,         read_int   (set, "race"));
+  charSetRace(mob,         read_string(set, "race"));
   charSetPassword(mob,     read_string(set, "password"));
 
   // read in PC data
   if(*charGetPassword(mob)) {
+    charSetImmInvis(mob,   read_int   (set, "imm_invis"));
     charSetUID(mob,        read_int   (set, "uid"));
     charSetLoadroom(mob,   read_int   (set, "loadroom"));
     charSetPos(mob,        read_int   (set, "position"));
@@ -428,6 +440,12 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
   mob->auxiliary_data = auxiliaryDataRead(read_set(set, "auxiliary"), 
 					  AUXILIARY_TYPE_CHAR);
 
+  // make sure our race is OK
+  if(!isRace(mob->race)) {
+    free(mob->race);
+    mob->race = strdup(raceDefault());
+  }
+
   // reset our body to the default for our race
   charResetBody(mob);
 
@@ -437,30 +455,31 @@ CHAR_DATA *charRead(STORAGE_SET *set) {
 
 STORAGE_SET *charStore(CHAR_DATA *mob) {
   STORAGE_SET *set = new_storage_set();
-  store_int   (set, "vnum",       mob->vnum,                 NULL);
-  store_string(set, "name",       mob->name,                 NULL);
-  store_string(set, "keywords",   mob->keywords,             NULL);
-  store_string(set, "rdesc",      mob->rdesc,                NULL);
-  store_string(set, "desc",       mob->desc,                 NULL);
-  store_string(set, "multirdesc", mob->multi_rdesc,          NULL);
-  store_string(set, "multiname",  mob->multi_name,           NULL);
-  store_int   (set, "level",      mob->level,                NULL);
-  store_int   (set, "sex",        mob->sex,                  NULL);
-  store_int   (set, "race",       mob->race,                 NULL);
+  store_int   (set, "vnum",       mob->vnum);
+  store_string(set, "name",       mob->name);
+  store_string(set, "keywords",   mob->keywords);
+  store_string(set, "rdesc",      mob->rdesc);
+  store_string(set, "desc",       mob->desc);
+  store_string(set, "multirdesc", mob->multi_rdesc);
+  store_string(set, "multiname",  mob->multi_name);
+  store_int   (set, "level",      mob->level);
+  store_int   (set, "sex",        mob->sex);
+  store_string(set, "race",       mob->race);
 
   // PC-only data
   if(!charIsNPC(mob)) {
-    store_int   (set, "position",   mob->position,                 NULL);
-    store_string(set, "prfs",       write_bits(mob->prfs),         NULL);
-    store_string(set, "password",   mob->password,                 NULL);
-    store_int   (set, "uid",        mob->uid,                      NULL);
-    store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)), NULL);
+    store_int   (set, "imm_invis",  mob->imm_invis);
+    store_int   (set, "position",   mob->position);
+    store_string(set, "prfs",       write_bits(mob->prfs));
+    store_string(set, "password",   mob->password);
+    store_int   (set, "uid",        mob->uid);
+    store_int   (set, "loadroom",   roomGetVnum(charGetRoom(mob)));
   }
   // NPC-only data
   else
-    store_int   (set, "dialog",     mob->dialog,               NULL);
+    store_int   (set, "dialog",     mob->dialog);
 
-  store_set(set,"auxiliary", auxiliaryDataStore(mob->auxiliary_data), NULL);
+  store_set(set,"auxiliary", auxiliaryDataStore(mob->auxiliary_data));
   return set;
 }
 
@@ -480,6 +499,7 @@ void charCopyTo( CHAR_DATA *from, CHAR_DATA *to) {
   charSetPos        (to, charGetPos(from));
   charSetRace       (to, charGetRace(from));
   charSetBody       (to, bodyCopy(charGetBody(from)));
+  charSetImmInvis   (to, charGetImmInvis(from));
 
   auxiliaryDataCopyTo(from->auxiliary_data, to->auxiliary_data);
 }

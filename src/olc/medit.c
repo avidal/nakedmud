@@ -43,8 +43,9 @@ void medit_menu(SOCKET_DATA *sock, OLC_DATA *olc) {
 #ifdef MODULE_SCRIPTS
 		 "{gS) Script menu\r\n"
 #endif
-		 "{gR) Change race  {y[{c%8s{y]\r\n"
-		 "{gD) Dialog       {y[{c%8d{y]  {w%s\r\n",
+		 "{gR) Change race   {y[{c%8s{y]\r\n"
+		 "{gG) Change Gender {y[{c%8s{y]\r\n"
+		 "{gD) Dialog        {y[{c%8d{y]  {w%s\r\n",
 		 charGetVnum(mob),
 		 charGetName(mob),
 		 charGetMultiName(mob),
@@ -52,7 +53,8 @@ void medit_menu(SOCKET_DATA *sock, OLC_DATA *olc) {
 		 charGetRdesc(mob),
 		 charGetMultiRdesc(mob),
 		 charGetDesc(mob),
-		 raceGetName(charGetRace(mob)),
+		 charGetRace(mob),
+		 sexGetName(charGetSex(mob)),
 		 charGetDialog(mob),
 		 (worldGetDialog(gameworld, charGetDialog(mob)) ?
 		  dialogGetName(worldGetDialog(gameworld, 
@@ -65,22 +67,21 @@ void medit_menu(SOCKET_DATA *sock, OLC_DATA *olc) {
 		 );
 }
 
-void medit_race_menu(SOCKET_DATA *sock, OLC_DATA *olc) {
+void medit_sex_menu(SOCKET_DATA *sock, OLC_DATA *olc) {
   int i;
-  for(i = 0; i < NUM_RACES; i++)
-    send_to_socket(sock, "%2d) %-20s%s", 
-		   i, raceGetName(i), (i % 3 == 2 ?"\r\n":""));
-  if(i % 3 != 0)
-    send_to_socket(sock, "\r\n");
-  send_to_socket(sock,
-		 "\r\nPlease select a race: ");
+  for(i = 0; i < NUM_SEXES; i++)
+    send_to_socket(sock, "%2d) %s\r\n", i, sexGetName(i));
+}
+
+void medit_race_menu(SOCKET_DATA *sock, OLC_DATA *olc) {
+  send_to_socket(sock, "%s\r\n\r\n", raceGetList(FALSE));
+  send_to_socket(sock, "Please select a race: ");
 }
 
 void medit_main_loop(SOCKET_DATA *sock, OLC_DATA *olc, char *arg) {
   int next_substate = MEDIT_MAIN;
 
-  switch(*arg) {
-  case 'q':
+  switch(toupper(*arg)) {
   case 'Q':
     send_to_socket(sock, "Save changes (Y/N) : ");
     next_substate = MEDIT_CONFIRM_SAVE;
@@ -119,20 +120,22 @@ void medit_main_loop(SOCKET_DATA *sock, OLC_DATA *olc, char *arg) {
     next_substate = MEDIT_MAIN;
     break;
 
-  case 'r':
   case 'R':
     medit_race_menu(sock, olc);
     next_substate = MEDIT_RACE;
     break;
 
-  case 'd':
+  case 'G':
+    medit_sex_menu(sock, olc);
+    next_substate = MEDIT_SEX;
+    break;
+
   case 'D':
     send_to_socket(sock, "Enter new dialog vnum (-1 for none) : ");
     next_substate = MEDIT_DIALOG;
     break;
 
 #ifdef MODULE_SCRIPTS
-  case 's':
   case 'S':
     olcSetNext(olc, newOLC(OLC_SSEDIT, SSEDIT_MAIN,
 			   copyScriptSet(charGetScripts((CHAR_DATA *)olcGetData(olc))), charGetName((CHAR_DATA *)olcGetData(olc))));
@@ -208,17 +211,27 @@ void medit_loop(SOCKET_DATA *sock, OLC_DATA *olc, char *arg) {
     break;
 
   case MEDIT_RACE: {
-    int race = RACE_NONE;
-    if(isdigit(*arg)) race = atoi(arg);
-    else              race = raceGetNum(arg);
-    if(race == RACE_NONE) {
+    if(!isRace(arg)) {
       send_to_socket(sock, "Invalid race! Try again: ");
       next_substate = MEDIT_RACE;
     }
     else {
-      charSetRace(mob, race);
+      charSetRace(mob, arg);
       charResetBody(mob);
     }
+    break;
+  }
+
+  case MEDIT_SEX: {
+    int sex = SEX_NONE;
+    if(isdigit(*arg)) sex = atoi(arg);
+    else              sex = sexGetNum(arg);
+    if(sex == SEX_NONE) {
+      send_to_socket(sock, "Invalid gender! Try again: ");
+      next_substate = MEDIT_SEX;
+    }
+    else
+      charSetSex(mob, sex);
     break;
   }
 

@@ -95,6 +95,18 @@ void *listGet(struct list *L, int num);
 
 
 //
+// Return the head of the list
+//
+void *listHead(struct list *L);
+
+
+//
+// Return the tail of the list
+//
+void *listTail(struct list *L);
+
+
+//
 // Put the element in the list in an ascending order, based on
 // what the comparator, func, tells us is the order.
 //

@@ -102,7 +102,7 @@ timeAuxDataCopy(TIME_AUX_DATA *data) {
 
 STORAGE_SET *timeAuxDataStore(TIME_AUX_DATA *data) {
   STORAGE_SET *set = new_storage_set();
-  store_string(set, "night_desc", data->night_desc, NULL);
+  store_string(set, "night_desc", data->night_desc);
   return set;
 }
 
@@ -174,19 +174,13 @@ void handle_time_update(void *self, void *data, char *arg) {
 
   // save our time data to file
   STORAGE_SET *set = new_storage_set();
-  store_int(set, "hour",         curr_hour,         NULL);
-  store_int(set, "day_of_week",  curr_day_of_week,  NULL);
-  store_int(set, "day_of_month", curr_day_of_month, NULL);
-  store_int(set, "month",        curr_month,        NULL);
-  store_int(set, "year",         curr_year,         NULL);
+  store_int(set, "hour",         curr_hour);
+  store_int(set, "day_of_week",  curr_day_of_week);
+  store_int(set, "day_of_month", curr_day_of_month);
+  store_int(set, "month",        curr_month);
+  store_int(set, "year",         curr_year);
   storage_write(set, TIME_FILE);
   storage_close(set);
-
-  // throw ourself back into the event queue
-  start_event(NULL,
-	      TIME_UPDATE_DELAY,
-	      handle_time_update,
-	      NULL, NULL, NULL);
 }
 
 
@@ -216,10 +210,7 @@ void init_time() {
 				       timeAuxDataStore, timeAuxDataRead));
 
   // start our time updater
-  start_event(NULL,
-	      TIME_UPDATE_DELAY,
-	      handle_time_update,
-	      NULL, NULL, NULL);
+  start_update(NULL, TIME_UPDATE_DELAY, handle_time_update, NULL, NULL, NULL);
 }
 
 

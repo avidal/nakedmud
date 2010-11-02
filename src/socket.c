@@ -687,6 +687,7 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
 {
   if(sock_new->page_string) free(sock_new->page_string);
   if(sock_new->text_editor) buffer_free(sock_new->text_editor);
+  if(sock_new->notepad)     free(sock_new->notepad);
 
   bzero(sock_new, sizeof(*sock_new));
   sock_new->control        =  sock;
@@ -697,6 +698,7 @@ void clear_socket(SOCKET_DATA *sock_new, int sock)
 
   sock_new->text_editor    = NULL;
   sock_new->text_pointer   = NULL;
+  sock_new->notepad        = NULL;
   sock_new->in_text_edit   = FALSE;
   sock_new->max_text_len   = 0;
 

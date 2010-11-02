@@ -24,12 +24,14 @@ typedef struct event_data EVENT_DATA;
 LIST    *events = NULL;
 
 struct event_data {
-  void *owner; // who is the lucky person who owns this event?
+  void *owner;   // who is the lucky person who owns this event?
   void (*  on_complete)(void *owner, void *data, char *arg);
   bool (*  check_involvement)(void *thing, void *data);
-  int   delay; // how much longer until the event is complete?
-  void *data;  // data for the event
-  char *arg;   // an argument supplied to an event
+  int   delay;   // how much longer until the event is complete?
+  int   tot_time;// what is the total delay before the event fires?
+  void *data;    // data for the event
+  char *arg;     // an argument supplied to an event
+  bool  requeue; // is the event requeue'd after it goes off?
 };
 
 
@@ -75,14 +77,16 @@ EVENT_DATA *newEvent(void *owner,
 		     int delay, 	
 		     void (*  on_complete)(void *owner, void *data, char *arg),
 		     bool (* check_involvement)(void *thing, void *data),
-		     void *data, char *arg) {
+		     void *data, const char *arg, bool requeue) {
   EVENT_DATA *event        = malloc(sizeof(EVENT_DATA));
   event->owner             = owner;
   event->on_complete       = on_complete;
   event->check_involvement = check_involvement;
   event->delay             = delay;
+  event->tot_time          = delay;
   event->data              = data;
   event->arg               = strdup(arg ? arg :"");
+  event->requeue           = requeue;
   return event;
 }
 
@@ -137,18 +141,26 @@ void start_event(void *owner,
 		 void *on_complete,
 		 void *check_involvement,
 		 void *data,
-		 char *arg) {
+		 const char *arg) {
   listPut(events, newEvent(owner, delay, on_complete, check_involvement,
-			   data, arg));
+			   data, arg, FALSE));
+}
+
+void start_update(void *owner, 
+		  int   delay,
+		  void *on_complete,
+		  void *check_involvement,
+		  void *data,
+		  const char *arg) {
+  listPut(events, newEvent(owner, delay, on_complete, check_involvement,
+			   data, arg, TRUE));
 }
 
 void pulse_events(int time) {
   LIST_ITERATOR *ev_i = newListIterator(events);
   EVENT_DATA   *event = NULL;
 
-  // we can't use ITERATE_LIST here, because there are times
-  // where we will remove our current element  from the list, 
-  // making it kinda hard to go onto the next one afterwards ;)
+  // go over all of the events
   ITERATE_LIST(event, ev_i) {
     // decrement the delay
     event->delay -= time;
@@ -156,7 +168,15 @@ void pulse_events(int time) {
     if(event->delay <= 0) {
       listRemove(events, event);
       run_event(event);
-      deleteEvent(event);
+      // if we need to requeue, reset the timer 
+      // and put us back in the list
+      if(event->requeue) {
+	event->delay = event->tot_time;
+	listPut(events, event);
+      }
+      // otherwise, just delete the event
+      else
+	deleteEvent(event);
     }
   }
   deleteListIterator(ev_i);

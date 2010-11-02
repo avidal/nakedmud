@@ -17,6 +17,7 @@
 #define AUXILIARY_TYPE_CHAR      (1 << 0)
 #define AUXILIARY_TYPE_ROOM      (1 << 1)
 #define AUXILIARY_TYPE_OBJ       (1 << 2)
+#define AUXILIARY_TYPE_ZONE      (1 << 3)
 
 
 //

@@ -36,7 +36,7 @@
 //
 COMMAND(cmd_lock) {
   if(!arg || !*arg) {
-    send_to_char(ch, "What were you wanting to unlock?\r\n");
+    send_to_char(ch, "What were you wanting to lock?\r\n");
     return;
   }
 

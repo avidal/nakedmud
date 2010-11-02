@@ -26,7 +26,6 @@
 #define LIST_MARKER           '='
 #define STRING_MARKER         '~'
 #define TYPELESS_MARKER       ' '
-#define COMMENT_MARKER        '#'
 
 
 struct storage_set {
@@ -57,7 +56,6 @@ void delete_storage_data(STORAGE_DATA *data);
 bool list_is_empty(STORAGE_SET_LIST *list);
 bool set_is_empty (STORAGE_SET *set);
 
-void write_storage_comment(FILE *fl, const char *comment, int indent);
 void write_storage_set(STORAGE_SET *set, FILE *fl, int indent);
 void write_storage_list(STORAGE_SET_LIST *list, FILE *fl, int indent);
 void write_storage_data(STORAGE_DATA *data, FILE *fl, int key_width,int indent);
@@ -143,15 +141,6 @@ void print_indent(FILE *fl, int indent) {
     sprintf(fmt, "%%%ds", indent);
     fprintf(fl, fmt, " ");
   }
-}
-
-
-//
-// write a comment to file
-//
-void write_storage_comment(FILE *fl, const char *comment, int indent) {
-  print_indent(fl, indent);
-  fprintf(fl, "%c %s\n", COMMENT_MARKER, comment);
 }
 
 
@@ -365,17 +354,6 @@ bool storage_end(FILE *fl) {
 
 
 //
-// Parse out the comments that are next. If none exist, return NULL
-//
-char *parse_comments(FILE *fl, int indent) {
-  //***********
-  // FINISH ME
-  //***********
-  return NULL;
-}
-
-
-//
 // return the type of the data we're dealing with. It is assumed
 // this will be called IMMEDIATELY after parse_key is called
 //
@@ -468,7 +446,7 @@ STORAGE_SET *parse_storage_set(FILE *fl, int indent) {
     switch(type) {
     case TYPELESS_MARKER: {
       char *line = parse_line(fl);
-      store_string(set, key, line, NULL);
+      store_string(set, key, line);
       free(line);
       break;
     }
@@ -476,19 +454,19 @@ STORAGE_SET *parse_storage_set(FILE *fl, int indent) {
     case STRING_MARKER: {
       fgetc(fl); // kill the newline
       char *string = parse_string(fl, indent+2);
-      store_string(set, key, string, NULL);
+      store_string(set, key, string);
       free(string);
       break;
     }
 
     case SET_MARKER:
       fgetc(fl); // kill the newline
-      store_set(set, key, parse_storage_set(fl, indent+2), NULL);
+      store_set(set, key, parse_storage_set(fl, indent+2));
       break;
 
     case LIST_MARKER:
       fgetc(fl); // kill the newline
-      store_list(set, key, parse_storage_list(fl, indent+2), NULL);
+      store_list(set, key, parse_storage_list(fl, indent+2));
       break;
     }
     free(key);
@@ -576,33 +554,27 @@ void   storage_put(STORAGE_SET *set, STORAGE_DATA *data) {
 }
 
 
-void   store_set(STORAGE_SET *set, const char *key, STORAGE_SET *val,
-		 const char *comment) {
+void   store_set(STORAGE_SET *set, const char *key, STORAGE_SET *val) {
   storage_put(set, new_data_set(val, key));
 }
 
-void   store_list(STORAGE_SET *set, const char *key, STORAGE_SET_LIST *val,
-		  const char *comment) {
+void   store_list(STORAGE_SET *set, const char *key, STORAGE_SET_LIST *val) {
   storage_put(set, new_data_list(val, key));
 }
 
-void store_string(STORAGE_SET *set, const char *key, const char *val,
-		  const char *comment) {
+void store_string(STORAGE_SET *set, const char *key, const char *val) {
   storage_put(set, new_data_string(val, key));
 }
 
-void store_double(STORAGE_SET *set, const char *key, double val, 
-		  const char *comment) {
+void store_double(STORAGE_SET *set, const char *key, double val) {
   storage_put(set, new_data_double(val, key));
 }
 
-void store_int(STORAGE_SET *set, const char *key, int val, 
-	       const char *comment) {
+void store_int(STORAGE_SET *set, const char *key, int val) {
   storage_put(set, new_data_int(val, key));
 }
 
-void store_long(STORAGE_SET *set, const char *key, long val, 
-	       const char *comment) {
+void store_long(STORAGE_SET *set, const char *key, long val) {
   storage_put(set, new_data_long(val, key));
 }
 
@@ -611,7 +583,7 @@ STORAGE_SET    *read_set(STORAGE_SET *set, const char *key) {
   if(data) 
     return data->set_val;
   else {
-    store_set(set, key, new_storage_set(), NULL);
+    store_set(set, key, new_storage_set());
     return read_set(set, key);
   }
 }
@@ -621,7 +593,7 @@ STORAGE_SET_LIST    *read_list(STORAGE_SET *set, const char *key) {
   if(data) 
     return data->list_val;
   else {
-    store_list(set, key, new_storage_list(), NULL);
+    store_list(set, key, new_storage_list());
     return read_list(set, key);
   }
 }

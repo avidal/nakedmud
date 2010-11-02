@@ -96,7 +96,7 @@ void redit_exit_menu(SOCKET_DATA *sock, OLC_DATA *olc) {
 
   // now special exits
   int num_spec_exits = 0;
-  char **room_names = roomGetExitNames(room, &num_spec_exits);
+  const char **room_names = roomGetExitNames(room, &num_spec_exits);
   for(i = 0; i < num_spec_exits; i++) {
     EXIT_DATA *exit = roomGetExitSpecial(room, room_names[i]);
     send_to_socket(sock, "   {g%-10s : {y[{c%6d{y]%s",
@@ -110,8 +110,6 @@ void redit_exit_menu(SOCKET_DATA *sock, OLC_DATA *olc) {
     send_to_socket(sock, "\r\n");
 
   // clean up our mess
-  for(i = 0; i < num_spec_exits; i++)
-    free(room_names[i]);
   free(room_names);
 }
 

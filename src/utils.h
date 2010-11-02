@@ -101,7 +101,9 @@ char *tag_keywords        (const char *keywords, const char *string,
 void format_string        (char **ptr_string, int max_width, 
 		          unsigned int maxlen, bool indent);
 int  count_letters        (const char *string, const char ch, const int strlen);
-int   fgetline            (FILE *file, char *p, int maxlen);
+int  fgetline             (FILE *file, char *p, int maxlen);
+void center_string        (char *buf, const char *string, int linelen, 
+			   int buflen, bool border);
 
 
 
@@ -137,6 +139,14 @@ CHAR_DATA  *check_reconnect( const char *player );
       key != NULL; \
       mapIteratorNext(it), \
       key = mapIteratorCurrentKey(it), val = mapIteratorCurrentVal(it))
+
+// iterate across all the elements in a set
+#define ITERATE_SET(elem, it) \
+  for(elem = setIteratorCurrent(it); \
+      elem != NULL; \
+      setIteratorNext(it), elem = setIteratorCurrent(it))
+
+
 
 
 //
@@ -199,8 +209,12 @@ char *print_list(LIST *list, void *descriptor, void *multi_descriptor);
 // multi-descriptor is a pointer to the function that gets a copy of the
 // thing's description if there is more than 1 copy of it in the list.
 //
-void show_list(CHAR_DATA *ch, LIST *list, 
-	       void *descriptor, void *multi_descriptor);
+// vnum_getter is a pointer to a function that returns the thing's vnum for
+// displaying to players of builder level and above. vnum_getter can be NULL 
+// to display no vnums.
+//
+void show_list(CHAR_DATA *ch, LIST *list, void *descriptor, 
+	       void *multi_descriptor, void *vnum_getter);
 
 
 //

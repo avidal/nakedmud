@@ -57,11 +57,6 @@ const char *bodypos_list[NUM_BODYPOS] = {
   "held"
 };
 
-const char *bodytype_list[NUM_BODYTYPES] = {
-  "humanoid",
-  "dragon",
-};
-
 const char *bodysize_list[NUM_BODYSIZES] = {
   "diminuitive",
   "tiny",
@@ -108,66 +103,6 @@ BODYPART *bodypartCopy(BODYPART *P) {
   return p_new;
 }
 
-/**
- * Create a new body with dragon pieces and proportions
- */
-BODY_DATA *newDragonBody() {
-  BODY_DATA *body = newBody();
-  body->size = BODYSIZE_COLLOSAL;
-  bodyAddPosition(body, "left hind claw",          BODYPOS_CLAW,          1);
-  bodyAddPosition(body, "right hind claw",         BODYPOS_CLAW,          1);
-  bodyAddPosition(body, "left front claw",         BODYPOS_CLAW,          1);
-  bodyAddPosition(body, "right front claw",        BODYPOS_CLAW,          1);
-  bodyAddPosition(body, "right hind leg",          BODYPOS_LEG,           8);
-  bodyAddPosition(body, "left hind leg",           BODYPOS_LEG,           8);
-  bodyAddPosition(body, "right front leg",         BODYPOS_LEG,           8);
-  bodyAddPosition(body, "left front leg",          BODYPOS_LEG,           8);
-  bodyAddPosition(body, "left wing",               BODYPOS_WING,         10);
-  bodyAddPosition(body, "right wing",              BODYPOS_WING,         10);
-  bodyAddPosition(body, "torso",                   BODYPOS_TORSO,        30);
-  bodyAddPosition(body, "neck",                    BODYPOS_NECK,          3);
-  bodyAddPosition(body, "face",                    BODYPOS_FACE,          3);
-  bodyAddPosition(body, "head",                    BODYPOS_HEAD,          2);
-  bodyAddPosition(body, "tail",                    BODYPOS_TAIL,          6);
-  bodyAddPosition(body, "floating about head",     BODYPOS_FLOAT,         0);
-  //                                                                  ------
-  //                                                                    100
-  return body;
-}
-
-/**
- * Create a new body with humanoid pieces and proportions
- */
-BODY_DATA *newHumanoidBody() {
-  BODY_DATA *body = newBody();
-  body->size = BODYSIZE_MEDIUM;
-  bodyAddPosition(body, "right grip",              BODYPOS_HELD,          0);
-  bodyAddPosition(body, "left grip",               BODYPOS_HELD,          0);
-  bodyAddPosition(body, "right foot",              BODYPOS_RIGHT_FOOT,    2);
-  bodyAddPosition(body, "left foot",               BODYPOS_LEFT_FOOT,     2);
-  bodyAddPosition(body, "right leg",               BODYPOS_LEG,           9);
-  bodyAddPosition(body, "left leg",                BODYPOS_LEG,           9);
-  bodyAddPosition(body, "waist",                   BODYPOS_WAIST,         1);
-  bodyAddPosition(body, "right finger",            BODYPOS_FINGER,        1);
-  bodyAddPosition(body, "left finger",             BODYPOS_FINGER,        1);
-  bodyAddPosition(body, "right hand",              BODYPOS_RIGHT_HAND,    2);
-  bodyAddPosition(body, "left hand",               BODYPOS_LEFT_HAND,     2);
-  bodyAddPosition(body, "right wrist",             BODYPOS_WRIST,         1);
-  bodyAddPosition(body, "left wrist",              BODYPOS_WRIST,         1);
-  bodyAddPosition(body, "right arm",               BODYPOS_ARM,           7);
-  bodyAddPosition(body, "left arm",                BODYPOS_ARM,           7);
-  bodyAddPosition(body, "about body",              BODYPOS_ABOUT,         0);
-  bodyAddPosition(body, "torso",                   BODYPOS_TORSO,        50);
-  bodyAddPosition(body, "neck",                    BODYPOS_NECK,          1);
-  bodyAddPosition(body, "right ear",               BODYPOS_EAR,           0);
-  bodyAddPosition(body, "left ear",                BODYPOS_EAR,           0);
-  bodyAddPosition(body, "face",                    BODYPOS_FACE,          2);
-  bodyAddPosition(body, "head",                    BODYPOS_HEAD,          2);
-  bodyAddPosition(body, "floating about head",     BODYPOS_FLOAT,         0);
-  //                                                                  ------
-  //                                                                    100
-  return body;
-}
 
 
 //*****************************************************************************
@@ -196,18 +131,6 @@ char *list_postypes(const BODY_DATA *B, const char *posnames) {
   return strdup(types);
 }
 
-const char *bodytypeGetName(int bodytype) {
-  return bodytype_list[bodytype];
-}
-
-int bodytypeGetNum(const char *bodytype) {
-  int i;
-  for(i = 0; i < NUM_BODYTYPES; i++)
-    if(!strcasecmp(bodytype, bodytype_list[i]))
-      return i;
-  return BODYTYPE_NONE;
-}
-
 const char *bodysizeGetName(int size) {
   return bodysize_list[size];
 }
@@ -231,15 +154,6 @@ int bodyposGetNum(const char *bodypos) {
       return i;
   return BODYPOS_NONE;
 }
-
-BODY_DATA *bodyCreate(int bodytype) {
-  switch(bodytype) {
-  case BODYTYPE_HUMANOID:  return newHumanoidBody();
-  case BODYTYPE_DRAGON:    return newDragonBody();
-  default:                 return NULL;
-  }
-}
-
 
 BODY_DATA *newBody() {
   struct body_data*B = malloc(sizeof(BODY_DATA));
@@ -266,6 +180,10 @@ BODY_DATA *bodyCopy(const BODY_DATA *B) {
 
 int bodyGetSize(const BODY_DATA *B) {
   return B->size;
+}
+
+void bodySetSize(BODY_DATA *B, int size) {
+  B->size = size;
 }
 
 //

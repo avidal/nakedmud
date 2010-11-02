@@ -88,11 +88,11 @@ STORAGE_SET *aliasAuxDataStore(ALIAS_AUX_DATA *data) {
   const char       *name = NULL;
   const char        *cmd = NULL;
 
-  store_list(set, "aliases", list, NULL);
+  store_list(set, "aliases", list);
   ITERATE_HASH(name, cmd, hash_i) {
     STORAGE_SET *alias_set = new_storage_set();
-    store_string(alias_set, "key", name, NULL);
-    store_string(alias_set, "val", hashIteratorCurrentVal(hash_i), NULL);
+    store_string(alias_set, "key", name);
+    store_string(alias_set, "val", hashIteratorCurrentVal(hash_i));
     storage_list_put(list, alias_set);
   }
   deleteHashIterator(hash_i);

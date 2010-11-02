@@ -199,7 +199,6 @@ void        charSetScripts(CHAR_DATA *mob, SCRIPT_SET *scripts);
 #define SCRIPTOR_CHAR           0
 #define SCRIPTOR_ROOM           1
 #define SCRIPTOR_OBJ            2
-#define SCRIPTOR_EXIT           3
 
 //
 // initialize the scripting system
@@ -216,7 +215,7 @@ void finalize_scripts();
 // start up a script
 //
 void run_script(const char *script, void *me, int me_type,
-		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room, EXIT_DATA *exit, 
+		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room,
 		const char *cmd, const char *arg, int narg);
 
 //
@@ -242,14 +241,12 @@ void try_speech_script(CHAR_DATA *ch, CHAR_DATA *listener, char *speech);
 //
 // Try enterance scripts in the given room (the room itself, and mobs)
 //
-void try_enterance_script(CHAR_DATA *ch, ROOM_DATA *room, 
-			  EXIT_DATA *exit, const char *dirname);
+void try_enterance_script(CHAR_DATA *ch, ROOM_DATA *room, const char *dirname);
 
 //
 // Try exit scripts in the given room (the room itself, and mobs)
 //
-void try_exit_script(CHAR_DATA *ch, ROOM_DATA *room, 
-		     EXIT_DATA *exit, const char *dirname);
+void try_exit_script(CHAR_DATA *ch, ROOM_DATA *room, const char *dirname);
 
 //
 // Searches for command scripts in the room. If the actual command should
@@ -267,7 +264,7 @@ int  try_command_script(CHAR_DATA *ch, const char *cmd, const char *arg);
 //
 int try_scripts(int script_type,
 		void *me, int me_type,
-		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room, EXIT_DATA *exit,
+		CHAR_DATA *ch, OBJ_DATA *obj, ROOM_DATA *room,
 		const char *cmd, const char *arg, int narg);
 
 #endif //__SCRIPT_H

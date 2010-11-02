@@ -59,18 +59,12 @@ void storage_list_put(STORAGE_SET_LIST *list, STORAGE_SET *set);
 //
 // store various datatypes to the storage data
 //
-void    store_set(STORAGE_SET *set, const char *key, STORAGE_SET *val,
-		  const char *comment);
-void   store_list(STORAGE_SET *set, const char *key, STORAGE_SET_LIST *val,
-		  const char *comment);
-void store_string(STORAGE_SET *set, const char *key, const char *val,
-		  const char *comment);
-void store_double(STORAGE_SET *set, const char *key, double val,
-		  const char *comment);
-void    store_int(STORAGE_SET *set, const char *key, int val,
-		  const char *comment);
-void   store_long(STORAGE_SET *set, const char *key, long val,
-		  const char *comment);
+void    store_set(STORAGE_SET *set, const char *key, STORAGE_SET *val);
+void   store_list(STORAGE_SET *set, const char *key, STORAGE_SET_LIST *val);
+void store_string(STORAGE_SET *set, const char *key, const char *val);
+void store_double(STORAGE_SET *set, const char *key, double val);
+void    store_int(STORAGE_SET *set, const char *key, int val);
+void   store_long(STORAGE_SET *set, const char *key, long val);
 
 
 //

@@ -274,9 +274,18 @@ void text_editor_loop (SOCKET_DATA *sock, char *arg) {
       break;
 
     case 'l':
-    case 'L':
+    case 'L': {
       text_editor_display(sock, sock->editor_mode, TRUE);
+      if(sock->editor_mode == EDITOR_MODE_NORMAL) {
+	int linecount = 0;
+	if(buffer_string(sock->text_editor))
+	  linecount = count_letters(buffer_string(sock->text_editor), '\n', 
+				    strlen(buffer_string(sock->text_editor)));
+	send_to_socket(sock, "%d line%s displayed.\r\n", linecount,
+		       (linecount == 1 ? "" : "s"));
+      }
       break;
+    }
 
     case 'f':
     case 'F':
@@ -393,6 +402,12 @@ void text_editor_loop (SOCKET_DATA *sock, char *arg) {
   }
 }
 
+void start_notepad(SOCKET_DATA *sock, const char *txt, int max_len, 
+		   int mode) {
+  if(sock->notepad) free(sock->notepad);
+  sock->notepad = strdup(txt ? txt : "");
+  start_text_editor(sock, &sock->notepad, max_len, mode);
+}
 
 void start_text_editor( SOCKET_DATA *sock, char **text, int max_len, int mode) {
   // we're already in edit mode ... don't mess around

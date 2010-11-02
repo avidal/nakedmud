@@ -283,6 +283,14 @@ void *listGet(struct list *L, int num) {
   return (node ? node->elem : NULL);
 }
 
+void *listHead(struct list *L) {
+  return L->head;
+}
+
+void *listTail(struct list *L) {
+  return L->tail;
+}
+
 int isListEmpty(struct list *L) {
   return (L->size == 0);
 }

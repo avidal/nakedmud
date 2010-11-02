@@ -4,7 +4,8 @@
 //
 // mudtime.h
 //
-// A small module for handling time of day in the MUD.
+// We can't use time.c, because it is a standard C header. A small module for
+// handling time of day in the MUD.
 //
 //*****************************************************************************
 

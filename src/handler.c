@@ -234,12 +234,12 @@ void do_give(CHAR_DATA *ch, CHAR_DATA *recv, OBJ_DATA *obj) {
   // object give
   try_scripts(SCRIPT_TYPE_GIVE,
 	      obj, SCRIPTOR_OBJ,
-	      ch, obj, charGetRoom(ch), NULL, NULL, NULL, 0);
+	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
   
   // char receive
   try_scripts(SCRIPT_TYPE_GIVE,
 	      recv, SCRIPTOR_CHAR,
-	      ch, obj, charGetRoom(ch), NULL, NULL, NULL, 0);
+	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
 #endif
 }
 
@@ -253,10 +253,10 @@ void do_drop(CHAR_DATA *ch, OBJ_DATA *obj) {
   // check for triggers
   try_scripts(SCRIPT_TYPE_DROP,
 	      charGetRoom(ch), SCRIPTOR_ROOM,
-	      ch, obj, charGetRoom(ch), NULL, NULL, NULL, 0);
+	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
   try_scripts(SCRIPT_TYPE_DROP,
 	      obj, SCRIPTOR_OBJ,
-	      ch, obj, charGetRoom(ch), NULL, NULL, NULL, 0);
+	      ch, obj, charGetRoom(ch), NULL, NULL, 0);
 #endif
 }
 
@@ -828,7 +828,7 @@ void *find_one(CHAR_DATA *looker,
 
     // now special exits
     int num_exits = 0;
-    char **ex_names = roomGetExitNames(charGetRoom(looker), &num_exits);
+    const char **ex_names = roomGetExitNames(charGetRoom(looker), &num_exits);
     for(ex_i = 0; ex_i < num_exits; ex_i++) {
       exit = roomGetExitSpecial(charGetRoom(looker), ex_names[ex_i]);
       if(!exit)
@@ -854,8 +854,6 @@ void *find_one(CHAR_DATA *looker,
       exit = NULL;
 
     // clean up our mess
-    for(ex_i = 0; ex_i < num_exits; ex_i++)
-      free(ex_names[ex_i]);
     free(ex_names);
 
     // we got one

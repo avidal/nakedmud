@@ -25,7 +25,6 @@
 #include "dialog.h"
 #include "event.h"
 #include "action.h"
-#include "help.h"
 
 
 // optional modules
@@ -91,11 +90,6 @@ void extract_mobile(CHAR_DATA *ch) {
 #endif
   interrupt_events_involving(ch);
 
-#ifdef MODULE_FIGHT
-  stop_all_targetting(ch);
-  stop_fight(ch);
-#endif
-
   // unequip everything the character is wearing
   // and send it to inventory
   unequip_all(ch);
@@ -157,10 +151,9 @@ void communicate(CHAR_DATA *dMob, char *txt, int range)
 
 
 /*
- * Loading of help files, areas, etc, at boot time.
+ * load the world and its inhabitants, as well as other misc game data
  */
 void load_muddata(bool fCopyOver) {  
-  load_helps();
   gameworld = worldLoad(WORLD_PATH);
   if(gameworld == NULL) {
     log_string("ERROR: Could not boot game world.");
@@ -329,6 +322,8 @@ bool  can_see_char          ( CHAR_DATA *ch, CHAR_DATA *target) {
   if(ch == target)
     return TRUE;
   if(poscmp(charGetPos(ch), POS_SLEEPING) <= 0)
+    return FALSE;
+  if(charGetImmInvis(target) > charGetLevel(ch))
     return FALSE;
 
   return TRUE;
@@ -857,6 +852,41 @@ void remove_keyword(char *keywords, const char *word) {
 
 
 //
+// print the string on the buffer, centered for a line of length linelen.
+// if border is TRUE, put a border to either side of the string.
+//
+void center_string(char *buf, const char *string, int linelen, int buflen, 
+		   bool border) {
+  static char fmt[32];
+  int str_len = strlen(string);
+  int spaces  = (linelen - str_len)/2;
+
+  if(border) {
+    int i, buf_i = 0;
+    sprintf(fmt, "{g%%-%ds[{c", spaces-2);
+    buf_i  = snprintf(buf, buflen, fmt, " ");
+    // replace all of the spaces with -
+    for(i = 0; buf[i] != '\0'; i++) if(buf[i] == ' ') buf[i] = '-';
+
+    buf_i += snprintf(buf+buf_i, buflen-buf_i, " %s ", string);
+    sprintf(fmt, "{g]%%-%ds\r\n", 
+	    spaces-2 + (((linelen-str_len) % 2) == 1 ? 1 : 0));
+
+    i = buf_i;
+    buf_i += snprintf(buf+buf_i, buflen-buf_i, fmt, " ");
+    // replace all of the spaces with -
+    for(; buf[i] != '\0'; i++) if(buf[i] == ' ') buf[i] = '-';
+  }
+  else {
+    int buf_i = 0;
+    sprintf(fmt, "%%-%ds", spaces);
+    buf_i  = snprintf(buf, buflen, fmt, " ");
+    buf_i += snprintf(buf+buf_i, buflen-buf_i, "%s\r\n", string);
+  }
+}
+
+
+//
 // fill up the buffer with characters until
 // a newline is reached, or we hit our critical
 // length. Return how many characters were read
@@ -1163,10 +1193,11 @@ char *print_list(LIST *list, void *descriptor, void *multi_descriptor) {
 }
 
 
-void show_list(CHAR_DATA *ch, LIST *list, 
-	       void *descriptor, void *multi_descriptor) {
+void show_list(CHAR_DATA *ch, LIST *list, void *descriptor, 
+	       void *multi_descriptor, void *vnum_getter) {
   const char             *(* desc_func)(void *) = descriptor;
   const char            *(* multi_desc)(void *) = multi_descriptor;
+  int                    (*  vnum_func)(void *) = vnum_getter;
 
   int i;
   int size = listSize(list);
@@ -1205,14 +1236,23 @@ void show_list(CHAR_DATA *ch, LIST *list,
     // we've run into the end of the list
     if(things[i] == NULL)
       break;
-    if(counts[i] == 1)
-      send_to_char(ch, "%s\r\n", desc_func(things[i]));
-    else if(multi_desc == NULL || !*multi_desc(things[i]))
-      send_to_char(ch, "(%d) %s\r\n", counts[i], desc_func(things[i]));
     else {
-      char fmt[SMALL_BUFFER];
-      sprintf(fmt, "%s\r\n", multi_desc(things[i]));
-      send_to_char(ch, fmt, counts[i]);
+      char vnum_buf[20];
+      if(charGetLevel(ch) < LEVEL_BUILDER || vnum_func == NULL)
+	*vnum_buf = '\0';
+      else
+	sprintf(vnum_buf, "[%d] ", vnum_func(things[i]));
+
+      if(counts[i] == 1)
+	send_to_char(ch, "%s%s\r\n", vnum_buf, desc_func(things[i]));
+      else if(multi_desc == NULL || !*multi_desc(things[i]))
+	send_to_char(ch, "%s(%d) %s\r\n", vnum_buf, 
+		     counts[i], desc_func(things[i]));
+      else {
+	char fmt[SMALL_BUFFER];
+	sprintf(fmt, "%s%s\r\n", vnum_buf, multi_desc(things[i]));
+	send_to_char(ch, fmt, counts[i]);
+      }
     }
   }
 }
@@ -1263,8 +1303,6 @@ bool has_obj(CHAR_DATA *ch, int vnum) {
 
 const char *custom_prompt(CHAR_DATA *ch) {
   static char prompt[MAX_BUFFER];
-  *prompt = '\0';
-  strcat(prompt, "\r\nprompt> ");
-    
+  sprintf(prompt, "\r\nprompt> ");
   return prompt;
 }

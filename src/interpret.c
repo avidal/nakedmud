@@ -91,8 +91,9 @@ void init_commands() {
   // B
   add_cmd("back",       NULL, cmd_back,     0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
-  add_cmd("buildwalk",  NULL, cmd_tog_prf,  SUBCMD_BUILDWALK, 
+  add_cmd("buildwalk",  NULL, cmd_tog_prf,  PRF_BUILDWALK, 
 	  POS_UNCONCIOUS, POS_FLYING, LEVEL_BUILDER, FALSE, FALSE);
+
 
   // C
   add_cmd("chat",       NULL, cmd_chat,     0, POS_UNCONCIOUS, POS_FLYING,
@@ -149,12 +150,14 @@ void init_commands() {
 	  LEVEL_BUILDER, FALSE, TRUE );
 
   // H
-  add_cmd("help",       NULL, cmd_help,     0, POS_UNCONCIOUS, POS_FLYING,
-	  LEVEL_PLAYER, TRUE, FALSE);
+  //  add_cmd("help",       NULL, cmd_help,     0, POS_UNCONCIOUS, POS_FLYING,
+  //	  LEVEL_PLAYER, TRUE, FALSE);
 
   // I
   add_cmd("inventory",  NULL, cmd_inventory,0, POS_SITTING,  POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd("invis",      NULL, cmd_invis,    0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
 
   // L
   add_cmd("look",       "l",  cmd_look,     0, POS_SITTING,  POS_FLYING,
@@ -169,6 +172,8 @@ void init_commands() {
 	  LEVEL_ADMIN, FALSE, FALSE);
 
   // M
+  add_cmd("mapwalk",    NULL, cmd_tog_prf,  PRF_MAPWALK,
+	  POS_UNCONCIOUS, POS_FLYING, LEVEL_PLAYER, FALSE, FALSE);
   add_cmd("mlist",      NULL, cmd_mlist,    0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("more",       NULL, cmd_more,     0, POS_UNCONCIOUS, POS_FLYING,
@@ -211,6 +216,8 @@ void init_commands() {
 	  LEVEL_PLAYER, TRUE, FALSE);
   add_cmd("stand",      NULL, cmd_stand,    0, POS_SITTING,  POS_STANDING,
 	  LEVEL_PLAYER, TRUE, TRUE );
+  add_cmd("stop",       NULL, cmd_stop,     0, POS_SITTING, POS_FLYING,
+	  LEVEL_PLAYER, TRUE, FALSE);
 #ifdef MODULE_SCRIPTS
   // really, we -should- put this in the scripts module, but there are some
   // very nice functions in builder.c that cmd_sclist uses to print scripts,
@@ -224,10 +231,16 @@ void init_commands() {
 	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("tell",       NULL, cmd_tell,     0, POS_SLEEPING, POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd("transfer",   NULL, cmd_transfer, 0, POS_STANDING, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, TRUE);
 
   // U
   add_cmd("unlock",       NULL,  cmd_unlock,    0, POS_STANDING,  POS_FLYING,
 	  LEVEL_PLAYER, TRUE, TRUE);
+
+  // V
+  add_cmd("visible",      NULL, cmd_visible,    0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
 
   // W
   add_cmd("wake",       NULL, cmd_wake,     0, POS_SLEEPING,  POS_SLEEPING,
@@ -240,6 +253,8 @@ void init_commands() {
 	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("worn",       NULL, cmd_equipment,0, POS_SITTING,  POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
+  add_cmd("write",      NULL, cmd_write,    0, POS_SITTING, POS_FLYING,
+	  LEVEL_PLAYER, TRUE, TRUE);
 
   // Z
   add_cmd("zlist",      NULL, cmd_zlist,    0, POS_SITTING,  POS_FLYING,

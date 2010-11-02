@@ -1,6 +1,6 @@
 //*****************************************************************************
 //
-// builder.c
+// cmd_builder.c
 //
 // various utilities (non-OLC) for builders, such as digging/filling exits, 
 // listing zone scripts/rooms/etc, and utilities for loading/purging mobs and
@@ -14,7 +14,6 @@
 #include "room.h"
 #include "exit.h"
 #include "movement.h"
-#include "builder.h"
 #include "character.h"
 #include "object.h"
 #include "handler.h"
@@ -65,7 +64,10 @@ void try_specfill(CHAR_DATA *ch, const char *dir) {
 }
 
 
-
+//
+// creates an exit in a direction to a specific room
+// usage: dig [dir] [room]
+//
 COMMAND(cmd_dig) {
   char buf[MAX_INPUT_LEN];
   int dir;
@@ -114,6 +116,10 @@ COMMAND(cmd_dig) {
 }
 
 
+//
+// fills in an exit in a specific direction
+// usage: fill [dir]
+//
 COMMAND(cmd_fill) {
   char buf[MAX_INPUT_LEN];
   int dir;
@@ -160,48 +166,10 @@ COMMAND(cmd_fill) {
 }
 
 
-bool try_buildwalk(CHAR_DATA *ch, int dir) {
-  ZONE_DATA *zone = worldZoneBounding(gameworld, roomGetVnum(charGetRoom(ch)));
-  
-  if(!canEditZone(zone, ch))
-    send_to_char(ch, "You are not authorized to edit this zone.\r\n");
-  else if(roomGetExit(charGetRoom(ch), dir))
-    send_to_char(ch, "You try to buildwalk %s, but a room already exists in that direction!\r\n", dirGetName(dir));
-  else if(!zone) {
-    send_to_char(ch, "The room you are in is not attached to a zone!\r\n");
-    log_string("ERROR: %s tried to buildwalk %s, but room %d was not in a zone!", charGetName(ch), dirGetName(dir), roomGetVnum(charGetRoom(ch)));
-  }
-  else {
-    room_vnum vnum = getFreeRoomVnum(zone);
-    if(vnum == NOWHERE)
-      send_to_char(ch, 
-		   "Zone #%d has no free rooms left. "
-		   "Buildwalk could not be performed.\r\n", zoneGetVnum(zone));
-    else {
-      char desc[MAX_BUFFER];
-      ROOM_DATA *new_room = newRoom();
-      roomSetVnum(new_room, vnum);
-
-      roomSetName(new_room, "A New Buildwalk Room");
-      sprintf(desc, "This room was created by %s.\r\n", charGetName(ch));
-      roomSetDesc(new_room, desc);
-
-      zoneAddRoom(zone, new_room);
-      roomDigExit(charGetRoom(ch), dir, vnum);
-      roomDigExit(new_room, dirGetOpposite(dir), 
-		  roomGetVnum(charGetRoom(ch)));
-      try_move(ch, dir, NULL);
-      return TRUE;
-
-      // save the changes... this will get costly as our world gets bigger.
-      // But that should be alright once we make zone saving a bit smarter
-      worldSave(gameworld, WORLD_PATH);
-    }
-  }
-  return FALSE;
-}
-
-
+//
+// Load a copy of a specific mob/object
+// usage: load [mob | obj] [vnum]
+//
 COMMAND(cmd_load) {
   if(!arg || !*arg)
     send_to_char(ch, "What did you want to load?\r\n");
@@ -229,7 +197,7 @@ COMMAND(cmd_load) {
 	// check for initialization scripts
 	try_scripts(SCRIPT_TYPE_INIT,
 		    mob, SCRIPTOR_CHAR,
-		    NULL, NULL, charGetRoom(mob), NULL, NULL, NULL, 0);
+		    NULL, NULL, charGetRoom(mob), NULL, NULL, 0);
 #endif
       }
     }
@@ -248,7 +216,7 @@ COMMAND(cmd_load) {
 	// check for initialization scripts
 	try_scripts(SCRIPT_TYPE_INIT,
 		    obj, SCRIPTOR_OBJ,
-		    ch, NULL, charGetRoom(ch), NULL, NULL, NULL, 0);
+		    ch, NULL, charGetRoom(ch), NULL, NULL, 0);
 #endif
       }
     }
@@ -256,6 +224,11 @@ COMMAND(cmd_load) {
 }
 
 
+//
+// remove an object or player from the game. If no argument is supplied, all
+// objects and non-player characters are removed from the current room.
+//   usage: purge <target>
+//
 COMMAND(cmd_purge) {
 
   // purge everything
@@ -322,6 +295,11 @@ COMMAND(cmd_purge) {
 }
 
 
+//
+// trigger all of a specified zone's reset scripts and such. If no vnum is
+// supplied, the zone the user is currently in is reset.
+//   usage: zreset <zone vnum>
+//
 COMMAND(cmd_zreset) {
   ZONE_DATA *zone = NULL;
 
@@ -399,10 +377,9 @@ COMMAND(cmd_rlist) {
 	  "rooms", arg);
 }
 
-
 COMMAND(cmd_mlist) {
-  do_list(ch, zoneGetMob, charGetName, charGetRace, raceGetName,
-	  "mobs", arg);
+  //  do_list(ch, zoneGetMob, charGetName, charGetRace, raceGetName,
+  //	  "mobs", arg);
 }
 
 COMMAND(cmd_olist) {

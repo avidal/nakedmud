@@ -11,7 +11,26 @@
 #include "utils.h"
 #include "save.h"
 #include "event.h"
+#include "action.h"
 #include "handler.h"
+
+
+//
+// stop performing the character's current action
+//
+COMMAND(cmd_stop) {
+#ifdef MODULE_FACULTY
+  if(!is_acting(ch, FACULTY_ALL))
+    send_to_char(ch, "But you're not currently performing an action!\r\n");
+  else
+    interrupt_action(ch, FACULTY_ALL);
+#else
+  if(!is_acting(ch, 1))
+    send_to_char(ch, "But you're not currently performing an action!\r\n");
+  else
+    interrupt_action(ch, 1);
+#endif
+}
 
 
 //
@@ -19,7 +38,12 @@
 //
 COMMAND(cmd_tog_prf) {
   switch(subcmd) {
-  case SUBCMD_BUILDWALK:
+  case PRF_MAPWALK:
+    charToggleBit(ch, BITFIELD_PRFS, PRF_MAPWALK);
+    send_to_char(ch, "Mapwalk %s.\r\n",
+		 (charIsBitSet(ch, BITFIELD_PRFS, PRF_MAPWALK) ? "on":"off"));
+    break;
+  case PRF_BUILDWALK:
     charToggleBit(ch, BITFIELD_PRFS, PRF_BUILDWALK);
     send_to_char(ch, "Buildwalk %s.\r\n", 
 		 (charIsBitSet(ch, BITFIELD_PRFS, PRF_BUILDWALK) ? "on":"off"));
@@ -139,4 +163,15 @@ COMMAND(cmd_delay) {
 
   send_to_char(ch, "You delay '%s' for %d seconds.\r\n", arg, atoi(time));
   start_event(ch, atoi(time) SECONDS, event_delayed_cmd, NULL, NULL, arg);
+}
+
+
+//
+// An entrypoint into the character's notepad
+//
+COMMAND(cmd_write) {
+  if(!charGetSocket(ch))
+    send_to_char(ch, "You cannot use notepad if you have no socket.\r\n");
+  else
+    start_notepad(charGetSocket(ch), "", MAX_BUFFER, EDITOR_MODE_NORMAL);
 }

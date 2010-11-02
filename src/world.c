@@ -185,7 +185,7 @@ bool worldSave(WORLD_DATA *world, const char *dirpath) {
   char buf[MAX_BUFFER];
   STORAGE_SET       *set = new_storage_set();
   STORAGE_SET_LIST *list = new_storage_list();
-  store_list(set, "zones", list, NULL);
+  store_list(set, "zones", list);
 
   LIST_ITERATOR *zone_i = newListIterator(world->zones);
   ZONE_DATA       *zone = NULL;
@@ -198,7 +198,7 @@ bool worldSave(WORLD_DATA *world, const char *dirpath) {
 
     if(zoneSave(zone, buf)) {
       STORAGE_SET *zone_set = new_storage_set();
-      store_int(zone_set, "vnum", zoneGetVnum(zone), NULL);
+      store_int(zone_set, "vnum", zoneGetVnum(zone));
       storage_list_put(list, zone_set);
     }
   }

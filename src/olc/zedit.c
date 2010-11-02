@@ -42,8 +42,7 @@ void zedit_menu(SOCKET_DATA *sock, OLC_DATA *olc) {
 void zedit_main_loop(SOCKET_DATA *sock, OLC_DATA *olc, char *arg) {
   int next_substate = ZEDIT_MAIN;
 
-  switch(*arg) {
-  case 'q':
+  switch(toupper(*arg)) {
   case 'Q':
     send_to_socket(sock, "Save changes (Y/N) : ");
     next_substate = ZEDIT_CONFIRM_SAVE;

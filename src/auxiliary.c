@@ -148,7 +148,7 @@ auxiliaryDataStore(HASHTABLE *data) {
     entry = hashIteratorCurrentVal(hash_i);
     hashIteratorNext(hash_i);
     funcs = auxiliariesGetFuncs(name);
-    store_set(set, name, funcs->store(entry), NULL);
+    store_set(set, name, funcs->store(entry));
   }
   deleteHashIterator(hash_i);
   return set;

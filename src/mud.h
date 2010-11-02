@@ -27,16 +27,7 @@
 #define MODULE_ALIAS
 #define MODULE_CHAR_VARS
 #define MODULE_SOCIALS
-
-
-//
-// Two modules that I am working on... together, they work similar to KaVir's
-// Gladiator Pits. Expect to see them for download in the near future.
-//   - Geoff Hollis, Dec26/04
-//
-//#define MODULE_FACULTY
-//#define MODULE_COMBAT
-//
+#define MODULE_HELP
 
 
 
@@ -49,7 +40,6 @@
 //*****************************************************************************
 typedef struct socket_data                SOCKET_DATA;
 typedef struct char_data                  CHAR_DATA;  
-typedef struct help_data                  HELP_DATA;
 typedef struct lookup_data                LOOKUP_DATA;
 typedef struct list                       LIST;
 typedef struct list_iterator              LIST_ITERATOR;
@@ -57,6 +47,8 @@ typedef struct hashtable                  HASHTABLE;
 typedef struct hashtable_iterator         HASH_ITERATOR;
 typedef struct hashmap                    HASHMAP;
 typedef struct map_iterator               MAP_ITERATOR;
+typedef struct set_data                   SET;
+typedef struct set_iterator               SET_ITERATOR;
 typedef struct datatable                  DATATABLE;
 typedef struct storage_set                STORAGE_SET;
 typedef struct storage_set_list           STORAGE_SET_LIST;
@@ -108,6 +100,7 @@ typedef  unsigned char     byte;
 #include "list.h"
 #include "hashmap.h"
 #include "hashtable.h"
+#include "set.h"
 
 
 
@@ -136,7 +129,6 @@ typedef  unsigned char     byte;
 #define MAX_INPUT_LEN       512                   /* max length of a string someone can input */
 #define SMALL_BUFFER       1024
 #define MAX_BUFFER         8192                   /* seems like a decent amount         */
-#define MAX_HELP_ENTRY     (MAX_BUFFER)
 #define MAX_SCRIPT         16384                  /* max length of a script */
 #define MAX_OUTPUT         8192                   /* well shoot me if it isn't enough   */
 #define FILE_TERMINATOR    "EOF"                  /* end of file marker                 */
@@ -183,10 +175,6 @@ typedef  unsigned char     byte;
 #define COMM_LOG              10  /* admins only                     */
 
 
-/* cmd_tog_prf */
-#define SUBCMD_BUILDWALK       0
-
-
 #define NOWHERE        (-1)
 #define NOTHING        (-1)
 #define NOBODY         (-1)
@@ -211,14 +199,6 @@ typedef  unsigned char     byte;
  ******************************/
 
 /* the actual structures */
-struct help_data
-{
-  HELP_DATA     * next;
-  time_t          load_time;
-  char          * keyword;
-  char          * text;
-};
-
 struct lookup_data
 {
   SOCKET_DATA       * dsock;   /* the socket we wish to do a hostlookup on */
@@ -264,12 +244,11 @@ extern  LIST           *socket_free;
 extern  LIST           *mobile_list;
 extern  PROPERTY_TABLE *mob_table;      /* same contents as mobile_list, but
 					   arranged by uid (unique ID)        */
-extern  HELP_DATA   *   help_list;      /* the linked list of help files      */
 extern  const struct    typCmd tabCmd[];/* the command table                  */
 extern  bool            shut_down;      /* used for shutdown                  */
 extern  int             mudport;        /* What port are we running on?       */
 extern  char        *   greeting;       /* the welcome greeting               */
-extern  char        *   motd;           /* the MOTD help file                 */
+extern  char        *   motd;           /* the MOTD message                   */
 extern  int             control;        /* boot control socket thingy         */
 extern  time_t          current_time;   /* let's cut down on calls to time()  */
 
@@ -322,9 +301,7 @@ void  do_cmd                  ( CHAR_DATA *ch, char *arg,
 /* io.c */
 void    log_string            ( const char *txt, ... ) __attribute__ ((format (printf, 1, 2)));
 void    bug                   ( const char *txt, ... ) __attribute__ ((format (printf, 1, 2)));
-time_t  last_modified         ( char *helpfile );
 char   *read_file             ( const char *file );
-char   *read_help_entry       ( const char *helpfile);
 char   *fread_line            ( FILE *fp );                 /* pointer        */
 char   *fread_string          ( FILE *fp );                 /* allocated data */
 char   *fread_word            ( FILE *fp );                 /* pointer        */
@@ -361,8 +338,6 @@ void  page_string           ( SOCKET_DATA *dsock, const char *string);
 void  page_continue         ( SOCKET_DATA *dsock);
 void  page_back             ( SOCKET_DATA *dsock);
 
-/* help.c */
-bool check_help(CHAR_DATA *dMob, char *helpfile);
 
 /*******************************
  * End of prototype declartion *

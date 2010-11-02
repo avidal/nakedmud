@@ -1,18 +1,20 @@
 GEOFF'S TO DO LIST
 +-- KNOWN BUGS
+  * moving via tracking will not trigger enter/exit scripts
 
 
 +-- NOT COMPLETE
-  * remove the EXIT_DATA parameter from the script functions
-  * write helpfiles, create a better helpfile system, and do hedit
+  * spellchecking in the text editor
+  * Redo OLC so that if a module uses OLC, it can add the relevant functions
+    from its own module.
+  * Devise something to replace bitvectors that is a bit more amenable to
+    keeping things modular.
   * condense normal and special exits in rooms
   * soft-code chat channels
   * random dungeon generator
-  * spellchecking in the text editor
   * mounts and vehicles
   * being able to stream music would be cool...
   * clean up and document resedit in the olc module
-  * tracking and path following
   * shops (for mobiles and players)
   * customized prompts
   * DOCUMENT DOCUMENT DOCUMENT!! Most of the major headers need full
@@ -27,15 +29,13 @@ GEOFF'S TO DO LIST
 
 
 +-- NEEDS EXTRA WORK
+  * write helpfiles, create a better helpfile system, and do hedit
+  * tracking and path following -> daily routines, and patrols
+  * displaying mob/obj/room/exit vnums for immortals -> do we want to also
+    display this stuff for furniture?
   * debug dialogs. Also have a new addition, STORY for temporally extended
     responses
 
 
 +-- NEEDS DEBUGGING
-  * containers
-  * room reset
-  * Make sure extract obj/char is catching everything, and is running well
-  * Delayed action and event handlers
-  * Generic find algorithm
-  * Bodytypes, especially when setting a character's bodytype anew
   * text editor

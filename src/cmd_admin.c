@@ -1,6 +1,6 @@
 //*****************************************************************************
 //
-// admin.c
+// cmd_admin.c
 //
 // commands and procedures available only to admins.
 //
@@ -61,17 +61,14 @@ COMMAND(cmd_goto) {
 
   // find the character we're trying to go to
   else {
-    int tgt_type = FOUND_NONE;
-    void *tgt    = NULL;
-
-    tgt = generic_find(ch, arg, 
-		       FIND_TYPE_CHAR,
-		       FIND_SCOPE_WORLD | FIND_SCOPE_VISIBLE,
-		       FALSE, &tgt_type);
+    void *tgt = generic_find(ch, arg, 
+			     FIND_TYPE_CHAR,
+			     FIND_SCOPE_WORLD | FIND_SCOPE_VISIBLE,
+			     FALSE, NULL);
 
     if(ch == tgt)
       send_to_char(ch, "You're already here, boss.\r\n");
-    else if(tgt && tgt_type == FOUND_CHAR) {
+    else if(tgt != NULL) {
       message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
 	      "$n disappears in a puff of smoke.");
       char_from_room(ch);
@@ -82,6 +79,41 @@ COMMAND(cmd_goto) {
     }
     else
       send_to_char(ch, "Who were you trying to go to?\r\n");
+  }
+}
+
+
+//
+// The opposite of goto. Instead of moving to a specified location, it
+// takes the target to the user.
+//   usage: transfer [player]
+//
+COMMAND(cmd_transfer) {
+  if(!arg || !*arg)
+    send_to_char(ch, "Who would you like to transfer?\r\n");
+  else {
+    void *tgt = generic_find(ch, arg, 
+			     FIND_TYPE_CHAR,
+			     FIND_SCOPE_WORLD | FIND_SCOPE_VISIBLE,
+			     FALSE, NULL);
+
+    if(ch == tgt)
+      send_to_char(ch, "You're already here, boss.\r\n");
+    else if(charGetRoom(ch) == charGetRoom(tgt))
+      send_to_char(ch, "They're already here.\r\n");
+    else if(tgt != NULL) {
+      message(ch, tgt, NULL, NULL, TRUE, TO_VICT,
+	      "$n has transferred you!");
+      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+	      "$n disappears in a puff of smoke.");
+      char_from_room(tgt);
+      char_to_room(tgt, charGetRoom(ch));
+      look_at_room(tgt, charGetRoom(tgt));
+      message(tgt, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+	      "$n arrives in a puff of smoke.");
+    }
+    else
+      send_to_char(ch, "Who were you trying to transfer?\r\n");
   }
 }
 
@@ -168,4 +200,53 @@ COMMAND(cmd_linkdead) {
 //
 COMMAND(cmd_wizhelp) {
   show_commands(ch, LEVEL_BUILDER, charGetLevel(ch));
+}
+
+
+//
+// Turn on/off immortal invisibility
+//
+COMMAND(cmd_invis) {
+  int level = charGetLevel(ch); // default to our level
+  if(arg && *arg && isdigit(*arg))
+    level = atoi(arg);
+
+  // make sure we're not trying to go invisible at a level higher than us
+  if(level > charGetLevel(ch)) {
+    send_to_char(ch, "You cannot go invisibile to a level higher than yours.\r\n");
+    return;
+  }
+
+  // see if we're trying to go visible
+  if(level == 0 && charGetImmInvis(ch) > 0) {
+    send_to_char(ch, "Invisibility turned off.\r\n");
+    charSetImmInvis(ch, 0);
+    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+	    "$n slowly fades into existence.");    
+  }
+  // or invisible
+  else if(level > 0) {
+    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+	    "$n slowly fades out of existence.");
+    charSetImmInvis(ch, level);
+    send_to_char(ch, "You are now invisible to anyone below level %d.\r\n",
+		 level);
+  }
+  // we tried to go visible, but we already are visible
+  else
+    send_to_char(ch, "But you're already visible!\r\n");
+}
+
+
+//
+// turn off immortal invisibility
+//
+COMMAND(cmd_visible) {
+  if(charGetImmInvis(ch) == 0)
+    send_to_char(ch, "But you're already visible!\r\n");
+  else {
+    charSetImmInvis(ch, 0);
+    message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+	    "$n slowly fades into existence.");
+  }
 }

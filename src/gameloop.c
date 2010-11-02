@@ -17,11 +17,12 @@
 #include "inform.h"
 #include "text_editor.h"
 #include "log.h"
-#include "races.h"
 #include "action.h"
 #include "event.h"
 #include "auxiliary.h"
 #include "storage.h"
+#include "races.h"
+#include "body.h"
 
 
 // optional modules
@@ -46,7 +47,6 @@
 #ifdef MODULE_HELP
 #include "help/help.h"
 #endif
-
 
 
 /* mccp support */
@@ -146,6 +146,10 @@ int main(int argc, char **argv)
   log_string("Preparing auxiliary data for usage.");
   init_auxiliaries();
 
+  /* prepare races and bodies for use */
+  log_string("Initializing races and default bodies.");
+  init_races();
+
   /* initialize our command table */
   log_string("Initializing command table.");
   init_commands();
@@ -179,7 +183,6 @@ int main(int argc, char **argv)
   init_time();
 #endif
 
-  /* initialize faculties */
 #ifdef MODULE_CHAR_VARS
   log_string("Initializing character variables.");
   init_char_vars();
@@ -237,13 +240,13 @@ int main(int argc, char **argv)
 }
 
 
-int num_updates = 0;
 //
 // let all of our actions and events know that time has gone by.
 // Also, give a chance of doing some resetting in the game.
 //
 void update_handler()
 {
+  static int num_updates = 0;
   // increment the number of updates we've done
   num_updates++;
 
@@ -255,7 +258,7 @@ void update_handler()
   // we don't want to be on the same schedule as
   // everything else, that updates every PULSES_PER_SECOND. 
   // We want to be on a schedule that updates every minute or so.
-  if(num_updates % PULSES_PER_SECOND * 60 == 0)
+  if((num_updates % (1 MINUTE)) == 0)
     worldPulse(gameworld);
 }
 
@@ -343,7 +346,7 @@ void game_loop(int control)
 	case STATE_VERIFY_PASSWORD:
 	case STATE_ASK_PASSWORD:
 	case STATE_ASK_SEX:
-	case STATE_ASK_RACE:
+   	case STATE_ASK_RACE:
 	  handle_new_connections(dsock, dsock->next_command);
 	  break;
 	case STATE_PLAYING:
@@ -547,15 +550,8 @@ void state_verify_password(SOCKET_DATA *dsock, char *arg) {
 }
 
 void list_races(SOCKET_DATA *sock) {
-  int i;
   send_to_socket(sock, "Available races are:\r\n");
-  for(i = 0; i < NUM_RACES; i++) {
-    if(!raceIsForPC(i))
-      continue;
-    send_to_socket(sock, "%s%s", 
-		   (i == 0 ? "" : ", "),
-		   raceGetName(i));
-  }
+  send_to_socket(sock, "%s", raceGetList(TRUE));
   send_to_socket(sock, "\r\n\r\nPlease enter your choice: ");
 }
 
@@ -563,14 +559,12 @@ void list_races(SOCKET_DATA *sock) {
 // Ask for the character's race. Called each time a character is created
 //
 void state_ask_race(SOCKET_DATA *dsock, char *arg) {
-  int racenum = raceGetNum(arg);
-
-  if(racenum == RACE_NONE || racenum >= NUM_RACES || !raceIsForPC(racenum)) {
+  if(!arg || !*arg || !raceIsForPC(arg)) {
     send_to_socket(dsock, "Invalid race! Please try again: ");
     return;
-  }
+  }    
   else {
-    charSetRace(dsock->player, racenum);
+    charSetRace(dsock->player, arg);
     charResetBody(dsock->player);
   }
 
@@ -595,10 +589,12 @@ void state_ask_race(SOCKET_DATA *dsock, char *arg) {
   char_to_room(dsock->player, worldGetRoom(gameworld, START_ROOM));
   look_at_room(dsock->player, charGetRoom(dsock->player));
 
+  /* and save him */
+  save_player(dsock->player);
+
 #ifdef MODULE_SCRIPTS
   // check enterance scripts
-  try_enterance_script(dsock->player, charGetRoom(dsock->player),
-		       NULL, NULL);
+  try_enterance_script(dsock->player, charGetRoom(dsock->player), NULL);
 #endif
 }
 
@@ -687,8 +683,7 @@ void state_ask_password(SOCKET_DATA *dsock, char *arg) {
 
 #ifdef MODULE_SCRIPTS
 	// check enterance scripts
-	try_enterance_script(p_new, charGetRoom(p_new),
-			     NULL, NULL);
+	try_enterance_script(p_new, charGetRoom(p_new), NULL);
 #endif
       }
       else {
