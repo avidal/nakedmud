@@ -156,12 +156,12 @@ void init_commands();
 void show_commands(CHAR_DATA *ch, const char *user_groups);
 void remove_cmd   (const char *cmd);
 void add_cmd      (const char *cmd, const char *sort_by, COMMAND(func),
-	           int min_pos, int max_pos, const char *user_group, 
-		   bool mob_ok, bool interrupts);
+	           const char *user_group, bool interrupts);
 void add_py_cmd   (const char *cmd, const char *sort_by, void *pyfunc,
-		   int min_pos, int max_pos, const char *user_group,
-		   bool mob_ok, bool interrupts);
+		   const char *user_group, bool interrupts);
 bool cmd_exists   (const char *cmd);
+void add_cmd_check(const char *cmd, CMD_CHK(func));
+void add_py_cmd_check(const char *cmd, void *pyfunc);
 
 
 

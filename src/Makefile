@@ -98,11 +98,14 @@ backup: clean
 	@echo "Compiling $<"
 	@$(CC) -c $(C_FLAGS) -o $(patsubst %.c,%.o, $<) $<
 
-# clear all of the .o files and all of the save files that emacs makes
+# clear all of the .o files and all of the save files that emacs makes. Also
+# clears all of our Python files
 clean:
 	@rm -f $(BINARY)
 	@rm -f *.o $(patsubst %,%/*.o, $(MODULES))
 	@rm -f *~ $(patsubst %,%/*~, $(MODULES))
+	@rm -f ../lib/pymodules/*~
+	@rm -f ../lib/pymodules/*.pyc
 	@echo "$(PROJECT) source files cleaned"
 
 # include all of our dependencies

@@ -187,6 +187,5 @@ COMMAND(cmd_socedit) {
 // implementation of socedit.h
 //*****************************************************************************
 void init_socedit(void) {
-  add_cmd("socedit", NULL, cmd_socedit, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, TRUE);
+  add_cmd("socedit", NULL, cmd_socedit, "builder", TRUE);
 }

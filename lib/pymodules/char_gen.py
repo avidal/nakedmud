@@ -73,6 +73,7 @@ def cg_finish_handler(sock, arg):
     # attach him to his account and save the accoutn
     sock.account.add_char(sock.ch)
     mudsys.do_save(sock.account)
+    mudsys.do_save(sock.ch)
     
     # make him look at the room
     sock.ch.act("look")

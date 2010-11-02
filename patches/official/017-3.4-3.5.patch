@@ -1,0 +1,1442 @@
+diff -ruN versions/nakedmudv3.4/src/Makefile src/Makefile
+--- versions/nakedmudv3.4/src/Makefile	2007-09-22 23:06:28.000000000 -0400
++++ src/Makefile	2007-10-15 19:19:51.000000000 -0400
+@@ -98,11 +98,14 @@
+ 	@echo "Compiling $<"
+ 	@$(CC) -c $(C_FLAGS) -o $(patsubst %.c,%.o, $<) $<
+ 
+-# clear all of the .o files and all of the save files that emacs makes
++# clear all of the .o files and all of the save files that emacs makes. Also
++# clears all of our Python files
+ clean:
+ 	@rm -f $(BINARY)
+ 	@rm -f *.o $(patsubst %,%/*.o, $(MODULES))
+ 	@rm -f *~ $(patsubst %,%/*~, $(MODULES))
++	@rm -f ../lib/pymodules/*~
++	@rm -f ../lib/pymodules/*.pyc
+ 	@echo "$(PROJECT) source files cleaned"
+ 
+ # include all of our dependencies
+diff -ruN versions/nakedmudv3.4/src/action.c src/action.c
+--- versions/nakedmudv3.4/src/action.c	2007-09-22 22:36:11.000000000 -0400
++++ src/action.c	2007-10-15 15:34:56.000000000 -0400
+@@ -129,8 +129,7 @@
+   actors = newMap(NULL, NULL);
+ 
+   // add in our example delayed action
+-  add_cmd("dsay", NULL, cmd_dsay, POS_SITTING, POS_FLYING, 
+-	  "admin", TRUE, FALSE);
++  add_cmd("dsay", NULL, cmd_dsay, "admin", FALSE);
+ 
+   // make sure the character does not continue actions after being extracted
+   hookAdd("char_from_game", stop_actions_hook);
+diff -ruN versions/nakedmudv3.4/src/alias/alias.c src/alias/alias.c
+--- versions/nakedmudv3.4/src/alias/alias.c	2007-09-22 22:36:11.000000000 -0400
++++ src/alias/alias.c	2007-10-15 15:36:29.000000000 -0400
+@@ -284,8 +284,7 @@
+ 				       aliasAuxDataStore, aliasAuxDataRead));
+ 
+   // allow people to view their aliases
+-  add_cmd("alias", NULL, cmd_alias, POS_UNCONSCIOUS, POS_FLYING, 
+-	  "player", FALSE, TRUE);
++  add_cmd("alias", NULL, cmd_alias, "player", TRUE);
+ }
+ 
+ 
+diff -ruN versions/nakedmudv3.4/src/command.c src/command.c
+--- versions/nakedmudv3.4/src/command.c	2007-09-22 22:36:11.000000000 -0400
++++ src/command.c	2007-10-15 17:32:44.000000000 -0400
+@@ -34,42 +34,79 @@
+   char       *name;
+   CMD_PTR(func);
+   PyObject *pyfunc;
+-  int      min_pos;
+-  int      max_pos;
+   char *user_group;
+-  bool      mob_ok;
+   bool  interrupts;
++  LIST     *checks;
+ };
+ 
++typedef struct cmd_check_data {
++  CMD_CHK_PTR(func);
++  PyObject *pyfunc;
++} CMD_CHK_DATA;
++
++
++
++//*****************************************************************************
++// functions for manipulating CMD_CHK_DATA
++//*****************************************************************************
++CMD_CHK_DATA *newCmdCheck(CMD_CHK(func)) {
++  CMD_CHK_DATA *data = malloc(sizeof(CMD_CHK_DATA));
++  data->func   = func;
++  data->pyfunc = NULL;
++  return data;
++}
++
++CMD_CHK_DATA *newPyCmdCheck(PyObject *pyfunc) {
++  CMD_CHK_DATA *data = malloc(sizeof(CMD_CHK_DATA));
++  data->func   = NULL;
++  data->pyfunc = pyfunc;
++  Py_XINCREF(data->pyfunc);
++  return data;
++}
++
++void deleteCmdCheck(CMD_CHK_DATA *data) {
++  if(data->pyfunc) { Py_XDECREF(data->pyfunc); }
++  free(data);
++}
++
++CMD_CHK_DATA *cmdCheckCopy(CMD_CHK_DATA *data) {
++  if(data->func)
++    return newCmdCheck(data->func);
++  else
++    return newPyCmdCheck(data->pyfunc);
++}
++
++void cmdCheckCopyTo(CMD_CHK_DATA *from, CMD_CHK_DATA *to) {
++  Py_XDECREF(to->pyfunc);
++  Py_XINCREF(from->pyfunc);
++  *to = *from;
++}
++
+ 
+ 
+ //*****************************************************************************
+ // implementation of command.h
+ //*****************************************************************************
+-CMD_DATA *newCmd(const char *name, COMMAND(func), int min_pos, int max_pos,
+-		 const char *user_group, bool mob_ok, bool interrupts) {
++CMD_DATA *newCmd(const char *name, COMMAND(func), const char *user_group, 
++		 bool interrupts) {
+   CMD_DATA *cmd   = malloc(sizeof(CMD_DATA));
+   cmd->name       = strdupsafe(name);
+   cmd->func       = func;
+-  cmd->min_pos    = min_pos;
+-  cmd->max_pos    = max_pos;
+   cmd->user_group = strdupsafe(user_group);
+-  cmd->mob_ok     = mob_ok;
+   cmd->interrupts = interrupts;
++  cmd->checks     = newList();
+   cmd->pyfunc     = NULL;
+   return cmd;
+ }
+ 
+-CMD_DATA *newPyCmd(const char *name, void *pyfunc, int min_pos, int max_pos,
+-		 const char *user_group, bool mob_ok, bool interrupts) {
++CMD_DATA *newPyCmd(const char *name, void *pyfunc, const char *user_group, 
++		   bool interrupts) {
+   CMD_DATA *cmd   = malloc(sizeof(CMD_DATA));
+   cmd->name       = strdupsafe(name);
+   cmd->func       = NULL;
+-  cmd->min_pos    = min_pos;
+-  cmd->max_pos    = max_pos;
+   cmd->user_group = strdupsafe(user_group);
+-  cmd->mob_ok     = mob_ok;
+   cmd->interrupts = interrupts;
++  cmd->checks     = newList();
+   cmd->pyfunc     = pyfunc;
+   Py_INCREF(cmd->pyfunc);
+   return cmd;
+@@ -79,26 +116,32 @@
+   if(cmd->name)       free(cmd->name);
+   if(cmd->user_group) free(cmd->user_group);
+   if(cmd->pyfunc)     { Py_DECREF(cmd->pyfunc); }
++  if(cmd->checks)     deleteListWith(cmd->checks, deleteCmdCheck);
+   free(cmd);
+ }
+ 
+ CMD_DATA *cmdCopy(CMD_DATA *cmd) {
++  CMD_DATA *newcmd = NULL;
+   if(cmd->func)
+-    return newCmd(cmd->name, cmd->func, cmd->min_pos, cmd->max_pos,
+-		  cmd->user_group, cmd->mob_ok, cmd->interrupts);
++    newcmd = newCmd(cmd->name, cmd->func, cmd->user_group, cmd->interrupts);
+   else
+-    return newPyCmd(cmd->name, cmd->pyfunc, cmd->min_pos, cmd->max_pos,
+-		    cmd->user_group, cmd->mob_ok, cmd->interrupts);
++    newcmd = newPyCmd(cmd->name, cmd->pyfunc, cmd->user_group, cmd->interrupts);
++  
++  // copy over the checks
++  deleteList(newcmd->checks);
++  newcmd->checks = listCopyWith(cmd->checks, cmdCheckCopy);
++  return newcmd;
+ }
+ 
+ void cmdCopyTo(CMD_DATA *from, CMD_DATA *to) {
+   if(to->name)       free(to->name);
+   if(to->user_group) free(to->user_group);
+   if(to->pyfunc)     { Py_DECREF(to->pyfunc); }
+-  *to = *from;
+   to->name         = strdup(from->name);
+   to->user_group   = strdup(from->user_group);
+   if(to->pyfunc)     { Py_INCREF(to->pyfunc); }
++  to->func         = from->func;
++  to->interrupts   = from->interrupts;
+ }
+ 
+ const char *cmdGetName(CMD_DATA *cmd) {
+@@ -109,23 +152,22 @@
+   return cmd->user_group;
+ }
+ 
+-int cmdGetMinPos(CMD_DATA *cmd) {
+-  return cmd->min_pos;
++bool cmdGetInterrupts(CMD_DATA *cmd) {
++  return cmd->interrupts;
+ }
+ 
+-int cmdGetMaxPos(CMD_DATA *cmd) {
+-  return cmd->max_pos;
++LIST *cmdGetChecks(CMD_DATA *cmd) {
++  return cmd->checks;
+ }
+ 
+-bool cmdGetMobOk(CMD_DATA *cmd) {
+-  return cmd->mob_ok;
++void cmdAddCheck(CMD_DATA *cmd, CMD_CHK(func)) {
++  listPut(cmdGetChecks(cmd), newCmdCheck(func));
+ }
+ 
+-bool cmdGetInterrupts(CMD_DATA *cmd) {
+-  return cmd->interrupts;
++void cmdAddPyCheck(CMD_DATA *cmd, void *pyfunc) {
++  listPut(cmdGetChecks(cmd), newPyCmdCheck(pyfunc));
+ }
+ 
+-
+ //
+ // make sure the character is in a position where this can be performed
+ bool min_pos_ok(CHAR_DATA *ch, int minpos) {
+@@ -192,11 +234,51 @@
+   }
+ }
+ 
++bool cmdTryChecks(CHAR_DATA *ch, CMD_DATA *cmd) {
++  bool cmd_ok = TRUE;
++  if(listSize(cmd->checks) > 0) {
++    LIST_ITERATOR *chk_i = newListIterator(cmd->checks);
++    CMD_CHK_DATA    *chk = NULL;
++    ITERATE_LIST(chk, chk_i) {
++      if(chk->func)
++	cmd_ok = (chk->func)(ch, cmd->name);
++      else {
++	PyObject *arglist = Py_BuildValue("Os", charGetPyFormBorrowed(ch), 
++					  cmd->name);
++	PyObject *retval  = PyEval_CallObject(chk->pyfunc, arglist);
++	// check for an error:
++	if(retval == NULL) {
++	  char *tb = getPythonTraceback();
++	  if(tb != NULL) {
++	    log_string("Error running python command check, %s:\r\n%s\r\n", 
++		       cmd->name, tb);
++	    free(tb);
++	  }
++	}
++	else if(retval == Py_False)
++	  cmd_ok = FALSE;
++
++	// garbage collection
++	Py_XDECREF(retval);
++	Py_XDECREF(arglist);
++      }
++
++      if(cmd_ok == FALSE)
++	break;
++    } deleteListIterator(chk_i);
++  }
++  return cmd_ok;
++}
+ 
+ bool charTryCmd(CHAR_DATA *ch, CMD_DATA *cmd, char *arg) {
++  // first, go through all of our checks
++  if(!cmdTryChecks(ch, cmd))
++    return FALSE;
++  /*
+   if(!min_pos_ok(ch, cmd->min_pos) || !max_pos_ok(ch,cmd->max_pos) ||
+      (charIsNPC(ch) && !cmd->mob_ok))
+     return FALSE;
++  */
+   else {
+     if(cmd->interrupts) {
+ #ifdef MODULE_FACULTY
+@@ -228,3 +310,21 @@
+     return TRUE;
+   }
+ }
++
++CMD_CHK(chk_can_move) {
++  return min_pos_ok(ch, POS_STANDING);
++}
++
++CMD_CHK(chk_conscious) {
++  return min_pos_ok(ch, POS_SITTING);
++}
++
++CMD_CHK(chk_grounded) {
++  return max_pos_ok(ch, POS_STANDING);
++}
++
++CMD_CHK(chk_not_mob) {
++  if(charIsNPC(ch))
++    send_to_char(ch, "NPCs may not use this command.\r\n");
++  return !charIsNPC(ch);
++}
+diff -ruN versions/nakedmudv3.4/src/command.h src/command.h
+--- versions/nakedmudv3.4/src/command.h	2007-09-22 22:36:11.000000000 -0400
++++ src/command.h	2007-10-15 19:26:53.000000000 -0400
+@@ -18,11 +18,15 @@
+   void (* name)(CHAR_DATA *ch, const char *cmd, char *arg)
+ #define COMMAND(name) \
+   void name(CHAR_DATA *ch, const char *cmd, char *arg)
++#define CMD_CHK_PTR(name) \
++  bool (* name)(CHAR_DATA *ch, const char *cmd) 
++#define CMD_CHK(name) \
++  bool name(CHAR_DATA *ch, const char *cmd)
+ 
+-CMD_DATA   *newCmd(const char *name, COMMAND(func), int min_pos, int max_pos,
+-		   const char *user_group, bool mob_ok, bool interrupts);
+-CMD_DATA *newPyCmd(const char *name, void  *pyfunc, int min_pos, int max_pos,
+-		   const char *user_group, bool mob_ok, bool interrupts);
++CMD_DATA   *newCmd(const char *name, COMMAND(func), const char *user_group,
++		   bool interrupts);
++CMD_DATA *newPyCmd(const char *name, void  *pyfunc, const char *user_group,
++		   bool interrupts);
+ 
+ void     deleteCmd(CMD_DATA *cmd);
+ CMD_DATA  *cmdCopy(CMD_DATA *cmd);
+@@ -32,9 +36,13 @@
+ 
+ const char      *cmdGetName(CMD_DATA *cmd);
+ const char *cmdGetUserGroup(CMD_DATA *cmd);
+-int            cmdGetMinPos(CMD_DATA *cmd);
+-int            cmdGetMaxPos(CMD_DATA *cmd);
+-bool            cmdGetMobOk(CMD_DATA *cmd);
+ bool       cmdGetInterrupts(CMD_DATA *cmd);
++void            cmdAddCheck(CMD_DATA *cmd, CMD_CHK(func));
++void          cmdAddPyCheck(CMD_DATA *cmd, void *pyfunc);
++
++CMD_CHK(chk_can_move);     // ensures the person is standing
++CMD_CHK(chk_conscious);    // ensures the person is conscious
++CMD_CHK(chk_grounded);     // ensures the person is on the ground
++CMD_CHK(chk_not_mob);      // ensures the person is not an NPC
+ 
+ #endif // COMMAND_H
+diff -ruN versions/nakedmudv3.4/src/editor/notepad.c src/editor/notepad.c
+--- versions/nakedmudv3.4/src/editor/notepad.c	2007-09-22 22:36:11.000000000 -0400
++++ src/editor/notepad.c	2007-10-15 15:37:09.000000000 -0400
+@@ -116,10 +116,8 @@
+ 				       NULL, NULL, NULL, NULL));
+ 
+   // install our commands
+-  add_cmd("write", NULL, cmd_write, POS_SITTING, POS_FLYING,
+-	  "player", FALSE, TRUE);
+-  add_cmd("notepad", NULL, cmd_notepad, POS_SITTING, POS_FLYING,
+-	  "player", FALSE, TRUE);
++  add_cmd("write",   NULL, cmd_write,   "player", TRUE);
++  add_cmd("notepad", NULL, cmd_notepad, "player", TRUE);
+ 
+   // add our python extensions
+   PyChar_addGetSetter("notepad", PyChar_getnotepad, NULL,
+diff -ruN versions/nakedmudv3.4/src/event.c src/event.c
+--- versions/nakedmudv3.4/src/event.c	2007-09-22 22:36:11.000000000 -0400
++++ src/event.c	2007-10-15 15:35:17.000000000 -0400
+@@ -123,8 +123,7 @@
+   events = newList();
+ 
+   // add our proof of concept command
+-  add_cmd("devent", NULL, cmd_devent, POS_SLEEPING, POS_FLYING,
+-	  "admin", TRUE, FALSE);
++  add_cmd("devent", NULL, cmd_devent, "admin", FALSE);
+ 
+   // make sure all events involving the object/char are cancelled when
+   // either is extracted from the game
+@@ -169,8 +168,15 @@
+ 		  void *check_involvement,
+ 		  void *data,
+ 		  const char *arg) {
+-  listPut(events, newEvent(owner, delay, on_complete, check_involvement,
+-			   data, arg, TRUE));
++  // some events might cause other events to activate. This is signaled by
++  // providing a delay of 0. In this case, we queue events to the back of the
++  // event list instead of push them on to the front
++  EVENT_DATA *event = newEvent(owner, delay, on_complete, check_involvement,
++			       data, arg, FALSE);
++  if(delay == 0)
++    listQueue(events, event);
++  else
++    listPut(events, event);
+ }
+ 
+ void pulse_events(int time) {
+diff -ruN versions/nakedmudv3.4/src/gameloop.c src/gameloop.c
+--- versions/nakedmudv3.4/src/gameloop.c	2007-09-22 22:36:11.000000000 -0400
++++ src/gameloop.c	2007-10-01 17:26:06.000000000 -0400
+@@ -399,11 +399,14 @@
+ 
+ 
+     /* check all of the sockets for input */
+-    socket_handler();
++    input_handler();
+ 
+     /* call the top-level update handler for events and actions */
+     update_handler();
+ 
++    /* send socket output */
++    output_handler();
++
+     /*
+      * Here we sleep out the rest of the pulse, thus forcing
+      * SocketMud(tm) (NakedMud) to run at PULSES_PER_SECOND pulses each second.
+diff -ruN versions/nakedmudv3.4/src/handler.c src/handler.c
+--- versions/nakedmudv3.4/src/handler.c	2007-09-22 22:36:11.000000000 -0400
++++ src/handler.c	2007-10-15 18:27:05.000000000 -0400
+@@ -152,10 +152,14 @@
+   char           *dir = NULL;
+   ITERATE_LIST(dir, ex_i) {
+     exit_to_game(roomGetExit(room, dir));
+-    if(get_cmd_move() != NULL && dirGetNum(dir) == DIR_NONE)
+-      nearMapPut(roomGetCmdTable(room), dir, NULL,
+-		 newPyCmd(dir, get_cmd_move(), POS_STANDING, POS_FLYING,
+-			"player", TRUE, TRUE));
++    if(get_cmd_move() != NULL && dirGetNum(dir) == DIR_NONE) {
++      CMD_DATA *old_cmd = nearMapRemove(roomGetCmdTable(room), dir);
++      CMD_DATA     *cmd = newPyCmd(dir, get_cmd_move(), "player", TRUE);
++      if(old_cmd != NULL)
++	deleteCmd(old_cmd);
++      cmdAddCheck(cmd, chk_can_move);
++      nearMapPut(roomGetCmdTable(room), dir, NULL, cmd);
++    }
+   } deleteListIterator(ex_i);
+   deleteListWith(ex_list, free);
+ }
+diff -ruN versions/nakedmudv3.4/src/help/help.c src/help/help.c
+--- versions/nakedmudv3.4/src/help/help.c	2007-09-22 22:36:11.000000000 -0400
++++ src/help/help.c	2007-10-15 15:38:24.000000000 -0400
+@@ -404,16 +404,11 @@
+     help_table[i] = newList();
+ 
+   // add all of our commands
+-  add_cmd("help", NULL, cmd_help, POS_UNCONSCIOUS, POS_FLYING,
+-	  "player", FALSE, FALSE);
+-  add_cmd("hlink", NULL, cmd_hlink, POS_UNCONSCIOUS, POS_FLYING,
+-	  "admin", FALSE, FALSE);
+-  add_cmd("hunlink", NULL, cmd_hunlink, POS_UNCONSCIOUS, POS_FLYING,
+-	  "admin", FALSE, FALSE);
+-  add_cmd("hupdate", NULL, cmd_hupdate, POS_SITTING, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("hedit", NULL, cmd_hedit, POS_SITTING, POS_FLYING,
+-	  "builder", FALSE, TRUE);
++  add_cmd("help",    NULL, cmd_help,    "player",  FALSE);
++  add_cmd("hlink",   NULL, cmd_hlink,   "admin",   FALSE);
++  add_cmd("hunlink", NULL, cmd_hunlink, "admin",   FALSE);
++  add_cmd("hupdate", NULL, cmd_hupdate, "builder", TRUE);
++  add_cmd("hedit",   NULL, cmd_hedit,   "builder", TRUE);
+ 
+   // read in all of our helps
+   STORAGE_SET       *set = storage_read(HELP_FILE);
+diff -ruN versions/nakedmudv3.4/src/interpret.c src/interpret.c
+--- versions/nakedmudv3.4/src/interpret.c	2007-09-22 22:36:11.000000000 -0400
++++ src/interpret.c	2007-10-15 19:28:06.000000000 -0400
+@@ -39,7 +39,6 @@
+ //*****************************************************************************
+ NEAR_MAP *cmd_table = NULL;
+ 
+-
+ void init_commands() {
+   cmd_table = newNearMap();
+ 
+@@ -48,21 +47,15 @@
+   // functions to the MUD, they should be added in the init_xxx() function
+   // associated with your module.
+   //***************************************************************************
+-  add_cmd("back",       NULL, cmd_back,     POS_UNCONSCIOUS, POS_FLYING,
+-	  "player", TRUE, FALSE);
+-  add_cmd("commands",   NULL, cmd_commands, POS_UNCONSCIOUS, POS_FLYING,
+-	  "player", TRUE, FALSE);
+-  add_cmd("compress",   NULL, cmd_compress, POS_UNCONSCIOUS, POS_FLYING,
+-	  "player", FALSE, FALSE);
+-  add_cmd("groupcmds",  NULL, cmd_groupcmds,POS_UNCONSCIOUS, POS_FLYING,
+-	  "player", FALSE, FALSE);
+-  add_cmd("look",       "l",  cmd_look,     POS_SITTING,  POS_FLYING,
+-	  "player", TRUE, FALSE);
+-  add_cmd("more",       NULL, cmd_more,     POS_UNCONSCIOUS, POS_FLYING,
+-	  "player", TRUE, FALSE);
++  add_cmd("back",       NULL, cmd_back,     "player", FALSE);
++  add_cmd("commands",   NULL, cmd_commands, "player", FALSE);
++  add_cmd("compress",   NULL, cmd_compress, "player", FALSE);
++  add_cmd("groupcmds",  NULL, cmd_groupcmds,"player", FALSE);
++  add_cmd("look",       "l",  cmd_look,     "player", FALSE);
++  add_cmd("more",       NULL, cmd_more,     "player", FALSE);
++  add_cmd_check("look", chk_conscious);
+ }
+ 
+-
+ bool cmd_exists(const char *cmd) {
+   return nearMapKeyExists(cmd_table, cmd);
+ }
+@@ -73,30 +66,36 @@
+ }
+ 
+ void add_cmd(const char *cmd, const char *sort_by, COMMAND(func),
+-	     int min_pos, int max_pos, const char *user_group, 
+-	     bool mob_ok, bool interrupts) {
++	     const char *user_group, bool interrupts) {
+   // if we've already got a command named this, remove it
+   remove_cmd(cmd);
+ 
+   // add in the new command
+   nearMapPut(cmd_table, cmd, sort_by, 
+-	     newCmd(cmd, func, min_pos, max_pos, 
+-		    user_group, mob_ok, interrupts));
++	     newCmd(cmd, func, user_group, interrupts));
+ }
+ 
+-
+ void add_py_cmd(const char *cmd, const char *sort_by, void *pyfunc,
+-	     int min_pos, int max_pos, const char *user_group, 
+-	     bool mob_ok, bool interrupts) {
++	     const char *user_group, bool interrupts) {
+   // if we've already got a command named this, remove it
+   remove_cmd(cmd);
+ 
+   // add in the new command
+   nearMapPut(cmd_table, cmd, sort_by, 
+-	     newPyCmd(cmd, pyfunc, min_pos, max_pos, 
+-		    user_group, mob_ok, interrupts));
++	     newPyCmd(cmd, pyfunc, user_group, interrupts));
+ }
+ 
++void add_cmd_check(const char *cmd, CMD_CHK(func)) {
++  CMD_DATA *data = nearMapGet(cmd_table, cmd, FALSE);
++  if(data != NULL)
++    cmdAddCheck(data, func);
++}
++
++void add_py_cmd_check(const char *cmd, void *pyfunc) {
++  CMD_DATA *data = nearMapGet(cmd_table, cmd, FALSE);
++  if(data != NULL)
++    cmdAddPyCheck(data, pyfunc);
++}
+ 
+ // show the character all of the commands in the specified group(s).
+ void show_commands(CHAR_DATA *ch, const char *user_groups) {
+diff -ruN versions/nakedmudv3.4/src/items/portal.c src/items/portal.c
+--- versions/nakedmudv3.4/src/items/portal.c	2007-09-22 22:36:11.000000000 -0400
++++ src/items/portal.c	2007-10-15 17:09:11.000000000 -0400
+@@ -165,6 +165,7 @@
+       else
+ 	message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
+ 		"$n arrives after travelling through $o.");
++      hookRun("enter", hookBuildInfo("ch rm", ch, dest));
+     }
+   }
+ }
+@@ -427,6 +428,6 @@
+ 		     PyObj_getportalleavemssg, PyObj_setportalleavemssg,
+ 		     "The message shown when user leaves a room.");
+ 
+-  add_cmd("enter", NULL, cmd_enter, POS_STANDING, POS_FLYING,
+-	  "player", TRUE, TRUE);
++  add_cmd("enter", NULL, cmd_enter, "player", TRUE);
++  add_cmd_check("enter", chk_can_move);
+ }
+diff -ruN versions/nakedmudv3.4/src/log.c src/log.c
+--- versions/nakedmudv3.4/src/log.c	2007-09-22 22:36:11.000000000 -0400
++++ src/log.c	2007-10-15 15:35:34.000000000 -0400
+@@ -98,8 +98,7 @@
+     storage_close(set);
+   }
+ 
+-  add_cmd("log", NULL, cmd_log, POS_UNCONSCIOUS, POS_FLYING,
+-	  "admin", FALSE, FALSE);
++  add_cmd("log", NULL, cmd_log, "admin", FALSE);
+ }
+ 
+ 
+diff -ruN versions/nakedmudv3.4/src/mud.h src/mud.h
+--- versions/nakedmudv3.4/src/mud.h	2007-09-22 22:36:11.000000000 -0400
++++ src/mud.h	2007-10-15 15:33:24.000000000 -0400
+@@ -156,12 +156,12 @@
+ void show_commands(CHAR_DATA *ch, const char *user_groups);
+ void remove_cmd   (const char *cmd);
+ void add_cmd      (const char *cmd, const char *sort_by, COMMAND(func),
+-	           int min_pos, int max_pos, const char *user_group, 
+-		   bool mob_ok, bool interrupts);
++	           const char *user_group, bool interrupts);
+ void add_py_cmd   (const char *cmd, const char *sort_by, void *pyfunc,
+-		   int min_pos, int max_pos, const char *user_group,
+-		   bool mob_ok, bool interrupts);
++		   const char *user_group, bool interrupts);
+ bool cmd_exists   (const char *cmd);
++void add_cmd_check(const char *cmd, CMD_CHK(func));
++void add_py_cmd_check(const char *cmd, void *pyfunc);
+ 
+ 
+ 
+diff -ruN versions/nakedmudv3.4/src/olc2/olc.c src/olc2/olc.c
+--- versions/nakedmudv3.4/src/olc2/olc.c	2007-09-22 22:36:11.000000000 -0400
++++ src/olc2/olc.c	2007-10-15 15:44:00.000000000 -0400
+@@ -578,64 +578,37 @@
+   extern COMMAND(cmd_dig);
+   extern COMMAND(cmd_fill);
+   extern COMMAND(cmd_instantiate);
+-  add_cmd("zedit", NULL, cmd_zedit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("redit", NULL, cmd_redit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("resedit", NULL, cmd_resedit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("medit", NULL, cmd_medit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("oedit", NULL, cmd_oedit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("accedit", NULL, cmd_accedit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "admin",   FALSE, TRUE);
+-  add_cmd("pcedit",  NULL, cmd_pcedit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "admin",   FALSE, TRUE);
+-  add_cmd("mpedit", NULL, cmd_mpedit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter", FALSE, TRUE);
+-  add_cmd("opedit", NULL, cmd_opedit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter", FALSE, TRUE);
+-  add_cmd("rpedit", NULL, cmd_rpedit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter", FALSE, TRUE);
+-
+-  add_cmd("dig", NULL, cmd_dig, POS_STANDING, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("fill", NULL, cmd_fill, POS_STANDING, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("instantiate", NULL, cmd_instantiate, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("purge",      NULL, cmd_purge,    POS_SITTING,  POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("load",       NULL, cmd_load,     POS_SITTING,  POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("rcopy", NULL, cmd_instantiate,   POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-
+-  add_cmd("mlist",      NULL, cmd_mlist,    POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("mdelete",    NULL, cmd_mdelete,  POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("mrename",    NULL, cmd_mrename,  POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("olist",      NULL, cmd_olist,    POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("odelete",    NULL, cmd_odelete,  POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("orename",    NULL, cmd_orename,  POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("rreload",    NULL, cmd_rreload,  POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("rlist",      NULL, cmd_rlist,    POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("rdelete",    NULL, cmd_rdelete,  POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("rrename",    NULL, cmd_rrename,  POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("zlist",      NULL, cmd_zlist,    POS_SITTING,  POS_FLYING,
+-	  "builder", FALSE, TRUE);
+-  add_cmd("zreset",     NULL, cmd_zreset,   POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
++
++  add_cmd("zedit",   NULL, cmd_zedit,   "builder", TRUE);
++  add_cmd("redit",   NULL, cmd_redit,   "builder", TRUE);
++  add_cmd("resedit", NULL, cmd_resedit, "builder", TRUE);
++  add_cmd("medit",   NULL, cmd_medit,   "builder", TRUE);
++  add_cmd("oedit",   NULL, cmd_oedit,   "builder", TRUE);
++  add_cmd("accedit", NULL, cmd_accedit, "admin",   TRUE);
++  add_cmd("pcedit",  NULL, cmd_pcedit,  "admin",   TRUE);
++  add_cmd("mpedit",  NULL, cmd_mpedit,  "scripter",TRUE);
++  add_cmd("opedit",  NULL, cmd_opedit,  "scripter",TRUE);
++  add_cmd("rpedit",  NULL, cmd_rpedit,  "scripter",TRUE);
++
++  add_cmd("dig",     NULL, cmd_dig,     "builder", TRUE);
++  add_cmd("fill",    NULL, cmd_fill,    "builder", TRUE);
++  add_cmd("instantiate", NULL, cmd_instantiate, "builder", TRUE);
++  add_cmd("purge",   NULL, cmd_purge,   "builder", FALSE);
++  add_cmd("load",    NULL, cmd_load,    "builder", FALSE);
++  add_cmd("rcopy",   NULL, cmd_instantiate,"builder", TRUE);
++
++  add_cmd("mlist",   NULL, cmd_mlist,   "builder", FALSE);
++  add_cmd("mdelete", NULL, cmd_mdelete, "builder", FALSE);
++  add_cmd("mrename", NULL, cmd_mrename, "builder", FALSE);
++  add_cmd("olist",   NULL, cmd_olist,   "builder", FALSE);
++  add_cmd("odelete", NULL, cmd_odelete, "builder", FALSE);
++  add_cmd("orename", NULL, cmd_orename, "builder", FALSE);
++  add_cmd("rreload", NULL, cmd_rreload, "builder", FALSE);
++  add_cmd("rlist",   NULL, cmd_rlist,   "builder", FALSE);
++  add_cmd("rdelete", NULL, cmd_rdelete, "builder", FALSE);
++  add_cmd("rrename", NULL, cmd_rrename, "builder", FALSE);
++  add_cmd("zlist",   NULL, cmd_zlist,   "builder", TRUE);
++  add_cmd("zreset",  NULL, cmd_zreset,  "builder", FALSE);
+ }
+ 
+ void do_olc(SOCKET_DATA *sock,
+diff -ruN versions/nakedmudv3.4/src/scripts/pymudsys.c src/scripts/pymudsys.c
+--- versions/nakedmudv3.4/src/scripts/pymudsys.c	2007-09-22 22:36:11.000000000 -0400
++++ src/scripts/pymudsys.c	2007-10-15 17:45:22.000000000 -0400
+@@ -538,35 +538,42 @@
+ // command can be performed by mobiles, and whether it interrupts actions.
+ PyObject *mudsys_add_cmd(PyObject *self, PyObject *args) {
+   PyObject *func = NULL;
+-  char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
+-       *group = NULL;
+-  bool mob_ok = FALSE, interrupts = FALSE;
+-  int min_pos_num, max_pos_num;
++  char *name  = NULL, *sort_by = NULL, *group = NULL;
++  bool interrupts = FALSE;
+ 
+   // parse all of the values
+-  if (!PyArg_ParseTuple(args, "szOsssbb", &name, &sort_by, &func,
+-  			&min_pos, &max_pos, &group, &mob_ok, &interrupts)) {
++  if (!PyArg_ParseTuple(args, "szOsb", &name, &sort_by, &func,
++  			&group, &interrupts)) {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Could not add new command. Improper arguments supplied");
+     return NULL;
+   }
+ 
+-  // get our positions
+-  min_pos_num = posGetNum(min_pos);
+-  max_pos_num = posGetNum(max_pos);
+-  if(min_pos_num == POS_NONE || max_pos_num == POS_NONE) {
++  // add the command to the game
++  add_py_cmd(name, sort_by, func, group, interrupts);
++  return Py_BuildValue("O", Py_None);
++}
++
++//
++// adds a check prior to the command's execution. If any check returns false,
++// the command fails. Checks are assumed to tell people why their command
++// failed.
++PyObject *mudsys_add_cmd_check(PyObject *self, PyObject *args) {
++  PyObject *func = NULL;
++  char    *name  = NULL;
++
++  // parse all of the values
++  if (!PyArg_ParseTuple(args, "sO", &name, &func)) {
+     PyErr_Format(PyExc_TypeError, 
+-		 "Could not add new command. Invalid position names.");
++	       "Could not add new command check. Improper arguments supplied.");
+     return NULL;
+   }
+ 
+   // add the command to the game
+-  add_py_cmd(name, sort_by, func, min_pos_num, max_pos_num,
+-	     group, mob_ok, interrupts);
++  add_py_cmd_check(name, func);
+   return Py_BuildValue("O", Py_None);
+ }
+ 
+-
+ //
+ // removes a command from the game
+ PyObject *mudsys_remove_cmd(PyObject *self, PyObject *args) {
+@@ -693,6 +700,8 @@
+ 		     "sets an account's password.");
+   PyMudSys_addMethod("add_cmd", mudsys_add_cmd, METH_VARARGS,
+ 		     "Add a new command to the game.");
++  PyMudSys_addMethod("add_cmd_check", mudsys_add_cmd_check, METH_VARARGS,
++		     "Add a new check prior to a command running.");
+   PyMudSys_addMethod("remove_cmd", mudsys_remove_cmd, METH_VARARGS,
+ 		     "Removes a command from the game.");
+   PyMudSys_addMethod("handle_cmd_input", mudsys_handle_cmd_input, METH_VARARGS,
+diff -ruN versions/nakedmudv3.4/src/scripts/pyobj.c src/scripts/pyobj.c
+--- versions/nakedmudv3.4/src/scripts/pyobj.c	2007-09-22 22:36:11.000000000 -0400
++++ src/scripts/pyobj.c	2007-09-23 15:17:41.000000000 -0400
+@@ -914,19 +914,20 @@
+   else if(cont != NULL)
+     obj_to_obj(obj, cont);
+   else if(ch != NULL) {
+-    // if we have supplied locations, equip to those
+-    if(equip_to && *equip_to) {
+-      if(!try_equip(ch, obj, equip_to, NULL))
++    // we're just trying to send it to our inventory
++    if(equip_to == NULL)
++      obj_to_char(obj, ch);
++    // trying to equip to our default slots
++    else if(!*equip_to && objIsType(obj, "worn")) {
++      if(!try_equip(ch, obj, NULL, wornGetPositions(obj)))
+ 	obj_to_char(obj, ch);
+     }
+-
+-    // otherwise, assume it's worn equipemnt
+-    else if(objIsType(obj, "worn")) {
+-      if(!try_equip(ch, obj, NULL, wornGetPositions(obj)))
++    // trying to equip to specific slots
++    else if(*equip_to) {
++      if(!try_equip(ch, obj, equip_to, NULL))
+ 	obj_to_char(obj, ch);
+     }
+-
+-    // failed. Just give it to us
++    // can't equip it in any other case -- send it to the inventory
+     else
+       obj_to_char(obj, ch);
+   }
+diff -ruN versions/nakedmudv3.4/src/scripts/pyplugs.c src/scripts/pyplugs.c
+--- versions/nakedmudv3.4/src/scripts/pyplugs.c	2007-09-22 22:36:11.000000000 -0400
++++ src/scripts/pyplugs.c	2007-10-15 15:44:58.000000000 -0400
+@@ -196,8 +196,7 @@
+ //*****************************************************************************
+ void init_pyplugs(void) {
+   init_py_modules();
+-  add_cmd("pyload", NULL, cmd_pyload, POS_UNCONSCIOUS, POS_FLYING,
+-	  "admin", FALSE, FALSE);
++  add_cmd("pyload", NULL, cmd_pyload, "admin", FALSE);
+ }
+ 
+ 
+diff -ruN versions/nakedmudv3.4/src/scripts/pyroom.c src/scripts/pyroom.c
+--- versions/nakedmudv3.4/src/scripts/pyroom.c	2007-09-22 22:36:11.000000000 -0400
++++ src/scripts/pyroom.c	2007-10-15 18:20:50.000000000 -0400
+@@ -540,10 +540,11 @@
+     roomSetExit(room, cdir, exit);
+ 
+     // if we're digging a special exit, add a cmd for it to the room cmd table
+-    if(get_cmd_move() && dir_num == DIR_NONE && dir_abbrev_num == DIR_NONE)
+-      nearMapPut(roomGetCmdTable(room), cdir, NULL,
+-		 newPyCmd(cdir, get_cmd_move(), POS_STANDING, POS_FLYING, 
+-			"player", TRUE, TRUE));
++    if(get_cmd_move() && dir_num == DIR_NONE && dir_abbrev_num == DIR_NONE) {
++      CMD_DATA *cmd = newPyCmd(cdir, get_cmd_move(), "player", TRUE);
++      cmdAddCheck(cmd, chk_can_move);
++      nearMapPut(roomGetCmdTable(room), cdir, NULL, cmd);
++    }
+   }
+ 
+   PyObject   *pyex = newPyExit(exit);
+@@ -616,14 +617,12 @@
+ // adds a new command to the room
+ PyObject *PyRoom_add_cmd(PyRoom *self, PyObject *args) {
+   PyObject *func = NULL;
+-  char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
+-       *group = NULL;
+-  bool mob_ok = FALSE, interrupts = FALSE;
+-  int min_pos_num, max_pos_num;
++  char *name  = NULL, *sort_by = NULL, *group = NULL;
++  bool interrupts = FALSE;
+ 
+   // parse all of the values
+-  if (!PyArg_ParseTuple(args, "szOsssbb", &name, &sort_by, &func,
+-  			&min_pos, &max_pos, &group, &mob_ok, &interrupts)) {
++  if (!PyArg_ParseTuple(args, "szOsb", &name, &sort_by, &func,
++  			&group, &interrupts)) {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Could not add new room command. Improper arguments supplied");
+     return NULL;
+@@ -637,19 +636,39 @@
+     return NULL;
+   }
+ 
+-  // get our positions
+-  min_pos_num = posGetNum(min_pos);
+-  max_pos_num = posGetNum(max_pos);
+-  if(min_pos_num == POS_NONE || max_pos_num == POS_NONE) {
++  // add the command to the game
++  nearMapPut(roomGetCmdTable(room), name, sort_by, 
++	     newPyCmd(name, func, group, TRUE));
++  return Py_BuildValue("O", Py_None);
++}
++
++//
++// adds a pre-check to a room command
++PyObject *PyRoom_add_cmd_check(PyRoom *self, PyObject *args) {
++  PyObject *func = NULL;
++  char    *name  = NULL;
++
++  // parse all of the values
++  if (!PyArg_ParseTuple(args, "sO", &name, &func)) {
+     PyErr_Format(PyExc_TypeError, 
+-		 "Could not add new room command. Invalid position names.");
++		 "Could not add new room command check. "
++		 "Improper arguments supplied");
+     return NULL;
+   }
+ 
+-  // add the command to the game
+-  nearMapPut(roomGetCmdTable(room), name, sort_by,
+-	     newPyCmd(name, func, POS_STANDING, POS_FLYING,
+-		      group, TRUE, TRUE));
++  // make sure the room exists
++  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
++  if(room == NULL) {
++    PyErr_Format(PyExc_StandardError,
++		 "Tried to add command check to nonexistent room, %d", 
++		 self->uid);
++    return NULL;
++  }
++
++  // get the command
++  CMD_DATA *cmd = nearMapGet(roomGetCmdTable(room), name, FALSE);
++  if(cmd != NULL)
++    cmdAddPyCheck(cmd, func);
+   return Py_BuildValue("O", Py_None);
+ }
+ 
+@@ -871,7 +890,7 @@
+ };
+ 
+ PyMethodDef room_module_methods[] = {
+-  { "get_room", (PyCFunction)PyRoom_get_room, METH_NOARGS,
++  { "get_room", (PyCFunction)PyRoom_get_room, METH_VARARGS,
+     "Takes a room key/locale and returns a pointer to that room." },
+   {NULL, NULL, 0, NULL}  /* Sentinel */
+ };
+@@ -955,6 +974,8 @@
+ 		     "adds an extra description to the room.");
+     PyRoom_addMethod("add_cmd", PyRoom_add_cmd, METH_VARARGS,
+ 		     "adds a command to the room.");
++    PyRoom_addMethod("add_cmd_check", PyRoom_add_cmd_check, METH_VARARGS,
++		     "adds a pre-check to a room command.");
+     PyRoom_addMethod("isinstance", PyRoom_isinstance, METH_VARARGS,
+ 		     "returns whether or not the room inherits from the proto");
+     PyRoom_addMethod("getAuxiliary", PyRoom_get_auxiliary, METH_VARARGS,
+diff -ruN versions/nakedmudv3.4/src/scripts/scripts.c src/scripts/scripts.c
+--- versions/nakedmudv3.4/src/scripts/scripts.c	2007-09-22 22:36:11.000000000 -0400
++++ src/scripts/scripts.c	2007-10-15 15:46:39.000000000 -0400
+@@ -379,24 +379,16 @@
+ 
+   /*
+   // add new player commands
+-  add_cmd("trun", NULL, cmd_scrun, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
++  add_cmd("trun", NULL, cmd_scrun, "builder", FALSE);
+   */
+   extern COMMAND(cmd_tedit); // define the command
+-  add_cmd("attach",  NULL, cmd_attach,  POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter", FALSE, FALSE);
+-  add_cmd("detach",  NULL, cmd_detach,  POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter", FALSE, FALSE);
+-  add_cmd("tedit",   NULL, cmd_tedit,   POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter", FALSE, TRUE);
+-  add_cmd("tstat",   NULL, cmd_tstat,   POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter", FALSE, FALSE);
+-  add_cmd("tlist",   NULL, cmd_tlist,   POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter", FALSE, FALSE);
+-  add_cmd("tdelete", NULL, cmd_tdelete, POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter",FALSE, FALSE);
+-  add_cmd("trename", NULL, cmd_trename, POS_UNCONSCIOUS, POS_FLYING,
+-	  "scripter", FALSE, FALSE);
++  add_cmd("attach",  NULL, cmd_attach, "scripter", FALSE);
++  add_cmd("detach",  NULL, cmd_detach, "scripter", FALSE);
++  add_cmd("tedit",   NULL, cmd_tedit,  "scripter", TRUE);
++  add_cmd("tstat",   NULL, cmd_tstat,  "scripter", FALSE);
++  add_cmd("tlist",   NULL, cmd_tlist,  "scripter", FALSE);
++  add_cmd("tdelete", NULL, cmd_tdelete,"scripter",FALSE);
++  add_cmd("trename", NULL, cmd_trename,"scripter", FALSE);
+ }
+ 
+ //
+diff -ruN versions/nakedmudv3.4/src/set_val/set_val.c src/set_val/set_val.c
+--- versions/nakedmudv3.4/src/set_val/set_val.c	2007-09-22 22:36:11.000000000 -0400
++++ src/set_val/set_val.c	2007-10-15 15:47:16.000000000 -0400
+@@ -266,10 +266,8 @@
+   add_set("keywords", SET_OBJECT,SET_TYPE_STRING,objSetKeywords,      NULL);
+ 
+   // now, add the admin commands for working with set
+-  add_cmd("set", NULL, cmd_set, POS_UNCONSCIOUS, POS_FLYING,
+-	  "admin", FALSE, FALSE);
+-  add_cmd("setpad", NULL, cmd_set, POS_UNCONSCIOUS,POS_FLYING,
+-	  "admin", FALSE, FALSE);
++  add_cmd("set",    NULL, cmd_set, "admin", FALSE);
++  add_cmd("setpad", NULL, cmd_set, "admin", FALSE);
+ }
+ 
+ 
+diff -ruN versions/nakedmudv3.4/src/socials/socedit.c src/socials/socedit.c
+--- versions/nakedmudv3.4/src/socials/socedit.c	2007-09-22 22:36:11.000000000 -0400
++++ src/socials/socedit.c	2007-10-15 15:47:36.000000000 -0400
+@@ -187,6 +187,5 @@
+ // implementation of socedit.h
+ //*****************************************************************************
+ void init_socedit(void) {
+-  add_cmd("socedit", NULL, cmd_socedit, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, TRUE);
++  add_cmd("socedit", NULL, cmd_socedit, "builder", TRUE);
+ }
+diff -ruN versions/nakedmudv3.4/src/socials/socials.c src/socials/socials.c
+--- versions/nakedmudv3.4/src/socials/socials.c	2007-09-22 22:36:11.000000000 -0400
++++ src/socials/socials.c	2007-10-15 17:34:49.000000000 -0400
+@@ -450,18 +450,20 @@
+   const char       *cmd = NULL;
+   SOCIAL_DATA     *data = NULL;
+ 
+-  ITERATE_HASH(cmd, data, hash_i)
+-    add_cmd(cmd, NULL, cmd_social, data->min_pos, data->max_pos, 
+-	    "player", TRUE, FALSE);
+-  deleteHashIterator(hash_i);
++  ITERATE_HASH(cmd, data, hash_i) {
++    add_cmd(cmd, NULL, cmd_social, "player", FALSE);
++    if(data->min_pos == POS_SITTING)
++      add_cmd_check(cmd, chk_conscious);
++    else if(data->min_pos == POS_STANDING)
++      add_cmd_check(cmd, chk_can_move);
++    else if(data->max_pos == POS_STANDING)
++      add_cmd_check(cmd, chk_grounded);
++  } deleteHashIterator(hash_i);
+ 
+   // link/unlink commands for the admins
+-  add_cmd("soclink", NULL, cmd_soclink, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("socunlink", NULL, cmd_socunlink, POS_UNCONSCIOUS, POS_FLYING,
+-	  "builder", FALSE, FALSE);
+-  add_cmd("socials",   NULL, cmd_socials,   POS_UNCONSCIOUS, POS_FLYING,
+-	  "player",  TRUE, FALSE);
++  add_cmd("soclink",   NULL, cmd_soclink,   "builder", FALSE);
++  add_cmd("socunlink", NULL, cmd_socunlink, "builder", FALSE);
++  add_cmd("socials",   NULL, cmd_socials,   "player",  FALSE);
+ 
+   // let add_social know it can start saving again
+   in_social_init = FALSE;
+@@ -486,8 +488,13 @@
+     unlink_social(cmd);
+     hashPut(social_table, cmd, social);
+     // add the new command to the game
+-    add_cmd(cmd, NULL, cmd_social, social->min_pos, social->max_pos,
+-	    "player", TRUE, FALSE);
++    add_cmd(cmd, NULL, cmd_social, "player", FALSE);
++    if(social->min_pos == POS_SITTING)
++      add_cmd_check(cmd, chk_conscious);
++    else if(social->min_pos == POS_STANDING)
++      add_cmd_check(cmd, chk_can_move);
++    else if(social->max_pos == POS_STANDING)
++      add_cmd_check(cmd, chk_grounded);
+   } deleteListIterator(cmd_i);
+ 
+   // garbage collection
+@@ -515,8 +522,13 @@
+     hashPut(social_table, new_cmd, data);
+     
+     // add the new command to the game
+-    add_cmd(new_cmd, NULL, cmd_social, data->min_pos, data->max_pos,
+-	    "player", TRUE, FALSE);
++    add_cmd(new_cmd, NULL, cmd_social, "player", FALSE);
++    if(data->min_pos == POS_SITTING)
++      add_cmd_check(new_cmd, chk_conscious);
++    else if(data->min_pos == POS_STANDING)
++      add_cmd_check(new_cmd, chk_can_move);
++    else if(data->max_pos == POS_STANDING)
++      add_cmd_check(new_cmd, chk_grounded);
+   }
+ 
+   // save changes
+diff -ruN versions/nakedmudv3.4/src/socket.c src/socket.c
+--- versions/nakedmudv3.4/src/socket.c	2007-09-22 22:36:11.000000000 -0400
++++ src/socket.c	2007-10-01 17:26:54.000000000 -0400
+@@ -736,7 +736,22 @@
+   reconnect_copyover_sockets();
+ }     
+ 
+-void socket_handler() {
++void output_handler() {
++  LIST_ITERATOR *sock_i = newListIterator(socket_list);
++  SOCKET_DATA     *sock = NULL; 
++
++  ITERATE_LIST(sock, sock_i) {
++    /* if the player quits or get's disconnected */
++    if(sock->closed)
++      continue;
++    
++    /* Send all new data to the socket and close it if any errors occour */
++    if (!flush_output(sock))
++      close_socket(sock, FALSE);
++  } deleteListIterator(sock_i);
++}
++
++void input_handler() {
+   LIST_ITERATOR *sock_i = newListIterator(socket_list);
+   SOCKET_DATA     *sock = NULL; 
+ 
+@@ -798,14 +813,6 @@
+ 	charSetAliasesQueued(sock->player, --alias_queue);
+     }
+ #endif
+-    
+-    /* if the player quits or get's disconnected */
+-    if(sock->closed)
+-      continue;
+-    
+-    /* Send all new data to the socket and close it if any errors occour */
+-    if (!flush_output(sock))
+-      close_socket(sock, FALSE);
+   } deleteListIterator(sock_i);
+ }
+ 
+diff -ruN versions/nakedmudv3.4/src/socket.h src/socket.h
+--- versions/nakedmudv3.4/src/socket.h	2007-09-22 22:36:11.000000000 -0400
++++ src/socket.h	2007-10-01 17:27:59.000000000 -0400
+@@ -10,7 +10,8 @@
+ SOCKET_DATA  *new_socket    ( int sock );
+ void  close_socket          ( SOCKET_DATA *dsock, bool reconnect );
+ bool  read_from_socket      ( SOCKET_DATA *dsock );
+-void  socket_handler        ( void );
++void  input_handler         ( void );
++void  output_handler        ( void );
+ void  copyover_recover      ( void );
+ void  do_copyover           ( void );
+ 
+diff -ruN versions/nakedmudv3.4/src/time/time.c src/time/time.c
+--- versions/nakedmudv3.4/src/time/time.c	2007-09-22 22:36:11.000000000 -0400
++++ src/time/time.c	2007-10-15 15:49:15.000000000 -0400
+@@ -187,8 +187,7 @@
+   PyMud_addMethod("is_night",     PyMud_IsNight,     METH_NOARGS, NULL);
+ 
+   // add the time command
+-  add_cmd("time", NULL, cmd_time, POS_SITTING,  POS_FLYING,
+-	  "player", TRUE, FALSE);
++  add_cmd("time", NULL, cmd_time, "player", FALSE);
+ 
+   // start our time updater
+   start_update(NULL, TIME_UPDATE_DELAY, handle_time_update, NULL, NULL, NULL);
+Binary files versions/nakedmudv3.4/lib/pymodules/.DS_Store and lib/pymodules/.DS_Store differ
+diff -ruN versions/nakedmudv3.4/lib/pymodules/char_gen.py lib/pymodules/char_gen.py
+--- versions/nakedmudv3.4/lib/pymodules/char_gen.py	2007-09-22 22:36:20.000000000 -0400
++++ lib/pymodules/char_gen.py	2007-09-30 18:13:32.000000000 -0400
+@@ -73,6 +73,7 @@
+     # attach him to his account and save the accoutn
+     sock.account.add_char(sock.ch)
+     mudsys.do_save(sock.account)
++    mudsys.do_save(sock.ch)
+     
+     # make him look at the room
+     sock.ch.act("look")
+diff -ruN versions/nakedmudv3.4/lib/pymodules/cmd_admin.py lib/pymodules/cmd_admin.py
+--- versions/nakedmudv3.4/lib/pymodules/cmd_admin.py	2007-09-22 22:36:20.000000000 -0400
++++ lib/pymodules/cmd_admin.py	2007-10-15 15:57:29.000000000 -0400
+@@ -191,25 +191,14 @@
+ ################################################################################
+ # add our commands
+ ################################################################################
+-add_cmd("shutdow", None, cmd_shutdown_net, "unconscious", "flying", "admin",
+-        False, False)
+-add_cmd("shutdown", None, cmd_shutdown, "unconscious", "flying", "admin",
+-        False, False)
+-add_cmd("copyove", None, cmd_copyover_net, "unconscious", "flying", "admin",
+-        False, False)
+-add_cmd("copyover", None, cmd_copyover, "unconscious", "flying", "admin",
+-        False, False)
+-add_cmd("at", None, cmd_at, "unconscious", "flying", "admin",
+-        False, False)
+-add_cmd("lockdown", None, cmd_lockdown, "unconscious", "flying", "admin",
+-        False, False)
+-add_cmd("pulserate", None, cmd_pulserate, "unconscious", "flying", "admin",
+-        False, False)
+-add_cmd("repeat", None, cmd_repeat, "unconscious", "flying", "admin",
+-        False, False)
+-add_cmd("force", None, cmd_force, "sitting", "flying", "admin",
+-        False, False)
+-add_cmd("goto", None, cmd_goto, "sitting", "flying", "admin",
+-        False, False)
+-add_cmd("transfer", None, cmd_transfer, "sitting", "flying", "admin",
+-        False, False)
++add_cmd("shutdow",  None, cmd_shutdown_net, "admin", False)
++add_cmd("shutdown", None, cmd_shutdown,     "admin", False)
++add_cmd("copyove",  None, cmd_copyover_net, "admin", False)
++add_cmd("copyover", None, cmd_copyover,     "admin", False)
++add_cmd("at",       None, cmd_at,           "admin", False)
++add_cmd("lockdown", None, cmd_lockdown,     "admin", False)
++add_cmd("pulserate",None, cmd_pulserate,    "admin", False)
++add_cmd("repeat",   None, cmd_repeat,       "admin", False)
++add_cmd("force",    None, cmd_force,        "admin", False)
++add_cmd("goto",     None, cmd_goto,         "admin", False)
++add_cmd("transfer", None, cmd_transfer,     "admin", False)
+diff -ruN versions/nakedmudv3.4/lib/pymodules/cmd_comm.py lib/pymodules/cmd_comm.py
+--- versions/nakedmudv3.4/lib/pymodules/cmd_comm.py	2007-09-22 22:36:20.000000000 -0400
++++ lib/pymodules/cmd_comm.py	2007-10-15 17:53:18.000000000 -0400
+@@ -7,7 +7,7 @@
+ #
+ ################################################################################
+ from mud import *
+-from mudsys import add_cmd
++from mudsys import add_cmd, add_cmd_check
+ import inform, hooks
+ 
+ 
+@@ -148,16 +148,24 @@
+ ################################################################################
+ # add our commands
+ ################################################################################
+-add_cmd("ask",     None, cmd_ask,   "sitting", "flying", "player", True, False)
+-add_cmd("say",     None, cmd_say,   "sitting", "flying", "player", True, False)
+-add_cmd("'",       None, cmd_say,   "sitting", "flying", "player", True, False)
+-add_cmd("tell",    None, cmd_tell,  "sitting", "flying", "player", True, False)
+-add_cmd("chat",    None, cmd_chat,  "sitting", "flying", "player", True, False)
+-add_cmd("gossip",  None, cmd_chat,  "sitting", "flying", "player", True, False)
+-add_cmd("\"",      None, cmd_chat,  "sitting", "flying", "player", True, False)
+-add_cmd("page",    None, cmd_page,  "sitting", "flying", "player", True, False)
+-add_cmd("greet",   None, cmd_greet, "sitting", "flying", "player", True, False)
+-add_cmd("approach",None, cmd_greet, "sitting", "flying", "player", True, False)
+-add_cmd("emote",   None, cmd_emote, "sitting", "flying", "player", True, False)
+-add_cmd("gemote",  None, cmd_gemote,"sitting", "flying", "player", True, False)
+-add_cmd(":",       None, cmd_emote, "sitting", "flying", "player", True, False)
++add_cmd("ask",     None, cmd_ask,   "player", False)
++add_cmd("say",     None, cmd_say,   "player", False)
++add_cmd("'",       None, cmd_say,   "player", False)
++add_cmd("tell",    None, cmd_tell,  "player", False)
++add_cmd("chat",    None, cmd_chat,  "player", False)
++add_cmd("gossip",  None, cmd_chat,  "player", False)
++add_cmd("\"",      None, cmd_chat,  "player", False)
++add_cmd("page",    None, cmd_page,  "player", False)
++add_cmd("greet",   None, cmd_greet, "player", False)
++add_cmd("approach",None, cmd_greet, "player", False)
++add_cmd("emote",   None, cmd_emote, "player", False)
++add_cmd("gemote",  None, cmd_gemote,"player", False)
++add_cmd(":",       None, cmd_emote, "player", False)
++
++def chk_room_communication(ch, cmd):
++    if ch.pos in ["sleeping", "unconscious"]:
++        ch.send("You cannot do that while " + ch.pos + ".")
++        return False
++
++for cmd in ["ask", "say", "'", "greet", "approach", "emote", ":"]:
++    add_cmd_check(cmd, chk_room_communication)
+diff -ruN versions/nakedmudv3.4/lib/pymodules/cmd_inform.py lib/pymodules/cmd_inform.py
+--- versions/nakedmudv3.4/lib/pymodules/cmd_inform.py	2007-09-22 22:36:20.000000000 -0400
++++ lib/pymodules/cmd_inform.py	2007-10-15 15:58:33.000000000 -0400
+@@ -62,16 +62,11 @@
+ ################################################################################
+ # add our commands
+ ################################################################################
+-add_cmd("inventory", "inv", cmd_inventory, "sitting", "flying",
+-        "player", True, False)
+-add_cmd("equipment", "eq",  cmd_equipment, "sitting", "flying",
+-        "player", True, False)
+-add_cmd("worn",      None,  cmd_equipment, "sitting", "flying",
+-        "player", True, False)
+-add_cmd("who",       None,  cmd_who,       "sitting", "flying",
+-        "player", True, False)
++add_cmd("inventory", "inv", cmd_inventory, "player", False)
++add_cmd("equipment", "eq",  cmd_equipment, "player", False)
++add_cmd("worn",      None,  cmd_equipment, "player", False)
++add_cmd("who",       None,  cmd_who,       "player", False)
+ 
+ '''
+-add_cmd("look",      "l",   cmd_look,      "sitting", "flying",
+-        "player", True, False)
++add_cmd("look",      "l",   cmd_look,      "player", False)
+ '''
+diff -ruN versions/nakedmudv3.4/lib/pymodules/cmd_manip.py lib/pymodules/cmd_manip.py
+--- versions/nakedmudv3.4/lib/pymodules/cmd_manip.py	2007-09-22 22:36:20.000000000 -0400
++++ lib/pymodules/cmd_manip.py	2007-10-15 17:58:36.000000000 -0400
+@@ -11,7 +11,7 @@
+ from mud import *
+ from utils import *
+ from inform import *
+-from mudsys import add_cmd
++from mudsys import add_cmd, add_cmd_check
+ import movement, hooks
+ 
+ 
+@@ -484,13 +484,23 @@
+ ################################################################################
+ # load all of our commands
+ ################################################################################
+-add_cmd("give",   None, cmd_give,   "sitting", "flying", "player", True, True)
+-add_cmd("get",    None, cmd_get,    "sitting", "flying", "player", True, True)
+-add_cmd("drop",   None, cmd_drop,   "sitting", "flying", "player", True, True)
+-add_cmd("remove", None, cmd_remove, "sitting", "flying", "player", True, True)
+-add_cmd("wear",   None, cmd_wear,   "sitting", "flying", "player", True, True)
+-add_cmd("put",    None, cmd_put,    "sitting", "flying", "player", True, True)
+-add_cmd("open",   None, cmd_open,   "sitting", "flying", "player", True, True)
+-add_cmd("close",  None, cmd_close,  "sitting", "flying", "player", True, True)
+-add_cmd("lock",   None, cmd_lock,   "sitting", "flying", "player", True, True)
+-add_cmd("unlock", None, cmd_unlock, "sitting", "flying", "player", True, True)
++add_cmd("give",   None, cmd_give,   "player", True)
++add_cmd("get",    None, cmd_get,    "player", True)
++add_cmd("drop",   None, cmd_drop,   "player", True)
++add_cmd("remove", None, cmd_remove, "player", True)
++add_cmd("wear",   None, cmd_wear,   "player", True)
++add_cmd("put",    None, cmd_put,    "player", True)
++add_cmd("open",   None, cmd_open,   "player", True)
++add_cmd("close",  None, cmd_close,  "player", True)
++add_cmd("lock",   None, cmd_lock,   "player", True)
++add_cmd("unlock", None, cmd_unlock, "player", True)
++
++def chk_can_manip(ch, cmd):
++    if not ch.pos in ["sitting", "standing", "flying"]:
++        ch.send("You cannot do that while " + ch.pos + ".")
++        return False
++
++for cmd in ["give", "get", "drop", "remove", "wear", "put", "open", "close",
++            "lock", "unlock"]:
++    add_cmd_check(cmd, chk_can_manip)
++    
+diff -ruN versions/nakedmudv3.4/lib/pymodules/cmd_misc.py lib/pymodules/cmd_misc.py
+--- versions/nakedmudv3.4/lib/pymodules/cmd_misc.py	2007-09-22 22:36:20.000000000 -0400
++++ lib/pymodules/cmd_misc.py	2007-10-15 17:58:52.000000000 -0400
+@@ -7,7 +7,7 @@
+ ################################################################################
+ from mud import *
+ from hooks import *
+-from mudsys import add_cmd
++from mudsys import add_cmd, add_cmd_check
+ import event, mudsys
+ 
+ 
+@@ -58,9 +58,13 @@
+ ################################################################################
+ # add our commands
+ ################################################################################
+-add_cmd("stop",  None, cmd_stop,    "sitting", "flying", "player", True,  False)
+-add_cmd("clear", None, cmd_clear,"unconscious", "flying", "player", True,  False)
+-add_cmd("delay", None, cmd_delay,  "sleeping", "flying", "player", True,  False)
+-add_cmd("motd",  None, cmd_motd, "unconscious", "flying", "player", False, False)
+-add_cmd("save",  None, cmd_save,   "sleeping", "flying", "player", False, False)
+-add_cmd("quit",  None, cmd_quit,   "sleeping", "flying", "player", False, True)
++add_cmd("stop",  None, cmd_stop,  "player", False)
++add_cmd("clear", None, cmd_clear, "player", False)
++add_cmd("delay", None, cmd_delay, "player", False)
++add_cmd("motd",  None, cmd_motd,  "player", False)
++add_cmd("save",  None, cmd_save,  "player", False)
++add_cmd("quit",  None, cmd_quit,  "player", True)
++
++chk_can_save = lambda ch, cmd: ch.is_pc
++add_cmd_check("save", chk_can_save)
++add_cmd_check("quit", chk_can_save)
+diff -ruN versions/nakedmudv3.4/lib/pymodules/movement.py lib/pymodules/movement.py
+--- versions/nakedmudv3.4/lib/pymodules/movement.py	2007-09-22 22:36:20.000000000 -0400
++++ lib/pymodules/movement.py	2007-10-15 18:18:00.000000000 -0400
+@@ -6,7 +6,7 @@
+ #
+ ################################################################################
+ from mud import *
+-from mudsys import add_cmd
++from mudsys import add_cmd, add_cmd_check
+ import inform, hooks
+ 
+ 
+@@ -141,7 +141,7 @@
+         ch.room = new_room
+         if ex.enter_mssg != '':
+             message(ch, None, None, None, True, "to_room", ex.enter_mssg)
+-        elif dirnum == None:
++        elif dirnum == -1:
+             message(ch, None, None, None, True, "to_room", "$n has arrived.")
+         else:
+             message(ch, None, None, None, True, "to_room",
+@@ -191,26 +191,77 @@
+ ################################################################################
+ # mud commands
+ ################################################################################
+-add_cmd("north",     "n",  cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("west",      "w",  cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("east",      "e",  cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("south",     "s",  cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("up",        "u",  cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("down",      "d",  cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("northwest", None, cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("northeast", None, cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("southwest", None, cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("southeast", None, cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("nw",        None, cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("ne",        None, cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("sw",        None, cmd_move, "standing", "flying", "player", True, True)
+-add_cmd("se",        None, cmd_move, "standing", "flying", "player", True, True)
+-
+-add_cmd("wake",      None, cmd_wake,"sleeping","sleeping", "player", True, True)
+-add_cmd("sleep",     None, cmd_sleep,"sitting", "flying",  "player", True, True)
+-add_cmd("stand",     None, cmd_stand,"sitting", "flying",  "player", True, True)
+-add_cmd("land",      None, cmd_stand, "flying", "flying",  "player", True, True)
+-add_cmd("sit",       None, cmd_sit, "standing", "flying",  "player", True, True)
++add_cmd("north",     "n",  cmd_move, "player", True)
++add_cmd("west",      "w",  cmd_move, "player", True)
++add_cmd("east",      "e",  cmd_move, "player", True)
++add_cmd("south",     "s",  cmd_move, "player", True)
++add_cmd("up",        "u",  cmd_move, "player", True)
++add_cmd("down",      "d",  cmd_move, "player", True)
++add_cmd("northwest", None, cmd_move, "player", True)
++add_cmd("northeast", None, cmd_move, "player", True)
++add_cmd("southwest", None, cmd_move, "player", True)
++add_cmd("southeast", None, cmd_move, "player", True)
++add_cmd("nw",        None, cmd_move, "player", True)
++add_cmd("ne",        None, cmd_move, "player", True)
++add_cmd("sw",        None, cmd_move, "player", True)
++add_cmd("se",        None, cmd_move, "player", True)
++
++add_cmd("wake",      None, cmd_wake, "player", True)
++add_cmd("sleep",     None, cmd_sleep,"player", True)
++add_cmd("stand",     None, cmd_stand,"player", True)
++add_cmd("land",      None, cmd_stand,"player", True)
++add_cmd("sit",       None, cmd_sit,  "player", True)
+ 
+ # The mud needs to know our command for movement as well
+ set_cmd_move(cmd_move)
++
++def chk_can_move(ch, cmd):
++    if not ch.pos in ["standing", "flying"]:
++        ch.send("You cannot do that while " + ch.pos + "!")
++        return False
++
++for cmd in ["north", "west", "east", "south", "up", "down", "northwest",
++            "northeast", "southwest", "southeast", "nw", "ne", "sw", "se"]:
++    add_cmd_check(cmd, chk_can_move)
++
++def chk_wake(ch, cmd):
++    if not ch.pos == "sleeping":
++        ch.send("You must be asleep to wake up.")
++        return False
++add_cmd_check("wake", chk_wake)
++
++def chk_sleep(ch, cmd):
++    if ch.pos == "sleeping":
++        ch.send("You are already sleeping!")
++        return False
++    elif ch.pos == "unconscious":
++        ch.send("You cannot sleep while you are unconscious.")
++        return False
++add_cmd_check("sleep", chk_sleep)
++
++def chk_stand(ch, cmd):
++    if ch.pos == "standing":
++        ch.send("You are already standing!")
++        return False
++    elif ch.pos != "sitting":
++        ch.send("You cannot stand while " + ch.pos + ".")
++        return False
++add_cmd_check("stand", chk_stand)
++
++def chk_land(ch, cmd):
++    if ch.pos == "standing":
++        ch.send("You are already on the ground!")
++        return False
++    elif ch.pos != "flying":
++        ch.send("You cannot land if you are not flying.")
++        return False
++add_cmd_check("land", chk_land)
++
++def chk_sit(ch, cmd):
++    if ch.pos == "sitting":
++        ch.send("You are already sitting!")
++        return False
++    elif ch.pos != "standing":
++        ch.send("You must be standing to sit.")
++        return False
++add_cmd_check("sit", chk_sit)
+diff -ruN versions/nakedmudv3.4/lib/pymodules/path.py lib/pymodules/path.py
+--- versions/nakedmudv3.4/lib/pymodules/path.py	2007-09-22 22:36:20.000000000 -0400
++++ lib/pymodules/path.py	2007-10-15 16:00:09.000000000 -0400
+@@ -207,7 +207,7 @@
+ ################################################################################
+ 
+ # add our commands
+-add_cmd("path", None, cmd_path, "sitting", "flying", "admin", False, False)
++add_cmd("path", None, cmd_path, "admin", False)
+ 
+ # mud initialization
+ mud.build_patrol = build_patrol
+diff -ruN versions/nakedmudv3.4/lib/pymodules/routine.py lib/pymodules/routine.py
+--- versions/nakedmudv3.4/lib/pymodules/routine.py	2007-09-22 22:36:20.000000000 -0400
++++ lib/pymodules/routine.py	2007-10-15 16:00:25.000000000 -0400
+@@ -196,8 +196,7 @@
+ register_routine_check(lambda ch: ch.isActing())
+ 
+ # commands
+-add_cmd("routine", None, cmd_routine, "sitting", "flying", "admin",
+-        False, False)
++add_cmd("routine", None, cmd_routine, "admin", False)
+ 
+ # misc initialization
+ mud.set_routine = set_routine

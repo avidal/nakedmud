@@ -379,24 +379,16 @@ void init_scripts(void) {
 
   /*
   // add new player commands
-  add_cmd("trun", NULL, cmd_scrun, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
+  add_cmd("trun", NULL, cmd_scrun, "builder", FALSE);
   */
   extern COMMAND(cmd_tedit); // define the command
-  add_cmd("attach",  NULL, cmd_attach,  POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter", FALSE, FALSE);
-  add_cmd("detach",  NULL, cmd_detach,  POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter", FALSE, FALSE);
-  add_cmd("tedit",   NULL, cmd_tedit,   POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter", FALSE, TRUE);
-  add_cmd("tstat",   NULL, cmd_tstat,   POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter", FALSE, FALSE);
-  add_cmd("tlist",   NULL, cmd_tlist,   POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter", FALSE, FALSE);
-  add_cmd("tdelete", NULL, cmd_tdelete, POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter",FALSE, FALSE);
-  add_cmd("trename", NULL, cmd_trename, POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter", FALSE, FALSE);
+  add_cmd("attach",  NULL, cmd_attach, "scripter", FALSE);
+  add_cmd("detach",  NULL, cmd_detach, "scripter", FALSE);
+  add_cmd("tedit",   NULL, cmd_tedit,  "scripter", TRUE);
+  add_cmd("tstat",   NULL, cmd_tstat,  "scripter", FALSE);
+  add_cmd("tlist",   NULL, cmd_tlist,  "scripter", FALSE);
+  add_cmd("tdelete", NULL, cmd_tdelete,"scripter",FALSE);
+  add_cmd("trename", NULL, cmd_trename,"scripter", FALSE);
 }
 
 //

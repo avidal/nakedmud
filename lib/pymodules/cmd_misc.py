@@ -7,7 +7,7 @@
 ################################################################################
 from mud import *
 from hooks import *
-from mudsys import add_cmd
+from mudsys import add_cmd, add_cmd_check
 import event, mudsys
 
 
@@ -58,9 +58,13 @@ def cmd_quit(ch, cmd, arg):
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("stop",  None, cmd_stop,    "sitting", "flying", "player", True,  False)
-add_cmd("clear", None, cmd_clear,"unconscious", "flying", "player", True,  False)
-add_cmd("delay", None, cmd_delay,  "sleeping", "flying", "player", True,  False)
-add_cmd("motd",  None, cmd_motd, "unconscious", "flying", "player", False, False)
-add_cmd("save",  None, cmd_save,   "sleeping", "flying", "player", False, False)
-add_cmd("quit",  None, cmd_quit,   "sleeping", "flying", "player", False, True)
+add_cmd("stop",  None, cmd_stop,  "player", False)
+add_cmd("clear", None, cmd_clear, "player", False)
+add_cmd("delay", None, cmd_delay, "player", False)
+add_cmd("motd",  None, cmd_motd,  "player", False)
+add_cmd("save",  None, cmd_save,  "player", False)
+add_cmd("quit",  None, cmd_quit,  "player", True)
+
+chk_can_save = lambda ch, cmd: ch.is_pc
+add_cmd_check("save", chk_can_save)
+add_cmd_check("quit", chk_can_save)

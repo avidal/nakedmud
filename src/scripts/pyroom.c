@@ -540,10 +540,11 @@ PyObject *PyRoom_dig(PyRoom *self, PyObject *value) {
     roomSetExit(room, cdir, exit);
 
     // if we're digging a special exit, add a cmd for it to the room cmd table
-    if(get_cmd_move() && dir_num == DIR_NONE && dir_abbrev_num == DIR_NONE)
-      nearMapPut(roomGetCmdTable(room), cdir, NULL,
-		 newPyCmd(cdir, get_cmd_move(), POS_STANDING, POS_FLYING, 
-			"player", TRUE, TRUE));
+    if(get_cmd_move() && dir_num == DIR_NONE && dir_abbrev_num == DIR_NONE) {
+      CMD_DATA *cmd = newPyCmd(cdir, get_cmd_move(), "player", TRUE);
+      cmdAddCheck(cmd, chk_can_move);
+      nearMapPut(roomGetCmdTable(room), cdir, NULL, cmd);
+    }
   }
 
   PyObject   *pyex = newPyExit(exit);
@@ -616,14 +617,12 @@ PyObject *PyRoom_detach(PyRoom *self, PyObject *args) {
 // adds a new command to the room
 PyObject *PyRoom_add_cmd(PyRoom *self, PyObject *args) {
   PyObject *func = NULL;
-  char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
-       *group = NULL;
-  bool mob_ok = FALSE, interrupts = FALSE;
-  int min_pos_num, max_pos_num;
+  char *name  = NULL, *sort_by = NULL, *group = NULL;
+  bool interrupts = FALSE;
 
   // parse all of the values
-  if (!PyArg_ParseTuple(args, "szOsssbb", &name, &sort_by, &func,
-  			&min_pos, &max_pos, &group, &mob_ok, &interrupts)) {
+  if (!PyArg_ParseTuple(args, "szOsb", &name, &sort_by, &func,
+  			&group, &interrupts)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Could not add new room command. Improper arguments supplied");
     return NULL;
@@ -637,19 +636,39 @@ PyObject *PyRoom_add_cmd(PyRoom *self, PyObject *args) {
     return NULL;
   }
 
-  // get our positions
-  min_pos_num = posGetNum(min_pos);
-  max_pos_num = posGetNum(max_pos);
-  if(min_pos_num == POS_NONE || max_pos_num == POS_NONE) {
+  // add the command to the game
+  nearMapPut(roomGetCmdTable(room), name, sort_by, 
+	     newPyCmd(name, func, group, TRUE));
+  return Py_BuildValue("O", Py_None);
+}
+
+//
+// adds a pre-check to a room command
+PyObject *PyRoom_add_cmd_check(PyRoom *self, PyObject *args) {
+  PyObject *func = NULL;
+  char    *name  = NULL;
+
+  // parse all of the values
+  if (!PyArg_ParseTuple(args, "sO", &name, &func)) {
     PyErr_Format(PyExc_TypeError, 
-		 "Could not add new room command. Invalid position names.");
+		 "Could not add new room command check. "
+		 "Improper arguments supplied");
     return NULL;
   }
 
-  // add the command to the game
-  nearMapPut(roomGetCmdTable(room), name, sort_by,
-	     newPyCmd(name, func, POS_STANDING, POS_FLYING,
-		      group, TRUE, TRUE));
+  // make sure the room exists
+  ROOM_DATA *room = PyRoom_AsRoom((PyObject *)self);
+  if(room == NULL) {
+    PyErr_Format(PyExc_StandardError,
+		 "Tried to add command check to nonexistent room, %d", 
+		 self->uid);
+    return NULL;
+  }
+
+  // get the command
+  CMD_DATA *cmd = nearMapGet(roomGetCmdTable(room), name, FALSE);
+  if(cmd != NULL)
+    cmdAddPyCheck(cmd, func);
   return Py_BuildValue("O", Py_None);
 }
 
@@ -871,7 +890,7 @@ PyTypeObject PyRoom_Type = {
 };
 
 PyMethodDef room_module_methods[] = {
-  { "get_room", (PyCFunction)PyRoom_get_room, METH_NOARGS,
+  { "get_room", (PyCFunction)PyRoom_get_room, METH_VARARGS,
     "Takes a room key/locale and returns a pointer to that room." },
   {NULL, NULL, 0, NULL}  /* Sentinel */
 };
@@ -955,6 +974,8 @@ init_PyRoom(void) {
 		     "adds an extra description to the room.");
     PyRoom_addMethod("add_cmd", PyRoom_add_cmd, METH_VARARGS,
 		     "adds a command to the room.");
+    PyRoom_addMethod("add_cmd_check", PyRoom_add_cmd_check, METH_VARARGS,
+		     "adds a pre-check to a room command.");
     PyRoom_addMethod("isinstance", PyRoom_isinstance, METH_VARARGS,
 		     "returns whether or not the room inherits from the proto");
     PyRoom_addMethod("getAuxiliary", PyRoom_get_auxiliary, METH_VARARGS,

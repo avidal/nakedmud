@@ -284,8 +284,7 @@ void init_aliases() {
 				       aliasAuxDataStore, aliasAuxDataRead));
 
   // allow people to view their aliases
-  add_cmd("alias", NULL, cmd_alias, POS_UNCONSCIOUS, POS_FLYING, 
-	  "player", FALSE, TRUE);
+  add_cmd("alias", NULL, cmd_alias, "player", TRUE);
 }
 
 

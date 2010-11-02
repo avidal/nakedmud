@@ -7,7 +7,7 @@
 #
 ################################################################################
 from mud import *
-from mudsys import add_cmd
+from mudsys import add_cmd, add_cmd_check
 import inform, hooks
 
 
@@ -148,16 +148,24 @@ def cmd_page(ch, cmd, arg):
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("ask",     None, cmd_ask,   "sitting", "flying", "player", True, False)
-add_cmd("say",     None, cmd_say,   "sitting", "flying", "player", True, False)
-add_cmd("'",       None, cmd_say,   "sitting", "flying", "player", True, False)
-add_cmd("tell",    None, cmd_tell,  "sitting", "flying", "player", True, False)
-add_cmd("chat",    None, cmd_chat,  "sitting", "flying", "player", True, False)
-add_cmd("gossip",  None, cmd_chat,  "sitting", "flying", "player", True, False)
-add_cmd("\"",      None, cmd_chat,  "sitting", "flying", "player", True, False)
-add_cmd("page",    None, cmd_page,  "sitting", "flying", "player", True, False)
-add_cmd("greet",   None, cmd_greet, "sitting", "flying", "player", True, False)
-add_cmd("approach",None, cmd_greet, "sitting", "flying", "player", True, False)
-add_cmd("emote",   None, cmd_emote, "sitting", "flying", "player", True, False)
-add_cmd("gemote",  None, cmd_gemote,"sitting", "flying", "player", True, False)
-add_cmd(":",       None, cmd_emote, "sitting", "flying", "player", True, False)
+add_cmd("ask",     None, cmd_ask,   "player", False)
+add_cmd("say",     None, cmd_say,   "player", False)
+add_cmd("'",       None, cmd_say,   "player", False)
+add_cmd("tell",    None, cmd_tell,  "player", False)
+add_cmd("chat",    None, cmd_chat,  "player", False)
+add_cmd("gossip",  None, cmd_chat,  "player", False)
+add_cmd("\"",      None, cmd_chat,  "player", False)
+add_cmd("page",    None, cmd_page,  "player", False)
+add_cmd("greet",   None, cmd_greet, "player", False)
+add_cmd("approach",None, cmd_greet, "player", False)
+add_cmd("emote",   None, cmd_emote, "player", False)
+add_cmd("gemote",  None, cmd_gemote,"player", False)
+add_cmd(":",       None, cmd_emote, "player", False)
+
+def chk_room_communication(ch, cmd):
+    if ch.pos in ["sleeping", "unconscious"]:
+        ch.send("You cannot do that while " + ch.pos + ".")
+        return False
+
+for cmd in ["ask", "say", "'", "greet", "approach", "emote", ":"]:
+    add_cmd_check(cmd, chk_room_communication)

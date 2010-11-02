@@ -399,10 +399,13 @@ void game_loop(int control)
 
 
     /* check all of the sockets for input */
-    socket_handler();
+    input_handler();
 
     /* call the top-level update handler for events and actions */
     update_handler();
+
+    /* send socket output */
+    output_handler();
 
     /*
      * Here we sleep out the rest of the pulse, thus forcing

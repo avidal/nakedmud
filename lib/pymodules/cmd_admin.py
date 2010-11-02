@@ -191,25 +191,14 @@ def cmd_transfer(ch, cmd, arg):
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("shutdow", None, cmd_shutdown_net, "unconscious", "flying", "admin",
-        False, False)
-add_cmd("shutdown", None, cmd_shutdown, "unconscious", "flying", "admin",
-        False, False)
-add_cmd("copyove", None, cmd_copyover_net, "unconscious", "flying", "admin",
-        False, False)
-add_cmd("copyover", None, cmd_copyover, "unconscious", "flying", "admin",
-        False, False)
-add_cmd("at", None, cmd_at, "unconscious", "flying", "admin",
-        False, False)
-add_cmd("lockdown", None, cmd_lockdown, "unconscious", "flying", "admin",
-        False, False)
-add_cmd("pulserate", None, cmd_pulserate, "unconscious", "flying", "admin",
-        False, False)
-add_cmd("repeat", None, cmd_repeat, "unconscious", "flying", "admin",
-        False, False)
-add_cmd("force", None, cmd_force, "sitting", "flying", "admin",
-        False, False)
-add_cmd("goto", None, cmd_goto, "sitting", "flying", "admin",
-        False, False)
-add_cmd("transfer", None, cmd_transfer, "sitting", "flying", "admin",
-        False, False)
+add_cmd("shutdow",  None, cmd_shutdown_net, "admin", False)
+add_cmd("shutdown", None, cmd_shutdown,     "admin", False)
+add_cmd("copyove",  None, cmd_copyover_net, "admin", False)
+add_cmd("copyover", None, cmd_copyover,     "admin", False)
+add_cmd("at",       None, cmd_at,           "admin", False)
+add_cmd("lockdown", None, cmd_lockdown,     "admin", False)
+add_cmd("pulserate",None, cmd_pulserate,    "admin", False)
+add_cmd("repeat",   None, cmd_repeat,       "admin", False)
+add_cmd("force",    None, cmd_force,        "admin", False)
+add_cmd("goto",     None, cmd_goto,         "admin", False)
+add_cmd("transfer", None, cmd_transfer,     "admin", False)

@@ -62,16 +62,11 @@ def cmd_look(ch, cmd, arg):
 ################################################################################
 # add our commands
 ################################################################################
-add_cmd("inventory", "inv", cmd_inventory, "sitting", "flying",
-        "player", True, False)
-add_cmd("equipment", "eq",  cmd_equipment, "sitting", "flying",
-        "player", True, False)
-add_cmd("worn",      None,  cmd_equipment, "sitting", "flying",
-        "player", True, False)
-add_cmd("who",       None,  cmd_who,       "sitting", "flying",
-        "player", True, False)
+add_cmd("inventory", "inv", cmd_inventory, "player", False)
+add_cmd("equipment", "eq",  cmd_equipment, "player", False)
+add_cmd("worn",      None,  cmd_equipment, "player", False)
+add_cmd("who",       None,  cmd_who,       "player", False)
 
 '''
-add_cmd("look",      "l",   cmd_look,      "sitting", "flying",
-        "player", True, False)
+add_cmd("look",      "l",   cmd_look,      "player", False)
 '''

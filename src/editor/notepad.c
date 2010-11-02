@@ -116,10 +116,8 @@ void init_notepad() {
 				       NULL, NULL, NULL, NULL));
 
   // install our commands
-  add_cmd("write", NULL, cmd_write, POS_SITTING, POS_FLYING,
-	  "player", FALSE, TRUE);
-  add_cmd("notepad", NULL, cmd_notepad, POS_SITTING, POS_FLYING,
-	  "player", FALSE, TRUE);
+  add_cmd("write",   NULL, cmd_write,   "player", TRUE);
+  add_cmd("notepad", NULL, cmd_notepad, "player", TRUE);
 
   // add our python extensions
   PyChar_addGetSetter("notepad", PyChar_getnotepad, NULL,

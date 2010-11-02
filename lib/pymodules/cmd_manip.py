@@ -11,7 +11,7 @@
 from mud import *
 from utils import *
 from inform import *
-from mudsys import add_cmd
+from mudsys import add_cmd, add_cmd_check
 import movement, hooks
 
 
@@ -484,13 +484,23 @@ def cmd_close(ch, cmd, arg):
 ################################################################################
 # load all of our commands
 ################################################################################
-add_cmd("give",   None, cmd_give,   "sitting", "flying", "player", True, True)
-add_cmd("get",    None, cmd_get,    "sitting", "flying", "player", True, True)
-add_cmd("drop",   None, cmd_drop,   "sitting", "flying", "player", True, True)
-add_cmd("remove", None, cmd_remove, "sitting", "flying", "player", True, True)
-add_cmd("wear",   None, cmd_wear,   "sitting", "flying", "player", True, True)
-add_cmd("put",    None, cmd_put,    "sitting", "flying", "player", True, True)
-add_cmd("open",   None, cmd_open,   "sitting", "flying", "player", True, True)
-add_cmd("close",  None, cmd_close,  "sitting", "flying", "player", True, True)
-add_cmd("lock",   None, cmd_lock,   "sitting", "flying", "player", True, True)
-add_cmd("unlock", None, cmd_unlock, "sitting", "flying", "player", True, True)
+add_cmd("give",   None, cmd_give,   "player", True)
+add_cmd("get",    None, cmd_get,    "player", True)
+add_cmd("drop",   None, cmd_drop,   "player", True)
+add_cmd("remove", None, cmd_remove, "player", True)
+add_cmd("wear",   None, cmd_wear,   "player", True)
+add_cmd("put",    None, cmd_put,    "player", True)
+add_cmd("open",   None, cmd_open,   "player", True)
+add_cmd("close",  None, cmd_close,  "player", True)
+add_cmd("lock",   None, cmd_lock,   "player", True)
+add_cmd("unlock", None, cmd_unlock, "player", True)
+
+def chk_can_manip(ch, cmd):
+    if not ch.pos in ["sitting", "standing", "flying"]:
+        ch.send("You cannot do that while " + ch.pos + ".")
+        return False
+
+for cmd in ["give", "get", "drop", "remove", "wear", "put", "open", "close",
+            "lock", "unlock"]:
+    add_cmd_check(cmd, chk_can_manip)
+    

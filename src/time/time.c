@@ -187,8 +187,7 @@ void init_time() {
   PyMud_addMethod("is_night",     PyMud_IsNight,     METH_NOARGS, NULL);
 
   // add the time command
-  add_cmd("time", NULL, cmd_time, POS_SITTING,  POS_FLYING,
-	  "player", TRUE, FALSE);
+  add_cmd("time", NULL, cmd_time, "player", FALSE);
 
   // start our time updater
   start_update(NULL, TIME_UPDATE_DELAY, handle_time_update, NULL, NULL, NULL);

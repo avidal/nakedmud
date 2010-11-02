@@ -152,10 +152,14 @@ void room_to_game(ROOM_DATA *room) {
   char           *dir = NULL;
   ITERATE_LIST(dir, ex_i) {
     exit_to_game(roomGetExit(room, dir));
-    if(get_cmd_move() != NULL && dirGetNum(dir) == DIR_NONE)
-      nearMapPut(roomGetCmdTable(room), dir, NULL,
-		 newPyCmd(dir, get_cmd_move(), POS_STANDING, POS_FLYING,
-			"player", TRUE, TRUE));
+    if(get_cmd_move() != NULL && dirGetNum(dir) == DIR_NONE) {
+      CMD_DATA *old_cmd = nearMapRemove(roomGetCmdTable(room), dir);
+      CMD_DATA     *cmd = newPyCmd(dir, get_cmd_move(), "player", TRUE);
+      if(old_cmd != NULL)
+	deleteCmd(old_cmd);
+      cmdAddCheck(cmd, chk_can_move);
+      nearMapPut(roomGetCmdTable(room), dir, NULL, cmd);
+    }
   } deleteListIterator(ex_i);
   deleteListWith(ex_list, free);
 }

@@ -196,8 +196,7 @@ auxiliary.install("routine_data", RoutineAuxData, "character")
 register_routine_check(lambda ch: ch.isActing())
 
 # commands
-add_cmd("routine", None, cmd_routine, "sitting", "flying", "admin",
-        False, False)
+add_cmd("routine", None, cmd_routine, "admin", False)
 
 # misc initialization
 mud.set_routine = set_routine

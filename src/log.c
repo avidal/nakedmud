@@ -98,8 +98,7 @@ void init_logs() {
     storage_close(set);
   }
 
-  add_cmd("log", NULL, cmd_log, POS_UNCONSCIOUS, POS_FLYING,
-	  "admin", FALSE, FALSE);
+  add_cmd("log", NULL, cmd_log, "admin", FALSE);
 }
 
 

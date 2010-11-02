@@ -165,6 +165,7 @@ COMMAND(cmd_enter) {
       else
 	message(ch, NULL, obj, NULL, TRUE, TO_ROOM,
 		"$n arrives after travelling through $o.");
+      hookRun("enter", hookBuildInfo("ch rm", ch, dest));
     }
   }
 }
@@ -427,6 +428,6 @@ void init_portal(void) {
 		     PyObj_getportalleavemssg, PyObj_setportalleavemssg,
 		     "The message shown when user leaves a room.");
 
-  add_cmd("enter", NULL, cmd_enter, POS_STANDING, POS_FLYING,
-	  "player", TRUE, TRUE);
+  add_cmd("enter", NULL, cmd_enter, "player", TRUE);
+  add_cmd_check("enter", chk_can_move);
 }

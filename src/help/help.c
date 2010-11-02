@@ -404,16 +404,11 @@ void init_help() {
     help_table[i] = newList();
 
   // add all of our commands
-  add_cmd("help", NULL, cmd_help, POS_UNCONSCIOUS, POS_FLYING,
-	  "player", FALSE, FALSE);
-  add_cmd("hlink", NULL, cmd_hlink, POS_UNCONSCIOUS, POS_FLYING,
-	  "admin", FALSE, FALSE);
-  add_cmd("hunlink", NULL, cmd_hunlink, POS_UNCONSCIOUS, POS_FLYING,
-	  "admin", FALSE, FALSE);
-  add_cmd("hupdate", NULL, cmd_hupdate, POS_SITTING, POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("hedit", NULL, cmd_hedit, POS_SITTING, POS_FLYING,
-	  "builder", FALSE, TRUE);
+  add_cmd("help",    NULL, cmd_help,    "player",  FALSE);
+  add_cmd("hlink",   NULL, cmd_hlink,   "admin",   FALSE);
+  add_cmd("hunlink", NULL, cmd_hunlink, "admin",   FALSE);
+  add_cmd("hupdate", NULL, cmd_hupdate, "builder", TRUE);
+  add_cmd("hedit",   NULL, cmd_hedit,   "builder", TRUE);
 
   // read in all of our helps
   STORAGE_SET       *set = storage_read(HELP_FILE);

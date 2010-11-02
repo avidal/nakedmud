@@ -207,7 +207,7 @@ def cmd_path(ch, cmd, arg):
 ################################################################################
 
 # add our commands
-add_cmd("path", None, cmd_path, "sitting", "flying", "admin", False, False)
+add_cmd("path", None, cmd_path, "admin", False)
 
 # mud initialization
 mud.build_patrol = build_patrol

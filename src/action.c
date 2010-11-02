@@ -129,8 +129,7 @@ void init_actions() {
   actors = newMap(NULL, NULL);
 
   // add in our example delayed action
-  add_cmd("dsay", NULL, cmd_dsay, POS_SITTING, POS_FLYING, 
-	  "admin", TRUE, FALSE);
+  add_cmd("dsay", NULL, cmd_dsay, "admin", FALSE);
 
   // make sure the character does not continue actions after being extracted
   hookAdd("char_from_game", stop_actions_hook);

@@ -450,18 +450,20 @@ void init_socials() {
   const char       *cmd = NULL;
   SOCIAL_DATA     *data = NULL;
 
-  ITERATE_HASH(cmd, data, hash_i)
-    add_cmd(cmd, NULL, cmd_social, data->min_pos, data->max_pos, 
-	    "player", TRUE, FALSE);
-  deleteHashIterator(hash_i);
+  ITERATE_HASH(cmd, data, hash_i) {
+    add_cmd(cmd, NULL, cmd_social, "player", FALSE);
+    if(data->min_pos == POS_SITTING)
+      add_cmd_check(cmd, chk_conscious);
+    else if(data->min_pos == POS_STANDING)
+      add_cmd_check(cmd, chk_can_move);
+    else if(data->max_pos == POS_STANDING)
+      add_cmd_check(cmd, chk_grounded);
+  } deleteHashIterator(hash_i);
 
   // link/unlink commands for the admins
-  add_cmd("soclink", NULL, cmd_soclink, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("socunlink", NULL, cmd_socunlink, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("socials",   NULL, cmd_socials,   POS_UNCONSCIOUS, POS_FLYING,
-	  "player",  TRUE, FALSE);
+  add_cmd("soclink",   NULL, cmd_soclink,   "builder", FALSE);
+  add_cmd("socunlink", NULL, cmd_socunlink, "builder", FALSE);
+  add_cmd("socials",   NULL, cmd_socials,   "player",  FALSE);
 
   // let add_social know it can start saving again
   in_social_init = FALSE;
@@ -486,8 +488,13 @@ void add_social(SOCIAL_DATA *social) {
     unlink_social(cmd);
     hashPut(social_table, cmd, social);
     // add the new command to the game
-    add_cmd(cmd, NULL, cmd_social, social->min_pos, social->max_pos,
-	    "player", TRUE, FALSE);
+    add_cmd(cmd, NULL, cmd_social, "player", FALSE);
+    if(social->min_pos == POS_SITTING)
+      add_cmd_check(cmd, chk_conscious);
+    else if(social->min_pos == POS_STANDING)
+      add_cmd_check(cmd, chk_can_move);
+    else if(social->max_pos == POS_STANDING)
+      add_cmd_check(cmd, chk_grounded);
   } deleteListIterator(cmd_i);
 
   // garbage collection
@@ -515,8 +522,13 @@ void link_social(const char *new_cmd, const char *old_cmd) {
     hashPut(social_table, new_cmd, data);
     
     // add the new command to the game
-    add_cmd(new_cmd, NULL, cmd_social, data->min_pos, data->max_pos,
-	    "player", TRUE, FALSE);
+    add_cmd(new_cmd, NULL, cmd_social, "player", FALSE);
+    if(data->min_pos == POS_SITTING)
+      add_cmd_check(new_cmd, chk_conscious);
+    else if(data->min_pos == POS_STANDING)
+      add_cmd_check(new_cmd, chk_can_move);
+    else if(data->max_pos == POS_STANDING)
+      add_cmd_check(new_cmd, chk_grounded);
   }
 
   // save changes

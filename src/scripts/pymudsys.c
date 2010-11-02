@@ -538,34 +538,41 @@ PyObject *mudsys_set_password(PyObject *self, PyObject *args) {
 // command can be performed by mobiles, and whether it interrupts actions.
 PyObject *mudsys_add_cmd(PyObject *self, PyObject *args) {
   PyObject *func = NULL;
-  char *name  = NULL, *sort_by = NULL, *min_pos = NULL, *max_pos = NULL,
-       *group = NULL;
-  bool mob_ok = FALSE, interrupts = FALSE;
-  int min_pos_num, max_pos_num;
+  char *name  = NULL, *sort_by = NULL, *group = NULL;
+  bool interrupts = FALSE;
 
   // parse all of the values
-  if (!PyArg_ParseTuple(args, "szOsssbb", &name, &sort_by, &func,
-  			&min_pos, &max_pos, &group, &mob_ok, &interrupts)) {
+  if (!PyArg_ParseTuple(args, "szOsb", &name, &sort_by, &func,
+  			&group, &interrupts)) {
     PyErr_Format(PyExc_TypeError, 
 		 "Could not add new command. Improper arguments supplied");
     return NULL;
   }
 
-  // get our positions
-  min_pos_num = posGetNum(min_pos);
-  max_pos_num = posGetNum(max_pos);
-  if(min_pos_num == POS_NONE || max_pos_num == POS_NONE) {
+  // add the command to the game
+  add_py_cmd(name, sort_by, func, group, interrupts);
+  return Py_BuildValue("O", Py_None);
+}
+
+//
+// adds a check prior to the command's execution. If any check returns false,
+// the command fails. Checks are assumed to tell people why their command
+// failed.
+PyObject *mudsys_add_cmd_check(PyObject *self, PyObject *args) {
+  PyObject *func = NULL;
+  char    *name  = NULL;
+
+  // parse all of the values
+  if (!PyArg_ParseTuple(args, "sO", &name, &func)) {
     PyErr_Format(PyExc_TypeError, 
-		 "Could not add new command. Invalid position names.");
+	       "Could not add new command check. Improper arguments supplied.");
     return NULL;
   }
 
   // add the command to the game
-  add_py_cmd(name, sort_by, func, min_pos_num, max_pos_num,
-	     group, mob_ok, interrupts);
+  add_py_cmd_check(name, func);
   return Py_BuildValue("O", Py_None);
 }
-
 
 //
 // removes a command from the game
@@ -693,6 +700,8 @@ init_PyMudSys(void) {
 		     "sets an account's password.");
   PyMudSys_addMethod("add_cmd", mudsys_add_cmd, METH_VARARGS,
 		     "Add a new command to the game.");
+  PyMudSys_addMethod("add_cmd_check", mudsys_add_cmd_check, METH_VARARGS,
+		     "Add a new check prior to a command running.");
   PyMudSys_addMethod("remove_cmd", mudsys_remove_cmd, METH_VARARGS,
 		     "Removes a command from the game.");
   PyMudSys_addMethod("handle_cmd_input", mudsys_handle_cmd_input, METH_VARARGS,

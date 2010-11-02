@@ -6,7 +6,7 @@
 #
 ################################################################################
 from mud import *
-from mudsys import add_cmd
+from mudsys import add_cmd, add_cmd_check
 import inform, hooks
 
 
@@ -141,7 +141,7 @@ def try_move_mssg(ch, dir):
         ch.room = new_room
         if ex.enter_mssg != '':
             message(ch, None, None, None, True, "to_room", ex.enter_mssg)
-        elif dirnum == None:
+        elif dirnum == -1:
             message(ch, None, None, None, True, "to_room", "$n has arrived.")
         else:
             message(ch, None, None, None, True, "to_room",
@@ -191,26 +191,77 @@ def cmd_move(ch, cmd, arg):
 ################################################################################
 # mud commands
 ################################################################################
-add_cmd("north",     "n",  cmd_move, "standing", "flying", "player", True, True)
-add_cmd("west",      "w",  cmd_move, "standing", "flying", "player", True, True)
-add_cmd("east",      "e",  cmd_move, "standing", "flying", "player", True, True)
-add_cmd("south",     "s",  cmd_move, "standing", "flying", "player", True, True)
-add_cmd("up",        "u",  cmd_move, "standing", "flying", "player", True, True)
-add_cmd("down",      "d",  cmd_move, "standing", "flying", "player", True, True)
-add_cmd("northwest", None, cmd_move, "standing", "flying", "player", True, True)
-add_cmd("northeast", None, cmd_move, "standing", "flying", "player", True, True)
-add_cmd("southwest", None, cmd_move, "standing", "flying", "player", True, True)
-add_cmd("southeast", None, cmd_move, "standing", "flying", "player", True, True)
-add_cmd("nw",        None, cmd_move, "standing", "flying", "player", True, True)
-add_cmd("ne",        None, cmd_move, "standing", "flying", "player", True, True)
-add_cmd("sw",        None, cmd_move, "standing", "flying", "player", True, True)
-add_cmd("se",        None, cmd_move, "standing", "flying", "player", True, True)
+add_cmd("north",     "n",  cmd_move, "player", True)
+add_cmd("west",      "w",  cmd_move, "player", True)
+add_cmd("east",      "e",  cmd_move, "player", True)
+add_cmd("south",     "s",  cmd_move, "player", True)
+add_cmd("up",        "u",  cmd_move, "player", True)
+add_cmd("down",      "d",  cmd_move, "player", True)
+add_cmd("northwest", None, cmd_move, "player", True)
+add_cmd("northeast", None, cmd_move, "player", True)
+add_cmd("southwest", None, cmd_move, "player", True)
+add_cmd("southeast", None, cmd_move, "player", True)
+add_cmd("nw",        None, cmd_move, "player", True)
+add_cmd("ne",        None, cmd_move, "player", True)
+add_cmd("sw",        None, cmd_move, "player", True)
+add_cmd("se",        None, cmd_move, "player", True)
 
-add_cmd("wake",      None, cmd_wake,"sleeping","sleeping", "player", True, True)
-add_cmd("sleep",     None, cmd_sleep,"sitting", "flying",  "player", True, True)
-add_cmd("stand",     None, cmd_stand,"sitting", "flying",  "player", True, True)
-add_cmd("land",      None, cmd_stand, "flying", "flying",  "player", True, True)
-add_cmd("sit",       None, cmd_sit, "standing", "flying",  "player", True, True)
+add_cmd("wake",      None, cmd_wake, "player", True)
+add_cmd("sleep",     None, cmd_sleep,"player", True)
+add_cmd("stand",     None, cmd_stand,"player", True)
+add_cmd("land",      None, cmd_stand,"player", True)
+add_cmd("sit",       None, cmd_sit,  "player", True)
 
 # The mud needs to know our command for movement as well
 set_cmd_move(cmd_move)
+
+def chk_can_move(ch, cmd):
+    if not ch.pos in ["standing", "flying"]:
+        ch.send("You cannot do that while " + ch.pos + "!")
+        return False
+
+for cmd in ["north", "west", "east", "south", "up", "down", "northwest",
+            "northeast", "southwest", "southeast", "nw", "ne", "sw", "se"]:
+    add_cmd_check(cmd, chk_can_move)
+
+def chk_wake(ch, cmd):
+    if not ch.pos == "sleeping":
+        ch.send("You must be asleep to wake up.")
+        return False
+add_cmd_check("wake", chk_wake)
+
+def chk_sleep(ch, cmd):
+    if ch.pos == "sleeping":
+        ch.send("You are already sleeping!")
+        return False
+    elif ch.pos == "unconscious":
+        ch.send("You cannot sleep while you are unconscious.")
+        return False
+add_cmd_check("sleep", chk_sleep)
+
+def chk_stand(ch, cmd):
+    if ch.pos == "standing":
+        ch.send("You are already standing!")
+        return False
+    elif ch.pos != "sitting":
+        ch.send("You cannot stand while " + ch.pos + ".")
+        return False
+add_cmd_check("stand", chk_stand)
+
+def chk_land(ch, cmd):
+    if ch.pos == "standing":
+        ch.send("You are already on the ground!")
+        return False
+    elif ch.pos != "flying":
+        ch.send("You cannot land if you are not flying.")
+        return False
+add_cmd_check("land", chk_land)
+
+def chk_sit(ch, cmd):
+    if ch.pos == "sitting":
+        ch.send("You are already sitting!")
+        return False
+    elif ch.pos != "standing":
+        ch.send("You must be standing to sit.")
+        return False
+add_cmd_check("sit", chk_sit)

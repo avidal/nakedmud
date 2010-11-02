@@ -10,7 +10,8 @@ int   init_socket           ( void );
 SOCKET_DATA  *new_socket    ( int sock );
 void  close_socket          ( SOCKET_DATA *dsock, bool reconnect );
 bool  read_from_socket      ( SOCKET_DATA *dsock );
-void  socket_handler        ( void );
+void  input_handler         ( void );
+void  output_handler        ( void );
 void  copyover_recover      ( void );
 void  do_copyover           ( void );
 

@@ -914,19 +914,20 @@ PyObject *PyObj_load_obj(PyObject *self, PyObject *args) {
   else if(cont != NULL)
     obj_to_obj(obj, cont);
   else if(ch != NULL) {
-    // if we have supplied locations, equip to those
-    if(equip_to && *equip_to) {
-      if(!try_equip(ch, obj, equip_to, NULL))
-	obj_to_char(obj, ch);
-    }
-
-    // otherwise, assume it's worn equipemnt
-    else if(objIsType(obj, "worn")) {
+    // we're just trying to send it to our inventory
+    if(equip_to == NULL)
+      obj_to_char(obj, ch);
+    // trying to equip to our default slots
+    else if(!*equip_to && objIsType(obj, "worn")) {
       if(!try_equip(ch, obj, NULL, wornGetPositions(obj)))
 	obj_to_char(obj, ch);
     }
-
-    // failed. Just give it to us
+    // trying to equip to specific slots
+    else if(*equip_to) {
+      if(!try_equip(ch, obj, equip_to, NULL))
+	obj_to_char(obj, ch);
+    }
+    // can't equip it in any other case -- send it to the inventory
     else
       obj_to_char(obj, ch);
   }

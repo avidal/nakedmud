@@ -578,64 +578,37 @@ void init_olc2() {
   extern COMMAND(cmd_dig);
   extern COMMAND(cmd_fill);
   extern COMMAND(cmd_instantiate);
-  add_cmd("zedit", NULL, cmd_zedit, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("redit", NULL, cmd_redit, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("resedit", NULL, cmd_resedit, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("medit", NULL, cmd_medit, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("oedit", NULL, cmd_oedit, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("accedit", NULL, cmd_accedit, POS_UNCONSCIOUS, POS_FLYING,
-	  "admin",   FALSE, TRUE);
-  add_cmd("pcedit",  NULL, cmd_pcedit, POS_UNCONSCIOUS, POS_FLYING,
-	  "admin",   FALSE, TRUE);
-  add_cmd("mpedit", NULL, cmd_mpedit, POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter", FALSE, TRUE);
-  add_cmd("opedit", NULL, cmd_opedit, POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter", FALSE, TRUE);
-  add_cmd("rpedit", NULL, cmd_rpedit, POS_UNCONSCIOUS, POS_FLYING,
-	  "scripter", FALSE, TRUE);
 
-  add_cmd("dig", NULL, cmd_dig, POS_STANDING, POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("fill", NULL, cmd_fill, POS_STANDING, POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("instantiate", NULL, cmd_instantiate, POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("purge",      NULL, cmd_purge,    POS_SITTING,  POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("load",       NULL, cmd_load,     POS_SITTING,  POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("rcopy", NULL, cmd_instantiate,   POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, TRUE);
+  add_cmd("zedit",   NULL, cmd_zedit,   "builder", TRUE);
+  add_cmd("redit",   NULL, cmd_redit,   "builder", TRUE);
+  add_cmd("resedit", NULL, cmd_resedit, "builder", TRUE);
+  add_cmd("medit",   NULL, cmd_medit,   "builder", TRUE);
+  add_cmd("oedit",   NULL, cmd_oedit,   "builder", TRUE);
+  add_cmd("accedit", NULL, cmd_accedit, "admin",   TRUE);
+  add_cmd("pcedit",  NULL, cmd_pcedit,  "admin",   TRUE);
+  add_cmd("mpedit",  NULL, cmd_mpedit,  "scripter",TRUE);
+  add_cmd("opedit",  NULL, cmd_opedit,  "scripter",TRUE);
+  add_cmd("rpedit",  NULL, cmd_rpedit,  "scripter",TRUE);
 
-  add_cmd("mlist",      NULL, cmd_mlist,    POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("mdelete",    NULL, cmd_mdelete,  POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("mrename",    NULL, cmd_mrename,  POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("olist",      NULL, cmd_olist,    POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("odelete",    NULL, cmd_odelete,  POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("orename",    NULL, cmd_orename,  POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("rreload",    NULL, cmd_rreload,  POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("rlist",      NULL, cmd_rlist,    POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("rdelete",    NULL, cmd_rdelete,  POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("rrename",    NULL, cmd_rrename,  POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
-  add_cmd("zlist",      NULL, cmd_zlist,    POS_SITTING,  POS_FLYING,
-	  "builder", FALSE, TRUE);
-  add_cmd("zreset",     NULL, cmd_zreset,   POS_UNCONSCIOUS, POS_FLYING,
-	  "builder", FALSE, FALSE);
+  add_cmd("dig",     NULL, cmd_dig,     "builder", TRUE);
+  add_cmd("fill",    NULL, cmd_fill,    "builder", TRUE);
+  add_cmd("instantiate", NULL, cmd_instantiate, "builder", TRUE);
+  add_cmd("purge",   NULL, cmd_purge,   "builder", FALSE);
+  add_cmd("load",    NULL, cmd_load,    "builder", FALSE);
+  add_cmd("rcopy",   NULL, cmd_instantiate,"builder", TRUE);
+
+  add_cmd("mlist",   NULL, cmd_mlist,   "builder", FALSE);
+  add_cmd("mdelete", NULL, cmd_mdelete, "builder", FALSE);
+  add_cmd("mrename", NULL, cmd_mrename, "builder", FALSE);
+  add_cmd("olist",   NULL, cmd_olist,   "builder", FALSE);
+  add_cmd("odelete", NULL, cmd_odelete, "builder", FALSE);
+  add_cmd("orename", NULL, cmd_orename, "builder", FALSE);
+  add_cmd("rreload", NULL, cmd_rreload, "builder", FALSE);
+  add_cmd("rlist",   NULL, cmd_rlist,   "builder", FALSE);
+  add_cmd("rdelete", NULL, cmd_rdelete, "builder", FALSE);
+  add_cmd("rrename", NULL, cmd_rrename, "builder", FALSE);
+  add_cmd("zlist",   NULL, cmd_zlist,   "builder", TRUE);
+  add_cmd("zreset",  NULL, cmd_zreset,  "builder", FALSE);
 }
 
 void do_olc(SOCKET_DATA *sock,

@@ -736,7 +736,22 @@ void copyover_recover() {
   reconnect_copyover_sockets();
 }     
 
-void socket_handler() {
+void output_handler() {
+  LIST_ITERATOR *sock_i = newListIterator(socket_list);
+  SOCKET_DATA     *sock = NULL; 
+
+  ITERATE_LIST(sock, sock_i) {
+    /* if the player quits or get's disconnected */
+    if(sock->closed)
+      continue;
+    
+    /* Send all new data to the socket and close it if any errors occour */
+    if (!flush_output(sock))
+      close_socket(sock, FALSE);
+  } deleteListIterator(sock_i);
+}
+
+void input_handler() {
   LIST_ITERATOR *sock_i = newListIterator(socket_list);
   SOCKET_DATA     *sock = NULL; 
 
@@ -798,14 +813,6 @@ void socket_handler() {
 	charSetAliasesQueued(sock->player, --alias_queue);
     }
 #endif
-    
-    /* if the player quits or get's disconnected */
-    if(sock->closed)
-      continue;
-    
-    /* Send all new data to the socket and close it if any errors occour */
-    if (!flush_output(sock))
-      close_socket(sock, FALSE);
   } deleteListIterator(sock_i);
 }
 

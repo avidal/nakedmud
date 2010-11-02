@@ -39,7 +39,6 @@
 //*****************************************************************************
 NEAR_MAP *cmd_table = NULL;
 
-
 void init_commands() {
   cmd_table = newNearMap();
 
@@ -48,20 +47,14 @@ void init_commands() {
   // functions to the MUD, they should be added in the init_xxx() function
   // associated with your module.
   //***************************************************************************
-  add_cmd("back",       NULL, cmd_back,     POS_UNCONSCIOUS, POS_FLYING,
-	  "player", TRUE, FALSE);
-  add_cmd("commands",   NULL, cmd_commands, POS_UNCONSCIOUS, POS_FLYING,
-	  "player", TRUE, FALSE);
-  add_cmd("compress",   NULL, cmd_compress, POS_UNCONSCIOUS, POS_FLYING,
-	  "player", FALSE, FALSE);
-  add_cmd("groupcmds",  NULL, cmd_groupcmds,POS_UNCONSCIOUS, POS_FLYING,
-	  "player", FALSE, FALSE);
-  add_cmd("look",       "l",  cmd_look,     POS_SITTING,  POS_FLYING,
-	  "player", TRUE, FALSE);
-  add_cmd("more",       NULL, cmd_more,     POS_UNCONSCIOUS, POS_FLYING,
-	  "player", TRUE, FALSE);
+  add_cmd("back",       NULL, cmd_back,     "player", FALSE);
+  add_cmd("commands",   NULL, cmd_commands, "player", FALSE);
+  add_cmd("compress",   NULL, cmd_compress, "player", FALSE);
+  add_cmd("groupcmds",  NULL, cmd_groupcmds,"player", FALSE);
+  add_cmd("look",       "l",  cmd_look,     "player", FALSE);
+  add_cmd("more",       NULL, cmd_more,     "player", FALSE);
+  add_cmd_check("look", chk_conscious);
 }
-
 
 bool cmd_exists(const char *cmd) {
   return nearMapKeyExists(cmd_table, cmd);
@@ -73,30 +66,36 @@ void remove_cmd(const char *cmd) {
 }
 
 void add_cmd(const char *cmd, const char *sort_by, COMMAND(func),
-	     int min_pos, int max_pos, const char *user_group, 
-	     bool mob_ok, bool interrupts) {
+	     const char *user_group, bool interrupts) {
   // if we've already got a command named this, remove it
   remove_cmd(cmd);
 
   // add in the new command
   nearMapPut(cmd_table, cmd, sort_by, 
-	     newCmd(cmd, func, min_pos, max_pos, 
-		    user_group, mob_ok, interrupts));
+	     newCmd(cmd, func, user_group, interrupts));
 }
-
 
 void add_py_cmd(const char *cmd, const char *sort_by, void *pyfunc,
-	     int min_pos, int max_pos, const char *user_group, 
-	     bool mob_ok, bool interrupts) {
+	     const char *user_group, bool interrupts) {
   // if we've already got a command named this, remove it
   remove_cmd(cmd);
 
   // add in the new command
   nearMapPut(cmd_table, cmd, sort_by, 
-	     newPyCmd(cmd, pyfunc, min_pos, max_pos, 
-		    user_group, mob_ok, interrupts));
+	     newPyCmd(cmd, pyfunc, user_group, interrupts));
 }
 
+void add_cmd_check(const char *cmd, CMD_CHK(func)) {
+  CMD_DATA *data = nearMapGet(cmd_table, cmd, FALSE);
+  if(data != NULL)
+    cmdAddCheck(data, func);
+}
+
+void add_py_cmd_check(const char *cmd, void *pyfunc) {
+  CMD_DATA *data = nearMapGet(cmd_table, cmd, FALSE);
+  if(data != NULL)
+    cmdAddPyCheck(data, pyfunc);
+}
 
 // show the character all of the commands in the specified group(s).
 void show_commands(CHAR_DATA *ch, const char *user_groups) {
