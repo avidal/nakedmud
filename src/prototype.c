@@ -196,13 +196,9 @@ bool protoRun(PROTO_DATA *proto, const char *type, void *pynewfunc,
   else {
     run_code(proto->code, dict, get_key_locale(protoGetKey(proto)));
     
-    if(!last_script_ok()) {
-      char *tb = getPythonTraceback();
-      log_string("Prototype %s terminated with an error:\r\n%s\r\n"
-		 "\r\nTraceback is:\r\n%s\r\n", 
-		 proto->key, bufferString(proto->script), tb);
-      free(tb);
-    }
+    if(!last_script_ok())
+      log_pyerr("Prototype %s terminated with an error:\r\n%s",
+		proto->key, bufferString(proto->script));
   }
 
   // remove us from the dictionary just incase it doesn't GC immediately. It
@@ -223,6 +219,7 @@ CHAR_DATA *protoMobRun(PROTO_DATA *proto) {
   if(protoRun(proto, "mproto", charGetPyForm, charAddPrototype, charSetClass, ch))
     char_to_game(ch);
   else {
+    // should this be char_unexist? Check to see what difference it makes
     extract_mobile(ch);
     ch = NULL;
   }
@@ -238,6 +235,7 @@ OBJ_DATA *protoObjRun(PROTO_DATA *proto) {
   if(protoRun(proto, "oproto", newPyObj, objAddPrototype, objSetClass, obj))
     obj_to_game(obj);
   else {
+    // should this be obj_unexist? Check to see what difference it makes
     extract_obj(obj);
     obj = NULL;
   }
@@ -253,6 +251,7 @@ ROOM_DATA *protoRoomRun(PROTO_DATA *proto) {
   if(protoRun(proto, "rproto", newPyRoom, roomAddPrototype,roomSetClass,room))
     room_to_game(room);
   else {
+    // should this be room_unexist? Check to see what difference it makes
     extract_room(room);
     room = NULL;
   }

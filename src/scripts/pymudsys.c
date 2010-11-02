@@ -16,6 +16,8 @@
 #include "../save.h"
 #include "../handler.h"
 #include "../account.h"
+#include "../storage.h"
+#include "../world.h"
 
 #include "pymudsys.h"
 #include "scripts.h"
@@ -23,6 +25,11 @@
 #include "pychar.h"
 #include "pyaccount.h"
 #include "pysocket.h"
+#include "pyroom.h"
+#include "pyexit.h"
+#include "pyobj.h"
+#include "pystorage.h"
+
 
 
 //******************************************************************************
@@ -36,6 +43,10 @@
 //*****************************************************************************
 // local variables and functions
 //*****************************************************************************
+
+// a dictionary of world types and their appropriate Python class
+PyObject *worldtypes = NULL;
+
 // a list of methods to add to the mudsys module
 LIST *pymudsys_methods = NULL;
 
@@ -569,6 +580,7 @@ PyObject *mudsys_add_cmd(PyObject *self, PyObject *args) {
       bufferFormat(buf, SCREEN_WIDTH, 0);
       if(bufferLength(buf) > 0)
 	add_help(name, bufferString(buf), group, NULL, FALSE);
+      deleteBuffer(buf);
     }
 #endif
   }
@@ -660,6 +672,188 @@ PyObject *mudsys_show_prompt(PyObject *self, PyObject *args) {
 
 
 //*****************************************************************************
+// functions for adding methods to classes within Python
+//*****************************************************************************
+PyObject *mudsys_gen_add_method(PyTypeObject *type, PyObject *args) {
+  PyObject *pyname = NULL;
+  PyObject *method = NULL;
+  char       *name = NULL;
+
+  if(!PyArg_ParseTuple(args, "OO", &pyname, &method)) {
+    PyErr_Format(PyExc_TypeError, "Method takes string and function argument.");
+    return NULL;
+  }
+
+  if(!PyString_Check(pyname)) {
+    PyErr_Format(PyExc_TypeError, "First argument not a string.");
+    return NULL;
+  }
+
+  if(!PyFunction_Check(method)) {
+    PyErr_Format(PyExc_TypeError, "Second argument not a function.");
+    return NULL;
+  }
+
+  name = PyString_AsString(pyname);
+  if(PyDict_Contains(type->tp_dict, pyname)) {
+    PyErr_Format(PyExc_TypeError, "%s already has attribute, %s.", 
+		 type->tp_name, name);
+    return NULL;
+  }
+
+  // add our new method
+  PyDict_SetItemString(type->tp_dict, name, method);
+  return Py_BuildValue("i", 1);
+}
+
+PyObject *mudsys_add_sock_method(PyObject *self, PyObject *args) {
+  return mudsys_gen_add_method(&PySocket_Type, args);
+}
+PyObject *mudsys_add_room_method(PyObject *self, PyObject *args) {
+  return mudsys_gen_add_method(&PyRoom_Type, args);
+}
+PyObject *mudsys_add_exit_method(PyObject *self, PyObject *args) {
+  return mudsys_gen_add_method(&PyExit_Type, args);
+}
+PyObject *mudsys_add_obj_method(PyObject *self, PyObject *args) {
+  return mudsys_gen_add_method(&PyObj_Type, args);
+}
+PyObject *mudsys_add_char_method(PyObject *self, PyObject *args) {
+  return mudsys_gen_add_method(&PyChar_Type, args);
+}
+PyObject *mudsys_add_acct_method(PyObject *self, PyObject *args) {
+  return mudsys_gen_add_method(&PyAccount_Type, args);
+}
+
+
+
+//*****************************************************************************
+// functions for adding and getting types to the gameworld
+//*****************************************************************************
+void pytype_set_key(const char *type, PyObject *thing, const char *key) {
+  PyObject *ret = PyObject_CallMethod(thing, "setKey", "s", key);
+  if(ret == NULL)
+    log_pyerr("error calling setKey for world type, %s", type);
+  Py_XDECREF(ret);
+}
+
+PyObject *pytype_read(const char *type, STORAGE_SET *set) {
+  PyObject *thing = PyDict_GetItemString(worldtypes, type);
+
+  if(thing == NULL) {
+    log_pyerr("world type, %s, does not exist", type);
+    return NULL;
+  }
+  else {
+    PyObject *pystore = newPyStorageSet(set);
+    PyObject    *copy = PyObject_CallFunction(thing, "O", pystore);
+
+    // did it work?
+    if(copy == NULL)
+      log_pyerr("Error reading world type, %s", type);
+    Py_XDECREF(pystore);
+    return copy;
+  }
+}
+
+STORAGE_SET *pytype_store(const char *type, PyObject *thing) {
+  PyObject *pystore = PyObject_CallMethod(thing, "store", NULL);
+  STORAGE_SET  *set = NULL;
+  // make sure it worked
+  if(pystore != NULL)
+    set = PyStorageSet_AsSet(pystore);
+  else {
+    log_pyerr("error calling store for world type, %s", type);
+    set = new_storage_set();
+  }
+  Py_XDECREF(pystore);
+  return set;
+}
+
+void pytype_delete(const char *type, PyObject *thing) {
+  Py_XDECREF(thing);
+}
+
+PyObject *mudsys_world_add_type(PyObject *self, PyObject *args) {
+  char      *type = NULL;
+  PyObject *class = NULL;
+  if(!PyArg_ParseTuple(args, "sO", &type, &class)) {
+    PyErr_Format(PyExc_TypeError, "Error parsing new world type");
+    return NULL;
+  }
+
+  // add all of our relevant methods to the game world
+  worldAddForgetfulType(gameworld, type, pytype_read, pytype_store, 
+			pytype_delete, pytype_set_key);
+
+  // now, store us so we can look up the Python Methods
+  PyDict_SetItemString(worldtypes, type, class);
+
+  return Py_BuildValue("i", 1);
+}
+
+PyObject *mudsys_world_get_type(PyObject *self, PyObject *args) {
+  char      *type = NULL;
+  char       *key = NULL;
+
+  if(!PyArg_ParseTuple(args, "ss", &type, &key)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Error parsing type and key for world_get_type");
+    return NULL;
+  }
+
+  PyObject *entry = worldGetType(gameworld, type, key);
+  return Py_BuildValue("O", (type == NULL ? Py_None : entry));
+}
+
+PyObject *mudsys_world_put_type(PyObject *self, PyObject *args) {
+  char      *type = NULL;
+  char       *key = NULL;
+  PyObject *entry = NULL;
+
+  if(!PyArg_ParseTuple(args, "ssO", &type, &key, &entry)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Error parsing arguments for world_put_type");
+    return NULL;
+  }
+
+  worldPutType(gameworld, type, key, entry);
+  return Py_BuildValue("i", 1);
+}
+
+PyObject *mudsys_world_save_type(PyObject *self, PyObject *args) {
+  char      *type = NULL;
+  char       *key = NULL;
+
+  if(!PyArg_ParseTuple(args, "ssO", &type, &key)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Error parsing type and key for world_save_type");
+    return NULL;
+  }
+
+  worldSaveType(gameworld, type, key);
+  return Py_BuildValue("i", 1);
+}
+
+PyObject *mudsys_world_remove_type(PyObject *self, PyObject *args) {
+  char      *type = NULL;
+  char       *key = NULL;
+
+  if(!PyArg_ParseTuple(args, "ss", &type, &key)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "Error parsing type and key for world_remove_type");
+    return NULL;
+  }
+
+  PyObject *entry = worldRemoveType(gameworld, type, key);
+  PyObject   *ret = Py_BuildValue("O", (entry == NULL ? Py_None : entry));
+  Py_XDECREF(entry);
+  return ret;
+}
+
+
+
+//*****************************************************************************
 // MudSys module
 //*****************************************************************************
 void PyMudSys_addMethod(const char *name, void *f, int flags, const char *doc) {
@@ -737,7 +931,37 @@ init_PyMudSys(void) {
   PyMudSys_addMethod("create_player", mudsys_create_player, METH_VARARGS,
 		     "creates a new player by name. Must be registered "
 		     "after fully created.");
+  PyMudSys_addMethod("add_sock_method", mudsys_add_sock_method, METH_VARARGS,
+		     "adds a new Python method to the Mudsock class");
+  PyMudSys_addMethod("add_char_method", mudsys_add_char_method, METH_VARARGS,
+		     "adds a new Python method to the Char class");
+  PyMudSys_addMethod("add_room_method", mudsys_add_room_method, METH_VARARGS,
+		     "adds a new Python method to the Room class");
+  PyMudSys_addMethod("add_exit_method",  mudsys_add_exit_method, METH_VARARGS,
+		     "adds a new Python method to the Exit class");
+  PyMudSys_addMethod("add_obj_method",  mudsys_add_obj_method, METH_VARARGS,
+		     "adds a new Python method to the Obj class");
+  PyMudSys_addMethod("add_acct_method",  mudsys_add_acct_method, METH_VARARGS,
+		     "adds a new Python method to the Account class");
+  PyMudSys_addMethod("world_add_type", mudsys_world_add_type, METH_VARARGS,
+		     "adds a new type to the world. like, e.g., mob, obj, and "
+                     "room prototypes. Assumes a class with a store and "
+		     "setKey method");
+  PyMudSys_addMethod("world_get_type", mudsys_world_get_type, METH_VARARGS,
+		     "gets a registered item from the world database. Assumes "
+		     "it is a python type, and not a C type. If no type exists "
+		     "return Py_None");
+  PyMudSys_addMethod("world_put_type", mudsys_world_put_type, METH_VARARGS,
+		     "Put a new type into thw world database.");
+  PyMudSys_addMethod("world_save_type", mudsys_world_save_type, METH_VARARGS,
+		     "Saves a world entry if it exists.");
+  PyMudSys_addMethod("world_remove_type", mudsys_world_remove_type,METH_VARARGS,
+		     "Removes a type, and returns a reference to it, or None "
+		     "if it does not exist.");
 
   Py_InitModule3("mudsys", makePyMethods(pymudsys_methods),
 		 "The mudsys module, for all MUD system utils.");
+
+  worldtypes = PyDict_New();
+  Py_INCREF(worldtypes);
 }

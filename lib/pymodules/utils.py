@@ -112,3 +112,22 @@ def show_list(ch, list, s_func, m_func = None):
             else:
                 ch.send(m_func(thing) % count)
         else: pass
+
+def olc_display_table(sock, list, num_cols, disp = lambda x: x):
+    '''used by OLC functions to display a list of options in a table form.
+       Also displays each option\'s position number and colorizes everything.'''
+    print_room = (80 - 10*num_cols)/num_cols;
+    fmt        = "  {c%%2d{y) {g%%-%ds%%s" % print_room
+    i          = 0
+
+    # display each cell
+    for item in list:
+        endtag = "   "
+        if i % num_cols == (num_cols - 1):
+            endtag = "\r\n"
+        sock.send_raw(fmt % (i, disp(item), endtag))
+        i += 1
+
+    # do we need to end this with a newline?
+    if i % num_cols != 0:
+        sock.send_raw("\r\n")

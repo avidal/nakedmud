@@ -168,24 +168,6 @@ bool iedit_furniture_parser (SOCKET_DATA *sock, FURNITURE_DATA *data, int choice
   }
 }
 
-void furniture_from_proto(FURNITURE_DATA *data, BUFFER *buf) {
-  const char *code = bufferString(buf);
-  char line[SMALL_BUFFER];
-  char *lptr = line;
-  int capacity = 0;
-
-  // two lines: capacity and type. First capacity, then type
-  code = strcpyto(line, code, '\n');
-  sscanf(line, "me.furniture_capacity = %d", &capacity);
-  data->capacity = capacity;
-
-  code = strcpyto(line, code , '\n');
-  while(*lptr && *lptr != '\"') lptr++;
-  lptr++; // skip the leading "
-  lptr[next_letter_in(lptr, '\"')] = '\0'; // kill closing "
-  data->type = furnitureTypeGetNum(lptr);
-}
-
 void furniture_to_proto(FURNITURE_DATA *data, BUFFER *buf) {
   bprintf(buf, "me.furniture_capacity = %d\n",   data->capacity);
   bprintf(buf, "me.furniture_type     = \"%s\"\n", 
@@ -326,7 +308,7 @@ void init_furniture(void) {
 
   // set up the furniture OLC too
   item_add_olc("furniture", iedit_furniture_menu, iedit_furniture_chooser, 
-  	       iedit_furniture_parser, furniture_from_proto,furniture_to_proto);
+  	       iedit_furniture_parser, NULL, furniture_to_proto);
 
   // add our getters and setters for furniture
   PyObj_addGetSetter("furniture_capacity", 

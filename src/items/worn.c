@@ -222,22 +222,6 @@ bool iedit_worn_parser (SOCKET_DATA *sock, WORN_DATA *data, int choice,
   }
 }
 
-void worn_from_proto(WORN_DATA *worn, BUFFER *buf) {
-  const char *code = bufferString(buf);
-  char        line[SMALL_BUFFER];
-  char       *lptr = line;
-
-  // parse out our worn type
-  code = strcpyto(lptr, code, '\n'); 
-  while(*lptr != '\"') lptr++;
-  lptr++; // kill the leading "
-  lptr[next_letter_in(lptr, '\"')] = '\0'; // kill closing "
-  if(hashIn(worn_table, lptr)) {
-    if(worn->type) free(worn->type);
-    worn->type = strdup(lptr);
-  }
-}
-
 void worn_to_proto(WORN_DATA *worn, BUFFER *buf) {
   bprintf(buf, "me.worn_type = \"%s\"\n", worn->type);
 }
@@ -327,7 +311,7 @@ void init_worn(void) {
 
   // set up the worn OLC too
   item_add_olc("worn", iedit_worn_menu, iedit_worn_chooser, iedit_worn_parser,
-	       worn_from_proto, worn_to_proto);
+	       NULL, worn_to_proto);
 
   // attach our hooks to display worn info on look
   hookAdd("append_obj_desc", append_worn_hook);

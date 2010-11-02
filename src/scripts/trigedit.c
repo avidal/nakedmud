@@ -100,7 +100,7 @@ struct trigger_type_usable_list trigger_types[] = {
   { "get",            "obj, room" },
   { "give",           "obj, mob"  },
   { "receive",        "mob"       },
-  { "wear",           "mob"       },
+  { "wear",           "obj, mob"  },
   { "remove",         "obj, mob"  },
   { "reset",          "room"      },
   { "combat",         "mob"       },

@@ -103,6 +103,7 @@ backup: clean
 clean:
 	@rm -f $(BINARY)
 	@rm -f *.o $(patsubst %,%/*.o, $(MODULES))
+	@rm -f *.d $(patsubst %,%/*.d, $(MODULES))
 	@rm -f *~ $(patsubst %,%/*~, $(MODULES))
 	@rm -f ../lib/pymodules/*~
 	@rm -f ../lib/pymodules/*.pyc

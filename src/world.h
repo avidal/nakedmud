@@ -42,6 +42,15 @@ void     worldPutType(WORLD_DATA *world, const char *type, const char *key,
 void     worldAddType(WORLD_DATA *world, const char *type, void *reader,
 		      void *storer, void *deleter, void *typesetter);
 
+//
+// some types can 'forget' what they are. This is a fudge so Python can add
+// types to the world, and we can do a lookup on the functions that need to
+// be called, without having to explicitly deal with Python in world.c.
+// Forgetful functions are exactly the same as normal functions, except they
+// take an additional initial argument, which is a const string of their type
+void worldAddForgetfulType(WORLD_DATA *world, const char *type, void *reader,
+			   void *storer, void *deleter, void *typesetter);
+
 ZONE_DATA *worldRemoveZone(WORLD_DATA *world, const char *key);
 ROOM_DATA    *worldGetRoom(WORLD_DATA *world, const char *key);
 ROOM_DATA *worldRemoveRoom(WORLD_DATA *world, const char *key);

@@ -207,6 +207,9 @@ int main(int argc, char **argv)
   /**********************************************************************/
   /*                START MANDATORY MODULE INSTALLATION                 */
   /**********************************************************************/
+  log_string("Initializing OLC v2.0.");
+  init_olc2();
+
   log_string("Initializing item types.");
   init_items();
 
@@ -216,9 +219,6 @@ int main(int argc, char **argv)
 
   log_string("Initializing dynamic variables.");
   init_dyn_vars();
-
-  log_string("Initializing OLC v2.0.");
-  init_olc2();
 
   log_string("Initializing set utility.");
   init_set();

@@ -70,9 +70,12 @@ void init_olc2();
 //
 // deleter: this is a function that will delete the working copy of our data.
 //       This parameter can be NULL if the data is to be worked on directly.
-//       This function takes the form:
+//       If it is not NULL, it will be called at the completion of OLC, even if
+//       the data is being worked on directly. This is simply to allow for
+//       wrapper structures (e.g., for Python). This function takes the form:
 //       void delete(datatype *working_copy)
-#define MENU_CHOICE_CONFIRM_SAVE   (-2) // this define for internal use only!
+#define MENU_CHOICE_CONFIRM_SAVE   (-3) // this define for internal use only!
+#define MENU_CHOICE_OK             (-2) // used for olc extenders
 #define MENU_CHOICE_INVALID        (-1)
 #define MENU_NOCHOICE               (0)
 
@@ -85,6 +88,19 @@ void do_olc(SOCKET_DATA *sock,
 	    void *deleter,
 	    void *saver,
 	    void *data);
+
+
+
+#define ECODE_BEGIN "### begin extra code"
+#define ECODE_END   "### end extra code"
+
+//
+// Pre v3.6, we'd manually parse out OLC-editable structures from Python code.
+// Now, we just run the relevant code to generate something editable. This is
+// the function that does all the work of parsing out the 'extra' code and not
+// running it, but running everything else.
+void olc_from_proto(PROTO_DATA *proto,BUFFER *extra,void *me,void *aspy,
+		    void *togame,void *fromgame);
 
 
 

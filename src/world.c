@@ -28,10 +28,11 @@
 #define HUGE_WORLD      250000
 
 typedef struct {
-  void      *(* read_func)(STORAGE_SET *);
-  STORAGE_SET     *(* store_func)(void *);
-  void            (* delete_func)(void *);
-  void (* key_func)(void *, const char *);
+  void   *read_func;
+  void  *store_func;
+  void *delete_func;
+  void    *key_func;
+  bool    forgetful;
 } WORLD_TYPE_DATA;
 
 struct world_data {
@@ -42,12 +43,13 @@ struct world_data {
 };
 
 WORLD_TYPE_DATA *newWorldTypeData(void *reader, void *storer, void *deleter,
-				  void *keysetter) {
+				  void *keysetter, bool forgetful) {
   WORLD_TYPE_DATA *data = malloc(sizeof(WORLD_TYPE_DATA));
   data->read_func       = reader;
   data->store_func      = storer;
   data->delete_func     = deleter;
   data->key_func        = keysetter;
+  data->forgetful       = forgetful;
   return data;
 }
 
@@ -304,12 +306,27 @@ void worldAddType(WORLD_DATA *world, const char *type, void *reader,
   // add the new type to each of our zones, too
   if(!hashIn(world->type_table, type)) {
     hashPut(world->type_table, type, 
-	    newWorldTypeData(reader, storer, deleter, zonesetter));
+	    newWorldTypeData(reader, storer, deleter, zonesetter, FALSE));
     HASH_ITERATOR *zone_i = newHashIterator(world->zones);
     const char       *key = NULL;
     ZONE_DATA       *zone = NULL;
     ITERATE_HASH(key, zone, zone_i)
       zoneAddType(zone, type, reader, storer, deleter, zonesetter);
+    deleteHashIterator(zone_i);
+  }
+}
+
+void worldAddForgetfulType(WORLD_DATA *world, const char *type, void *reader,
+			   void *storer, void *deleter, void *zonesetter) {
+  // add the new type to each of our zones, too
+  if(!hashIn(world->type_table, type)) {
+    hashPut(world->type_table, type, 
+	    newWorldTypeData(reader, storer, deleter, zonesetter, TRUE));
+    HASH_ITERATOR *zone_i = newHashIterator(world->zones);
+    const char       *key = NULL;
+    ZONE_DATA       *zone = NULL;
+    ITERATE_HASH(key, zone, zone_i)
+      zoneAddForgetfulType(zone, type, reader, storer, deleter, zonesetter);
     deleteHashIterator(zone_i);
   }
 }

@@ -21,13 +21,21 @@
 #include "items.h"
 #include "iedit.h"
 
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../scripts/scripts.h"
 #include "../olc2/olc.h"
+#include "../olc2/olc_extender.h"
 
 
 
 //*****************************************************************************
 // local functions, variables, and datastructures
 //*****************************************************************************
+
 // used to store the different sub-olc functions for different item types
 HASHTABLE *item_olc_table = NULL;
 
@@ -35,13 +43,13 @@ typedef struct item_olc_data {
   void       (* menu)(SOCKET_DATA *sock, void *data);
   int     (* chooser)(SOCKET_DATA *sock, void *data, const char *option);
   bool     (* parser)(SOCKET_DATA *sock, void *data,int choice,const char *arg);
-  void (* from_proto)(void *data, BUFFER *buf);
+  void (* from_proto)(void *data);
   void   (* to_proto)(void *data, BUFFER *buf);
 } ITEM_OLC_DATA;
 
 ITEM_OLC_DATA *newItemOLC(void *menu, void *chooser, void *parser, 
 			  void *from_proto, void *to_proto) {
-  ITEM_OLC_DATA *data = malloc(sizeof(ITEM_OLC_DATA));
+  ITEM_OLC_DATA *data = calloc(1, sizeof(ITEM_OLC_DATA));
   data->menu       = menu;
   data->chooser    = chooser;
   data->parser     = parser;
@@ -136,20 +144,63 @@ bool iedit_parser(SOCKET_DATA *sock, OBJ_DATA *obj,int choice, const char *arg){
   }
 }
 
-void (* item_from_proto_func(const char *type))(void *data, BUFFER *buf) {
+void item_from_proto(const char *type, void *data) {
   ITEM_OLC_DATA *funcs = hashGet(item_olc_table, type);
-  if(funcs == NULL)
-    return NULL;
-  else
-    return funcs->from_proto;
+  if(funcs != NULL && funcs->from_proto != NULL)
+    funcs->from_proto(data);
 }
 
-void (* item_to_proto_func(const char *type))(void *data, BUFFER *buf) {
+void item_to_proto(const char *type, void *data, BUFFER *buf) {
   ITEM_OLC_DATA *funcs = hashGet(item_olc_table, type);
-  if(funcs == NULL)
-    return NULL;
-  else
-    return funcs->to_proto;
+  if(funcs != NULL && funcs->to_proto != NULL)
+    return funcs->to_proto(data, buf);
+}
+
+
+
+//*****************************************************************************
+// functions for extending oedit
+//*****************************************************************************
+void oedit_item_menu(SOCKET_DATA *sock, OBJ_DATA *obj) {
+  send_to_socket(sock, "Edit item types: {c%s\r\n", objGetTypes(obj));
+}
+
+int oedit_item_choose(SOCKET_DATA *sock, OBJ_DATA *obj) {
+  do_olc(sock, iedit_menu, iedit_chooser, iedit_parser, NULL, NULL, NULL,
+	 NULL, obj);
+  return MENU_NOCHOICE;
+}
+
+void oedit_item_to_proto(OBJ_DATA *obj, BUFFER *buf) {
+  // item types
+  LIST      *item_types = itemTypeList();
+  LIST_ITERATOR *type_i = newListIterator(item_types);
+  char            *type = NULL;
+
+  ITERATE_LIST(type, type_i) {
+    if(objIsType(obj, type)) {
+      void *data = objGetTypeData(obj, type);
+      bprintf(buf, "\n### item type: %s\n", type);
+      bprintf(buf, "me.settype(\"%s\")\n", type);
+      item_to_proto(type, data, buf);
+      //item_to_proto_func(type)(data, buf);      
+      bprintf(buf, "### end type\n");
+    }
+  } deleteListIterator(type_i);
+  deleteListWith(item_types, free);
+}
+
+void oedit_item_from_proto(OBJ_DATA *obj) {
+  // item types
+  LIST      *item_types = itemTypeList();
+  LIST_ITERATOR *type_i = newListIterator(item_types);
+  char            *type = NULL;
+
+  ITERATE_LIST(type, type_i) {
+    if(objIsType(obj, type))
+      item_from_proto(type, obj);
+  } deleteListIterator(type_i);
+  deleteListWith(item_types, free);
 }
 
 
@@ -159,4 +210,9 @@ void (* item_to_proto_func(const char *type))(void *data, BUFFER *buf) {
 //*****************************************************************************
 void init_item_olc() {
   item_olc_table = newHashtable();
+
+  // add our OLC extension
+  extenderRegisterOpt(oedit_extend, 'I', 
+		      oedit_item_menu, oedit_item_choose, NULL, 
+		      oedit_item_from_proto, oedit_item_to_proto);
 }

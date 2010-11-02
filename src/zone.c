@@ -25,22 +25,65 @@
 // zone type data
 //*****************************************************************************
 typedef struct {
+  /*
   void      *(* read_func)(STORAGE_SET *);
   STORAGE_SET     *(* store_func)(void *);
   void            (* delete_func)(void *);
   void (* key_func)(void *, const char *);
-  HASHTABLE                  *key_map;
+  */
+  void    *read_func;
+  void   *store_func;
+  void  *delete_func;
+  void     *key_func;
+  bool     forgetful;
+  HASHTABLE *key_map;
+  char         *type;
 } ZONE_TYPE_DATA;
 
-ZONE_TYPE_DATA *newZoneType(void *reader, void *storer, void *deleter,
-			    void *keysetter) {
+ZONE_TYPE_DATA *newZoneType(const char *type, void *reader, void *storer, 
+			    void *deleter, void *keysetter, bool forgetful) {
   ZONE_TYPE_DATA *data = malloc(sizeof(ZONE_TYPE_DATA));
   data->read_func      = reader;
   data->store_func     = storer;
   data->delete_func    = deleter;
   data->key_func       = keysetter;
+  data->forgetful      = forgetful;
   data->key_map        = newHashtable();
+  data->type           = strdupsafe(type);
   return data;
+}
+
+void *do_zone_read(ZONE_TYPE_DATA *tdata, STORAGE_SET *set) {
+  if(tdata->forgetful) {
+    void *(* read_func)(const char *, STORAGE_SET *) = tdata->read_func;
+    return read_func(tdata->type, set);
+  }
+  else {
+    void *(* read_func)(STORAGE_SET *) = tdata->read_func;
+    return read_func(set);
+  }
+}
+
+void do_zone_setkey(ZONE_TYPE_DATA *tdata, void *data, const char *key) {
+  if(tdata->forgetful) {
+    void (* key_func)(const char *, void *, const char *) = tdata->key_func;
+    key_func(tdata->type, data, key);
+  }
+  else {
+    void (* key_func)(void *, const char *) = tdata->key_func;
+    key_func(data, key);
+  }
+}
+
+STORAGE_SET *do_zone_store(ZONE_TYPE_DATA *tdata, void *data) {
+  if(tdata->forgetful) {
+    STORAGE_SET *(* store_func)(const char *, void *) = tdata->store_func;
+    return store_func(tdata->type, data);
+  }
+  else {
+    STORAGE_SET *(* store_func)(void *) = tdata->store_func;
+    return store_func(data);
+  }
 }
 
 
@@ -304,9 +347,9 @@ void *zoneLoadType(ZONE_DATA *zone, const char *type, const char *key) {
 	    type, key);
     STORAGE_SET *set = storage_read(buf);
     if(set != NULL) {
-      data = tdata->read_func(set);
+      data = do_zone_read(tdata, set);
       hashPut(tdata->key_map, key, data);
-      tdata->key_func(data, get_fullkey(key, zone->key));
+      do_zone_setkey(tdata, data, get_fullkey(key, zone->key));
       storage_close(set);
     }
     return data;
@@ -330,7 +373,7 @@ void zoneSaveType(ZONE_DATA *zone, const char *type, const char *key) {
   void *data = zoneGetType(zone, type, key);
   if(data != NULL) {
     ZONE_TYPE_DATA *tdata = hashGet(zone->type_table, type);
-    STORAGE_SET      *set = tdata->store_func(data);
+    STORAGE_SET      *set = do_zone_store(tdata, data);
     if(set != NULL) {
       char buf[MAX_BUFFER];
       sprintf(buf,"%s/%s/%s",worldGetZonePath(zone->world,zone->key),type,key);
@@ -352,7 +395,7 @@ void *zoneRemoveType(ZONE_DATA *zone, const char *type, const char *key) {
     // then remove it from the key map
     void *data = hashRemove(tdata->key_map, key);
     if(data != NULL)
-      tdata->key_func(data, "");
+      do_zone_setkey(tdata, data, "");
     return data;
   }
 }
@@ -362,15 +405,26 @@ void zonePutType(ZONE_DATA *zone, const char *type, const char *key,
   ZONE_TYPE_DATA *tdata = hashGet(zone->type_table, type);
   if(tdata != NULL) {
     hashPut(tdata->key_map, key, data);
-    tdata->key_func(data, get_fullkey(key, zone->key));
+    do_zone_setkey(tdata, data, get_fullkey(key, zone->key));
   }
 }
 
 void zoneAddType(ZONE_DATA *zone, const char *type, void *reader, 
 		 void *storer, void *deleter, void *typesetter) {
   if(!hashIn(zone->type_table, type)) {
-    hashPut(zone->type_table, type, newZoneType(reader, storer, deleter, 
-						typesetter));
+    hashPut(zone->type_table, type, newZoneType(type, reader, storer, deleter, 
+						typesetter, FALSE));
+    char buf[MAX_BUFFER];
+    sprintf(buf, "%s/%s", worldGetZonePath(zone->world, zone->key), type);
+    mkdir(buf, S_IRWXU | S_IRWXG);
+  }
+}
+
+void zoneAddForgetfulType(ZONE_DATA *zone, const char *type, void *reader, 
+			  void *storer, void *deleter, void *typesetter) {
+  if(!hashIn(zone->type_table, type)) {
+    hashPut(zone->type_table, type, newZoneType(type, reader, storer, deleter, 
+						typesetter, TRUE));
     char buf[MAX_BUFFER];
     sprintf(buf, "%s/%s", worldGetZonePath(zone->world, zone->key), type);
     mkdir(buf, S_IRWXU | S_IRWXG);

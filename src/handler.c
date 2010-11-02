@@ -41,6 +41,10 @@ void exit_exist(EXIT_DATA *exit) {
   propertyTablePut(exit_table, exit);
 }
 
+void exit_unexist(EXIT_DATA *exit) {
+  propertyTableRemove(exit_table, exitGetUID(exit));
+}
+
 bool exit_exists(EXIT_DATA *exit) {
   return propertyTableIn(exit_table, exitGetUID(exit));
 }
@@ -61,6 +65,19 @@ void obj_exist(OBJ_DATA *obj) {
       obj_exist(cont);
     deleteListIterator(cont_i);
   }
+}
+
+void obj_unexist(OBJ_DATA *obj) {
+  // also unexist all contents
+  if(listSize(objGetContents(obj)) > 0) {
+    LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
+    OBJ_DATA *cont = NULL;
+    ITERATE_LIST(cont, cont_i)
+      obj_unexist(cont);
+    deleteListIterator(cont_i);
+  }
+
+  propertyTableRemove(obj_table, objGetUID(obj));
 }
 
 bool obj_exists(OBJ_DATA *obj) {
@@ -114,6 +131,37 @@ void room_exist(ROOM_DATA *room) {
     exit_exist(roomGetExit(room, dir));
   } deleteListIterator(ex_i);
   deleteListWith(ex_list, free);
+}
+
+void room_unexist(ROOM_DATA *room) {
+  // add contents
+  if(listSize(roomGetContents(room)) > 0) {
+    LIST_ITERATOR *cont_i = newListIterator(roomGetContents(room));
+    OBJ_DATA        *cont = NULL;
+    ITERATE_LIST(cont, cont_i)
+      obj_unexist(cont);
+    deleteListIterator(cont_i);
+  }
+
+  // add its people
+  if(listSize(roomGetCharacters(room)) > 0) {
+    LIST_ITERATOR *ch_i = newListIterator(roomGetCharacters(room));
+    CHAR_DATA       *ch = NULL;
+    ITERATE_LIST(ch, ch_i)
+      char_unexist(ch);
+    deleteListIterator(ch_i);
+  }
+
+  // add its exits
+  LIST       *ex_list = roomGetExitNames(room);
+  LIST_ITERATOR *ex_i = newListIterator(ex_list);
+  char           *dir = NULL;
+  ITERATE_LIST(dir, ex_i) {
+    exit_unexist(roomGetExit(room, dir));
+  } deleteListIterator(ex_i);
+  deleteListWith(ex_list, free);
+
+  propertyTableRemove(room_table, roomGetUID(room));
 }
 
 bool room_exists(ROOM_DATA *room) {
@@ -186,6 +234,31 @@ void char_exist(CHAR_DATA *ch) {
     deleteListIterator(eq_i);
   }
   deleteList(eq);
+}
+
+void char_unexist(CHAR_DATA *ch) {
+  // also unexist inventory
+  if(listSize(charGetInventory(ch)) > 0) {
+    LIST_ITERATOR *inv_i = newListIterator(charGetInventory(ch));
+    OBJ_DATA *obj = NULL;
+    ITERATE_LIST(obj, inv_i)
+      obj_unexist(obj);
+    deleteListIterator(inv_i);
+  }
+
+  // and equipped items
+  LIST *eq = bodyGetAllEq(charGetBody(ch));
+  if(listSize(eq) > 0) {
+    LIST_ITERATOR *eq_i = newListIterator(eq);
+    OBJ_DATA *obj = NULL;
+    ITERATE_LIST(obj, eq_i)
+      obj_unexist(obj);
+    deleteListIterator(eq_i);
+  }
+  deleteList(eq);
+
+  // take us out of the lookup table
+  propertyTableRemove(mob_table, charGetUID(ch));
 }
 
 bool char_exists(CHAR_DATA *ch) {
@@ -278,7 +351,7 @@ void room_from_game(ROOM_DATA *room) {
 }
 
 void char_from_game(CHAR_DATA *ch) {
-  // go through all of our fromgame hooks
+  // go through all of our fromgame hooks, then remove us from the mobile list
   hookRun("char_from_game", hookBuildInfo("ch", ch));
 
   // also remove inventory

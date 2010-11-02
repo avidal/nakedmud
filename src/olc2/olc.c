@@ -25,6 +25,17 @@
 #include "../object.h"
 #include "../inform.h"
 #include "olc.h"
+#include "olc_extender.h"
+
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../scripts/scripts.h"
+#include "../scripts/pymudsys.h"
+#include "../scripts/pysocket.h"
+#include "../scripts/pyplugs.h"
 
 
 
@@ -38,10 +49,14 @@
 
 
 //*****************************************************************************
-//
 // local data structures, defines, and functions
-//
 //*****************************************************************************
+
+// extender data for our various OLCs
+OLC_EXTENDER *medit_extend = NULL;
+OLC_EXTENDER *oedit_extend = NULL;
+OLC_EXTENDER *redit_extend = NULL;
+
 typedef struct olc_data {
   void    (* menu)(SOCKET_DATA *, void *);
   int  (* chooser)(SOCKET_DATA *, void *, const char *);
@@ -50,9 +65,11 @@ typedef struct olc_data {
   void  (* copyto)(void *, void *);
   void (* deleter)(void *);
   void   (* saver)(void *); 
-  void *data;
-  void *working_copy;
-  int  cmd;
+
+  // the data we're working with
+  void          *data;
+  void  *working_copy;
+  int             cmd;
 } OLC_DATA;
 
 OLC_DATA *newOLC(void    (* menu)(SOCKET_DATA *, void *),
@@ -63,7 +80,7 @@ OLC_DATA *newOLC(void    (* menu)(SOCKET_DATA *, void *),
 		 void (* deleter)(void *),
 		 void   (* saver)(void *),
 		 void *data) {
-  OLC_DATA *olc     = malloc(sizeof(OLC_DATA));
+  OLC_DATA *olc     = calloc(1, sizeof(OLC_DATA));
   olc->menu         = menu;
   olc->chooser      = chooser;
   olc->parser       = parser;
@@ -72,22 +89,22 @@ OLC_DATA *newOLC(void    (* menu)(SOCKET_DATA *, void *),
   olc->deleter      = deleter;
   olc->saver        = saver;
   olc->data         = data;
-  olc->working_copy = (copier ? copier(data) : data);
   olc->cmd          = MENU_NOCHOICE;
+  olc->working_copy = (copier ? copier(data) : data);
   return olc;
 }
 
 void deleteOLC(OLC_DATA *olc) {
-  if(olc->deleter) olc->deleter(olc->working_copy);
+  // are we working with C functions or Python functions?
+  if(olc->deleter)
+    olc->deleter(olc->working_copy);
   free(olc);
 }
 
 
 
 //*****************************************************************************
-//
 // auxiliary data we put on the socket
-//
 //*****************************************************************************
 typedef struct olc_aux_data {
   LIST *olc_stack; // the list of OLCs we have opened
@@ -95,7 +112,7 @@ typedef struct olc_aux_data {
 
 OLC_AUX_DATA *
 newOLCAuxData() {
-  OLC_AUX_DATA *data = malloc(sizeof(OLC_AUX_DATA));
+  OLC_AUX_DATA *data = calloc(1, sizeof(OLC_AUX_DATA));
   data->olc_stack = newList();
   return data;
 }
@@ -109,9 +126,7 @@ deleteOLCAuxData(OLC_AUX_DATA *data) {
 
 
 //*****************************************************************************
-//
 // Implementation of the OLC framework
-//
 //*****************************************************************************
 
 //
@@ -182,10 +197,8 @@ void olc_handler(SOCKET_DATA *sock, char *arg) {
   // we're giving an argument for a menu choice we've already selected
   if(olc->cmd > MENU_NOCHOICE) {
     // the change went alright. Re-display the menu
-    if(olc->parser(sock, olc->working_copy, olc->cmd, arg)) {
+    if(olc->parser(sock, olc->working_copy, olc->cmd, arg))
       olc->cmd = MENU_NOCHOICE;
-      //olc_menu(sock);
-    }
     else
       text_to_buffer(sock, "Invalid choice!\r\nTry again: ");
   }
@@ -211,7 +224,7 @@ void olc_handler(SOCKET_DATA *sock, char *arg) {
     case 'Q':
       // if our working copy is different from our actual data, prompt to
       // see if we want to save our changes or not
-      if(olc->saver) {
+      if(olc->saver || olc->data != olc->working_copy) {
 	text_to_buffer(sock, "Save changes (Y/N): ");
 	olc->cmd = MENU_CHOICE_CONFIRM_SAVE;
       }
@@ -617,6 +630,14 @@ void init_olc2() {
   add_cmd("rrename", NULL, cmd_rrename, "builder", FALSE);
   add_cmd("zlist",   NULL, cmd_zlist,   "builder", TRUE);
   add_cmd("zreset",  NULL, cmd_zreset,  "builder", FALSE);
+
+  // build our basic OLC extenders
+  medit_extend = newExtender();
+  extenderSetPyFunc(medit_extend, charGetPyFormBorrowed);
+  oedit_extend = newExtender();
+  extenderSetPyFunc(oedit_extend, objGetPyFormBorrowed);
+  redit_extend = newExtender();
+  extenderSetPyFunc(redit_extend, roomGetPyFormBorrowed);
 }
 
 void do_olc(SOCKET_DATA *sock,
@@ -628,9 +649,9 @@ void do_olc(SOCKET_DATA *sock,
 	    void *deleter,
 	    void *saver,
 	    void *data) {
-  // first, we create a new OLC data structure, and then push it onto the stack
   OLC_DATA *olc = newOLC(menu, chooser, parser, copier, copyto, deleter,
 			 saver, data);
+
   OLC_AUX_DATA *aux_olc = socketGetAuxiliaryData(sock, "olc_aux_data");
   listPush(aux_olc->olc_stack, olc);
 
@@ -638,6 +659,61 @@ void do_olc(SOCKET_DATA *sock,
   if(listSize(aux_olc->olc_stack) == 1)
     socketPushInputHandler(sock, olc_handler, olc_menu);
 }
+
+void olc_from_proto(PROTO_DATA *proto, BUFFER *extra, void *me, void *aspy,
+		    void *togame, void *fromgame) {
+  BUFFER *to_run = newBuffer(1);
+  char line[MAX_BUFFER];
+  const char *code = protoGetScript(proto);
+  bool  extra_code = FALSE;
+
+  // go line by line and parse everything that's relevant 
+  // in 'to_run', and append everything that's not into 'extra'
+  do {
+    code = strcpyto(line, code, '\n');
+
+    // is this a begin/end marker?
+    if(!strcmp(ECODE_BEGIN, line))
+      extra_code = TRUE;
+    else if(!strcmp(ECODE_END, line))
+      extra_code = FALSE;
+    // is this relevant code, or "extra" code
+    else if(extra_code == TRUE)
+      bprintf(extra, "%s\n", line);
+    else
+      bprintf(to_run, "%s\n", line);
+  } while(*code != '\0');
+
+  // make all our arguments like functions
+  void    *(* aspy_func)(void *) = aspy;
+  void   (* togame_func)(void *) = togame;
+  void (* fromgame_func)(void *) = fromgame;
+
+  // add us to the game so we can run scripts over us
+  togame_func(me);
+
+  // make our Python stuff
+  PyObject *dict = restricted_script_dict();
+  PyObject *pyme = aspy_func(me);
+  PyDict_SetItemString(dict, "me", pyme);  
+
+  // run the script
+  run_script(dict, bufferString(to_run), get_key_locale(protoGetKey(proto)));
+
+  // make sure it ran ok
+  if(!last_script_ok())
+    log_pyerr("Error converting prototype to OLC editable structure: %s",
+	      protoGetKey(proto));
+
+
+  // remove us from the game
+  fromgame_func(me);
+
+  // clean up our garbage
+  deleteBuffer(to_run);
+  Py_DECREF(dict);
+}
+
 
 void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
 		       int num_vals, int num_cols) {
@@ -668,8 +744,7 @@ void olc_display_list(SOCKET_DATA *sock, LIST *list, int num_cols) {
     send_to_socket(sock, fmt, i, str, (i % num_cols == (num_cols - 1) ? 
 				       "\r\n" : "   "));
     i++;
-  }
-  deleteListIterator(list_i);
+  } deleteListIterator(list_i);
 
   if(i % num_cols != 0)
     send_to_socket(sock, "\r\n");

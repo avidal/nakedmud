@@ -16,8 +16,10 @@
 #include "../world.h"
 #include "../character.h"
 #include "../prototype.h"
+#include "../handler.h"
 
 #include "olc.h"
+#include "olc_extender.h"
 
 
 
@@ -106,87 +108,14 @@ CHAR_OLC *charOLCFromProto(PROTO_DATA *proto) {
   charOLCSetParents(data, protoGetParents(proto));
   charOLCSetAbstract(data, protoIsAbstract(proto));
 
-  // this is a really ugly way to do the conversion, but basically let's
-  // just look through every line in the buffer and if we recognize some
-  // token, parse out whatever is assigned to it
-  char line[MAX_BUFFER];
-  const char *code = protoGetScript(proto);
-  do {
-    code = strcpyto(line, code, '\n');
-    char *lptr = line;
-    if(!strncmp(lptr, "me.name", 7)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      charSetName(ch, lptr);
-    }
-    else if(!strncmp(lptr, "me.mname", 8)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      charSetMultiName(ch, lptr);
-    }
-    else if(!strncmp(lptr, "me.rdesc", 8)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      charSetRdesc(ch, lptr);
-    }
-    else if(!strncmp(lptr, "me.mdesc", 8)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      charSetMultiRdesc(ch, lptr);
-    }
-    else if(!strncmp(lptr, "me.desc",  7)) {
-      // we have three "'s to skip by, because this lptr will take the form:
-      // me.desc = me.desc + " " + "..."
-      while(*lptr != '\"') lptr++; lptr++;
-      while(*lptr != '\"') lptr++; lptr++;
-      while(*lptr != '\"') lptr++; lptr++;
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      charSetDesc(ch, lptr);
-      // replace our \"s with "
-      bufferReplace(charGetDescBuffer(ch), "\\\"", "\"", TRUE);
-      bufferFormat(charGetDescBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
-    }
-    else if(!strncmp(lptr, "me.keywords", 11)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                                  // kill the leading "
-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
-      charSetKeywords(ch, lptr);
-    }
-    else if(!strncmp(lptr, "me.gender", 9)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      charSetSex(ch, sexGetNum(lptr));
-    }
-    else if(!strncmp(lptr, "me.race", 7)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      charSetRace(ch, lptr);
-    }
-    else if(!strncmp(lptr, "me.attach(\"", 11)) {
-      char trigname[SMALL_BUFFER];
-      sscanf(lptr, "me.attach(\"%s", trigname);
-      // kill our ending ")
-      trigname[strlen(trigname)-2] = '\0';
-      triggerListAdd(charGetTriggers(ch), trigname);
-    }
-    else if(!strcmp(lptr, "### begin extra code")) {
-      code = strcpyto(line, code, '\n');
-      while(strcmp(line, "### end extra code") != 0) {
-	bprintf(charOLCGetExtraCode(data), "%s\n", line);
-	if(!*code) break;
-	code = strcpyto(line, code, '\n');
-      }
-    }
-    // we didn't recognize the line... just ignore it
-    else
-      continue;
-  } while(*code != '\0');
+  // build it from the prototype
+  olc_from_proto(proto, charOLCGetExtraCode(data), ch, charGetPyFormBorrowed,
+		 char_exist, char_unexist);
+  bufferFormatFromPy(charGetDescBuffer(ch));
+  bufferFormat(charGetDescBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
+
+  // do all of our extender data as well
+  extenderFromProto(medit_extend, ch);
 
   return data;
 }
@@ -207,7 +136,7 @@ PROTO_DATA *charOLCToProto(CHAR_OLC *data) {
 
   bprintf(buf, "\n### keywords, short descs, room descs, and look descs\n");
   if(*charGetKeywords(ch))
-    bprintf(buf, "me.keywords = \"%s\"  + \", \" + me.keywords\n", 
+    bprintf(buf, "me.keywords = ', '.join([me.keywords, \"%s\"])\n",
 	    charGetKeywords(ch));
   if(*charGetName(ch))
     bprintf(buf, "me.name     = \"%s\"\n", charGetName(ch));
@@ -219,10 +148,8 @@ PROTO_DATA *charOLCToProto(CHAR_OLC *data) {
     bprintf(buf, "me.mdesc    = \"%s\"\n", charGetMultiRdesc(ch));
   if(*charGetDesc(ch)) {
     BUFFER *desc_copy = bufferCopy(charGetDescBuffer(ch));
-    bufferReplace(desc_copy, "\n", " ", TRUE);
-    bufferReplace(desc_copy, "\r", "",  TRUE);
-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
-    bprintf(buf, "me.desc     = me.desc + \" \" + \"%s\"\n", 
+    bufferFormatPy(desc_copy);
+    bprintf(buf, "me.desc     = me.desc + ' ' + \"%s\"\n", 
 	    bufferString(desc_copy));
     deleteBuffer(desc_copy);
   }
@@ -240,9 +167,12 @@ PROTO_DATA *charOLCToProto(CHAR_OLC *data) {
     LIST_ITERATOR *trig_i = newListIterator(charGetTriggers(ch));
     char            *trig = NULL;
     ITERATE_LIST(trig, trig_i) {
-      bprintf(buf, "me.attach(\"%s\")\n", trig);
+      bprintf(buf, "me.attach(\"%s\")\n",get_shortkey(trig,protoGetKey(proto)));
     } deleteListIterator(trig_i);
   }
+
+  // print all of our extender data as well
+  extenderToProto(medit_extend, ch, buf);
 
   if(bufferLength(charOLCGetExtraCode(data)) > 0) {
     bprintf(buf, "\n### begin extra code\n");
@@ -305,6 +235,9 @@ void medit_menu(SOCKET_DATA *sock, CHAR_OLC *data) {
 		  sexGetName(charGetSex(charOLCGetChar(data))))
 		 );
 
+  // display our extender menu options
+  extenderDoMenu(sock, medit_extend, charOLCGetChar(data));
+
   // only allow code editing for people with scripting priviledges
   send_to_socket(sock, "{gC) Extra code%s\r\n", 
 		 ((!socketGetChar(sock) ||  
@@ -360,7 +293,8 @@ int  medit_chooser(SOCKET_DATA *sock, CHAR_OLC *data, const char *option) {
     text_to_buffer(sock, "Edit extra code\r\n");
     socketStartEditor(sock,script_editor,charOLCGetExtraCode(data));
     return MENU_NOCHOICE;
-  default: return MENU_CHOICE_INVALID;
+  default: 
+    return extenderDoOptChoice(sock,medit_extend,charOLCGetChar(data),*option);
   }
 }
 
@@ -397,7 +331,8 @@ bool medit_parser(SOCKET_DATA *sock, CHAR_OLC *data, int choice,
     charSetSex(charOLCGetChar(data), val);
     return TRUE;
   }
-  default: return FALSE;
+  default: 
+    return extenderDoParse(sock,medit_extend,charOLCGetChar(data),choice,arg);
   }
 }
 

@@ -264,7 +264,7 @@ PyObject *mud_generic_find(PyObject *self, PyObject *args) {
     }
     else if(IS_SET(type, FIND_TYPE_OBJ | FIND_TYPE_IN_OBJ)) {
       ITERATE_LIST(one_found, found_i)
-	PyList_Append(list, charGetPyFormBorrowed(one_found));
+	PyList_Append(list, objGetPyFormBorrowed(one_found));
     }
     deleteListIterator(found_i);
     deleteList(found);

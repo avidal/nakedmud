@@ -17,6 +17,12 @@
 char *getPythonTraceback(void);
 
 //
+// If we've enountered an error in python, log the traceback along
+// with the specified message
+void log_pyerr(const char *mssg, ...)
+__attribute__ ((format (printf, 1, 2)));
+
+//
 // initialize all of our plugs with python
 void init_pyplugs();
 

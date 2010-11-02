@@ -315,7 +315,26 @@ int PyObj_setkeywords(PyObj *self, PyObject *value, void *closure) {
 
   OBJ_DATA *obj;
   PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
-  objSetKeywords(obj, PyString_AsString(value));
+
+  // clean up empty keywords, and rebuild it
+  LIST           *kwds = parse_keywords(PyString_AsString(value));
+  BUFFER     *new_kwds = newBuffer(1);
+  LIST_ITERATOR *kwd_i = newListIterator(kwds);
+  char            *kwd = NULL;
+
+  ITERATE_LIST(kwd, kwd_i) {
+    // if we already have content, add a comma
+    if(bufferLength(new_kwds) > 0)
+      bufferCat(new_kwds, ", ");
+    bufferCat(new_kwds, kwd);
+  } deleteListIterator(kwd_i);
+
+  // set our keywords
+  objSetKeywords(obj, bufferString(new_kwds));
+
+  // garbage collection
+  deleteListWith(kwds, free);
+  deleteBuffer(new_kwds);
   return 0;
 }
 
@@ -436,15 +455,23 @@ int PyObj_setroom(PyObj *self, PyObject *value, void *closure) {
     return -1;
   }
 
-  if (!PyRoom_Check(value)) {
+  ROOM_DATA *room = NULL;
+
+  if(PyRoom_Check(value))
+    room = PyRoom_AsRoom(value);
+  else if(PyString_Check(value))
+    room = worldGetRoom(gameworld, 
+			get_fullkey_relative(PyString_AsString(value),
+					     get_script_locale()));
+  else {
     PyErr_Format(PyExc_TypeError, 
-                    "Room must be a room!");
+		 "Object's room must be a string value or a "
+		 "room object.");
     return -1;
   }
 
   OBJ_DATA *obj;
   PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
-  ROOM_DATA *room = PyRoom_AsRoom(value);
   // remove us from whatever we're currently in
   if(objGetRoom(obj))
     obj_from_room(obj);
@@ -589,48 +616,6 @@ PyObject *PyObj_isinstance(PyObj *self, PyObject *args) {
   else {
     PyErr_Format(PyExc_StandardError, 
 		 "Tried to check instances of nonexistent object, %d.", self->uid);
-    return NULL;
-  }
-}
-
-PyObject *PyObj_istype(PyObj *self, PyObject *args) {  
-  char *type = NULL;
-
-  // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "s", &type)) {
-    PyErr_Format(PyExc_TypeError, "istype only accepts strings.");
-    return NULL;
-  }
-
-  // pull out the object and check the type
-  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
-  if(obj != NULL)
-    return Py_BuildValue("i", objIsType(obj, type));
-  else {
-    PyErr_Format(PyExc_StandardError, 
-		 "Tried to check type of nonexistent object, %d.", self->uid);
-    return NULL;
-  }
-}
-
-PyObject *PyObj_settype(PyObj *self, PyObject *args) {  
-  char *type = NULL;
-
-  // make sure we're getting passed the right type of data
-  if (!PyArg_ParseTuple(args, "s", &type)) {
-    PyErr_Format(PyExc_TypeError, "settype only accepts strings.");
-    return NULL;
-  }
-
-  // pull out the object and check the type
-  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
-  if(obj != NULL) {
-    objSetType(obj, type);
-    return Py_BuildValue("i", 1);
-  }
-  else {
-    PyErr_Format(PyExc_StandardError, 
-		 "Tried to set type of nonexistent object, %d.", self->uid);
     return NULL;
   }
 }
@@ -1198,10 +1183,6 @@ init_PyObj(void) {
 		    "detach an old script from the object, by vnum");
     PyObj_addMethod("isinstance", PyObj_isinstance, METH_VARARGS,
 		    "checks to see if the object inherits from the class");
-    PyObj_addMethod("istype", PyObj_istype, METH_VARARGS,
-		     "checks to see if the object is of the specified type");
-    PyObj_addMethod("settype", PyObj_settype, METH_VARARGS,
-		    "the object will become of the specified type");
     PyObj_addMethod("edesc", PyObj_edesc, METH_VARARGS,
 		    "adds an extra description to the object.");
     PyObj_addMethod("getAuxiliary", PyObj_get_auxiliary, METH_VARARGS,

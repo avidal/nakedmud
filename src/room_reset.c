@@ -682,13 +682,9 @@ bool try_reset_script(RESET_DATA *reset, void *initiator, int initiator_type,
   run_script(dict, resetGetArg(reset), locale);
 
   // check to see if we had an error
-  if(!last_script_ok()) {
-    char *tb = getPythonTraceback();
-    log_string("Reset script in locale %s terminated with an error:\r\n%s\r\n"
-	       "\r\nTraceback is:\r\n%s\r\n", 
-	       locale, resetGetArg(reset), tb);
-    free(tb);
-  }
+  if(!last_script_ok())
+    log_pyerr("Reset script in locale %s terminated with an error:\r\n%s",
+	      locale, resetGetArg(reset));
 
   // garbage collection and return our outcome
   Py_DECREF(dict);

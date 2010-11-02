@@ -207,6 +207,20 @@ int bufferReplaceLine(BUFFER *buf, const char *newline, int line) {
     return 0;
 }
 
+void bufferFormatPy(BUFFER *buf) {
+  bufferReplace(buf, "\\", "\\\\", TRUE);
+  bufferReplace(buf, "\n", "\\n",  TRUE);
+  bufferReplace(buf, "\r", "\\r",  TRUE);
+  bufferReplace(buf, "\"", "\\\"", TRUE);
+}
+
+void bufferFormatFromPy(BUFFER *buf) {
+  bufferReplace(buf, "\\\\", "\\", TRUE);
+  bufferReplace(buf, "\\n",  "\n", TRUE);
+  bufferReplace(buf, "\\r",  "\r", TRUE);
+  bufferReplace(buf, "\\\"", "\"", TRUE);
+}
+
 void bufferFormat(BUFFER *buf, int max_width, int indent) {
   char formatted[(buf->len * 3)/2];
   bool needs_capital = TRUE, needs_indent = FALSE;

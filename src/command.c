@@ -247,14 +247,8 @@ bool cmdTryChecks(CHAR_DATA *ch, CMD_DATA *cmd) {
 					  cmd->name);
 	PyObject *retval  = PyEval_CallObject(chk->pyfunc, arglist);
 	// check for an error:
-	if(retval == NULL) {
-	  char *tb = getPythonTraceback();
-	  if(tb != NULL) {
-	    log_string("Error running python command check, %s:\r\n%s\r\n", 
-		       cmd->name, tb);
-	    free(tb);
-	  }
-	}
+	if(retval == NULL)
+	  log_pyerr("Error running Python command check, %s:", cmd->name);
 	else if(retval == Py_False)
 	  cmd_ok = FALSE;
 
@@ -294,14 +288,8 @@ bool charTryCmd(CHAR_DATA *ch, CMD_DATA *cmd, char *arg) {
 					cmd->name, arg);
       PyObject *retval  = PyEval_CallObject(cmd->pyfunc, arglist);
       // check for an error:
-      if(retval == NULL) {
-	char *tb = getPythonTraceback();
-	if(tb != NULL) {
-	  log_string("Error running python command, %s:\r\n%s\r\n", 
-		     cmd->name, tb);
-	  free(tb);
-	}
-      }
+      if(retval == NULL)
+	log_pyerr("Error running Python command, %s:", cmd->name);
 
       // garbage collection
       Py_XDECREF(retval);

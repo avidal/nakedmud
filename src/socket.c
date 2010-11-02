@@ -402,7 +402,7 @@ void  send_to_socket( SOCKET_DATA *dsock, const char *format, ...) {
     static char buf[MAX_BUFFER];
     va_list args;
     va_start(args, format);
-    vsprintf(buf, format, args);
+    vsnprintf(buf, MAX_BUFFER, format, args);
     va_end(args);
     text_to_buffer(dsock, buf);
   }
@@ -790,13 +790,8 @@ void input_handler() {
 	PyObject *retval  = PyEval_CallObject(pair->handler, arglist);
 
 	// check for an error:
-	if(retval == NULL) {
-	  char *tb = getPythonTraceback();
-	  if(tb != NULL) {
-	    log_string("Error with a python input handler:\r\n%s\r\n", tb);
-	    free(tb);
-	  }
-	}
+	if(retval == NULL)
+	  log_pyerr("Error with a Python input handler");
 	
 	// garbage collection
 	Py_XDECREF(retval);
@@ -1094,13 +1089,8 @@ void socketShowPrompt( SOCKET_DATA *sock) {
     PyObject *arglist = Py_BuildValue("(O)", socketGetPyFormBorrowed(sock));
     PyObject *retval  = PyEval_CallObject(pair->prompt, arglist);
     // check for an error:
-    if(retval == NULL) {
-      char *tb = getPythonTraceback();
-      if(tb != NULL) {
-	log_string("Error with a python prompt:\r\n%s\r\n", tb);
-	free(tb);
-      }
-    }
+    if(retval == NULL)
+      log_pyerr("Error with a Python prompt");
     
     // garbage collection
     Py_XDECREF(retval);

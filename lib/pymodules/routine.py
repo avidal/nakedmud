@@ -199,4 +199,9 @@ register_routine_check(lambda ch: ch.isActing())
 add_cmd("routine", None, cmd_routine, "admin", False)
 
 # misc initialization
-mud.set_routine = set_routine
+# mud.set_routine = set_routine
+#
+# now use:    ch.set_routine(routine)
+# instead of: mud.set_routine(ch, routine)
+#
+mudsys.add_char_method("set_routine", set_routine)

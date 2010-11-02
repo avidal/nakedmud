@@ -12,6 +12,9 @@
 //
 //*****************************************************************************
 
+// used by pymudsys. Do not touch!
+PyTypeObject PyObj_Type;
+
 // initialize objects for use. This must be called AFTER all other modules
 // have added in new get/setters and methods to pyobj
 PyMODINIT_FUNC init_PyObj(void);

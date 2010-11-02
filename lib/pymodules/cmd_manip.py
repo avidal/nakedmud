@@ -193,7 +193,9 @@ def do_wear(ch, obj, where):
     elif ch.equip(obj, where):
         message(ch, None, obj, None, True, "to_char", "You wear $o.")
         message(ch, None, obj, None, True, "to_room", "$n wears $o.")
-        # equip hooks are done in the C code
+
+        # run our wear hook
+        hooks.run("wear", hooks.build_info("ch obj", (ch, obj)))
     else:
         message(ch, None, obj, None, True, "to_char", "You could not equip $o.")
 

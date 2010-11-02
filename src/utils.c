@@ -1309,6 +1309,33 @@ const char *get_fullkey_relative(const char *key, const char *locale) {
   }
 }
 
+const char *get_shortkey(const char *key, const char *to) {
+  // are we missing a locale?
+  int pos = next_letter_in(key, '@');
+  if(pos < 0)
+    return key;
+
+  // if 'to' doesn't exist, make sure we return the full thing back.
+  // Only relevant for attaching triggers to characters instead of mobiles
+  if(!*to)
+    return key;
+
+  // is 'to' missing a locale?
+  pos = next_letter_in(to, '@');
+  if(pos < 0)
+    return get_key_name(key);
+
+  // two keys, both with a name and a locale. See if our locales match up
+  static char name[SMALL_BUFFER];
+  static char locale[SMALL_BUFFER];
+  parse_worldkey(key, name, locale);
+  if(!strcmp(locale, get_key_locale(to)))
+    return name;
+
+  // different locales, return the full key
+  return key;
+}
+
 bool cmd_matches(const char *pattern, const char *cmd) {
   int len = next_letter_in(pattern, '*');
   // we have to match exactly

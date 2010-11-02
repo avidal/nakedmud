@@ -114,7 +114,8 @@ SRC  += scripts/scripts.c       \
 	scripts/pyauxiliary.c   \
 	scripts/triggers.c      \
 	scripts/trigedit.c      \
-	scripts/trighooks.c
+	scripts/trighooks.c		\
+	scripts/pyolc.c
 
 
 # the top level directory of python.

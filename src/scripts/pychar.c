@@ -373,7 +373,26 @@ int PyChar_setkeywords(PyChar *self, PyObject *value, void *closure) {
 
   CHAR_DATA *ch;
   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
-  charSetKeywords(ch, PyString_AsString(value));
+
+  // clean up empty keywords, and rebuild it
+  LIST           *kwds = parse_keywords(PyString_AsString(value));
+  BUFFER     *new_kwds = newBuffer(1);
+  LIST_ITERATOR *kwd_i = newListIterator(kwds);
+  char            *kwd = NULL;
+
+  ITERATE_LIST(kwd, kwd_i) {
+    // if we already have content, add a comma
+    if(bufferLength(new_kwds) > 0)
+      bufferCat(new_kwds, ", ");
+    bufferCat(new_kwds, kwd);
+  } deleteListIterator(kwd_i);
+
+  // set our keywords
+  charSetKeywords(ch, bufferString(new_kwds));
+
+  // garbage collection
+  deleteListWith(kwds, free);
+  deleteBuffer(new_kwds);
   return 0;
 }
 
@@ -586,7 +605,9 @@ int PyChar_setroom(PyChar *self, PyObject *value, void *closure) {
   if(PyRoom_Check(value))
     room = PyRoom_AsRoom(value);
   else if(PyString_Check(value))
-    room = worldGetRoom(gameworld, PyString_AsString(value));
+    room = worldGetRoom(gameworld, 
+			get_fullkey_relative(PyString_AsString(value),
+					     get_script_locale()));
   else {
     PyErr_Format(PyExc_TypeError, 
 		 "Character's room must be a string value or a "
@@ -1123,7 +1144,7 @@ PyObject *PyChar_start_action(PyChar *self, PyObject *args) {
   char              *arg = NULL;    // the action's string argument
 
   // parse all of our values
-  if(!PyArg_ParseTuple(args, "dO|OOs", &delay,  &on_complete, &on_interrupt,
+  if(!PyArg_ParseTuple(args, "dO|OOz", &delay,  &on_complete, &on_interrupt,
 		      &data, &arg)) {
     PyErr_Format(PyExc_TypeError,
 		 "startAction supplied with invalid arguments!");

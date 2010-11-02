@@ -57,10 +57,7 @@ PyObject *Py_CompileFile(char *fname) {
 bool PyModule_Reload(char *fname, char *mname) {
   PyObject *code = Py_CompileFile(fname);
   if(code == NULL) {
-    char *tb = getPythonTraceback();
-    log_string("Error in module file: %s\r\n"
-	       "\r\nTraceback is:\r\n%s\r\n", fname, tb);
-    free(tb);
+    log_pyerr("Error in module file: %s", fname);
     return FALSE;
   }
   // no errors occured... load the module into our package
@@ -75,12 +72,8 @@ bool PyModule_Reload(char *fname, char *mname) {
 	PyObject *tbList = PyObject_CallMethod(old_mod, "__unload__", "");
 
 	// encountered an error with the unload function
-	if(tbList == NULL) {
-	  char *tb = getPythonTraceback();
-	  log_string("Encountered error in %s.__unload__():\r\n"
-		     "\r\nTraceback is:\r\n%s\r\n", mname, tb);
-	  free(tb);
-	}
+	if(tbList == NULL)
+	  log_pyerr("Encountered error in %s.__unload__()", mname);
 	Py_XDECREF(tbList);
       }
       Py_XDECREF(old_mod);
@@ -88,10 +81,7 @@ bool PyModule_Reload(char *fname, char *mname) {
 
     PyObject *module = PyImport_ExecCodeModule(mname, code);
     if(module == NULL) {
-      char *tb = getPythonTraceback();
-      log_string("Error in module file: %s\r\n"
-		 "\r\nTraceback is:\r\n%s\r\n", fname, tb);
-      free(tb);
+      log_pyerr("Error in module file: %s", fname);
       return FALSE;
     }
     else
@@ -173,15 +163,8 @@ void init_py_modules() {
       // we now abandon bootup if we fail to load a Python module, because it
       // can have potentially dangerous affects on the loading of other modules
       // Thanks to Thirsteh for pointing this out.
-      BUFFER *buf = newBuffer(1);
-      char *tb = getPythonTraceback();
-      bprintf(buf, "Error loading module, %s:\r\n%s\r\n"
-	           "Bootup aborted. MUD shutting down.", mname, tb);
-      log_string(bufferString(buf));
-      printf("%s", bufferString(buf));
-      
-      deleteBuffer(buf);
-      free(tb);
+      log_pyerr("Error loading module, %s:", mname);
+      log_string("Bootup aborted. MUD shutting down.");
       closedir(dir);
       exit(1);
     }
@@ -251,6 +234,22 @@ char* getPythonTraceback(void) {
 
     return chrRetval;
 }
+
+void log_pyerr(const char *format, ...) {
+  // get the traceback, and print our message
+  char *tb = getPythonTraceback();
+  if(tb != NULL) {
+    static char buf[MAX_BUFFER];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buf, MAX_BUFFER, format, args);
+    va_end(args);
+
+    log_string("%s\r\n\r\n%s\r\n", buf, tb);
+    free(tb);
+  }
+}
+
 
 PyGetSetDef *makePyGetSetters(LIST *getsetters) {
   PyGetSetDef *getsets = calloc(listSize(getsetters)+1,sizeof(PyGetSetDef));

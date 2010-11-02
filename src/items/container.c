@@ -457,33 +457,6 @@ int PyObj_setcontainerlocked  (PyObject *self, PyObject *value, void *closure) {
   return 0;
 }
 
-void container_from_proto(CONTAINER_DATA *data, BUFFER *buf) {
-  char line[MAX_BUFFER];
-  const char *code = bufferString(buf);
-  do {
-    code = strcpyto(line, code, '\n');
-    char *lptr = line;
-    if(!strncasecmp(lptr, "me.container_capacity", 21)) {
-      while(*lptr && !isdigit(*lptr)) lptr++;
-      data->capacity = atoi(lptr);
-    }
-    else if(!strncasecmp(lptr, "me.container_key", 16)) {
-      while(*lptr && *lptr != '\"') lptr++;
-      lptr++; // skip leading "
-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
-      if(data->key) free(data->key);
-      data->key = strdupsafe(lptr);
-    }
-    else if(!strncasecmp(lptr, "me.container_pick_diff", 22)) {
-      while(*lptr && !isdigit(*lptr)) lptr++;
-      data->pick_diff = atoi(lptr);
-    }
-    else if(!strcasecmp(lptr, "me.container_is_closable = True"))
-      data->closable = TRUE;
-    else; // ignore line
-  } while(*code != '\0');
-}
-
 void container_to_proto(CONTAINER_DATA *data, BUFFER *buf) {
   if(data->capacity > 0)
     bprintf(buf, "me.container_capacity    = %1.3lf\n", data->capacity);
@@ -549,7 +522,7 @@ void init_container(void) {
 
   // set up the container OLC too
   item_add_olc("container", iedit_container_menu, iedit_container_chooser, 
-  	       iedit_container_parser, container_from_proto,container_to_proto);
+  	       iedit_container_parser, NULL, container_to_proto);
   PyObj_addGetSetter("container_capacity",
 		     PyObj_getcontainercapacity, PyObj_setcontainercapacity,
 		     "Sets the maximum amount of weight the container holds.");

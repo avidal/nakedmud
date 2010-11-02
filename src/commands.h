@@ -1,5 +1,5 @@
-#ifndef __COMMAND_H
-#define __COMMAND_H
+#ifndef __COMMANDS_H
+#define __COMMANDS_H
 //*****************************************************************************
 //
 // commands.h
@@ -16,4 +16,4 @@ COMMAND(cmd_groupcmds);
 COMMAND(cmd_more);
 COMMAND(cmd_back);
 
-#endif // __COMMAND_H
+#endif // __COMMANDS_H

@@ -896,17 +896,19 @@ PARSE_VAR *use_one_parse_token(CHAR_DATA *looker, PARSE_TOKEN *tok,
     var = newParseVar(PARSE_VAR_STRING);
     var->ptr_val    = arg;
     bool multi_word = FALSE;
+    char multi_mark = '"';
 
     // are we using quotation marks to specify multiple words?
-    if(*arg == '\"') {
+    if(*arg == '"' || *arg == '\'') {
       multi_word = TRUE;
+      multi_mark = *arg;
       arg++;
       var->ptr_val = arg;
     }
 
     // go through arg to the next space, and delimit the word
     for(; *arg != '\0'; arg++) {
-      if((multi_word && *arg == '\"') || (!multi_word && isspace(*arg))) {
+      if((multi_word && *arg == multi_mark) || (!multi_word && isspace(*arg))) {
 	*arg = '\0';
 	arg++;
 	break;

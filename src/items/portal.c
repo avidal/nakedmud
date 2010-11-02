@@ -226,37 +226,6 @@ bool iedit_portal_parser (SOCKET_DATA *sock, PORTAL_DATA *data, int choice,
   }
 }
 
-void portal_from_proto(PORTAL_DATA *data, BUFFER *buf) {
-  char line[MAX_BUFFER];
-  const char *code = bufferString(buf);
-  do {
-    code = strcpyto(line, code, '\n');
-    char *lptr = line;
-    if(!strncasecmp(lptr, "me.portal_dest", 14)) {
-      while(*lptr && *lptr != '\"') lptr++;
-      lptr++; // skip leading "
-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
-      if(data->dest) free(data->dest);
-      data->dest = strdupsafe(lptr);
-    }
-    else if(!strncasecmp(lptr, "me.portal_enter_mssg", 20)) {
-      while(*lptr && *lptr != '\"') lptr++;
-      lptr++; // skip leading "
-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
-      if(data->enter_mssg) free(data->enter_mssg);
-      data->enter_mssg = strdupsafe(lptr);
-    }
-    else if(!strncasecmp(lptr, "me.portal_leave_mssg", 20)) {
-      while(*lptr && *lptr != '\"') lptr++;
-      lptr++; // skip leading "
-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
-      if(data->leave_mssg) free(data->leave_mssg);
-      data->leave_mssg = strdupsafe(lptr);
-    }
-    else; // ignore line
-  } while(*code != '\0');
-}
-
 void portal_to_proto(PORTAL_DATA *data, BUFFER *buf) {
   if(*data->dest)
     bprintf(buf, "me.portal_dest = \"%s\"\n", data->dest);
@@ -416,7 +385,7 @@ void init_portal(void) {
 
   // set up the portal OLC too
   item_add_olc("portal", iedit_portal_menu, iedit_portal_chooser, 
-	       iedit_portal_parser, portal_from_proto, portal_to_proto);
+	       iedit_portal_parser, NULL, portal_to_proto);
 
   // make it so we can set portal destinations in scripts
   PyObj_addGetSetter("portal_dest", PyObj_getportaldest, PyObj_setportaldest,

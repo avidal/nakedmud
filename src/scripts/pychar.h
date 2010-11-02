@@ -12,6 +12,9 @@
 //
 //*****************************************************************************
 
+// used by pymudsys. Do not touch!
+PyTypeObject PyChar_Type;
+
 // initialize rooms for use. This must be called AFTER all other modules
 // have added in new get/setters and methods to pyroom
 PyMODINIT_FUNC init_PyChar(void);

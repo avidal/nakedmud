@@ -48,7 +48,7 @@ def cg_race_handler(sock, arg):
     if not mud.is_race(arg, True):
         sock.send("Invalid race selection, try again.")
     else:
-        sock.ch.race = arg
+        sock.ch.race = arg.lower()
         sock.pop_ih()
 
 def cg_finish_handler(sock, arg):

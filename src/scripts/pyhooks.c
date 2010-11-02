@@ -300,13 +300,8 @@ void PyHooks_Monitor(const char *type, const char *info) {
       PyObject *arglist = Py_BuildValue("(s)", info);
       PyObject *retval  = PyEval_CallObject(func, arglist);
       // check for an error:
-      if(retval == NULL) {
-	char *tb = getPythonTraceback();
-	if(tb != NULL) {
-	  log_string("Error running python hook:\r\n%s\r\n", tb);
-	  free(tb);
-	}
-      }
+      if(retval == NULL)
+	log_pyerr("Error running Python hook");
 
       // garbage collection
       Py_XDECREF(retval);

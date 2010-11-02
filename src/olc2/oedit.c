@@ -18,9 +18,11 @@
 #include "../character.h"
 #include "../extra_descs.h"
 #include "../prototype.h"
+#include "../handler.h"
 
 #include "olc.h"
 #include "olc_submenus.h"
+#include "olc_extender.h"
 
 
 
@@ -30,8 +32,6 @@
 #include "../editor/editor.h"
 #include "../scripts/scripts.h"
 #include "../scripts/script_editor.h"
-#include "../items/items.h"
-#include "../items/iedit.h"
 
 
 
@@ -99,7 +99,6 @@ void objOLCSetAbstract(OBJ_OLC *data, bool abstract) {
   data->abstract = abstract;
 }
 
-
 //
 // takes in an obj prototype, and tries to generate an obj olc out of it. This
 // function is messy and ugly and icky and yuck. But, alas, I cannot think of
@@ -111,115 +110,23 @@ OBJ_OLC *objOLCFromProto(PROTO_DATA *proto) {
   objOLCSetParents(data, protoGetParents(proto));
   objOLCSetAbstract(data, protoIsAbstract(proto));
 
-  // this is a really ugly way to do the conversion, but basically let's
-  // just look through every line in the buffer and if we recognize some
-  // token, parse out whatever is assigned to it
-  char line[MAX_BUFFER];
-  const char *code = protoGetScript(proto);
-  do {
-    code = strcpyto(line, code, '\n');
-    char *lptr = line;
-    if(!strncmp(lptr, "me.name", 7)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      objSetName(obj, lptr);
-    }
-    else if(!strncmp(lptr, "me.mname", 8)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      objSetMultiName(obj, lptr);
-    }
-    else if(!strncmp(lptr, "me.rdesc", 8)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      objSetRdesc(obj, lptr);
-    }
-    else if(!strncmp(lptr, "me.mdesc", 8)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      objSetMultiRdesc(obj, lptr);
-    }
-    else if(!strncmp(lptr, "me.desc",  7)) {
-      // we have three "'s to skip by, because this lptr will take the form:
-      // me.desc = me.desc + " " + "..."
-      while(*lptr != '\"') lptr++; lptr++;
-      while(*lptr != '\"') lptr++; lptr++;
-      while(*lptr != '\"') lptr++; lptr++;
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      objSetDesc(obj, lptr);
-      // replace our \"s with "
-      bufferReplace(objGetDescBuffer(obj), "\\\"", "\"", TRUE);
-      bufferFormat(objGetDescBuffer(obj), SCREEN_WIDTH, PARA_INDENT);
-    }
-    else if(!strncmp(lptr, "me.keywords", 11)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                                  // kill the leading "
-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
-      objSetKeywords(obj, lptr);
-    }
-    else if(!strncmp(lptr, "me.bits", 7)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                                  // kill the leading "
-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
-      bitSet(objGetBits(obj), lptr);
-    }
-    else if(!strncmp(lptr, "me.weight", 9)) {
-      while(*lptr != '\0' && !isdigit(*lptr)) lptr++;
-      objSetWeightRaw(obj, atof(lptr));
-    }
-    else if(!strncmp(lptr, "me.edesc(", 9)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                                              // kill the leading "
-      char *desc_start = lptr + next_letter_in(lptr, '\"') + 1;
-      lptr[next_letter_in(lptr, '\"')] = '\0';             // kill the ending "
-      while(*desc_start != '\"') desc_start++;
-      desc_start++;                                        // kill start and end
-      desc_start[next_letter_in(desc_start, '\"')] = '\0'; // "s for desc too
-      edescSetPut(objGetEdescs(obj), newEdesc(lptr, desc_start));
-    }
-    // setting an item type
-    else if(!strncmp(lptr, "me.settype(", 11)) {
-      char type[SMALL_BUFFER];
-      sscanf(lptr, "me.settype(\"%s", type);
-      // kill our ending ")
-      type[strlen(type)-2] = '\0';
-      objSetType(obj, type);
+  // build it from the prototype
+  olc_from_proto(proto, objOLCGetExtraCode(data), obj, objGetPyFormBorrowed,
+		 obj_exist, obj_unexist);
+  bufferFormatFromPy(objGetDescBuffer(obj));
+  bufferFormat(objGetDescBuffer(obj), SCREEN_WIDTH, PARA_INDENT);
 
-      // parse out all of our type info
-      void       *data = objGetTypeData(obj, type);
-      BUFFER *type_buf = newBuffer(1);
-      code = strcpyto(line, code, '\n');
-      while(*line && strcmp(line, "### end type") != 0) {
-	bprintf(type_buf, "%s\n", line);
-	code = strcpyto(line, code, '\n');
-      }
+  // format our extra descriptions
+  if(listSize(edescSetGetList(objGetEdescs(obj))) > 0) {
+    LIST_ITERATOR *edesc_i= newListIterator(edescSetGetList(objGetEdescs(obj)));
+    EDESC_DATA      *edesc= NULL;
+    ITERATE_LIST(edesc, edesc_i) {
+      bufferFormatFromPy(edescGetDescBuffer(edesc));
+    } deleteListIterator(edesc_i);
+  }
 
-      // parse out our type info
-      item_from_proto_func(type)(data, type_buf);
-
-      // garbage collection
-      deleteBuffer(type_buf);
-    }
-    else if(!strncmp(lptr, "me.attach(\"", 11)) {
-      char trigname[SMALL_BUFFER];
-      sscanf(lptr, "me.attach(\"%s", trigname);
-      // kill our ending ")
-      trigname[strlen(trigname)-2] = '\0';
-      triggerListAdd(objGetTriggers(obj), trigname);
-    }
-    else if(!strcmp(lptr, "### begin extra code")) {
-      code = strcpyto(line, code, '\n');
-      while(strcmp(line, "### end extra code") != 0) {
-	bprintf(objOLCGetExtraCode(data), "%s\n", line);
-	if(!*code) break;
-	code = strcpyto(line, code, '\n');
-      }
-    }
-  } while(*code != '\0');
+  // all of our OLC extensions
+  extenderFromProto(oedit_extend, obj);
 
   return data;
 }
@@ -234,14 +141,14 @@ PROTO_DATA *objOLCToProto(OBJ_OLC *data) {
   protoSetKey(proto, objOLCGetKey(data));
   protoSetParents(proto, objOLCGetParents(data));
   protoSetAbstract(proto, objOLCGetAbstract(data));
-
+  
   bprintf(buf, "### The following oproto was generated by oedit\n");
   bprintf(buf, "### If you edit this script, adhere to the stylistic\n"
 	       "### conventions laid out by oedit, or delete the top line\n");
 
   bprintf(buf, "\n### keywords, short descs, room descs, and look descs\n");
   if(*objGetKeywords(obj))
-    bprintf(buf, "me.keywords = \"%s\"  + \", \" + me.keywords\n", 
+    bprintf(buf, "me.keywords = ', '.join([me.keywords, \"%s\"])\n",
 	    objGetKeywords(obj));
   if(*objGetName(obj))
     bprintf(buf, "me.name     = \"%s\"\n", objGetName(obj));
@@ -253,10 +160,8 @@ PROTO_DATA *objOLCToProto(OBJ_OLC *data) {
     bprintf(buf, "me.mdesc    = \"%s\"\n", objGetMultiRdesc(obj));
   if(*objGetDesc(obj)) {
     BUFFER *desc_copy = bufferCopy(objGetDescBuffer(obj));
-    bufferReplace(desc_copy, "\n", " ", TRUE);
-    bufferReplace(desc_copy, "\r", "",  TRUE);
-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
-    bprintf(buf, "me.desc     = me.desc + \" \" + \"%s\"\n", 
+    bufferFormatPy(desc_copy);
+    bprintf(buf, "me.desc     = me.desc + ' ' + \"%s\"\n", 
 	    bufferString(desc_copy));
     deleteBuffer(desc_copy);
   }
@@ -268,8 +173,7 @@ PROTO_DATA *objOLCToProto(OBJ_OLC *data) {
     EDESC_DATA      *edesc= NULL;
     ITERATE_LIST(edesc, edesc_i) {
       BUFFER *desc_copy = bufferCopy(edescGetDescBuffer(edesc));
-      bufferReplace(desc_copy, "\n", " ", TRUE);
-      bufferReplace(desc_copy, "\r", "",  TRUE);
+      bufferFormatPy(desc_copy);
       bprintf(buf, "me.edesc(\"%s\", \"%s\")\n", 
 	      edescGetKeywords(edesc), bufferString(desc_copy));
       deleteBuffer(desc_copy);
@@ -278,7 +182,7 @@ PROTO_DATA *objOLCToProto(OBJ_OLC *data) {
 
   if(*bitvectorGetBits(objGetBits(obj))) {
     bprintf(buf, "\n### object bits\n");
-    bprintf(buf, "me.bits     = \"%s\" + \", \" + me.bits\n", 
+    bprintf(buf, "me.bits     = ', '.join([me.bits, \"%s\"])\n",
 	    bitvectorGetBits(objGetBits(obj)));
   }
 
@@ -287,29 +191,17 @@ PROTO_DATA *objOLCToProto(OBJ_OLC *data) {
     bprintf(buf, "me.weight   = %1.3lf\n", objGetWeightRaw(obj));
   }
 
-  // item types
-  LIST      *item_types = itemTypeList();
-  LIST_ITERATOR *type_i = newListIterator(item_types);
-  char            *type = NULL;
-  ITERATE_LIST(type, type_i) {
-    if(objIsType(obj, type)) {
-      void *data = objGetTypeData(obj, type);
-      bprintf(buf, "\n### set type: %s\n", type);
-      bprintf(buf, "me.settype(\"%s\")\n", type);
-      item_to_proto_func(type)(data, buf);      
-      bprintf(buf, "### end type\n");
-    }
-  } deleteListIterator(type_i);
-  deleteListWith(item_types, free);
-
   if(listSize(objGetTriggers(obj)) > 0) {
     bprintf(buf, "\n### object triggers\n");
     LIST_ITERATOR *trig_i = newListIterator(objGetTriggers(obj));
     char            *trig = NULL;
     ITERATE_LIST(trig, trig_i) {
-      bprintf(buf, "me.attach(\"%s\")\n", trig);
+      bprintf(buf, "me.attach(\"%s\")\n",get_shortkey(trig,protoGetKey(proto)));
     } deleteListIterator(trig_i);
   }
+
+  // all of our extender info
+  extenderToProto(oedit_extend, obj, buf);
 
   if(bufferLength(objOLCGetExtraCode(data)) > 0) {
     bprintf(buf, "\n### begin extra code\n");
@@ -357,7 +249,6 @@ void oedit_menu(SOCKET_DATA *sock, OBJ_OLC *data) {
 		 "{g8) Description:\r\n"
 		 "{c%s"
 		 "{gW) Weight         : {c%s\r\n"
-		 "{gI) Edit item types: {c%s\r\n"
 		 "{gB) Edit bitvector : {c%s\r\n"
 		 "{gT) Trigger menu\r\n"
 		 "{gX) Extra Descriptions menu\r\n",
@@ -371,9 +262,11 @@ void oedit_menu(SOCKET_DATA *sock, OBJ_OLC *data) {
 		 objGetMultiRdesc(objOLCGetObj(data)),
 		 objGetDesc(objOLCGetObj(data)),
 		 weight_buf,
-		 objGetTypes(objOLCGetObj(data)),
 		 bitvectorGetBits(objGetBits(objOLCGetObj(data)))
 		 );
+
+  // all of our extender menu options
+  extenderDoMenu(sock, oedit_extend, objOLCGetObj(data));
 
   // only allow code editing for people with scripting priviledges
   send_to_socket(sock, "{gC) Extra code%s\r\n", 
@@ -417,10 +310,6 @@ int  oedit_chooser(SOCKET_DATA *sock, OBJ_OLC *data, const char *option) {
     do_olc(sock, edesc_set_menu, edesc_set_chooser, edesc_set_parser, NULL,NULL,
 	   NULL, NULL, objGetEdescs(objOLCGetObj(data)));
     return MENU_NOCHOICE;
-  case 'I':
-    do_olc(sock, iedit_menu, iedit_chooser, iedit_parser, NULL, NULL, NULL,
-	   NULL, objOLCGetObj(data));
-    return MENU_NOCHOICE;
   case 'B':
     do_olc(sock, bedit_menu, bedit_chooser, bedit_parser, NULL, NULL, NULL,
 	   NULL, objGetBits(objOLCGetObj(data)));
@@ -437,7 +326,8 @@ int  oedit_chooser(SOCKET_DATA *sock, OBJ_OLC *data, const char *option) {
     text_to_buffer(sock, "Edit extra code\r\n");
     socketStartEditor(sock, script_editor, objOLCGetExtraCode(data));
     return MENU_NOCHOICE;
-  default: return MENU_CHOICE_INVALID;
+  default:
+    return extenderDoOptChoice(sock,oedit_extend,objOLCGetObj(data),*option);
   }
 }
 
@@ -468,7 +358,8 @@ bool oedit_parser(SOCKET_DATA *sock, OBJ_OLC *data, int choice,
     objSetWeightRaw(objOLCGetObj(data), val);
     return TRUE;
   }
-  default: return FALSE;
+  default:
+    return extenderDoParse(sock,oedit_extend,objOLCGetObj(data),choice,arg);
   }
 }
 

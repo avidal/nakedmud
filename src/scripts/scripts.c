@@ -40,6 +40,7 @@
 #include "pystorage.h"
 #include "pyauxiliary.h"
 #include "trighooks.h"
+#include "pyolc.h"
 
 // online editor stuff
 #include "../editor/editor.h"
@@ -48,6 +49,13 @@
 // Python stuff
 #include <compile.h>
 #include <eval.h>
+
+
+
+//*****************************************************************************
+// mandatory modules
+//*****************************************************************************
+#include "../olc2/olc.h"
 
 
 
@@ -349,6 +357,7 @@ void init_scripts(void) {
   init_PyObj();
   init_PyMud();
   init_PyHooks();
+  init_PyOLC();
 
   // initialize all of our modules written in Python
   init_pyplugs();
@@ -402,6 +411,7 @@ PyObject *mud_script_dict(void) {
   if(sys != NULL) {
     PyObject *exit = PyDict_GetItemString(PyModule_GetDict(sys), "exit");
     if(exit != NULL) PyDict_SetItemString(dict, "exit", exit);
+    if(exit != NULL) PyDict_SetItemString(dict, "end_script", exit);
     Py_DECREF(sys);
   }
   
@@ -493,12 +503,8 @@ PyObject *run_script_forcode(PyObject *dict, const char *script,
     run_code(retval, dict, locale);
   
   // did we end up with an error?
-  if(retval == NULL || !last_script_ok()) {
-    char *tb = getPythonTraceback();
-    log_string("Script terminated with an error:\r\n%s\r\n"
-	       "\r\nTraceback is:\r\n%s\r\n", script, tb);
-    free(tb);
-  }
+  if(retval == NULL || !last_script_ok())
+    log_pyerr("Script terminated with an error:\r\n%s", script);
 
   // return our code object
   return retval;
@@ -516,12 +522,8 @@ PyObject *eval_script(PyObject *dict, const char *statement,const char *locale){
   PyObject *retval = PyRun_String(statement, Py_eval_input, dict, dict);
 
   // did we encounter an error?
-  if(retval == NULL) {
-    char *tb = getPythonTraceback();
-    log_string("eval_script terminated with an error:\r\n%s\r\n"
-	       "\r\nTraceback is:\r\n%s\r\n", statement, tb);
-    free(tb);
-  }
+  if(retval == NULL)
+    log_pyerr("eval_script terminated with an error:\r\n%s", statement);
 
   free(listPop(locale_stack));
   return retval;

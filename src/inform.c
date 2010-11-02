@@ -304,7 +304,7 @@ void send_outdoors(const char *format, ...) {
     static char buf[MAX_BUFFER];
     va_list args;
     va_start(args, format);
-    vsprintf(buf, format, args);
+    vsnprintf(buf, MAX_BUFFER, format, args);
     va_end(args);
 
     // send it out to everyone
@@ -340,9 +340,10 @@ void send_to_char(CHAR_DATA *ch, const char *format, ...) {
     static char buf[MAX_BUFFER];
     va_list args;
     va_start(args, format);
-    vsprintf(buf, format, args);
+    vsnprintf(buf, MAX_BUFFER, format, args);
     va_end(args);
     text_to_char(ch, buf);
+    hookRun("char_receive_text", hookBuildInfo("ch str", ch, buf));
     return;
   }
 }
@@ -352,7 +353,7 @@ void send_around_char(CHAR_DATA *ch, bool hide_nosee, const char *format, ...) {
   static char buf[MAX_BUFFER];
   va_list args;
   va_start(args, format);
-  vsprintf(buf, format, args);
+  vsnprintf(buf, MAX_BUFFER, format, args);
   va_end(args);
 
   LIST_ITERATOR *room_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
@@ -374,7 +375,7 @@ void send_to_groups(const char *groups, const char *format, ...) {
   static char buf[MAX_BUFFER];
   va_list args;
   va_start(args, format);
-  vsprintf(buf, format, args);
+  vsnprintf(buf, MAX_BUFFER, format, args);
   va_end(args);
 
   LIST_ITERATOR *ch_i = newListIterator(mobile_list);
@@ -394,7 +395,7 @@ void send_to_list(LIST *list, const char *format, ...) {
     static char buf[MAX_BUFFER];
     va_list args;
     va_start(args, format);
-    vsprintf(buf, format, args);
+    vsnprintf(buf, MAX_BUFFER, format, args);
     va_end(args);
 
     // send it out to everyone
@@ -691,7 +692,7 @@ void mssgprintf(CHAR_DATA *ch, CHAR_DATA *vict,
     static char buf[MAX_BUFFER];
     va_list args;
     va_start(args, fmt);
-    vsprintf(buf, fmt, args);
+    vsnprintf(buf, MAX_BUFFER, fmt, args);
     va_end(args);
     message(ch, vict, obj, vobj, hide_nosee, range, buf);
   }

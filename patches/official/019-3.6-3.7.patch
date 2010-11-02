@@ -1,0 +1,4122 @@
+diff -ruN versions/nakedmudv3.6/src/Makefile src/Makefile
+--- versions/nakedmudv3.6/src/Makefile	2008-05-31 00:25:38.000000000 -0400
++++ src/Makefile	2008-11-16 06:38:14.000000000 -0500
+@@ -103,6 +103,7 @@
+ clean:
+ 	@rm -f $(BINARY)
+ 	@rm -f *.o $(patsubst %,%/*.o, $(MODULES))
++	@rm -f *.d $(patsubst %,%/*.d, $(MODULES))
+ 	@rm -f *~ $(patsubst %,%/*~, $(MODULES))
+ 	@rm -f ../lib/pymodules/*~
+ 	@rm -f ../lib/pymodules/*.pyc
+diff -ruN versions/nakedmudv3.6/src/buffer.c src/buffer.c
+--- versions/nakedmudv3.6/src/buffer.c	2008-05-31 00:17:59.000000000 -0400
++++ src/buffer.c	2008-12-03 00:42:47.000000000 -0500
+@@ -207,6 +207,20 @@
+     return 0;
+ }
+ 
++void bufferFormatPy(BUFFER *buf) {
++  bufferReplace(buf, "\\", "\\\\", TRUE);
++  bufferReplace(buf, "\n", "\\n",  TRUE);
++  bufferReplace(buf, "\r", "\\r",  TRUE);
++  bufferReplace(buf, "\"", "\\\"", TRUE);
++}
++
++void bufferFormatFromPy(BUFFER *buf) {
++  bufferReplace(buf, "\\\\", "\\", TRUE);
++  bufferReplace(buf, "\\n",  "\n", TRUE);
++  bufferReplace(buf, "\\r",  "\r", TRUE);
++  bufferReplace(buf, "\\\"", "\"", TRUE);
++}
++
+ void bufferFormat(BUFFER *buf, int max_width, int indent) {
+   char formatted[(buf->len * 3)/2];
+   bool needs_capital = TRUE, needs_indent = FALSE;
+diff -ruN versions/nakedmudv3.6/src/buffer.h src/buffer.h
+--- versions/nakedmudv3.6/src/buffer.h	2008-05-31 00:17:59.000000000 -0400
++++ src/buffer.h	2008-12-03 00:32:37.000000000 -0500
+@@ -55,4 +55,10 @@
+ // format a string with the given arguments
+ void bufferFormat(BUFFER *buf, int max_width, int indent);
+ 
++// format our buffer to be a viable Python string
++void bufferFormatPy(BUFFER *buf);
++
++// format our buffer to be a C string from a Python string
++void bufferFormatFromPy(BUFFER *buf);
++
+ #endif // BUFFER_H
+diff -ruN versions/nakedmudv3.6/src/command.c src/command.c
+--- versions/nakedmudv3.6/src/command.c	2008-05-31 00:17:59.000000000 -0400
++++ src/command.c	2008-12-01 22:20:44.000000000 -0500
+@@ -247,14 +247,8 @@
+ 					  cmd->name);
+ 	PyObject *retval  = PyEval_CallObject(chk->pyfunc, arglist);
+ 	// check for an error:
+-	if(retval == NULL) {
+-	  char *tb = getPythonTraceback();
+-	  if(tb != NULL) {
+-	    log_string("Error running python command check, %s:\r\n%s\r\n", 
+-		       cmd->name, tb);
+-	    free(tb);
+-	  }
+-	}
++	if(retval == NULL)
++	  log_pyerr("Error running Python command check, %s:", cmd->name);
+ 	else if(retval == Py_False)
+ 	  cmd_ok = FALSE;
+ 
+@@ -294,14 +288,8 @@
+ 					cmd->name, arg);
+       PyObject *retval  = PyEval_CallObject(cmd->pyfunc, arglist);
+       // check for an error:
+-      if(retval == NULL) {
+-	char *tb = getPythonTraceback();
+-	if(tb != NULL) {
+-	  log_string("Error running python command, %s:\r\n%s\r\n", 
+-		     cmd->name, tb);
+-	  free(tb);
+-	}
+-      }
++      if(retval == NULL)
++	log_pyerr("Error running Python command, %s:", cmd->name);
+ 
+       // garbage collection
+       Py_XDECREF(retval);
+diff -ruN versions/nakedmudv3.6/src/commands.h src/commands.h
+--- versions/nakedmudv3.6/src/commands.h	2008-05-31 00:17:59.000000000 -0400
++++ src/commands.h	2008-11-15 16:44:11.000000000 -0500
+@@ -1,5 +1,5 @@
+-#ifndef __COMMAND_H
+-#define __COMMAND_H
++#ifndef __COMMANDS_H
++#define __COMMANDS_H
+ //*****************************************************************************
+ //
+ // commands.h
+@@ -16,4 +16,4 @@
+ COMMAND(cmd_more);
+ COMMAND(cmd_back);
+ 
+-#endif // __COMMAND_H
++#endif // __COMMANDS_H
+diff -ruN versions/nakedmudv3.6/src/gameloop.c src/gameloop.c
+--- versions/nakedmudv3.6/src/gameloop.c	2008-05-31 00:17:59.000000000 -0400
++++ src/gameloop.c	2008-12-03 03:55:04.000000000 -0500
+@@ -207,6 +207,9 @@
+   /**********************************************************************/
+   /*                START MANDATORY MODULE INSTALLATION                 */
+   /**********************************************************************/
++  log_string("Initializing OLC v2.0.");
++  init_olc2();
++
+   log_string("Initializing item types.");
+   init_items();
+ 
+@@ -217,9 +220,6 @@
+   log_string("Initializing dynamic variables.");
+   init_dyn_vars();
+ 
+-  log_string("Initializing OLC v2.0.");
+-  init_olc2();
+-
+   log_string("Initializing set utility.");
+   init_set();
+ 
+diff -ruN versions/nakedmudv3.6/src/handler.c src/handler.c
+--- versions/nakedmudv3.6/src/handler.c	2008-05-31 00:17:59.000000000 -0400
++++ src/handler.c	2008-12-03 15:17:00.000000000 -0500
+@@ -41,6 +41,10 @@
+   propertyTablePut(exit_table, exit);
+ }
+ 
++void exit_unexist(EXIT_DATA *exit) {
++  propertyTableRemove(exit_table, exitGetUID(exit));
++}
++
+ bool exit_exists(EXIT_DATA *exit) {
+   return propertyTableIn(exit_table, exitGetUID(exit));
+ }
+@@ -63,6 +67,19 @@
+   }
+ }
+ 
++void obj_unexist(OBJ_DATA *obj) {
++  // also unexist all contents
++  if(listSize(objGetContents(obj)) > 0) {
++    LIST_ITERATOR *cont_i = newListIterator(objGetContents(obj));
++    OBJ_DATA *cont = NULL;
++    ITERATE_LIST(cont, cont_i)
++      obj_unexist(cont);
++    deleteListIterator(cont_i);
++  }
++
++  propertyTableRemove(obj_table, objGetUID(obj));
++}
++
+ bool obj_exists(OBJ_DATA *obj) {
+   return propertyTableIn(obj_table, objGetUID(obj));
+ }
+@@ -116,6 +133,37 @@
+   deleteListWith(ex_list, free);
+ }
+ 
++void room_unexist(ROOM_DATA *room) {
++  // add contents
++  if(listSize(roomGetContents(room)) > 0) {
++    LIST_ITERATOR *cont_i = newListIterator(roomGetContents(room));
++    OBJ_DATA        *cont = NULL;
++    ITERATE_LIST(cont, cont_i)
++      obj_unexist(cont);
++    deleteListIterator(cont_i);
++  }
++
++  // add its people
++  if(listSize(roomGetCharacters(room)) > 0) {
++    LIST_ITERATOR *ch_i = newListIterator(roomGetCharacters(room));
++    CHAR_DATA       *ch = NULL;
++    ITERATE_LIST(ch, ch_i)
++      char_unexist(ch);
++    deleteListIterator(ch_i);
++  }
++
++  // add its exits
++  LIST       *ex_list = roomGetExitNames(room);
++  LIST_ITERATOR *ex_i = newListIterator(ex_list);
++  char           *dir = NULL;
++  ITERATE_LIST(dir, ex_i) {
++    exit_unexist(roomGetExit(room, dir));
++  } deleteListIterator(ex_i);
++  deleteListWith(ex_list, free);
++
++  propertyTableRemove(room_table, roomGetUID(room));
++}
++
+ bool room_exists(ROOM_DATA *room) {
+   return propertyTableIn(room_table, roomGetUID(room));
+ }
+@@ -188,6 +236,31 @@
+   deleteList(eq);
+ }
+ 
++void char_unexist(CHAR_DATA *ch) {
++  // also unexist inventory
++  if(listSize(charGetInventory(ch)) > 0) {
++    LIST_ITERATOR *inv_i = newListIterator(charGetInventory(ch));
++    OBJ_DATA *obj = NULL;
++    ITERATE_LIST(obj, inv_i)
++      obj_unexist(obj);
++    deleteListIterator(inv_i);
++  }
++
++  // and equipped items
++  LIST *eq = bodyGetAllEq(charGetBody(ch));
++  if(listSize(eq) > 0) {
++    LIST_ITERATOR *eq_i = newListIterator(eq);
++    OBJ_DATA *obj = NULL;
++    ITERATE_LIST(obj, eq_i)
++      obj_unexist(obj);
++    deleteListIterator(eq_i);
++  }
++  deleteList(eq);
++
++  // take us out of the lookup table
++  propertyTableRemove(mob_table, charGetUID(ch));
++}
++
+ bool char_exists(CHAR_DATA *ch) {
+   return propertyTableIn(mob_table, charGetUID(ch));
+ }
+@@ -278,7 +351,7 @@
+ }
+ 
+ void char_from_game(CHAR_DATA *ch) {
+-  // go through all of our fromgame hooks
++  // go through all of our fromgame hooks, then remove us from the mobile list
+   hookRun("char_from_game", hookBuildInfo("ch", ch));
+ 
+   // also remove inventory
+diff -ruN versions/nakedmudv3.6/src/handler.h src/handler.h
+--- versions/nakedmudv3.6/src/handler.h	2008-05-31 00:17:59.000000000 -0400
++++ src/handler.h	2008-12-03 15:19:26.000000000 -0500
+@@ -17,22 +17,28 @@
+ // called AND THEN it should be added to the game (e.g. loading a character and
+ // putting him into a room... call char_to_game first); exist functions are to
+ // state that something is ready for interaction with but it is *not* ready to
+-// be placed in the game yet. For instance, when a brand new character has been
+-// made for character creation. Whenever something is put to_game, it is first
+-// make to exist.
++// be placed in the game yet. Conversely, unexist functions are to state that
++// something is no longer ready for interaction but was never part of the game
++// For instance, when a brand new character has been made for character 
++// creation. Whenever something is put to_game, it is first make to exist.
++// Whenever something is remove from_game, it is also immediately unexisted.
+ void      char_exist        (CHAR_DATA *ch);
++void      char_unexist      (CHAR_DATA *ch);
+ bool      char_exists       (CHAR_DATA *ch);
+ void      char_to_game      (CHAR_DATA *ch);
+ void      char_from_game    (CHAR_DATA *ch);
+ void      obj_exist         (OBJ_DATA  *obj);
++void      obj_unexist       (OBJ_DATA  *obj);
+ bool      obj_exists        (OBJ_DATA  *obj);
+ void      obj_to_game       (OBJ_DATA  *obj);
+ void      obj_from_game     (OBJ_DATA  *obj);
+ void      room_exist        (ROOM_DATA *room);
++void      room_unexist      (ROOM_DATA *room);
+ bool      room_exists       (ROOM_DATA *room);
+ void      room_to_game      (ROOM_DATA *room);
+ void      room_from_game    (ROOM_DATA *room);
+ void      exit_exist        (EXIT_DATA *exit);
++void      exit_unexist      (EXIT_DATA *exit);
+ bool      exit_exists       (EXIT_DATA *exit);
+ void      exit_to_game      (EXIT_DATA *exit);
+ void      exit_from_game    (EXIT_DATA *exit);
+diff -ruN versions/nakedmudv3.6/src/inform.c src/inform.c
+--- versions/nakedmudv3.6/src/inform.c	2008-05-31 00:17:59.000000000 -0400
++++ src/inform.c	2008-12-03 02:29:57.000000000 -0500
+@@ -304,7 +304,7 @@
+     static char buf[MAX_BUFFER];
+     va_list args;
+     va_start(args, format);
+-    vsprintf(buf, format, args);
++    vsnprintf(buf, MAX_BUFFER, format, args);
+     va_end(args);
+ 
+     // send it out to everyone
+@@ -340,9 +340,10 @@
+     static char buf[MAX_BUFFER];
+     va_list args;
+     va_start(args, format);
+-    vsprintf(buf, format, args);
++    vsnprintf(buf, MAX_BUFFER, format, args);
+     va_end(args);
+     text_to_char(ch, buf);
++    hookRun("char_receive_text", hookBuildInfo("ch str", ch, buf));
+     return;
+   }
+ }
+@@ -352,7 +353,7 @@
+   static char buf[MAX_BUFFER];
+   va_list args;
+   va_start(args, format);
+-  vsprintf(buf, format, args);
++  vsnprintf(buf, MAX_BUFFER, format, args);
+   va_end(args);
+ 
+   LIST_ITERATOR *room_i = newListIterator(roomGetCharacters(charGetRoom(ch)));
+@@ -374,7 +375,7 @@
+   static char buf[MAX_BUFFER];
+   va_list args;
+   va_start(args, format);
+-  vsprintf(buf, format, args);
++  vsnprintf(buf, MAX_BUFFER, format, args);
+   va_end(args);
+ 
+   LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+@@ -394,7 +395,7 @@
+     static char buf[MAX_BUFFER];
+     va_list args;
+     va_start(args, format);
+-    vsprintf(buf, format, args);
++    vsnprintf(buf, MAX_BUFFER, format, args);
+     va_end(args);
+ 
+     // send it out to everyone
+@@ -691,7 +692,7 @@
+     static char buf[MAX_BUFFER];
+     va_list args;
+     va_start(args, fmt);
+-    vsprintf(buf, fmt, args);
++    vsnprintf(buf, MAX_BUFFER, fmt, args);
+     va_end(args);
+     message(ch, vict, obj, vobj, hide_nosee, range, buf);
+   }
+diff -ruN versions/nakedmudv3.6/src/io.c src/io.c
+--- versions/nakedmudv3.6/src/io.c	2008-05-31 00:17:59.000000000 -0400
++++ src/io.c	2008-12-01 22:31:26.000000000 -0500
+@@ -32,11 +32,11 @@
+   va_list args;
+ 
+   va_start(args, txt);
+-  vsprintf(buf, txt, args);
++  vsnprintf(buf, MAX_BUFFER, txt, args);
+   va_end(args);
+ 
+   /* point to the correct logfile */
+-  sprintf(logfile, "../log/%6.6s.log", strtime);
++  snprintf(logfile, MAX_BUFFER, "../log/%6.6s.log", strtime);
+ 
+   /* try to open logfile */
+   if ((fp = fopen(logfile, "a")) == NULL)
+@@ -65,7 +65,7 @@
+   char *strtime = get_time();
+ 
+   va_start(args, txt);
+-  vsprintf(buf, txt, args);
++  vsnprintf(buf, MAX_BUFFER, txt, args);
+   va_end(args);
+ 
+   /* try to open logfile */
+diff -ruN versions/nakedmudv3.6/src/items/container.c src/items/container.c
+--- versions/nakedmudv3.6/src/items/container.c	2008-05-31 00:17:59.000000000 -0400
++++ src/items/container.c	2008-12-03 04:15:08.000000000 -0500
+@@ -457,33 +457,6 @@
+   return 0;
+ }
+ 
+-void container_from_proto(CONTAINER_DATA *data, BUFFER *buf) {
+-  char line[MAX_BUFFER];
+-  const char *code = bufferString(buf);
+-  do {
+-    code = strcpyto(line, code, '\n');
+-    char *lptr = line;
+-    if(!strncasecmp(lptr, "me.container_capacity", 21)) {
+-      while(*lptr && !isdigit(*lptr)) lptr++;
+-      data->capacity = atoi(lptr);
+-    }
+-    else if(!strncasecmp(lptr, "me.container_key", 16)) {
+-      while(*lptr && *lptr != '\"') lptr++;
+-      lptr++; // skip leading "
+-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
+-      if(data->key) free(data->key);
+-      data->key = strdupsafe(lptr);
+-    }
+-    else if(!strncasecmp(lptr, "me.container_pick_diff", 22)) {
+-      while(*lptr && !isdigit(*lptr)) lptr++;
+-      data->pick_diff = atoi(lptr);
+-    }
+-    else if(!strcasecmp(lptr, "me.container_is_closable = True"))
+-      data->closable = TRUE;
+-    else; // ignore line
+-  } while(*code != '\0');
+-}
+-
+ void container_to_proto(CONTAINER_DATA *data, BUFFER *buf) {
+   if(data->capacity > 0)
+     bprintf(buf, "me.container_capacity    = %1.3lf\n", data->capacity);
+@@ -549,7 +522,7 @@
+ 
+   // set up the container OLC too
+   item_add_olc("container", iedit_container_menu, iedit_container_chooser, 
+-  	       iedit_container_parser, container_from_proto,container_to_proto);
++  	       iedit_container_parser, NULL, container_to_proto);
+   PyObj_addGetSetter("container_capacity",
+ 		     PyObj_getcontainercapacity, PyObj_setcontainercapacity,
+ 		     "Sets the maximum amount of weight the container holds.");
+diff -ruN versions/nakedmudv3.6/src/items/furniture.c src/items/furniture.c
+--- versions/nakedmudv3.6/src/items/furniture.c	2008-05-31 00:17:59.000000000 -0400
++++ src/items/furniture.c	2008-12-03 04:15:37.000000000 -0500
+@@ -168,24 +168,6 @@
+   }
+ }
+ 
+-void furniture_from_proto(FURNITURE_DATA *data, BUFFER *buf) {
+-  const char *code = bufferString(buf);
+-  char line[SMALL_BUFFER];
+-  char *lptr = line;
+-  int capacity = 0;
+-
+-  // two lines: capacity and type. First capacity, then type
+-  code = strcpyto(line, code, '\n');
+-  sscanf(line, "me.furniture_capacity = %d", &capacity);
+-  data->capacity = capacity;
+-
+-  code = strcpyto(line, code , '\n');
+-  while(*lptr && *lptr != '\"') lptr++;
+-  lptr++; // skip the leading "
+-  lptr[next_letter_in(lptr, '\"')] = '\0'; // kill closing "
+-  data->type = furnitureTypeGetNum(lptr);
+-}
+-
+ void furniture_to_proto(FURNITURE_DATA *data, BUFFER *buf) {
+   bprintf(buf, "me.furniture_capacity = %d\n",   data->capacity);
+   bprintf(buf, "me.furniture_type     = \"%s\"\n", 
+@@ -326,7 +308,7 @@
+ 
+   // set up the furniture OLC too
+   item_add_olc("furniture", iedit_furniture_menu, iedit_furniture_chooser, 
+-  	       iedit_furniture_parser, furniture_from_proto,furniture_to_proto);
++  	       iedit_furniture_parser, NULL, furniture_to_proto);
+ 
+   // add our getters and setters for furniture
+   PyObj_addGetSetter("furniture_capacity", 
+diff -ruN versions/nakedmudv3.6/src/items/iedit.c src/items/iedit.c
+--- versions/nakedmudv3.6/src/items/iedit.c	2008-05-31 00:17:59.000000000 -0400
++++ src/items/iedit.c	2008-12-03 20:14:40.000000000 -0500
+@@ -21,13 +21,21 @@
+ #include "items.h"
+ #include "iedit.h"
+ 
++
++
++//*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../scripts/scripts.h"
+ #include "../olc2/olc.h"
++#include "../olc2/olc_extender.h"
+ 
+ 
+ 
+ //*****************************************************************************
+ // local functions, variables, and datastructures
+ //*****************************************************************************
++
+ // used to store the different sub-olc functions for different item types
+ HASHTABLE *item_olc_table = NULL;
+ 
+@@ -35,13 +43,13 @@
+   void       (* menu)(SOCKET_DATA *sock, void *data);
+   int     (* chooser)(SOCKET_DATA *sock, void *data, const char *option);
+   bool     (* parser)(SOCKET_DATA *sock, void *data,int choice,const char *arg);
+-  void (* from_proto)(void *data, BUFFER *buf);
++  void (* from_proto)(void *data);
+   void   (* to_proto)(void *data, BUFFER *buf);
+ } ITEM_OLC_DATA;
+ 
+ ITEM_OLC_DATA *newItemOLC(void *menu, void *chooser, void *parser, 
+ 			  void *from_proto, void *to_proto) {
+-  ITEM_OLC_DATA *data = malloc(sizeof(ITEM_OLC_DATA));
++  ITEM_OLC_DATA *data = calloc(1, sizeof(ITEM_OLC_DATA));
+   data->menu       = menu;
+   data->chooser    = chooser;
+   data->parser     = parser;
+@@ -136,20 +144,63 @@
+   }
+ }
+ 
+-void (* item_from_proto_func(const char *type))(void *data, BUFFER *buf) {
++void item_from_proto(const char *type, void *data) {
+   ITEM_OLC_DATA *funcs = hashGet(item_olc_table, type);
+-  if(funcs == NULL)
+-    return NULL;
+-  else
+-    return funcs->from_proto;
++  if(funcs != NULL && funcs->from_proto != NULL)
++    funcs->from_proto(data);
+ }
+ 
+-void (* item_to_proto_func(const char *type))(void *data, BUFFER *buf) {
++void item_to_proto(const char *type, void *data, BUFFER *buf) {
+   ITEM_OLC_DATA *funcs = hashGet(item_olc_table, type);
+-  if(funcs == NULL)
+-    return NULL;
+-  else
+-    return funcs->to_proto;
++  if(funcs != NULL && funcs->to_proto != NULL)
++    return funcs->to_proto(data, buf);
++}
++
++
++
++//*****************************************************************************
++// functions for extending oedit
++//*****************************************************************************
++void oedit_item_menu(SOCKET_DATA *sock, OBJ_DATA *obj) {
++  send_to_socket(sock, "Edit item types: {c%s\r\n", objGetTypes(obj));
++}
++
++int oedit_item_choose(SOCKET_DATA *sock, OBJ_DATA *obj) {
++  do_olc(sock, iedit_menu, iedit_chooser, iedit_parser, NULL, NULL, NULL,
++	 NULL, obj);
++  return MENU_NOCHOICE;
++}
++
++void oedit_item_to_proto(OBJ_DATA *obj, BUFFER *buf) {
++  // item types
++  LIST      *item_types = itemTypeList();
++  LIST_ITERATOR *type_i = newListIterator(item_types);
++  char            *type = NULL;
++
++  ITERATE_LIST(type, type_i) {
++    if(objIsType(obj, type)) {
++      void *data = objGetTypeData(obj, type);
++      bprintf(buf, "\n### item type: %s\n", type);
++      bprintf(buf, "me.settype(\"%s\")\n", type);
++      item_to_proto(type, data, buf);
++      //item_to_proto_func(type)(data, buf);      
++      bprintf(buf, "### end type\n");
++    }
++  } deleteListIterator(type_i);
++  deleteListWith(item_types, free);
++}
++
++void oedit_item_from_proto(OBJ_DATA *obj) {
++  // item types
++  LIST      *item_types = itemTypeList();
++  LIST_ITERATOR *type_i = newListIterator(item_types);
++  char            *type = NULL;
++
++  ITERATE_LIST(type, type_i) {
++    if(objIsType(obj, type))
++      item_from_proto(type, obj);
++  } deleteListIterator(type_i);
++  deleteListWith(item_types, free);
+ }
+ 
+ 
+@@ -159,4 +210,9 @@
+ //*****************************************************************************
+ void init_item_olc() {
+   item_olc_table = newHashtable();
++
++  // add our OLC extension
++  extenderRegisterOpt(oedit_extend, 'I', 
++		      oedit_item_menu, oedit_item_choose, NULL, 
++		      oedit_item_from_proto, oedit_item_to_proto);
+ }
+diff -ruN versions/nakedmudv3.6/src/items/iedit.h src/items/iedit.h
+--- versions/nakedmudv3.6/src/items/iedit.h	2008-05-31 00:17:59.000000000 -0400
++++ src/items/iedit.h	2008-12-03 20:14:48.000000000 -0500
+@@ -27,10 +27,9 @@
+ // (without actually running the script). If we want to have a non-scripting
+ // interface for builders, we have to be able to do this. It's pretty simple.
+ // For examples on how to go about doing this, see portal.c, container.c, and
+-// worn.c. from_proto should take in the data for an item type and a buffer of
+-// code relevant to that item type. It should then set values for the item type
+-// data, based on the code. It should be of the form:
+-//   void from_proto(type *item_type_data, BUFFER *script)
++// worn.c. from_proto should clean up any erroneous stuff that might happen
++// to strings after an object has been parsed into an OLC-editable state.
++//   void from_proto(type *item_type_data)
+ // to_proto should do the reverse: given type data, append it to a buffer that
+ // is an object prototype (python script). It should also be of the form:
+ //   void to_proto(type *item_type_data, BUFFER *script)
+@@ -43,7 +42,4 @@
+ int  iedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, const char *option);
+ bool iedit_parser(SOCKET_DATA *sock, OBJ_DATA *obj,int choice, const char *arg);
+ 
+-void (* item_from_proto_func(const char *type))(void *data, BUFFER *buf);
+-void   (* item_to_proto_func(const char *type))(void *data, BUFFER *buf);
+-
+ #endif // IEDIT_H
+diff -ruN versions/nakedmudv3.6/src/items/items.c src/items/items.c
+--- versions/nakedmudv3.6/src/items/items.c	2008-05-31 00:17:59.000000000 -0400
++++ src/items/items.c	2008-12-03 22:35:12.000000000 -0500
+@@ -25,41 +25,143 @@
+ 
+ 
+ //*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../scripts/scripts.h"
++#include "../scripts/pymudsys.h"
++#include "../scripts/pystorage.h"
++#include "../scripts/pyobj.h"
++#include "../scripts/pyplugs.h"
++
++
++
++//*****************************************************************************
+ // local functions, datastructures, and defines
+ //*****************************************************************************
+ // a table of all our item types, and their assocciated new/delete/etc.. funcs
+ HASHTABLE *type_table = NULL;
+ 
++#define ITYPE_C   0
++#define ITYPE_PY  1
++
+ //
+ // this is what will go into our type_data table
+ typedef struct item_func_data {
+-  void          *(* new)();
++  // what type of item function data do we have?
++  int              type;
++
++  // C functions
++  void          *(* new)(void);
+   void        (* delete)(void *data);
+   void         *(* copy)(void *data);
+   void        (* copyto)(void *from, void *to);
+   STORAGE_SET *(* store)(void *data);
+   void         *(* read)(STORAGE_SET *set);
++
++  // Python functions
++  PyObject *pyfuncs;
++
+ } ITEM_FUNC_DATA;
+ 
++void *ifunc_new(ITEM_FUNC_DATA *funcs) {
++  if(funcs->type == ITYPE_PY) {
++    PyObject *ret = PyInstance_New(funcs->pyfuncs, NULL, NULL);
++    if(ret == NULL)
++      log_pyerr("Error creating new Python item type");
++    return ret;
++  }
++  return funcs->new();
++}
++
++void ifunc_delete(ITEM_FUNC_DATA *funcs, void *data) {
++  if(funcs->type == ITYPE_PY) {
++    Py_XDECREF((PyObject *)data);
++  }
++  else 
++    funcs->delete(data);
++}
++
++void *ifunc_copy(ITEM_FUNC_DATA *funcs, void *data) {
++  if(funcs->type == ITYPE_PY) {
++    PyObject *ret = PyObject_CallMethod(data, "copy", NULL);
++    if(ret == NULL)
++      log_pyerr("Error copying Python item type");
++    return ret;
++  }
++  return funcs->copy(data);
++}
++
++void ifunc_copyto(ITEM_FUNC_DATA *funcs, void *from, void *to) {
++  if(funcs->type == ITYPE_PY) {
++    PyObject *ret = PyObject_CallMethod(from, "copyTo", "O", to);
++    if(ret == NULL)
++      log_pyerr("Error calling copyTo Python item type method");
++    Py_XDECREF(ret);
++  }
++  else
++    funcs->copyto(from, to);
++}
++
++STORAGE_SET *ifunc_store(ITEM_FUNC_DATA *funcs, void *data) {
++  if(funcs->type == ITYPE_PY) {
++    PyObject  *pyset = PyObject_CallMethod(data, "store", NULL);
++    STORAGE_SET *set = NULL;
++    if(pyset != NULL)
++      set = PyStorageSet_AsSet(pyset);
++    else {
++      set = new_storage_set();
++      log_pyerr("Error storing Python item type");
++    }
++
++    Py_XDECREF(pyset);
++    return set;
++  }
++  return funcs->store(data);
++}
++
++void *ifunc_read(ITEM_FUNC_DATA *funcs, STORAGE_SET *set) {
++  if(funcs->type == ITYPE_PY) {
++    PyObject *pyset = newPyStorageSet(set);
++    PyObject  *args = Py_BuildValue("(O)", pyset);
++    PyObject   *ret = PyInstance_New(funcs->pyfuncs, args, NULL);
++    if(ret == NULL)
++      log_pyerr("Error reading Python item type");
++    Py_XDECREF(args);
++    Py_XDECREF(pyset);
++    return ret;
++  }
++  return funcs->read(set);
++}
+ 
+ //
+ // create a new structure for holding item type functions
+ ITEM_FUNC_DATA *newItemFuncData(void *new, void *delete, void *copyTo,
+ 				void *copy, void *store, void *read) {
+-  ITEM_FUNC_DATA *data = malloc(sizeof(ITEM_FUNC_DATA));
++  ITEM_FUNC_DATA *data = calloc(1, sizeof(ITEM_FUNC_DATA));
+   data->new    = new;
+   data->delete = delete;
+   data->copy   = copy;
+   data->copyto = copyTo;
+   data->store  = store;
+   data->read   = read;
++  data->type   = ITYPE_C;
+   return data;
+ }
+ 
++//
++// create a new structure for holding Python item type functions
++ITEM_FUNC_DATA *newPyItemFuncData(PyObject *pyfuncs) {
++  ITEM_FUNC_DATA *data = calloc(1, sizeof(ITEM_FUNC_DATA));
++  data->pyfuncs = pyfuncs;
++  data->type    = ITYPE_PY;
++  Py_XINCREF(pyfuncs);
++  return data;
++}
+ 
+ //
+ // deletes one structure for holding item type functions
+ void deleteItemFuncData(ITEM_FUNC_DATA *data) {
++  Py_XDECREF(data->pyfuncs);
+   free(data);
+ }
+ 
+@@ -76,7 +178,7 @@
+     // delete the contents of our hashtable
+     ITERATE_HASH(key, val, hash_i) {
+       ITEM_FUNC_DATA *funcs = hashGet(type_table, key);
+-      funcs->delete(hashRemove(table, key));
++      ifunc_delete(funcs, hashRemove(table, key));
+     }
+     deleteHashIterator(hash_i);
+   }
+@@ -95,7 +197,7 @@
+     // copy all the contents
+     ITERATE_HASH(key, val, hash_i) {
+       ITEM_FUNC_DATA *funcs = hashGet(type_table, key);
+-      hashPut(to, key, funcs->copy(val));
++      hashPut(to, key, ifunc_copy(funcs, val));
+     }
+     deleteHashIterator(hash_i);
+   }
+@@ -156,7 +258,7 @@
+       STORAGE_SET *one_set = new_storage_set();
+       funcs = hashGet(type_table, key);
+       store_string(one_set, "type", key);
+-      store_set(one_set, "data", funcs->store(val));
++      store_set(one_set, "data", ifunc_store(funcs, val));
+       storage_list_put(list, one_set);
+     }
+     deleteHashIterator(hash_i);
+@@ -180,7 +282,7 @@
+     if((funcs = hashGet(type_table, type)) == NULL) 
+       continue;
+     STORAGE_SET *type_set = read_set(one_entry, "data");
+-    hashPut(data->item_table, type, funcs->read(type_set));
++    hashPut(data->item_table, type, ifunc_read(funcs, type_set));
+   }
+   return data;
+ }
+@@ -188,6 +290,111 @@
+ 
+ 
+ //*****************************************************************************
++// Python implementation
++//*****************************************************************************
++void item_add_pytype(const char *type, PyObject *pyfuncs) {
++  ITEM_FUNC_DATA *funcs = NULL;
++  // first, make sure no item type by this name already
++  // exists. If one does, delete it so it can be replaced
++  if((funcs = hashRemove(type_table, type)) != NULL)
++    deleteItemFuncData(funcs);
++  funcs = newPyItemFuncData(pyfuncs);
++  hashPut(type_table, type, funcs);
++}
++
++PyObject *PyMudSys_ItemAddType(PyObject *self, PyObject *args) {
++  char        *type = NULL;
++  PyObject *pyclass = NULL;
++
++  // parse out our socket and functions
++  if(!PyArg_ParseTuple(args, "sO",&type, &pyclass)) {
++    PyErr_Format(PyExc_TypeError,"Invalid arguments supplied to " 
++		 "item_add_type");
++    return NULL;
++  }
++
++  // make sure it has a string that says what item type it is
++  if(!PyObject_HasAttrString(pyclass, "__item_type__") ||
++     !PyString_Check(PyObject_GetAttrString(pyclass, "__item_type__"))) {
++    PyErr_Format(PyExc_TypeError,"Python item types must have an attribute, "
++		 "__item_type__, that describes what type of item data it is.");
++    return NULL;
++  }
++
++  // check to make sure it has all of the relevant methods
++  //***********
++  // FINISH ME
++  //***********
++
++  // create the new type
++  item_add_pytype(type, pyclass);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *PyObj_GetTypeData(PyObject *self, PyObject *args) {
++  OBJ_DATA         *obj = PyObj_AsObj(self);
++  ITEM_FUNC_DATA *fdata = NULL;
++  char            *type = NULL;
++
++  if(!PyArg_ParseTuple(args, "s", &type)) {
++    PyErr_Format(PyExc_TypeError, "get_type_data must be supplied a string.");
++    return NULL;
++  }
++
++  // make sure it's Python data
++  fdata = hashGet(type_table, type);
++  if(fdata == NULL || fdata->type == ITYPE_C)
++    return Py_BuildValue("O", Py_None);
++  return Py_BuildValue("O", objGetTypeData(obj, type));
++}
++
++PyObject *PyObj_istype(PyObject *self, PyObject *args) {  
++  char *type = NULL;
++
++  // make sure we're getting passed the right type of data
++  if (!PyArg_ParseTuple(args, "s", &type)) {
++    PyErr_Format(PyExc_TypeError, "istype only accepts strings.");
++    return NULL;
++  }
++
++  // pull out the object and check the type
++  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL)
++    return Py_BuildValue("i", objIsType(obj, type));
++  else {
++    PyErr_Format(PyExc_StandardError, 
++		 "Tried to check type of nonexistent object, %d.", 
++		 PyObj_AsUid(self));
++    return NULL;
++  }
++}
++
++PyObject *PyObj_settype(PyObject *self, PyObject *args) {  
++  char *type = NULL;
++
++  // make sure we're getting passed the right type of data
++  if (!PyArg_ParseTuple(args, "s", &type)) {
++    PyErr_Format(PyExc_TypeError, "settype only accepts strings.");
++    return NULL;
++  }
++
++  // pull out the object and check the type
++  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
++  if(obj != NULL) {
++    objSetType(obj, type);
++    return Py_BuildValue("i", 1);
++  }
++  else {
++    PyErr_Format(PyExc_StandardError, 
++		 "Tried to set type of nonexistent object, %d.", 
++		 PyObj_AsUid(self));
++    return NULL;
++  }
++}
++
++
++
++//*****************************************************************************
+ // implementation of items.h
+ //*****************************************************************************
+ void init_items(void) {
+@@ -198,6 +405,22 @@
+ 				       itemDataCopy, itemDataStore, 
+ 				       itemDataRead));
+ 
++  // initialize Python mudsys methods
++  PyMudSys_addMethod("item_add_type", PyMudSys_ItemAddType, METH_VARARGS,
++		     "add a new type of item to the game");
++
++  // initialize Python pyobj methods
++  PyObj_addMethod("get_type_data", PyObj_GetTypeData, METH_VARARGS,
++		  "Returns the Python data associated with the item type.");
++  PyObj_addMethod("istype", PyObj_istype, METH_VARARGS,
++		  "checks to see if the object is of the specified type");
++  PyObj_addMethod("settype", PyObj_settype, METH_VARARGS,
++		  "the object will become of the specified type");
++  // do we need a deltype as well?
++  //***********
++  // FINISH ME
++  //***********
++
+   // initialize item olc
+   init_item_olc();
+ 
+@@ -243,14 +466,14 @@
+   void   *old_item_data = hashGet(data->item_table, type);
+   // if the type exists and we're not already of the type, set it on us
+   if(funcs != NULL && old_item_data == NULL) 
+-    hashPut(data->item_table, type, funcs->new());
++    hashPut(data->item_table, type, ifunc_new(funcs));
+ }
+ 
+ void objDeleteType(OBJ_DATA *obj, const char *type) {
+   ITEM_FUNC_DATA *funcs = hashGet(type_table, type);
+   ITEM_DATA *data       = objGetAuxiliaryData(obj, "type_data");
+   void *old_item_data   = hashRemove(data->item_table, type);
+-  if(old_item_data) funcs->delete(old_item_data);
++  if(old_item_data) ifunc_delete(funcs, old_item_data);
+ }
+ 
+ bool objIsType(OBJ_DATA *obj, const char *type) {
+diff -ruN versions/nakedmudv3.6/src/items/portal.c src/items/portal.c
+--- versions/nakedmudv3.6/src/items/portal.c	2008-05-31 00:17:59.000000000 -0400
++++ src/items/portal.c	2008-12-03 04:13:49.000000000 -0500
+@@ -226,37 +226,6 @@
+   }
+ }
+ 
+-void portal_from_proto(PORTAL_DATA *data, BUFFER *buf) {
+-  char line[MAX_BUFFER];
+-  const char *code = bufferString(buf);
+-  do {
+-    code = strcpyto(line, code, '\n');
+-    char *lptr = line;
+-    if(!strncasecmp(lptr, "me.portal_dest", 14)) {
+-      while(*lptr && *lptr != '\"') lptr++;
+-      lptr++; // skip leading "
+-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
+-      if(data->dest) free(data->dest);
+-      data->dest = strdupsafe(lptr);
+-    }
+-    else if(!strncasecmp(lptr, "me.portal_enter_mssg", 20)) {
+-      while(*lptr && *lptr != '\"') lptr++;
+-      lptr++; // skip leading "
+-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
+-      if(data->enter_mssg) free(data->enter_mssg);
+-      data->enter_mssg = strdupsafe(lptr);
+-    }
+-    else if(!strncasecmp(lptr, "me.portal_leave_mssg", 20)) {
+-      while(*lptr && *lptr != '\"') lptr++;
+-      lptr++; // skip leading "
+-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill ending "
+-      if(data->leave_mssg) free(data->leave_mssg);
+-      data->leave_mssg = strdupsafe(lptr);
+-    }
+-    else; // ignore line
+-  } while(*code != '\0');
+-}
+-
+ void portal_to_proto(PORTAL_DATA *data, BUFFER *buf) {
+   if(*data->dest)
+     bprintf(buf, "me.portal_dest = \"%s\"\n", data->dest);
+@@ -416,7 +385,7 @@
+ 
+   // set up the portal OLC too
+   item_add_olc("portal", iedit_portal_menu, iedit_portal_chooser, 
+-	       iedit_portal_parser, portal_from_proto, portal_to_proto);
++	       iedit_portal_parser, NULL, portal_to_proto);
+ 
+   // make it so we can set portal destinations in scripts
+   PyObj_addGetSetter("portal_dest", PyObj_getportaldest, PyObj_setportaldest,
+diff -ruN versions/nakedmudv3.6/src/items/worn.c src/items/worn.c
+--- versions/nakedmudv3.6/src/items/worn.c	2008-05-31 00:17:59.000000000 -0400
++++ src/items/worn.c	2008-12-03 04:15:58.000000000 -0500
+@@ -222,22 +222,6 @@
+   }
+ }
+ 
+-void worn_from_proto(WORN_DATA *worn, BUFFER *buf) {
+-  const char *code = bufferString(buf);
+-  char        line[SMALL_BUFFER];
+-  char       *lptr = line;
+-
+-  // parse out our worn type
+-  code = strcpyto(lptr, code, '\n'); 
+-  while(*lptr != '\"') lptr++;
+-  lptr++; // kill the leading "
+-  lptr[next_letter_in(lptr, '\"')] = '\0'; // kill closing "
+-  if(hashIn(worn_table, lptr)) {
+-    if(worn->type) free(worn->type);
+-    worn->type = strdup(lptr);
+-  }
+-}
+-
+ void worn_to_proto(WORN_DATA *worn, BUFFER *buf) {
+   bprintf(buf, "me.worn_type = \"%s\"\n", worn->type);
+ }
+@@ -327,7 +311,7 @@
+ 
+   // set up the worn OLC too
+   item_add_olc("worn", iedit_worn_menu, iedit_worn_chooser, iedit_worn_parser,
+-	       worn_from_proto, worn_to_proto);
++	       NULL, worn_to_proto);
+ 
+   // attach our hooks to display worn info on look
+   hookAdd("append_obj_desc", append_worn_hook);
+diff -ruN versions/nakedmudv3.6/src/olc2/medit.c src/olc2/medit.c
+--- versions/nakedmudv3.6/src/olc2/medit.c	2008-05-31 00:17:59.000000000 -0400
++++ src/olc2/medit.c	2008-12-03 15:20:04.000000000 -0500
+@@ -16,8 +16,10 @@
+ #include "../world.h"
+ #include "../character.h"
+ #include "../prototype.h"
++#include "../handler.h"
+ 
+ #include "olc.h"
++#include "olc_extender.h"
+ 
+ 
+ 
+@@ -106,87 +108,14 @@
+   charOLCSetParents(data, protoGetParents(proto));
+   charOLCSetAbstract(data, protoIsAbstract(proto));
+ 
+-  // this is a really ugly way to do the conversion, but basically let's
+-  // just look through every line in the buffer and if we recognize some
+-  // token, parse out whatever is assigned to it
+-  char line[MAX_BUFFER];
+-  const char *code = protoGetScript(proto);
+-  do {
+-    code = strcpyto(line, code, '\n');
+-    char *lptr = line;
+-    if(!strncmp(lptr, "me.name", 7)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      charSetName(ch, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.mname", 8)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      charSetMultiName(ch, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.rdesc", 8)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      charSetRdesc(ch, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.mdesc", 8)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      charSetMultiRdesc(ch, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.desc",  7)) {
+-      // we have three "'s to skip by, because this lptr will take the form:
+-      // me.desc = me.desc + " " + "..."
+-      while(*lptr != '\"') lptr++; lptr++;
+-      while(*lptr != '\"') lptr++; lptr++;
+-      while(*lptr != '\"') lptr++; lptr++;
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      charSetDesc(ch, lptr);
+-      // replace our \"s with "
+-      bufferReplace(charGetDescBuffer(ch), "\\\"", "\"", TRUE);
+-      bufferFormat(charGetDescBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
+-    }
+-    else if(!strncmp(lptr, "me.keywords", 11)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                                  // kill the leading "
+-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
+-      charSetKeywords(ch, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.gender", 9)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      charSetSex(ch, sexGetNum(lptr));
+-    }
+-    else if(!strncmp(lptr, "me.race", 7)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      charSetRace(ch, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.attach(\"", 11)) {
+-      char trigname[SMALL_BUFFER];
+-      sscanf(lptr, "me.attach(\"%s", trigname);
+-      // kill our ending ")
+-      trigname[strlen(trigname)-2] = '\0';
+-      triggerListAdd(charGetTriggers(ch), trigname);
+-    }
+-    else if(!strcmp(lptr, "### begin extra code")) {
+-      code = strcpyto(line, code, '\n');
+-      while(strcmp(line, "### end extra code") != 0) {
+-	bprintf(charOLCGetExtraCode(data), "%s\n", line);
+-	if(!*code) break;
+-	code = strcpyto(line, code, '\n');
+-      }
+-    }
+-    // we didn't recognize the line... just ignore it
+-    else
+-      continue;
+-  } while(*code != '\0');
++  // build it from the prototype
++  olc_from_proto(proto, charOLCGetExtraCode(data), ch, charGetPyFormBorrowed,
++		 char_exist, char_unexist);
++  bufferFormatFromPy(charGetDescBuffer(ch));
++  bufferFormat(charGetDescBuffer(ch), SCREEN_WIDTH, PARA_INDENT);
++
++  // do all of our extender data as well
++  extenderFromProto(medit_extend, ch);
+ 
+   return data;
+ }
+@@ -207,7 +136,7 @@
+ 
+   bprintf(buf, "\n### keywords, short descs, room descs, and look descs\n");
+   if(*charGetKeywords(ch))
+-    bprintf(buf, "me.keywords = \"%s\"  + \", \" + me.keywords\n", 
++    bprintf(buf, "me.keywords = ', '.join([me.keywords, \"%s\"])\n",
+ 	    charGetKeywords(ch));
+   if(*charGetName(ch))
+     bprintf(buf, "me.name     = \"%s\"\n", charGetName(ch));
+@@ -219,10 +148,8 @@
+     bprintf(buf, "me.mdesc    = \"%s\"\n", charGetMultiRdesc(ch));
+   if(*charGetDesc(ch)) {
+     BUFFER *desc_copy = bufferCopy(charGetDescBuffer(ch));
+-    bufferReplace(desc_copy, "\n", " ", TRUE);
+-    bufferReplace(desc_copy, "\r", "",  TRUE);
+-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+-    bprintf(buf, "me.desc     = me.desc + \" \" + \"%s\"\n", 
++    bufferFormatPy(desc_copy);
++    bprintf(buf, "me.desc     = me.desc + ' ' + \"%s\"\n", 
+ 	    bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+   }
+@@ -240,10 +167,13 @@
+     LIST_ITERATOR *trig_i = newListIterator(charGetTriggers(ch));
+     char            *trig = NULL;
+     ITERATE_LIST(trig, trig_i) {
+-      bprintf(buf, "me.attach(\"%s\")\n", trig);
++      bprintf(buf, "me.attach(\"%s\")\n",get_shortkey(trig,protoGetKey(proto)));
+     } deleteListIterator(trig_i);
+   }
+ 
++  // print all of our extender data as well
++  extenderToProto(medit_extend, ch, buf);
++
+   if(bufferLength(charOLCGetExtraCode(data)) > 0) {
+     bprintf(buf, "\n### begin extra code\n");
+     bprintf(buf, "%s", bufferString(charOLCGetExtraCode(data)));
+@@ -305,6 +235,9 @@
+ 		  sexGetName(charGetSex(charOLCGetChar(data))))
+ 		 );
+ 
++  // display our extender menu options
++  extenderDoMenu(sock, medit_extend, charOLCGetChar(data));
++
+   // only allow code editing for people with scripting priviledges
+   send_to_socket(sock, "{gC) Extra code%s\r\n", 
+ 		 ((!socketGetChar(sock) ||  
+@@ -360,7 +293,8 @@
+     text_to_buffer(sock, "Edit extra code\r\n");
+     socketStartEditor(sock,script_editor,charOLCGetExtraCode(data));
+     return MENU_NOCHOICE;
+-  default: return MENU_CHOICE_INVALID;
++  default: 
++    return extenderDoOptChoice(sock,medit_extend,charOLCGetChar(data),*option);
+   }
+ }
+ 
+@@ -397,7 +331,8 @@
+     charSetSex(charOLCGetChar(data), val);
+     return TRUE;
+   }
+-  default: return FALSE;
++  default: 
++    return extenderDoParse(sock,medit_extend,charOLCGetChar(data),choice,arg);
+   }
+ }
+ 
+diff -ruN versions/nakedmudv3.6/src/olc2/module.mk src/olc2/module.mk
+--- versions/nakedmudv3.6/src/olc2/module.mk	2008-05-31 00:17:59.000000000 -0400
++++ src/olc2/module.mk	2008-12-02 01:00:19.000000000 -0500
+@@ -7,5 +7,6 @@
+ 	olc2/bedit.c      \
+ 	olc2/accedit.c    \
+ 	olc2/pcedit.c     \
+-	olc2/protedit.c
++	olc2/protedit.c   \
++	olc2/olc_extender.c \
+ 
+diff -ruN versions/nakedmudv3.6/src/olc2/oedit.c src/olc2/oedit.c
+--- versions/nakedmudv3.6/src/olc2/oedit.c	2008-05-31 00:17:59.000000000 -0400
++++ src/olc2/oedit.c	2008-12-03 15:20:09.000000000 -0500
+@@ -18,9 +18,11 @@
+ #include "../character.h"
+ #include "../extra_descs.h"
+ #include "../prototype.h"
++#include "../handler.h"
+ 
+ #include "olc.h"
+ #include "olc_submenus.h"
++#include "olc_extender.h"
+ 
+ 
+ 
+@@ -30,8 +32,6 @@
+ #include "../editor/editor.h"
+ #include "../scripts/scripts.h"
+ #include "../scripts/script_editor.h"
+-#include "../items/items.h"
+-#include "../items/iedit.h"
+ 
+ 
+ 
+@@ -99,7 +99,6 @@
+   data->abstract = abstract;
+ }
+ 
+-
+ //
+ // takes in an obj prototype, and tries to generate an obj olc out of it. This
+ // function is messy and ugly and icky and yuck. But, alas, I cannot think of
+@@ -111,115 +110,23 @@
+   objOLCSetParents(data, protoGetParents(proto));
+   objOLCSetAbstract(data, protoIsAbstract(proto));
+ 
+-  // this is a really ugly way to do the conversion, but basically let's
+-  // just look through every line in the buffer and if we recognize some
+-  // token, parse out whatever is assigned to it
+-  char line[MAX_BUFFER];
+-  const char *code = protoGetScript(proto);
+-  do {
+-    code = strcpyto(line, code, '\n');
+-    char *lptr = line;
+-    if(!strncmp(lptr, "me.name", 7)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      objSetName(obj, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.mname", 8)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      objSetMultiName(obj, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.rdesc", 8)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      objSetRdesc(obj, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.mdesc", 8)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      objSetMultiRdesc(obj, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.desc",  7)) {
+-      // we have three "'s to skip by, because this lptr will take the form:
+-      // me.desc = me.desc + " " + "..."
+-      while(*lptr != '\"') lptr++; lptr++;
+-      while(*lptr != '\"') lptr++; lptr++;
+-      while(*lptr != '\"') lptr++; lptr++;
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      objSetDesc(obj, lptr);
+-      // replace our \"s with "
+-      bufferReplace(objGetDescBuffer(obj), "\\\"", "\"", TRUE);
+-      bufferFormat(objGetDescBuffer(obj), SCREEN_WIDTH, PARA_INDENT);
+-    }
+-    else if(!strncmp(lptr, "me.keywords", 11)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                                  // kill the leading "
+-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
+-      objSetKeywords(obj, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.bits", 7)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                                  // kill the leading "
+-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
+-      bitSet(objGetBits(obj), lptr);
+-    }
+-    else if(!strncmp(lptr, "me.weight", 9)) {
+-      while(*lptr != '\0' && !isdigit(*lptr)) lptr++;
+-      objSetWeightRaw(obj, atof(lptr));
+-    }
+-    else if(!strncmp(lptr, "me.edesc(", 9)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                                              // kill the leading "
+-      char *desc_start = lptr + next_letter_in(lptr, '\"') + 1;
+-      lptr[next_letter_in(lptr, '\"')] = '\0';             // kill the ending "
+-      while(*desc_start != '\"') desc_start++;
+-      desc_start++;                                        // kill start and end
+-      desc_start[next_letter_in(desc_start, '\"')] = '\0'; // "s for desc too
+-      edescSetPut(objGetEdescs(obj), newEdesc(lptr, desc_start));
+-    }
+-    // setting an item type
+-    else if(!strncmp(lptr, "me.settype(", 11)) {
+-      char type[SMALL_BUFFER];
+-      sscanf(lptr, "me.settype(\"%s", type);
+-      // kill our ending ")
+-      type[strlen(type)-2] = '\0';
+-      objSetType(obj, type);
+-
+-      // parse out all of our type info
+-      void       *data = objGetTypeData(obj, type);
+-      BUFFER *type_buf = newBuffer(1);
+-      code = strcpyto(line, code, '\n');
+-      while(*line && strcmp(line, "### end type") != 0) {
+-	bprintf(type_buf, "%s\n", line);
+-	code = strcpyto(line, code, '\n');
+-      }
++  // build it from the prototype
++  olc_from_proto(proto, objOLCGetExtraCode(data), obj, objGetPyFormBorrowed,
++		 obj_exist, obj_unexist);
++  bufferFormatFromPy(objGetDescBuffer(obj));
++  bufferFormat(objGetDescBuffer(obj), SCREEN_WIDTH, PARA_INDENT);
+ 
+-      // parse out our type info
+-      item_from_proto_func(type)(data, type_buf);
++  // format our extra descriptions
++  if(listSize(edescSetGetList(objGetEdescs(obj))) > 0) {
++    LIST_ITERATOR *edesc_i= newListIterator(edescSetGetList(objGetEdescs(obj)));
++    EDESC_DATA      *edesc= NULL;
++    ITERATE_LIST(edesc, edesc_i) {
++      bufferFormatFromPy(edescGetDescBuffer(edesc));
++    } deleteListIterator(edesc_i);
++  }
+ 
+-      // garbage collection
+-      deleteBuffer(type_buf);
+-    }
+-    else if(!strncmp(lptr, "me.attach(\"", 11)) {
+-      char trigname[SMALL_BUFFER];
+-      sscanf(lptr, "me.attach(\"%s", trigname);
+-      // kill our ending ")
+-      trigname[strlen(trigname)-2] = '\0';
+-      triggerListAdd(objGetTriggers(obj), trigname);
+-    }
+-    else if(!strcmp(lptr, "### begin extra code")) {
+-      code = strcpyto(line, code, '\n');
+-      while(strcmp(line, "### end extra code") != 0) {
+-	bprintf(objOLCGetExtraCode(data), "%s\n", line);
+-	if(!*code) break;
+-	code = strcpyto(line, code, '\n');
+-      }
+-    }
+-  } while(*code != '\0');
++  // all of our OLC extensions
++  extenderFromProto(oedit_extend, obj);
+ 
+   return data;
+ }
+@@ -234,14 +141,14 @@
+   protoSetKey(proto, objOLCGetKey(data));
+   protoSetParents(proto, objOLCGetParents(data));
+   protoSetAbstract(proto, objOLCGetAbstract(data));
+-
++  
+   bprintf(buf, "### The following oproto was generated by oedit\n");
+   bprintf(buf, "### If you edit this script, adhere to the stylistic\n"
+ 	       "### conventions laid out by oedit, or delete the top line\n");
+ 
+   bprintf(buf, "\n### keywords, short descs, room descs, and look descs\n");
+   if(*objGetKeywords(obj))
+-    bprintf(buf, "me.keywords = \"%s\"  + \", \" + me.keywords\n", 
++    bprintf(buf, "me.keywords = ', '.join([me.keywords, \"%s\"])\n",
+ 	    objGetKeywords(obj));
+   if(*objGetName(obj))
+     bprintf(buf, "me.name     = \"%s\"\n", objGetName(obj));
+@@ -253,10 +160,8 @@
+     bprintf(buf, "me.mdesc    = \"%s\"\n", objGetMultiRdesc(obj));
+   if(*objGetDesc(obj)) {
+     BUFFER *desc_copy = bufferCopy(objGetDescBuffer(obj));
+-    bufferReplace(desc_copy, "\n", " ", TRUE);
+-    bufferReplace(desc_copy, "\r", "",  TRUE);
+-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+-    bprintf(buf, "me.desc     = me.desc + \" \" + \"%s\"\n", 
++    bufferFormatPy(desc_copy);
++    bprintf(buf, "me.desc     = me.desc + ' ' + \"%s\"\n", 
+ 	    bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+   }
+@@ -268,8 +173,7 @@
+     EDESC_DATA      *edesc= NULL;
+     ITERATE_LIST(edesc, edesc_i) {
+       BUFFER *desc_copy = bufferCopy(edescGetDescBuffer(edesc));
+-      bufferReplace(desc_copy, "\n", " ", TRUE);
+-      bufferReplace(desc_copy, "\r", "",  TRUE);
++      bufferFormatPy(desc_copy);
+       bprintf(buf, "me.edesc(\"%s\", \"%s\")\n", 
+ 	      edescGetKeywords(edesc), bufferString(desc_copy));
+       deleteBuffer(desc_copy);
+@@ -278,7 +182,7 @@
+ 
+   if(*bitvectorGetBits(objGetBits(obj))) {
+     bprintf(buf, "\n### object bits\n");
+-    bprintf(buf, "me.bits     = \"%s\" + \", \" + me.bits\n", 
++    bprintf(buf, "me.bits     = ', '.join([me.bits, \"%s\"])\n",
+ 	    bitvectorGetBits(objGetBits(obj)));
+   }
+ 
+@@ -287,30 +191,18 @@
+     bprintf(buf, "me.weight   = %1.3lf\n", objGetWeightRaw(obj));
+   }
+ 
+-  // item types
+-  LIST      *item_types = itemTypeList();
+-  LIST_ITERATOR *type_i = newListIterator(item_types);
+-  char            *type = NULL;
+-  ITERATE_LIST(type, type_i) {
+-    if(objIsType(obj, type)) {
+-      void *data = objGetTypeData(obj, type);
+-      bprintf(buf, "\n### set type: %s\n", type);
+-      bprintf(buf, "me.settype(\"%s\")\n", type);
+-      item_to_proto_func(type)(data, buf);      
+-      bprintf(buf, "### end type\n");
+-    }
+-  } deleteListIterator(type_i);
+-  deleteListWith(item_types, free);
+-
+   if(listSize(objGetTriggers(obj)) > 0) {
+     bprintf(buf, "\n### object triggers\n");
+     LIST_ITERATOR *trig_i = newListIterator(objGetTriggers(obj));
+     char            *trig = NULL;
+     ITERATE_LIST(trig, trig_i) {
+-      bprintf(buf, "me.attach(\"%s\")\n", trig);
++      bprintf(buf, "me.attach(\"%s\")\n",get_shortkey(trig,protoGetKey(proto)));
+     } deleteListIterator(trig_i);
+   }
+ 
++  // all of our extender info
++  extenderToProto(oedit_extend, obj, buf);
++
+   if(bufferLength(objOLCGetExtraCode(data)) > 0) {
+     bprintf(buf, "\n### begin extra code\n");
+     bprintf(buf, "%s", bufferString(objOLCGetExtraCode(data)));
+@@ -357,7 +249,6 @@
+ 		 "{g8) Description:\r\n"
+ 		 "{c%s"
+ 		 "{gW) Weight         : {c%s\r\n"
+-		 "{gI) Edit item types: {c%s\r\n"
+ 		 "{gB) Edit bitvector : {c%s\r\n"
+ 		 "{gT) Trigger menu\r\n"
+ 		 "{gX) Extra Descriptions menu\r\n",
+@@ -371,10 +262,12 @@
+ 		 objGetMultiRdesc(objOLCGetObj(data)),
+ 		 objGetDesc(objOLCGetObj(data)),
+ 		 weight_buf,
+-		 objGetTypes(objOLCGetObj(data)),
+ 		 bitvectorGetBits(objGetBits(objOLCGetObj(data)))
+ 		 );
+ 
++  // all of our extender menu options
++  extenderDoMenu(sock, oedit_extend, objOLCGetObj(data));
++
+   // only allow code editing for people with scripting priviledges
+   send_to_socket(sock, "{gC) Extra code%s\r\n", 
+ 		 ((!socketGetChar(sock) ||  
+@@ -417,10 +310,6 @@
+     do_olc(sock, edesc_set_menu, edesc_set_chooser, edesc_set_parser, NULL,NULL,
+ 	   NULL, NULL, objGetEdescs(objOLCGetObj(data)));
+     return MENU_NOCHOICE;
+-  case 'I':
+-    do_olc(sock, iedit_menu, iedit_chooser, iedit_parser, NULL, NULL, NULL,
+-	   NULL, objOLCGetObj(data));
+-    return MENU_NOCHOICE;
+   case 'B':
+     do_olc(sock, bedit_menu, bedit_chooser, bedit_parser, NULL, NULL, NULL,
+ 	   NULL, objGetBits(objOLCGetObj(data)));
+@@ -437,7 +326,8 @@
+     text_to_buffer(sock, "Edit extra code\r\n");
+     socketStartEditor(sock, script_editor, objOLCGetExtraCode(data));
+     return MENU_NOCHOICE;
+-  default: return MENU_CHOICE_INVALID;
++  default:
++    return extenderDoOptChoice(sock,oedit_extend,objOLCGetObj(data),*option);
+   }
+ }
+ 
+@@ -468,7 +358,8 @@
+     objSetWeightRaw(objOLCGetObj(data), val);
+     return TRUE;
+   }
+-  default: return FALSE;
++  default:
++    return extenderDoParse(sock,oedit_extend,objOLCGetObj(data),choice,arg);
+   }
+ }
+ 
+diff -ruN versions/nakedmudv3.6/src/olc2/olc.c src/olc2/olc.c
+--- versions/nakedmudv3.6/src/olc2/olc.c	2008-05-31 00:17:59.000000000 -0400
++++ src/olc2/olc.c	2008-12-03 22:24:13.000000000 -0500
+@@ -25,6 +25,17 @@
+ #include "../object.h"
+ #include "../inform.h"
+ #include "olc.h"
++#include "olc_extender.h"
++
++
++
++//*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../scripts/scripts.h"
++#include "../scripts/pymudsys.h"
++#include "../scripts/pysocket.h"
++#include "../scripts/pyplugs.h"
+ 
+ 
+ 
+@@ -38,10 +49,14 @@
+ 
+ 
+ //*****************************************************************************
+-//
+ // local data structures, defines, and functions
+-//
+ //*****************************************************************************
++
++// extender data for our various OLCs
++OLC_EXTENDER *medit_extend = NULL;
++OLC_EXTENDER *oedit_extend = NULL;
++OLC_EXTENDER *redit_extend = NULL;
++
+ typedef struct olc_data {
+   void    (* menu)(SOCKET_DATA *, void *);
+   int  (* chooser)(SOCKET_DATA *, void *, const char *);
+@@ -50,9 +65,11 @@
+   void  (* copyto)(void *, void *);
+   void (* deleter)(void *);
+   void   (* saver)(void *); 
+-  void *data;
+-  void *working_copy;
+-  int  cmd;
++
++  // the data we're working with
++  void          *data;
++  void  *working_copy;
++  int             cmd;
+ } OLC_DATA;
+ 
+ OLC_DATA *newOLC(void    (* menu)(SOCKET_DATA *, void *),
+@@ -63,7 +80,7 @@
+ 		 void (* deleter)(void *),
+ 		 void   (* saver)(void *),
+ 		 void *data) {
+-  OLC_DATA *olc     = malloc(sizeof(OLC_DATA));
++  OLC_DATA *olc     = calloc(1, sizeof(OLC_DATA));
+   olc->menu         = menu;
+   olc->chooser      = chooser;
+   olc->parser       = parser;
+@@ -72,22 +89,22 @@
+   olc->deleter      = deleter;
+   olc->saver        = saver;
+   olc->data         = data;
+-  olc->working_copy = (copier ? copier(data) : data);
+   olc->cmd          = MENU_NOCHOICE;
++  olc->working_copy = (copier ? copier(data) : data);
+   return olc;
+ }
+ 
+ void deleteOLC(OLC_DATA *olc) {
+-  if(olc->deleter) olc->deleter(olc->working_copy);
++  // are we working with C functions or Python functions?
++  if(olc->deleter)
++    olc->deleter(olc->working_copy);
+   free(olc);
+ }
+ 
+ 
+ 
+ //*****************************************************************************
+-//
+ // auxiliary data we put on the socket
+-//
+ //*****************************************************************************
+ typedef struct olc_aux_data {
+   LIST *olc_stack; // the list of OLCs we have opened
+@@ -95,7 +112,7 @@
+ 
+ OLC_AUX_DATA *
+ newOLCAuxData() {
+-  OLC_AUX_DATA *data = malloc(sizeof(OLC_AUX_DATA));
++  OLC_AUX_DATA *data = calloc(1, sizeof(OLC_AUX_DATA));
+   data->olc_stack = newList();
+   return data;
+ }
+@@ -109,9 +126,7 @@
+ 
+ 
+ //*****************************************************************************
+-//
+ // Implementation of the OLC framework
+-//
+ //*****************************************************************************
+ 
+ //
+@@ -182,10 +197,8 @@
+   // we're giving an argument for a menu choice we've already selected
+   if(olc->cmd > MENU_NOCHOICE) {
+     // the change went alright. Re-display the menu
+-    if(olc->parser(sock, olc->working_copy, olc->cmd, arg)) {
++    if(olc->parser(sock, olc->working_copy, olc->cmd, arg))
+       olc->cmd = MENU_NOCHOICE;
+-      //olc_menu(sock);
+-    }
+     else
+       text_to_buffer(sock, "Invalid choice!\r\nTry again: ");
+   }
+@@ -211,7 +224,7 @@
+     case 'Q':
+       // if our working copy is different from our actual data, prompt to
+       // see if we want to save our changes or not
+-      if(olc->saver) {
++      if(olc->saver || olc->data != olc->working_copy) {
+ 	text_to_buffer(sock, "Save changes (Y/N): ");
+ 	olc->cmd = MENU_CHOICE_CONFIRM_SAVE;
+       }
+@@ -617,6 +630,14 @@
+   add_cmd("rrename", NULL, cmd_rrename, "builder", FALSE);
+   add_cmd("zlist",   NULL, cmd_zlist,   "builder", TRUE);
+   add_cmd("zreset",  NULL, cmd_zreset,  "builder", FALSE);
++
++  // build our basic OLC extenders
++  medit_extend = newExtender();
++  extenderSetPyFunc(medit_extend, charGetPyFormBorrowed);
++  oedit_extend = newExtender();
++  extenderSetPyFunc(oedit_extend, objGetPyFormBorrowed);
++  redit_extend = newExtender();
++  extenderSetPyFunc(redit_extend, roomGetPyFormBorrowed);
+ }
+ 
+ void do_olc(SOCKET_DATA *sock,
+@@ -628,9 +649,9 @@
+ 	    void *deleter,
+ 	    void *saver,
+ 	    void *data) {
+-  // first, we create a new OLC data structure, and then push it onto the stack
+   OLC_DATA *olc = newOLC(menu, chooser, parser, copier, copyto, deleter,
+ 			 saver, data);
++
+   OLC_AUX_DATA *aux_olc = socketGetAuxiliaryData(sock, "olc_aux_data");
+   listPush(aux_olc->olc_stack, olc);
+ 
+@@ -639,6 +660,61 @@
+     socketPushInputHandler(sock, olc_handler, olc_menu);
+ }
+ 
++void olc_from_proto(PROTO_DATA *proto, BUFFER *extra, void *me, void *aspy,
++		    void *togame, void *fromgame) {
++  BUFFER *to_run = newBuffer(1);
++  char line[MAX_BUFFER];
++  const char *code = protoGetScript(proto);
++  bool  extra_code = FALSE;
++
++  // go line by line and parse everything that's relevant 
++  // in 'to_run', and append everything that's not into 'extra'
++  do {
++    code = strcpyto(line, code, '\n');
++
++    // is this a begin/end marker?
++    if(!strcmp(ECODE_BEGIN, line))
++      extra_code = TRUE;
++    else if(!strcmp(ECODE_END, line))
++      extra_code = FALSE;
++    // is this relevant code, or "extra" code
++    else if(extra_code == TRUE)
++      bprintf(extra, "%s\n", line);
++    else
++      bprintf(to_run, "%s\n", line);
++  } while(*code != '\0');
++
++  // make all our arguments like functions
++  void    *(* aspy_func)(void *) = aspy;
++  void   (* togame_func)(void *) = togame;
++  void (* fromgame_func)(void *) = fromgame;
++
++  // add us to the game so we can run scripts over us
++  togame_func(me);
++
++  // make our Python stuff
++  PyObject *dict = restricted_script_dict();
++  PyObject *pyme = aspy_func(me);
++  PyDict_SetItemString(dict, "me", pyme);  
++
++  // run the script
++  run_script(dict, bufferString(to_run), get_key_locale(protoGetKey(proto)));
++
++  // make sure it ran ok
++  if(!last_script_ok())
++    log_pyerr("Error converting prototype to OLC editable structure: %s",
++	      protoGetKey(proto));
++
++
++  // remove us from the game
++  fromgame_func(me);
++
++  // clean up our garbage
++  deleteBuffer(to_run);
++  Py_DECREF(dict);
++}
++
++
+ void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
+ 		       int num_vals, int num_cols) {
+   int i, print_room;
+@@ -668,8 +744,7 @@
+     send_to_socket(sock, fmt, i, str, (i % num_cols == (num_cols - 1) ? 
+ 				       "\r\n" : "   "));
+     i++;
+-  }
+-  deleteListIterator(list_i);
++  } deleteListIterator(list_i);
+ 
+   if(i % num_cols != 0)
+     send_to_socket(sock, "\r\n");
+diff -ruN versions/nakedmudv3.6/src/olc2/olc.h src/olc2/olc.h
+--- versions/nakedmudv3.6/src/olc2/olc.h	2008-05-31 00:17:59.000000000 -0400
++++ src/olc2/olc.h	2008-12-03 22:18:30.000000000 -0500
+@@ -70,9 +70,12 @@
+ //
+ // deleter: this is a function that will delete the working copy of our data.
+ //       This parameter can be NULL if the data is to be worked on directly.
+-//       This function takes the form:
++//       If it is not NULL, it will be called at the completion of OLC, even if
++//       the data is being worked on directly. This is simply to allow for
++//       wrapper structures (e.g., for Python). This function takes the form:
+ //       void delete(datatype *working_copy)
+-#define MENU_CHOICE_CONFIRM_SAVE   (-2) // this define for internal use only!
++#define MENU_CHOICE_CONFIRM_SAVE   (-3) // this define for internal use only!
++#define MENU_CHOICE_OK             (-2) // used for olc extenders
+ #define MENU_CHOICE_INVALID        (-1)
+ #define MENU_NOCHOICE               (0)
+ 
+@@ -88,6 +91,19 @@
+ 
+ 
+ 
++#define ECODE_BEGIN "### begin extra code"
++#define ECODE_END   "### end extra code"
++
++//
++// Pre v3.6, we'd manually parse out OLC-editable structures from Python code.
++// Now, we just run the relevant code to generate something editable. This is
++// the function that does all the work of parsing out the 'extra' code and not
++// running it, but running everything else.
++void olc_from_proto(PROTO_DATA *proto,BUFFER *extra,void *me,void *aspy,
++		    void *togame,void *fromgame);
++
++
++
+ //*****************************************************************************
+ // To keep a general "look and feel" to OLCs, a couple functions have been
+ // provided to display some features of an OLC in a standard manner.
+diff -ruN versions/nakedmudv3.6/src/olc2/olc_extender.c src/olc2/olc_extender.c
+--- versions/nakedmudv3.6/src/olc2/olc_extender.c	1969-12-31 19:00:00.000000000 -0500
++++ src/olc2/olc_extender.c	2008-12-03 03:40:07.000000000 -0500
+@@ -0,0 +1,282 @@
++//*****************************************************************************
++//
++// olc_extender.c
++//
++// A structure for helping in the extension of OLC functions. Allows for the
++// registration of new commands, menu displays, parsers, and execution 
++// functions.
++//
++//*****************************************************************************
++#include "../mud.h"
++#include "../socket.h"
++#include "olc.h"
++#include "olc_extender.h"
++
++
++
++//*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../scripts/scripts.h"
++#include "../scripts/pyplugs.h"
++
++
++
++//*****************************************************************************
++// local variables, structures, and functions
++//*****************************************************************************
++
++// what kind of extension is this?
++#define OLCEXT_C        0
++#define OLCEXT_PY       1
++
++// what is the minimum ID we use?
++#define MIN_CHOICE_ID   10000
++
++typedef struct olc_extender_data {
++  // what type of extension is this?
++  int type;
++
++  // C functions
++  void       (* menu)(SOCKET_DATA *sock, void *data);
++  int (* choose_exec)(SOCKET_DATA *sock, void *data);
++  bool (* parse_exec)(SOCKET_DATA *sock, void *data, const char *arg);
++  void (* from_proto)(void *data);
++  void   (* to_proto)(void *data, BUFFER *buf);
++
++  // Python functions
++  PyObject   *pymenu;
++  PyObject *pychoose;
++  PyObject  *pyparse;
++  PyObject *pyfrompr;
++  PyObject   *pytopr;
++} OLC_EXT_DATA;
++
++struct olc_extender {
++  HASHTABLE *opt_hash;
++  void *(* borrow_py)(void *data);
++};
++
++OLC_EXT_DATA *newOLCExt(void *menu, void *choose_exec, void *parse_exec,
++			void *from_proto, void *to_proto) {
++  OLC_EXT_DATA *ext = calloc(1, sizeof(OLC_EXT_DATA));
++  ext->menu         = menu;
++  ext->choose_exec  = choose_exec;
++  ext->parse_exec   = parse_exec;
++  ext->from_proto   = from_proto;
++  ext->to_proto     = to_proto;
++  ext->type = OLCEXT_C;
++  return ext;
++}
++
++OLC_EXT_DATA *newPyOLCExt(PyObject *menu, PyObject *choose_exec, 
++			  PyObject *parse_exec, PyObject *from_proto,
++			  PyObject *to_proto) {
++  OLC_EXT_DATA *ext = calloc(1, sizeof(OLC_EXT_DATA));
++  ext->pymenu   = menu;        Py_XINCREF(menu);
++  ext->pychoose = choose_exec; Py_XINCREF(choose_exec);
++  ext->pyparse  = parse_exec;  Py_XINCREF(parse_exec);
++  ext->pyfrompr = from_proto;  Py_XINCREF(from_proto);
++  ext->pytopr   = to_proto;    Py_XINCREF(to_proto);
++  ext->type = OLCEXT_PY;
++  return ext;
++}
++
++void deleteOLCExt(OLC_EXT_DATA *ext) {
++  Py_XDECREF(ext->pymenu);
++  Py_XDECREF(ext->pychoose);
++  Py_XDECREF(ext->pyparse);
++  Py_XDECREF(ext->pyfrompr);
++  Py_XDECREF(ext->pytopr);
++  free(ext);
++}
++
++
++
++//*****************************************************************************
++// implementation of olc_extender.h
++//*****************************************************************************
++OLC_EXTENDER *newExtender(void) {
++  OLC_EXTENDER *data = calloc(1, sizeof(OLC_EXTENDER));
++  data->opt_hash = newHashtable();
++  return data;
++}
++
++void extenderSetPyFunc(OLC_EXTENDER *ext, void *borrow_py) {
++  ext->borrow_py = borrow_py;
++}
++
++void extenderDoMenu(SOCKET_DATA *sock, OLC_EXTENDER *ext, void *data) {
++  LIST           *keys = hashCollect(ext->opt_hash);
++  char            *key = NULL;
++  OLC_EXT_DATA  *edata = NULL;
++
++  // display each menu item alphabetically
++  listSortWith(keys, strcasecmp);
++  LIST_ITERATOR *key_i = newListIterator(keys);
++  ITERATE_LIST(key, key_i) {
++    // display the menu option
++    send_to_socket(sock, "{g%s) ", key);
++
++    // then display the information
++    edata = hashGet(ext->opt_hash, key);
++    if(edata->type == OLCEXT_C)
++      edata->menu(sock, data);
++    else if(ext->borrow_py != NULL) {
++      PyObject *ret = PyObject_CallFunction(edata->pychoose, "OO", 
++					    socketGetPyFormBorrowed(sock), 
++					    ext->borrow_py(data));
++      if(ret == NULL)
++	log_pyerr("Error running Python OLC exention menu function: %s", key);
++      Py_XDECREF(ret);
++    }
++  } deleteListIterator(key_i);
++
++  // free up our garbage
++  deleteListWith(keys, free);
++}
++
++int extenderDoOptChoice(SOCKET_DATA *sock, OLC_EXTENDER *ext, void *data, 
++			char opt) {
++  char key[2] = { opt, '\0' };
++
++  // does it exist?
++  if(!hashIn(ext->opt_hash, key))
++    return MENU_CHOICE_INVALID;
++
++  // pull out the data
++  OLC_EXT_DATA *edata = hashGet(ext->opt_hash, key);
++  int          retval = MENU_CHOICE_INVALID;
++
++  // is it C data or Python data?
++  if(edata->type == OLCEXT_C)
++    retval = edata->choose_exec(sock, data);
++  else if(ext->borrow_py != NULL) {
++    PyObject *ret = 
++      PyObject_CallFunction(edata->pychoose, "O", ext->borrow_py(data));
++    if(ret == NULL)
++      log_pyerr("Error running Python OLC exention choice function: %s", key);
++    else if(PyInt_Check(ret))
++      retval = (int)PyInt_AsLong(ret);
++    Py_XDECREF(ret);
++  }
++
++  // did we do a toggle, or enter a submenu?
++  if(retval == MENU_NOCHOICE || retval == MENU_CHOICE_INVALID)
++    return retval;
++  return MIN_CHOICE_ID + opt;
++}
++
++bool extenderDoParse(SOCKET_DATA *sock, OLC_EXTENDER *ext, void *data, 
++		     int choice, const char *arg) {
++  char key[2] = { (char)(choice - MIN_CHOICE_ID), '\0' };
++
++  // pull out the data
++  OLC_EXT_DATA *edata = hashGet(ext->opt_hash, key);
++  int          retval = FALSE;
++
++  // is it C data or Python data?
++  if(edata->type == OLCEXT_C)
++    retval = edata->parse_exec(sock, data, arg);
++  else if(ext->borrow_py != NULL) {
++    PyObject *pyret = 
++      PyObject_CallFunction(edata->pyparse, "Os", ext->borrow_py(data), arg);
++    if(pyret == NULL)
++      log_pyerr("Error running Python OLC exention parse function: %s", key);
++    else if(PyObject_IsTrue(pyret))
++      retval = TRUE;
++    Py_XDECREF(pyret);
++  }
++
++  // was it valid?
++  return retval;
++}
++
++void extenderToProto(OLC_EXTENDER *ext, void *data, BUFFER *buf) {
++  LIST           *keys = hashCollect(ext->opt_hash);
++  char            *key = NULL;
++  OLC_EXT_DATA  *edata = NULL;
++
++  // display each menu item alphabetically
++  listSortWith(keys, strcasecmp);
++  LIST_ITERATOR *key_i = newListIterator(keys);
++  ITERATE_LIST(key, key_i) {
++    edata = hashGet(ext->opt_hash, key);
++
++    // is it C data?
++    if(edata->type == OLCEXT_C) {
++      if(edata->to_proto != NULL)
++	edata->to_proto(data, buf);
++    }
++    // is it Python data?
++    else if(ext->borrow_py != NULL) {
++      if(edata->pytopr != NULL && edata->pytopr != Py_None) {
++	PyObject *ret = PyObject_CallFunction(edata->pytopr, "O",
++					      ext->borrow_py(data));
++	if(ret == NULL)
++	  log_pyerr("Error running Python OLC to_proto function: %s", key);
++	else
++	  bufferCat(buf, PyString_AsString(ret));
++	Py_XDECREF(ret);
++      }
++    }
++  } deleteListIterator(key_i);
++
++  // free up our garbage
++  deleteListWith(keys, free);
++}
++
++void extenderFromProto(OLC_EXTENDER *ext, void *data) {
++  LIST           *keys = hashCollect(ext->opt_hash);
++  char            *key = NULL;
++  OLC_EXT_DATA  *edata = NULL;
++
++  // display each menu item alphabetically
++  listSortWith(keys, strcasecmp);
++  LIST_ITERATOR *key_i = newListIterator(keys);
++  ITERATE_LIST(key, key_i) {
++    edata = hashGet(ext->opt_hash, key);
++
++    // is it C data?
++    if(edata->type == OLCEXT_C) {
++      if(edata->from_proto != NULL)
++	edata->from_proto(data);
++    }
++    // is it Python data?
++    else if(ext->borrow_py != NULL) {
++      if(edata->pyfrompr != NULL && edata->pyfrompr != Py_None) {
++	PyObject *ret = PyObject_CallFunction(edata->pyfrompr, "O",
++					      ext->borrow_py(data));
++	if(ret == NULL)
++	  log_pyerr("Error running Python OLC from_proto function: %s", key);
++	Py_XDECREF(ret);
++      }
++    }
++  } deleteListIterator(key_i);
++
++  // free up our garbage
++  deleteListWith(keys, free);
++}
++
++void gen_register_opt(OLC_EXTENDER *ext, char opt, OLC_EXT_DATA *data) {
++  char key[2] = { opt, '\0' };
++
++  // do we already have this registered? If so, clear it
++  if(hashIn(ext->opt_hash, key))
++    deleteOLCExt(hashRemove(ext->opt_hash, key));
++  hashPut(ext->opt_hash, key, data);
++}
++
++void extenderRegisterOpt(OLC_EXTENDER *ext, char opt, 
++			 void *menu, void *choice, void *parse, 
++			 void *from_proto, void *to_proto) {
++  gen_register_opt(ext, opt, newOLCExt(menu,choice,parse,from_proto,to_proto));
++}
++
++//
++// The same, but takes Python functions instead of C function
++void extenderRegisterPyOpt(OLC_EXTENDER *ext, char opt, 
++			   void *menu, void *choice, void *parse,
++			   void *from_proto, void *to_proto) {
++  gen_register_opt(ext,opt,newPyOLCExt(menu,choice,parse,from_proto,to_proto));
++}
+diff -ruN versions/nakedmudv3.6/src/olc2/olc_extender.h src/olc2/olc_extender.h
+--- versions/nakedmudv3.6/src/olc2/olc_extender.h	1969-12-31 19:00:00.000000000 -0500
++++ src/olc2/olc_extender.h	2008-12-03 03:17:25.000000000 -0500
+@@ -0,0 +1,94 @@
++#ifndef OLC_EXTENDER_H
++#define OLC_EXTENDER_H
++//*****************************************************************************
++//
++// olc_extender.h
++//
++// A structure for helping in the extension of OLC functions. Allows for the
++// registration of new commands, menu displays, parsers, and execution 
++// functions.
++//
++//*****************************************************************************
++
++typedef struct olc_extender OLC_EXTENDER;
++
++// various extenders we might want to add to
++extern OLC_EXTENDER *medit_extend;
++extern OLC_EXTENDER *redit_extend;
++extern OLC_EXTENDER *oedit_extend;
++
++//
++// Create a new OLC extender
++OLC_EXTENDER *newExtender(void);
++
++//
++// Set the function that convert's the OLC's datatype to a borrowed Python 
++// object, so Python extensions can also be registered
++void extenderSetPyFunc(OLC_EXTENDER *ext, void *borrow_py);
++
++//
++// shows all of the menu options in the extender
++void extenderDoMenu(SOCKET_DATA *sock, OLC_EXTENDER *ext, void *data);
++
++//
++// If the option does not exist, return MENU_CHOICE_INVALID.
++// If the option leads to a submenu or a toggle, return MENU_NOCHOICE.
++// Otherwise, return a unique identifier in the range of 10000 and 11000
++int extenderDoOptChoice(SOCKET_DATA *sock, OLC_EXTENDER *ext, void *data, 
++			char opt);
++
++//
++// Run the parse function for the extender wit hthe specified choice ID.
++// Return TRUE if it is successful, or FALSE otherwise
++bool extenderDoParse(SOCKET_DATA *sock, OLC_EXTENDER *ext, void *data, 
++		     int choice, const char *arg);
++
++//
++// run all of our toProto functions
++void extenderToProto(OLC_EXTENDER *ext, void *data, BUFFER *buf);
++
++//
++// run all of our from proto functions
++void extenderFromProto(OLC_EXTENDER *ext, void *data);
++
++//
++// Set up a new OLC extension. Allows for extensions to the menu, functions
++// that execute on making a menu choice, and functions that parse arguments
++// for menu choices:
++//
++// menu: This is the function that displays the OLC menu to the socket:
++//       void menu(SOCKET_DATA *sock, datatype *to_display)
++//
++// choice_exec: This function executes when the extension is chosen from the
++//       OLC menu. Return MENU_NOCHOICE if this is a toggle, or if a new
++//       OLC or input handler is pushed. Return MENU_CHOICE_OK otherwise.
++//       int choice_exec(SOCKET_DATA *sock, datatype *to_edit)
++//
++// parse_exec: This function executes when the extension has been chosen, and
++//       an argument needs to be parsed. Return TRUE if is was parsed, and
++//       FALSE otherwise
++//       bool parse_exec(SOCKET_DATA *sock, datatype *to_edit, const char *arg)
++//
++// from_proto: This function does neccessary stuff to the data itself when a
++//       when an OLC object has just been created from a prototype. Mainly, this
++//       is for properly formatting buffered descriptions. Not neccessary if
++//       the extender is not for something that comes from a prototype
++//       (i.e., mobs, objs, and rooms)
++//       void from_proto(datatype *to_edit)
++//
++//  to_proto: This function converts the data to a Python script for generating
++//       it. Not neccesary if the extender is not for something that comes from
++//       a prototype.
++//       void to_proto(datatype *to_convert, BUFFER *destination)
++void extenderRegisterOpt(OLC_EXTENDER *ext, char opt, 
++			 void *menu, void *choice, void *parse,
++			 void *from_proto, void *to_proto);
++
++//
++// The same, but takes Python functions instead of C function. to_proto will
++// return a string instead of concatting it to a buffer.
++void extenderRegisterPyOpt(OLC_EXTENDER *ext, char opt, 
++			   void *menu, void *choice, void *parse,
++			   void *from_proto, void *to_proto);
++
++#endif // OLC_EXTENDER_H
+diff -ruN versions/nakedmudv3.6/src/olc2/redit.c src/olc2/redit.c
+--- versions/nakedmudv3.6/src/olc2/redit.c	2008-05-31 00:17:59.000000000 -0400
++++ src/olc2/redit.c	2008-12-03 15:19:59.000000000 -0500
+@@ -25,6 +25,7 @@
+ 
+ #include "olc.h"
+ #include "olc_submenus.h"
++#include "olc_extender.h"
+ 
+ 
+ 
+@@ -766,7 +767,6 @@
+   } while(*code != '\0');
+ }
+ 
+-
+ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
+   ROOM_OLC  *data = newRoomOLC();
+   ROOM_DATA *room = roomOLCGetRoom(data);
+@@ -774,97 +774,35 @@
+   roomOLCSetParents(data, protoGetParents(proto));
+   roomOLCSetAbstract(data, protoIsAbstract(proto));
+ 
+-  // this is a really ugly way to do the conversion, but basically let's
+-  // just look through every line in the buffer and if we recognize some
+-  // token, parse out whatever is assigned to it
+-  char line[MAX_BUFFER];
+-  const char *code = protoGetScript(proto);
+-  do {
+-    code = strcpyto(line, code, '\n');
+-    char *lptr = line;
+-    if(!strncmp(lptr, "me.name", 7)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      roomSetName(room, lptr);
+-    }
+-    else if(!strncmp(lptr, "me.desc",  7)) {
+-      // we have three "'s to skip by, because this lptr will take the form:
+-      // me.desc = me.desc + " " + "..."
+-      while(*lptr != '\"') lptr++; lptr++;
+-      while(*lptr != '\"') lptr++; lptr++;
+-      while(*lptr != '\"') lptr++; lptr++;
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      roomSetDesc(room, lptr);
+-      // replace our \"s with "
+-      bufferReplace(roomGetDescBuffer(room), "\\\"", "\"", TRUE);
+-      bufferFormat(roomGetDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
+-    }
+-    else if(!strncmp(lptr, "me.terrain", 10)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                      // kill the leading "
+-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
+-      roomSetTerrain(room, terrainGetNum(lptr));
+-    }
+-    else if(!strncmp(lptr, "me.edesc(", 9)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                                              // kill the leading "
+-      char *desc_start = lptr + next_letter_in(lptr, '\"') + 1;
+-      lptr[next_letter_in(lptr, '\"')] = '\0';             // kill the ending "
+-      while(*desc_start != '\"') desc_start++;
+-      desc_start++;                                        // kill start and end
+-      desc_start[strlen(desc_start)-2] = '\0';             // "s for desc too
+-      EDESC_DATA *edesc = newEdesc(lptr, desc_start);
+-      // replace our \"s with "
+-      bufferReplace(edescGetDescBuffer(edesc), "\\\"", "\"", TRUE);
+-      edescSetPut(roomGetEdescs(room), edesc);
+-    }
+-    else if(!strncmp(lptr, "me.attach(\"", 11)) {
+-      char trigname[SMALL_BUFFER];
+-      sscanf(lptr, "me.attach(\"%s", trigname);
+-      // kill our ending ")
+-      trigname[strlen(trigname)-2] = '\0';
+-      triggerListAdd(roomGetTriggers(room), trigname);
+-    }
+-    else if(!strncmp(lptr, "me.bits", 7)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                                  // kill the leading "
+-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
+-      bitSet(roomGetBits(room), lptr);
+-    }
++  // build it from the prototype
++  olc_from_proto(proto, roomOLCGetExtraCode(data), room, roomGetPyFormBorrowed,
++		 room_exist, room_unexist);
++  bufferFormatFromPy(roomGetDescBuffer(room));
++  bufferFormat(roomGetDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
+ 
+-    else if(!strncmp(lptr, "exit = me.dig(", 14)) {
+-      while(*lptr != '\"') lptr++;
+-      lptr++;                                              // kill the leading "
+-      char *dest = lptr + next_letter_in(lptr, '\"') + 1;
+-      lptr[next_letter_in(lptr, '\"')] = '\0';             // kill the ending "
+-      while(*dest != '\"') dest++;
+-      dest++;                                              // kill start and end
+-      dest[next_letter_in(dest, '\"')] = '\0';             // "s for desc too
+-      EXIT_DATA *exit = newExit();
+-      exitSetTo(exit, dest);
+-      roomSetExit(room, lptr, exit);
+-
+-      BUFFER *ex_buf = newBuffer(1);
+-      code = strcpyto(line, code, '\n');
+-      while(*line && strcmp(line, "### end exit") != 0) {
+-	bprintf(ex_buf, "%s\n", line);
+-	code = strcpyto(line, code, '\n');
+-      }
++  // format the exit desc buffers as well
++  LIST       *ex_list = roomGetExitNames(room);
++  LIST_ITERATOR *ex_i = newListIterator(ex_list);
++  char           *dir = NULL;
++  ITERATE_LIST(dir, ex_i) {
++    bufferFormatFromPy(exitGetDescBuffer(roomGetExit(room, dir)));
++    bufferFormat(exitGetDescBuffer(roomGetExit(room,dir)), 
++		 SCREEN_WIDTH, PARA_INDENT);
++  } deleteListIterator(ex_i);
++  deleteListWith(ex_list, free);
+ 
+-      exit_from_proto(exit, ex_buf);
+-      deleteBuffer(ex_buf);
+-    }
++  // format our extra descriptions
++  if(listSize(edescSetGetList(roomGetEdescs(room))) > 0) {
++    LIST_ITERATOR *edesc_i= newListIterator(edescSetGetList(roomGetEdescs(room)));
++    EDESC_DATA      *edesc= NULL;
++    ITERATE_LIST(edesc, edesc_i) {
++      bufferFormatFromPy(edescGetDescBuffer(edesc));
++      bufferFormat(edescGetDescBuffer(edesc), SCREEN_WIDTH, PARA_INDENT);
++    } deleteListIterator(edesc_i);
++  }
+ 
+-    else if(!strcmp(lptr, "### begin extra code")) {
+-      code = strcpyto(line, code, '\n');
+-      while(strcmp(line, "### end extra code") != 0) {
+-	bprintf(roomOLCGetExtraCode(data), "%s\n", line);
+-	if(!*code) break;
+-	code = strcpyto(line, code, '\n');
+-      }
+-    }
+-  } while(*code != '\0');
++  // do all of our extender data as well
++  extenderFromProto(redit_extend, room);
+ 
+   return data;
+ }
+@@ -885,9 +823,7 @@
+     bprintf(buf, "exit.opposite   = \"%s\"\n", exitGetOpposite(exit));
+   if(*exitGetDesc(exit)) {
+     BUFFER *desc_copy = bufferCopy(exitGetDescBuffer(exit));
+-    bufferReplace(desc_copy, "\n", " ", TRUE);
+-    bufferReplace(desc_copy, "\r", "",  TRUE);
+-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
++    bufferFormatPy(desc_copy);
+     bprintf(buf, "exit.desc       = \"%s\"\n", bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+   }
+@@ -921,9 +857,7 @@
+ 	    terrainGetName(roomGetTerrain(room)));
+   if(*roomGetDesc(room)) {
+     BUFFER *desc_copy = bufferCopy(roomGetDescBuffer(room));
+-    bufferReplace(desc_copy, "\n", " ", TRUE);
+-    bufferReplace(desc_copy, "\r", "",  TRUE);
+-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
++    bufferFormatPy(desc_copy);
+     bprintf(buf, "me.desc       = me.desc + \" \" + \"%s\"\n", 
+ 	    bufferString(desc_copy));
+     deleteBuffer(desc_copy);
+@@ -937,9 +871,7 @@
+     EDESC_DATA      *edesc= NULL;
+     ITERATE_LIST(edesc, edesc_i) {
+       BUFFER *desc_copy = bufferCopy(edescGetDescBuffer(edesc));
+-      bufferReplace(desc_copy, "\n", " ", TRUE);
+-      bufferReplace(desc_copy, "\r", "",  TRUE);
+-      bufferReplace(desc_copy, "\"", "\\\"", TRUE);
++      bufferFormatPy(desc_copy);
+       bprintf(buf, "me.edesc(\"%s\", \"%s\")\n", 
+ 	      edescGetKeywords(edesc), bufferString(desc_copy));
+       deleteBuffer(desc_copy);
+@@ -948,7 +880,7 @@
+ 
+   if(*bitvectorGetBits(roomGetBits(room))) {
+     bprintf(buf, "\n### room bits\n");
+-    bprintf(buf, "me.bits     = \"%s\" + \", \" + me.bits\n", 
++    bprintf(buf, "me.bits     = ', '.join([me.bits, \"%s\"])\n",
+ 	    bitvectorGetBits(roomGetBits(room)));
+   }
+ 
+@@ -957,7 +889,7 @@
+     LIST_ITERATOR *trig_i = newListIterator(roomGetTriggers(room));
+     char            *trig = NULL;
+     ITERATE_LIST(trig, trig_i) {
+-      bprintf(buf, "me.attach(\"%s\")\n", trig);
++      bprintf(buf, "me.attach(\"%s\")\n",get_shortkey(trig,protoGetKey(proto)));
+     } deleteListIterator(trig_i);
+   }
+ 
+@@ -969,12 +901,16 @@
+   ITERATE_LIST(ex_name, ex_i) {
+     exit = roomGetExit(room, ex_name);
+     bprintf(buf, "\n### begin exit: %s\n", ex_name);
+-    bprintf(buf, "exit = me.dig(\"%s\", \"%s\")\n", ex_name, exitGetTo(exit));
++    bprintf(buf, "exit = me.dig(\"%s\", \"%s\")\n",
++	    ex_name, get_shortkey(exitGetTo(exit), protoGetKey(proto)));
+     exit_to_proto(exit, buf);
+     bprintf(buf, "### end exit\n");
+   } deleteListIterator(ex_i);
+   deleteListWith(ex_names, free);
+ 
++  // do all of our extender data as well
++  extenderToProto(redit_extend, roomOLCGetRoom(data), buf);
++
+   // extra code
+   if(bufferLength(roomOLCGetExtraCode(data)) > 0) {
+     bprintf(buf, "\n### begin extra code\n");
+@@ -1017,7 +953,7 @@
+     send_to_socket(sock, "   {g%-10s : %s%-20s%s",
+ 		   dirGetName(i), 
+ 		   (ex ? "{c" : "{y" ),
+-		   (ex ? exitGetTo(ex) : "nowhere"),
++		   (ex ? get_shortkey(exitGetTo(ex), roomOLCGetKey(data)) : "nowhere"),
+ 		   (!(i % 2) ? "   "   : "\r\n"));    
+   }
+ 
+@@ -1069,6 +1005,9 @@
+ 		 (roomOLCGetResettable(data) ? "yes" : "no"));
+   redit_exit_menu(sock, data);
+ 
++  // display our extender info
++  extenderDoMenu(sock, redit_extend, roomOLCGetRoom(data));
++
+   // only allow code editing for people with scripting priviledges
+   send_to_socket(sock, "\n{gC) Extra code%s\r\n", 
+ 		 ((!socketGetChar(sock) ||  
+@@ -1097,6 +1036,7 @@
+     roomOLCSetResettable(data, (roomOLCGetResettable(data) + 1) % 2);
+     return MENU_NOCHOICE;
+   case 'R':
++    roomOLCSetResettable(data, TRUE);
+     do_olc(sock, rrledit_menu, rrledit_chooser, rrledit_parser, NULL, NULL,
+ 	   NULL, NULL, roomOLCGetResets(data));
+     return MENU_NOCHOICE;
+@@ -1131,7 +1071,7 @@
+     socketStartEditor(sock, script_editor, roomOLCGetExtraCode(data));
+     return MENU_NOCHOICE;
+   default:
+-    return MENU_CHOICE_INVALID;
++    return extenderDoOptChoice(sock,redit_extend,roomOLCGetRoom(data),*option);
+   }
+ }
+ 
+@@ -1200,7 +1140,7 @@
+   }
+     
+   default:
+-    return FALSE;
++    return extenderDoParse(sock,redit_extend,roomOLCGetRoom(data),choice,arg);
+   }
+ }
+ 
+@@ -1556,19 +1496,18 @@
+     bool      resettable = FALSE;
+ 
+     // check to see if the source room is resettable
+-    if(listGetWith(zoneGetResettable(src_zone),
+-		   get_key_name(get_fullkey(src_name, src_locale)),
+-		   strcasecmp) != NULL)
++    if(listGetWith(zoneGetResettable(src_zone), src_name, strcasecmp) != NULL)
+       resettable = TRUE;
+ 
+     // create each of the rooms to be cloned
+     ITERATE_LIST(key, key_i) {
++      const char *src_fullkey = get_fullkey(src_name, src_locale);
+       ROOM_OLC *data = newRoomOLC();
+       roomOLCSetKey(data, key);
+       resetListSetKey(roomOLCGetResets(data), key);
+       roomOLCSetAbstract(data, FALSE);
+       roomOLCSetResettable(data, resettable);
+-      roomOLCSetParents(data, get_fullkey(src_name, src_locale));
++      roomOLCSetParents(data, get_shortkey(src_fullkey, key));
+       save_room_olc(data);
+       deleteRoomOLC(data);
+     } deleteListIterator(key_i);
+diff -ruN versions/nakedmudv3.6/src/parse.c src/parse.c
+--- versions/nakedmudv3.6/src/parse.c	2008-05-31 00:17:59.000000000 -0400
++++ src/parse.c	2008-11-17 22:58:18.000000000 -0500
+@@ -896,17 +896,19 @@
+     var = newParseVar(PARSE_VAR_STRING);
+     var->ptr_val    = arg;
+     bool multi_word = FALSE;
++    char multi_mark = '"';
+ 
+     // are we using quotation marks to specify multiple words?
+-    if(*arg == '\"') {
++    if(*arg == '"' || *arg == '\'') {
+       multi_word = TRUE;
++      multi_mark = *arg;
+       arg++;
+       var->ptr_val = arg;
+     }
+ 
+     // go through arg to the next space, and delimit the word
+     for(; *arg != '\0'; arg++) {
+-      if((multi_word && *arg == '\"') || (!multi_word && isspace(*arg))) {
++      if((multi_word && *arg == multi_mark) || (!multi_word && isspace(*arg))) {
+ 	*arg = '\0';
+ 	arg++;
+ 	break;
+diff -ruN versions/nakedmudv3.6/src/prototype.c src/prototype.c
+--- versions/nakedmudv3.6/src/prototype.c	2008-05-31 00:17:59.000000000 -0400
++++ src/prototype.c	2008-12-03 15:22:18.000000000 -0500
+@@ -196,13 +196,9 @@
+   else {
+     run_code(proto->code, dict, get_key_locale(protoGetKey(proto)));
+     
+-    if(!last_script_ok()) {
+-      char *tb = getPythonTraceback();
+-      log_string("Prototype %s terminated with an error:\r\n%s\r\n"
+-		 "\r\nTraceback is:\r\n%s\r\n", 
+-		 proto->key, bufferString(proto->script), tb);
+-      free(tb);
+-    }
++    if(!last_script_ok())
++      log_pyerr("Prototype %s terminated with an error:\r\n%s",
++		proto->key, bufferString(proto->script));
+   }
+ 
+   // remove us from the dictionary just incase it doesn't GC immediately. It
+@@ -223,6 +219,7 @@
+   if(protoRun(proto, "mproto", charGetPyForm, charAddPrototype, charSetClass, ch))
+     char_to_game(ch);
+   else {
++    // should this be char_unexist? Check to see what difference it makes
+     extract_mobile(ch);
+     ch = NULL;
+   }
+@@ -238,6 +235,7 @@
+   if(protoRun(proto, "oproto", newPyObj, objAddPrototype, objSetClass, obj))
+     obj_to_game(obj);
+   else {
++    // should this be obj_unexist? Check to see what difference it makes
+     extract_obj(obj);
+     obj = NULL;
+   }
+@@ -253,6 +251,7 @@
+   if(protoRun(proto, "rproto", newPyRoom, roomAddPrototype,roomSetClass,room))
+     room_to_game(room);
+   else {
++    // should this be room_unexist? Check to see what difference it makes
+     extract_room(room);
+     room = NULL;
+   }
+diff -ruN versions/nakedmudv3.6/src/room_reset.c src/room_reset.c
+--- versions/nakedmudv3.6/src/room_reset.c	2008-05-31 00:17:59.000000000 -0400
++++ src/room_reset.c	2008-12-01 22:22:27.000000000 -0500
+@@ -682,13 +682,9 @@
+   run_script(dict, resetGetArg(reset), locale);
+ 
+   // check to see if we had an error
+-  if(!last_script_ok()) {
+-    char *tb = getPythonTraceback();
+-    log_string("Reset script in locale %s terminated with an error:\r\n%s\r\n"
+-	       "\r\nTraceback is:\r\n%s\r\n", 
+-	       locale, resetGetArg(reset), tb);
+-    free(tb);
+-  }
++  if(!last_script_ok())
++    log_pyerr("Reset script in locale %s terminated with an error:\r\n%s",
++	      locale, resetGetArg(reset));
+ 
+   // garbage collection and return our outcome
+   Py_DECREF(dict);
+diff -ruN versions/nakedmudv3.6/src/scripts/module.mk src/scripts/module.mk
+--- versions/nakedmudv3.6/src/scripts/module.mk	2008-05-31 00:25:14.000000000 -0400
++++ src/scripts/module.mk	2008-12-01 01:25:47.000000000 -0500
+@@ -114,4 +114,5 @@
+ 	scripts/pyauxiliary.c   \
+ 	scripts/triggers.c      \
+ 	scripts/trigedit.c      \
+-	scripts/trighooks.c
++	scripts/trighooks.c     \
++	scripts/pyolc.c
+diff -ruN versions/nakedmudv3.6/src/scripts/pyaccount.h src/scripts/pyaccount.h
+--- versions/nakedmudv3.6/src/scripts/pyaccount.h	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pyaccount.h	2008-12-01 03:18:23.000000000 -0500
+@@ -12,6 +12,9 @@
+ //
+ //*****************************************************************************
+ 
++// used by pymudsys. Do not touch!
++PyTypeObject PyAccount_Type;
++
+ // initialize accounts for use. This must be called AFTER all other modules
+ // have added in new get/setters and methods to pyroom
+ PyMODINIT_FUNC     init_PyAccount(void);
+diff -ruN versions/nakedmudv3.6/src/scripts/pychar.c src/scripts/pychar.c
+--- versions/nakedmudv3.6/src/scripts/pychar.c	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pychar.c	2008-12-03 02:31:16.000000000 -0500
+@@ -373,7 +373,26 @@
+ 
+   CHAR_DATA *ch;
+   PYCHAR_CHECK_CHAR_EXISTS(self->uid, ch);
+-  charSetKeywords(ch, PyString_AsString(value));
++
++  // clean up empty keywords, and rebuild it
++  LIST           *kwds = parse_keywords(PyString_AsString(value));
++  BUFFER     *new_kwds = newBuffer(1);
++  LIST_ITERATOR *kwd_i = newListIterator(kwds);
++  char            *kwd = NULL;
++
++  ITERATE_LIST(kwd, kwd_i) {
++    // if we already have content, add a comma
++    if(bufferLength(new_kwds) > 0)
++      bufferCat(new_kwds, ", ");
++    bufferCat(new_kwds, kwd);
++  } deleteListIterator(kwd_i);
++
++  // set our keywords
++  charSetKeywords(ch, bufferString(new_kwds));
++
++  // garbage collection
++  deleteListWith(kwds, free);
++  deleteBuffer(new_kwds);
+   return 0;
+ }
+ 
+@@ -586,7 +605,9 @@
+   if(PyRoom_Check(value))
+     room = PyRoom_AsRoom(value);
+   else if(PyString_Check(value))
+-    room = worldGetRoom(gameworld, PyString_AsString(value));
++    room = worldGetRoom(gameworld, 
++			get_fullkey_relative(PyString_AsString(value),
++					     get_script_locale()));
+   else {
+     PyErr_Format(PyExc_TypeError, 
+ 		 "Character's room must be a string value or a "
+@@ -1123,7 +1144,7 @@
+   char              *arg = NULL;    // the action's string argument
+ 
+   // parse all of our values
+-  if(!PyArg_ParseTuple(args, "dO|OOs", &delay,  &on_complete, &on_interrupt,
++  if(!PyArg_ParseTuple(args, "dO|OOz", &delay,  &on_complete, &on_interrupt,
+ 		      &data, &arg)) {
+     PyErr_Format(PyExc_TypeError,
+ 		 "startAction supplied with invalid arguments!");
+diff -ruN versions/nakedmudv3.6/src/scripts/pychar.h src/scripts/pychar.h
+--- versions/nakedmudv3.6/src/scripts/pychar.h	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pychar.h	2008-12-01 03:18:49.000000000 -0500
+@@ -12,6 +12,9 @@
+ //
+ //*****************************************************************************
+ 
++// used by pymudsys. Do not touch!
++PyTypeObject PyChar_Type;
++
+ // initialize rooms for use. This must be called AFTER all other modules
+ // have added in new get/setters and methods to pyroom
+ PyMODINIT_FUNC init_PyChar(void);
+diff -ruN versions/nakedmudv3.6/src/scripts/pyexit.h src/scripts/pyexit.h
+--- versions/nakedmudv3.6/src/scripts/pyexit.h	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pyexit.h	2008-12-01 03:18:47.000000000 -0500
+@@ -12,6 +12,9 @@
+ //
+ //*****************************************************************************
+ 
++// used by pymudsys. Do not touch!
++PyTypeObject PyExit_Type;
++
+ // initialize exits for use. This must be called AFTER all other modules
+ // have added in new get/setters and methods to pyroom
+ PyMODINIT_FUNC init_PyExit(void);
+diff -ruN versions/nakedmudv3.6/src/scripts/pyhooks.c src/scripts/pyhooks.c
+--- versions/nakedmudv3.6/src/scripts/pyhooks.c	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pyhooks.c	2008-12-01 22:24:39.000000000 -0500
+@@ -300,13 +300,8 @@
+       PyObject *arglist = Py_BuildValue("(s)", info);
+       PyObject *retval  = PyEval_CallObject(func, arglist);
+       // check for an error:
+-      if(retval == NULL) {
+-	char *tb = getPythonTraceback();
+-	if(tb != NULL) {
+-	  log_string("Error running python hook:\r\n%s\r\n", tb);
+-	  free(tb);
+-	}
+-      }
++      if(retval == NULL)
++	log_pyerr("Error running Python hook");
+ 
+       // garbage collection
+       Py_XDECREF(retval);
+diff -ruN versions/nakedmudv3.6/src/scripts/pymud.c src/scripts/pymud.c
+--- versions/nakedmudv3.6/src/scripts/pymud.c	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pymud.c	2008-06-23 11:17:18.000000000 -0400
+@@ -264,7 +264,7 @@
+     }
+     else if(IS_SET(type, FIND_TYPE_OBJ | FIND_TYPE_IN_OBJ)) {
+       ITERATE_LIST(one_found, found_i)
+-	PyList_Append(list, charGetPyFormBorrowed(one_found));
++	PyList_Append(list, objGetPyFormBorrowed(one_found));
+     }
+     deleteListIterator(found_i);
+     deleteList(found);
+diff -ruN versions/nakedmudv3.6/src/scripts/pymudsys.c src/scripts/pymudsys.c
+--- versions/nakedmudv3.6/src/scripts/pymudsys.c	2008-05-31 01:43:38.000000000 -0400
++++ src/scripts/pymudsys.c	2008-12-03 17:51:12.000000000 -0500
+@@ -16,6 +16,8 @@
+ #include "../save.h"
+ #include "../handler.h"
+ #include "../account.h"
++#include "../storage.h"
++#include "../world.h"
+ 
+ #include "pymudsys.h"
+ #include "scripts.h"
+@@ -23,6 +25,11 @@
+ #include "pychar.h"
+ #include "pyaccount.h"
+ #include "pysocket.h"
++#include "pyroom.h"
++#include "pyexit.h"
++#include "pyobj.h"
++#include "pystorage.h"
++
+ 
+ 
+ //******************************************************************************
+@@ -36,6 +43,10 @@
+ //*****************************************************************************
+ // local variables and functions
+ //*****************************************************************************
++
++// a dictionary of world types and their appropriate Python class
++PyObject *worldtypes = NULL;
++
+ // a list of methods to add to the mudsys module
+ LIST *pymudsys_methods = NULL;
+ 
+@@ -569,6 +580,7 @@
+       bufferFormat(buf, SCREEN_WIDTH, 0);
+       if(bufferLength(buf) > 0)
+ 	add_help(name, bufferString(buf), group, NULL, FALSE);
++      deleteBuffer(buf);
+     }
+ #endif
+   }
+@@ -660,6 +672,188 @@
+ 
+ 
+ //*****************************************************************************
++// functions for adding methods to classes within Python
++//*****************************************************************************
++PyObject *mudsys_gen_add_method(PyTypeObject *type, PyObject *args) {
++  PyObject *pyname = NULL;
++  PyObject *method = NULL;
++  char       *name = NULL;
++
++  if(!PyArg_ParseTuple(args, "OO", &pyname, &method)) {
++    PyErr_Format(PyExc_TypeError, "Method takes string and function argument.");
++    return NULL;
++  }
++
++  if(!PyString_Check(pyname)) {
++    PyErr_Format(PyExc_TypeError, "First argument not a string.");
++    return NULL;
++  }
++
++  if(!PyFunction_Check(method)) {
++    PyErr_Format(PyExc_TypeError, "Second argument not a function.");
++    return NULL;
++  }
++
++  name = PyString_AsString(pyname);
++  if(PyDict_Contains(type->tp_dict, pyname)) {
++    PyErr_Format(PyExc_TypeError, "%s already has attribute, %s.", 
++		 type->tp_name, name);
++    return NULL;
++  }
++
++  // add our new method
++  PyDict_SetItemString(type->tp_dict, name, method);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *mudsys_add_sock_method(PyObject *self, PyObject *args) {
++  return mudsys_gen_add_method(&PySocket_Type, args);
++}
++PyObject *mudsys_add_room_method(PyObject *self, PyObject *args) {
++  return mudsys_gen_add_method(&PyRoom_Type, args);
++}
++PyObject *mudsys_add_exit_method(PyObject *self, PyObject *args) {
++  return mudsys_gen_add_method(&PyExit_Type, args);
++}
++PyObject *mudsys_add_obj_method(PyObject *self, PyObject *args) {
++  return mudsys_gen_add_method(&PyObj_Type, args);
++}
++PyObject *mudsys_add_char_method(PyObject *self, PyObject *args) {
++  return mudsys_gen_add_method(&PyChar_Type, args);
++}
++PyObject *mudsys_add_acct_method(PyObject *self, PyObject *args) {
++  return mudsys_gen_add_method(&PyAccount_Type, args);
++}
++
++
++
++//*****************************************************************************
++// functions for adding and getting types to the gameworld
++//*****************************************************************************
++void pytype_set_key(const char *type, PyObject *thing, const char *key) {
++  PyObject *ret = PyObject_CallMethod(thing, "setKey", "s", key);
++  if(ret == NULL)
++    log_pyerr("error calling setKey for world type, %s", type);
++  Py_XDECREF(ret);
++}
++
++PyObject *pytype_read(const char *type, STORAGE_SET *set) {
++  PyObject *thing = PyDict_GetItemString(worldtypes, type);
++
++  if(thing == NULL) {
++    log_pyerr("world type, %s, does not exist", type);
++    return NULL;
++  }
++  else {
++    PyObject *pystore = newPyStorageSet(set);
++    PyObject    *copy = PyObject_CallFunction(thing, "O", pystore);
++
++    // did it work?
++    if(copy == NULL)
++      log_pyerr("Error reading world type, %s", type);
++    Py_XDECREF(pystore);
++    return copy;
++  }
++}
++
++STORAGE_SET *pytype_store(const char *type, PyObject *thing) {
++  PyObject *pystore = PyObject_CallMethod(thing, "store", NULL);
++  STORAGE_SET  *set = NULL;
++  // make sure it worked
++  if(pystore != NULL)
++    set = PyStorageSet_AsSet(pystore);
++  else {
++    log_pyerr("error calling store for world type, %s", type);
++    set = new_storage_set();
++  }
++  Py_XDECREF(pystore);
++  return set;
++}
++
++void pytype_delete(const char *type, PyObject *thing) {
++  Py_XDECREF(thing);
++}
++
++PyObject *mudsys_world_add_type(PyObject *self, PyObject *args) {
++  char      *type = NULL;
++  PyObject *class = NULL;
++  if(!PyArg_ParseTuple(args, "sO", &type, &class)) {
++    PyErr_Format(PyExc_TypeError, "Error parsing new world type");
++    return NULL;
++  }
++
++  // add all of our relevant methods to the game world
++  worldAddForgetfulType(gameworld, type, pytype_read, pytype_store, 
++			pytype_delete, pytype_set_key);
++
++  // now, store us so we can look up the Python Methods
++  PyDict_SetItemString(worldtypes, type, class);
++
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *mudsys_world_get_type(PyObject *self, PyObject *args) {
++  char      *type = NULL;
++  char       *key = NULL;
++
++  if(!PyArg_ParseTuple(args, "ss", &type, &key)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Error parsing type and key for world_get_type");
++    return NULL;
++  }
++
++  PyObject *entry = worldGetType(gameworld, type, key);
++  return Py_BuildValue("O", (type == NULL ? Py_None : entry));
++}
++
++PyObject *mudsys_world_put_type(PyObject *self, PyObject *args) {
++  char      *type = NULL;
++  char       *key = NULL;
++  PyObject *entry = NULL;
++
++  if(!PyArg_ParseTuple(args, "ssO", &type, &key, &entry)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Error parsing arguments for world_put_type");
++    return NULL;
++  }
++
++  worldPutType(gameworld, type, key, entry);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *mudsys_world_save_type(PyObject *self, PyObject *args) {
++  char      *type = NULL;
++  char       *key = NULL;
++
++  if(!PyArg_ParseTuple(args, "ssO", &type, &key)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Error parsing type and key for world_save_type");
++    return NULL;
++  }
++
++  worldSaveType(gameworld, type, key);
++  return Py_BuildValue("i", 1);
++}
++
++PyObject *mudsys_world_remove_type(PyObject *self, PyObject *args) {
++  char      *type = NULL;
++  char       *key = NULL;
++
++  if(!PyArg_ParseTuple(args, "ss", &type, &key)) {
++    PyErr_Format(PyExc_TypeError, 
++		 "Error parsing type and key for world_remove_type");
++    return NULL;
++  }
++
++  PyObject *entry = worldRemoveType(gameworld, type, key);
++  PyObject   *ret = Py_BuildValue("O", (entry == NULL ? Py_None : entry));
++  Py_XDECREF(entry);
++  return ret;
++}
++
++
++
++//*****************************************************************************
+ // MudSys module
+ //*****************************************************************************
+ void PyMudSys_addMethod(const char *name, void *f, int flags, const char *doc) {
+@@ -737,7 +931,37 @@
+   PyMudSys_addMethod("create_player", mudsys_create_player, METH_VARARGS,
+ 		     "creates a new player by name. Must be registered "
+ 		     "after fully created.");
++  PyMudSys_addMethod("add_sock_method", mudsys_add_sock_method, METH_VARARGS,
++		     "adds a new Python method to the Mudsock class");
++  PyMudSys_addMethod("add_char_method", mudsys_add_char_method, METH_VARARGS,
++		     "adds a new Python method to the Char class");
++  PyMudSys_addMethod("add_room_method", mudsys_add_room_method, METH_VARARGS,
++		     "adds a new Python method to the Room class");
++  PyMudSys_addMethod("add_exit_method",  mudsys_add_exit_method, METH_VARARGS,
++		     "adds a new Python method to the Exit class");
++  PyMudSys_addMethod("add_obj_method",  mudsys_add_obj_method, METH_VARARGS,
++		     "adds a new Python method to the Obj class");
++  PyMudSys_addMethod("add_acct_method",  mudsys_add_acct_method, METH_VARARGS,
++		     "adds a new Python method to the Account class");
++  PyMudSys_addMethod("world_add_type", mudsys_world_add_type, METH_VARARGS,
++		     "adds a new type to the world. like, e.g., mob, obj, and "
++                     "room prototypes. Assumes a class with a store and "
++		     "setKey method");
++  PyMudSys_addMethod("world_get_type", mudsys_world_get_type, METH_VARARGS,
++		     "gets a registered item from the world database. Assumes "
++		     "it is a python type, and not a C type. If no type exists "
++		     "return Py_None");
++  PyMudSys_addMethod("world_put_type", mudsys_world_put_type, METH_VARARGS,
++		     "Put a new type into thw world database.");
++  PyMudSys_addMethod("world_save_type", mudsys_world_save_type, METH_VARARGS,
++		     "Saves a world entry if it exists.");
++  PyMudSys_addMethod("world_remove_type", mudsys_world_remove_type,METH_VARARGS,
++		     "Removes a type, and returns a reference to it, or None "
++		     "if it does not exist.");
+ 
+   Py_InitModule3("mudsys", makePyMethods(pymudsys_methods),
+ 		 "The mudsys module, for all MUD system utils.");
++
++  worldtypes = PyDict_New();
++  Py_INCREF(worldtypes);
+ }
+diff -ruN versions/nakedmudv3.6/src/scripts/pyobj.c src/scripts/pyobj.c
+--- versions/nakedmudv3.6/src/scripts/pyobj.c	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pyobj.c	2008-12-03 02:31:26.000000000 -0500
+@@ -315,7 +315,26 @@
+ 
+   OBJ_DATA *obj;
+   PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+-  objSetKeywords(obj, PyString_AsString(value));
++
++  // clean up empty keywords, and rebuild it
++  LIST           *kwds = parse_keywords(PyString_AsString(value));
++  BUFFER     *new_kwds = newBuffer(1);
++  LIST_ITERATOR *kwd_i = newListIterator(kwds);
++  char            *kwd = NULL;
++
++  ITERATE_LIST(kwd, kwd_i) {
++    // if we already have content, add a comma
++    if(bufferLength(new_kwds) > 0)
++      bufferCat(new_kwds, ", ");
++    bufferCat(new_kwds, kwd);
++  } deleteListIterator(kwd_i);
++
++  // set our keywords
++  objSetKeywords(obj, bufferString(new_kwds));
++
++  // garbage collection
++  deleteListWith(kwds, free);
++  deleteBuffer(new_kwds);
+   return 0;
+ }
+ 
+@@ -436,15 +455,23 @@
+     return -1;
+   }
+ 
+-  if (!PyRoom_Check(value)) {
++  ROOM_DATA *room = NULL;
++
++  if(PyRoom_Check(value))
++    room = PyRoom_AsRoom(value);
++  else if(PyString_Check(value))
++    room = worldGetRoom(gameworld, 
++			get_fullkey_relative(PyString_AsString(value),
++					     get_script_locale()));
++  else {
+     PyErr_Format(PyExc_TypeError, 
+-                    "Room must be a room!");
++		 "Object's room must be a string value or a "
++		 "room object.");
+     return -1;
+   }
+ 
+   OBJ_DATA *obj;
+   PYOBJ_CHECK_OBJ_EXISTS(self->uid, obj);
+-  ROOM_DATA *room = PyRoom_AsRoom(value);
+   // remove us from whatever we're currently in
+   if(objGetRoom(obj))
+     obj_from_room(obj);
+@@ -593,48 +620,6 @@
+   }
+ }
+ 
+-PyObject *PyObj_istype(PyObj *self, PyObject *args) {  
+-  char *type = NULL;
+-
+-  // make sure we're getting passed the right type of data
+-  if (!PyArg_ParseTuple(args, "s", &type)) {
+-    PyErr_Format(PyExc_TypeError, "istype only accepts strings.");
+-    return NULL;
+-  }
+-
+-  // pull out the object and check the type
+-  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
+-  if(obj != NULL)
+-    return Py_BuildValue("i", objIsType(obj, type));
+-  else {
+-    PyErr_Format(PyExc_StandardError, 
+-		 "Tried to check type of nonexistent object, %d.", self->uid);
+-    return NULL;
+-  }
+-}
+-
+-PyObject *PyObj_settype(PyObj *self, PyObject *args) {  
+-  char *type = NULL;
+-
+-  // make sure we're getting passed the right type of data
+-  if (!PyArg_ParseTuple(args, "s", &type)) {
+-    PyErr_Format(PyExc_TypeError, "settype only accepts strings.");
+-    return NULL;
+-  }
+-
+-  // pull out the object and check the type
+-  OBJ_DATA    *obj = PyObj_AsObj((PyObject *)self);
+-  if(obj != NULL) {
+-    objSetType(obj, type);
+-    return Py_BuildValue("i", 1);
+-  }
+-  else {
+-    PyErr_Format(PyExc_StandardError, 
+-		 "Tried to set type of nonexistent object, %d.", self->uid);
+-    return NULL;
+-  }
+-}
+-
+ //
+ // create a new extra description for the object
+ PyObject *PyObj_edesc(PyObj *self, PyObject *value) {
+@@ -1198,10 +1183,6 @@
+ 		    "detach an old script from the object, by vnum");
+     PyObj_addMethod("isinstance", PyObj_isinstance, METH_VARARGS,
+ 		    "checks to see if the object inherits from the class");
+-    PyObj_addMethod("istype", PyObj_istype, METH_VARARGS,
+-		     "checks to see if the object is of the specified type");
+-    PyObj_addMethod("settype", PyObj_settype, METH_VARARGS,
+-		    "the object will become of the specified type");
+     PyObj_addMethod("edesc", PyObj_edesc, METH_VARARGS,
+ 		    "adds an extra description to the object.");
+     PyObj_addMethod("getAuxiliary", PyObj_get_auxiliary, METH_VARARGS,
+diff -ruN versions/nakedmudv3.6/src/scripts/pyobj.h src/scripts/pyobj.h
+--- versions/nakedmudv3.6/src/scripts/pyobj.h	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pyobj.h	2008-12-01 03:17:39.000000000 -0500
+@@ -12,6 +12,9 @@
+ //
+ //*****************************************************************************
+ 
++// used by pymudsys. Do not touch!
++PyTypeObject PyObj_Type;
++
+ // initialize objects for use. This must be called AFTER all other modules
+ // have added in new get/setters and methods to pyobj
+ PyMODINIT_FUNC init_PyObj(void);
+diff -ruN versions/nakedmudv3.6/src/scripts/pyolc.c src/scripts/pyolc.c
+--- versions/nakedmudv3.6/src/scripts/pyolc.c	1969-12-31 19:00:00.000000000 -0500
++++ src/scripts/pyolc.c	2008-12-05 21:37:14.000000000 -0500
+@@ -0,0 +1,391 @@
++//*****************************************************************************
++//
++// pyolc.c
++//
++// Provides wrapper functions for Python to interface with OLC2.
++//
++//*****************************************************************************
++#include "../mud.h"
++
++#ifdef MODULE_OLC2
++#include "scripts.h"
++#include "pyplugs.h"
++#include "pysocket.h"
++#include "pyolc.h"
++
++
++
++//*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../olc2/olc.h"
++#include "../olc2/olc_extender.h"
++#include "../items/iedit.h"
++
++
++
++//*****************************************************************************
++// local variables and functions
++//*****************************************************************************
++// a list of methods to add to the module
++LIST  *pyolc_methods = NULL;
++
++// a dictionary for the OLC functions of our various item types
++PyObject *pyitem_olc = NULL;
++
++
++
++//*****************************************************************************
++// raw pyolc methods, used by both items and the olc wrapper functions
++//*****************************************************************************
++void pyolc_do_menu(PyObject *menu, SOCKET_DATA *sock, PyObject *data) {
++  PyObject    *pysock = socketGetPyFormBorrowed(sock);
++  PyObject       *ret = PyObject_CallFunction(menu, "OO", pysock, data);
++  if(ret == NULL)
++    log_pyerr("pyolc_do_menu failed");
++  Py_XDECREF(ret);
++}
++
++int pyolc_do_chooser(PyObject *chooser, SOCKET_DATA *sock, PyObject *data,
++		     const char *option) {
++  PyObject    *pysock = socketGetPyFormBorrowed(sock);
++  PyObject     *pyret = PyObject_CallFunction(chooser, "OOs", pysock, data,
++					      option);
++  int             ret = MENU_CHOICE_INVALID;
++  if(pyret == NULL)
++    log_pyerr("pyolc_do_chooser failed: %s", option);
++  else if(PyInt_Check(pyret))
++    ret = (int)PyInt_AsLong(pyret);
++  Py_XDECREF(pyret);
++  return ret;
++}
++
++bool pyolc_do_parser(PyObject *parser, SOCKET_DATA *sock, PyObject *data,
++		     int choice, const char *arg) {
++  PyObject    *pysock = socketGetPyFormBorrowed(sock);
++  PyObject     *pyret = PyObject_CallFunction(parser, "OOis", pysock, data,
++					      choice, arg);
++  bool            ret = FALSE;
++  if(pyret == NULL)
++    log_pyerr("pyolc_do_parser failed: %d, %s", choice, arg);
++  else if(PyObject_IsTrue(pyret))
++    ret = TRUE;
++  Py_XDECREF(pyret);
++  return ret;
++}
++
++void pyolc_do_from_proto(PyObject *from_proto, PyObject *data) {
++  if(from_proto != NULL) {
++    PyObject *ret = PyObject_CallFunction(from_proto, "O", data);
++    if(ret == NULL)
++      log_pyerr("Error in pyolc_do_from_proto");
++    Py_XDECREF(ret);
++  }
++}
++
++void pyolc_do_to_proto(PyObject *to_proto, PyObject *data, BUFFER *buf) {
++  if(to_proto != NULL) {
++      PyObject *ret = PyObject_CallFunction(to_proto, "O", data);
++      if(ret == NULL)
++	log_pyerr("Error in pyolc_do_to_proto");
++      else if(PyString_Check(ret))
++	bufferCat(buf, PyString_AsString(ret));
++      Py_XDECREF(ret);
++  }
++}
++
++void pyolc_do_copyto(PyObject *from, PyObject *to) {
++  PyObject *ret = PyObject_CallMethod(from, "copyTo", "O", to);
++  if(ret == NULL)
++    log_pyerr("Error in pyolc_do_copyto");
++  Py_XDECREF(ret);
++}
++
++void pyolc_do_save(PyObject *saver, PyObject *data) {
++  if(saver != NULL && saver != Py_None) {
++    PyObject *ret = PyObject_CallFunction(saver, "O", data);
++    if(ret == NULL)
++      log_pyerr("Error in pyolc_do_save");
++    Py_XDECREF(ret);    
++  }
++}
++
++void pyolc_do_delete(PyObject *pyolc) {
++  Py_XDECREF(pyolc);
++}
++
++
++
++//*****************************************************************************
++// Python OLC wrapper
++//*****************************************************************************
++void pyolc_menu(SOCKET_DATA *sock, PyObject *olc) {
++  PyObject *working_copy = PyDict_GetItemString(olc, "working_copy");
++  PyObject         *menu = PyDict_GetItemString(olc, "menu");
++  pyolc_do_menu(menu, sock, working_copy);
++}
++
++int pyolc_chooser(SOCKET_DATA *sock, PyObject *olc, const char *option) {
++  PyObject *working_copy = PyDict_GetItemString(olc, "working_copy");
++  PyObject      *chooser = PyDict_GetItemString(olc, "chooser");
++  return pyolc_do_chooser(chooser, sock, working_copy, option);
++}
++
++bool pyolc_parser(SOCKET_DATA *sock,PyObject *olc,int option,const char *arg) {
++  PyObject *working_copy = PyDict_GetItemString(olc, "working_copy");
++  PyObject       *parser = PyDict_GetItemString(olc, "parser");
++  return pyolc_do_parser(parser, sock, working_copy, option, arg);
++}
++
++void pyolc_saver(PyObject *olc) {
++  PyObject *working_copy = PyDict_GetItemString(olc, "working_copy");
++  PyObject    *orig_copy = PyDict_GetItemString(olc, "orig_copy");
++  PyObject        *saver = PyDict_GetItemString(olc, "saver");
++
++  // do we need to copy from our working copy to our original?
++  if(orig_copy != working_copy)
++    pyolc_do_copyto(working_copy, orig_copy);
++
++  // do we need to save this info to disk?
++  if(saver != Py_None)
++    pyolc_do_save(saver, orig_copy);
++}
++
++void pyolc_deleter(PyObject *olc) {
++  Py_DECREF(olc);
++}
++
++PyObject *pyolc_do_olc(PyObject *self, PyObject *args) {
++  PyObject      *pymenu = NULL;
++  PyObject   *pychooser = NULL;
++  PyObject    *pyparser = NULL;
++  PyObject     *pysaver = NULL;
++  PyObject      *pydata = NULL;
++  PyObject      *pysock = NULL;
++  SOCKET_DATA     *sock = NULL;
++  bool         autosave = FALSE;
++
++  // parse out our socket and functions
++  if(!PyArg_ParseTuple(args, "OOOOOO|b", 
++		       &pysock, &pymenu, &pychooser, &pyparser,
++		       &pysaver, &pydata, &autosave)) {
++    PyErr_Format(PyExc_TypeError,"Invalid number arguments supplied to do_olc");
++    return NULL;
++  }
++
++  // make sure our socket is in fact a socket
++  if(PySocket_Check(pysock))
++    sock = PySocket_AsSocket(pysock);
++  else {
++    PyErr_Format(PyExc_TypeError, "First argument must be a socket.");
++    return NULL;
++  }
++
++  // figure out what our C functions will be
++  void    *menu = pyolc_menu;
++  void *chooser = pyolc_chooser;
++  void  *parser = pyolc_parser;
++  void   *saver = pyolc_saver;
++  void *deleter = pyolc_deleter;
++  bool can_copy = (PyObject_HasAttrString(pydata, "copy") && 
++		   PyObject_HasAttrString(pydata, "copyTo"));
++
++  // figure out our remaining C OLC functions, if any?
++  if(pyparser == Py_None)
++    parser = NULL;
++
++  // we do save if we have a save function, or we have a copy and a copyTo func
++  if(autosave == TRUE || (pysaver == Py_None && !can_copy))
++    saver = NULL;
++
++  // build up our OLC Wrapper
++  PyObject *wrapper = PyDict_New();
++  PyDict_SetItemString(wrapper, "menu",      pymenu);
++  PyDict_SetItemString(wrapper, "chooser",   pychooser);
++  PyDict_SetItemString(wrapper, "parser",    pyparser);
++  PyDict_SetItemString(wrapper, "saver",     pysaver);
++
++  // set our original copy
++  PyDict_SetItemString(wrapper, "orig_copy", pydata);
++
++  // do we want to work on the original copy directly, or no?
++  if(autosave == TRUE || !can_copy)
++    PyDict_SetItemString(wrapper, "working_copy", pydata);
++  else {
++    PyObject *working_copy = PyObject_CallMethod(pydata, "copy", NULL);
++    if(working_copy != NULL)
++      PyDict_SetItemString(wrapper, "working_copy", working_copy);
++    // work on the original copy instead
++    else {
++      log_pyerr("Error calling copy in pyolc_do_olc");
++      PyDict_SetItemString(wrapper, "working_copy", pydata);
++    }
++    Py_XDECREF(working_copy);
++  }
++
++  // add the OLC functions
++  do_olc(sock, menu, chooser, parser, NULL, NULL, deleter, saver, wrapper);
++  return Py_BuildValue("O", Py_None);
++}
++
++
++
++//*****************************************************************************
++// Item OLC
++//*****************************************************************************
++void pyitem_olc_menu(SOCKET_DATA *sock, PyObject *data) {
++  char *str = PyString_AsString(PyObject_GetAttrString(data, "__item_type__"));
++  PyObject *olc_funcs = PyDict_GetItemString(pyitem_olc, str);
++  PyObject      *menu = PyDict_GetItemString(olc_funcs, "menu");
++  pyolc_do_menu(menu, sock, data);
++}
++
++int pyitem_olc_chooser(SOCKET_DATA *sock, PyObject *data, const char *option) {
++  char *str = PyString_AsString(PyObject_GetAttrString(data, "__item_type__"));
++  PyObject *olc_funcs = PyDict_GetItemString(pyitem_olc, str);
++  PyObject   *chooser = PyDict_GetItemString(olc_funcs, "chooser");
++  return pyolc_do_chooser(chooser, sock, data, option);
++}
++
++bool pyitem_olc_parser(SOCKET_DATA *sock, PyObject *data,
++		       int choice, const char *arg) {
++  char *str = PyString_AsString(PyObject_GetAttrString(data, "__item_type__"));
++  PyObject *olc_funcs = PyDict_GetItemString(pyitem_olc, str);
++  PyObject    *parser = PyDict_GetItemString(olc_funcs, "parser");
++  return pyolc_do_parser(parser, sock, data, choice, arg);
++}
++
++void pyitem_olc_from_proto(PyObject *data) {
++  char *str = PyString_AsString(PyObject_GetAttrString(data, "__item_type__"));
++  PyObject  *olc_funcs = PyDict_GetItemString(pyitem_olc, str);
++  PyObject *from_proto = PyDict_GetItemString(olc_funcs, "from_proto");
++  pyolc_do_from_proto(from_proto, data);
++}
++
++void pyitem_olc_to_proto(PyObject *data, BUFFER *buf) {
++  char *str = PyString_AsString(PyObject_GetAttrString(data, "__item_type__"));
++  PyObject  *olc_funcs = PyDict_GetItemString(pyitem_olc, str);
++  PyObject   *to_proto = PyDict_GetItemString(olc_funcs, "to_proto");
++  pyolc_do_to_proto(to_proto, data, buf);
++}
++
++PyObject *pyolc_item_add_olc(PyObject *self, PyObject *args) {
++  PyObject       *pymenu = NULL;
++  PyObject    *pychooser = NULL;
++  PyObject     *pyparser = NULL;
++  PyObject *pyfrom_proto = NULL;
++  PyObject   *pyto_proto = NULL;
++  char             *type = NULL;
++
++  // parse out our socket and functions
++  if(!PyArg_ParseTuple(args, "sOOOOO", &type, &pymenu, &pychooser,&pyparser,
++		       &pyfrom_proto, &pyto_proto)) {
++    PyErr_Format(PyExc_TypeError,"Invalid number arguments supplied to do_olc");
++    return NULL;
++  }
++
++  // what are all the functions we need to pass to item_add_olc?
++  void       *menu = pyitem_olc_menu;
++  void    *chooser = pyitem_olc_chooser;
++  void     *parser = NULL;
++  void *from_proto = NULL;
++  void   *to_proto = NULL;
++
++  // figure out our remaining C OLC functions, if any?
++  if(pyparser != Py_None)
++    parser = pyitem_olc_parser;
++  if(pyfrom_proto != Py_None)
++    from_proto = pyitem_olc_from_proto;
++  if(pyto_proto != Py_None)
++    to_proto = pyitem_olc_to_proto;
++
++  // A new dictionary, and add all of our Python OLC functions
++  PyObject *item_olc = PyDict_New();
++  PyDict_SetItemString(item_olc, "menu",       pymenu);
++  PyDict_SetItemString(item_olc, "chooser",    pychooser);
++  PyDict_SetItemString(item_olc, "parser",     pyparser);
++  PyDict_SetItemString(item_olc, "from_proto", pyfrom_proto);
++  PyDict_SetItemString(item_olc, "to_proto",   pyto_proto);
++  PyDict_SetItemString(pyitem_olc, type, item_olc);
++
++  // add the OLC functions
++  item_add_olc(type, menu, chooser, parser, from_proto, to_proto);
++  return Py_BuildValue("O", Py_None);
++}
++
++
++PyObject *pyolc_extend(PyObject *self, PyObject *args) {
++  PyObject       *pymenu = NULL;
++  PyObject    *pychooser = NULL;
++  PyObject     *pyparser = NULL;
++  PyObject *pyfrom_proto = NULL;
++  PyObject   *pyto_proto = NULL;
++  char             *type = NULL;
++  char              *opt = NULL;
++
++  // parse out our socket and functions
++  if(!PyArg_ParseTuple(args, "ssOO|OOO", &type, &opt, &pymenu, &pychooser,&pyparser,
++		       &pyfrom_proto, &pyto_proto)) {
++    PyErr_Format(PyExc_TypeError,"Invalid number arguments supplied to do_olc");
++    return NULL;
++  }
++
++  // What OLC are we trying to extend?
++  OLC_EXTENDER *ext = NULL;
++  if(!strcmp(type, "medit"))
++    ext = medit_extend;
++  else if(!strcmp(type, "oedit"))
++    ext = oedit_extend;
++  else if(!strcmp(type, "redit"))
++    ext = redit_extend;
++  else {
++    PyErr_Format(PyExc_TypeError,"Extend options: medit, oedit, and redit.");
++    return NULL;
++  }
++
++  extenderRegisterPyOpt(ext, *opt, pymenu, pychooser, pyparser, pyfrom_proto,
++			pyto_proto);
++  return Py_BuildValue("i", 1);
++}
++
++
++
++//*****************************************************************************
++// PyOLC module
++//*****************************************************************************
++void PyOLC_addMethod(const char *name, void *f, int flags, const char *doc) {
++  // make sure our list of methods is created
++  if(pyolc_methods == NULL) pyolc_methods = newList();
++
++  // make the Method def
++  PyMethodDef *def = calloc(1, sizeof(PyMethodDef));
++  def->ml_name     = strdup(name);
++  def->ml_meth     = (PyCFunction)f;
++  def->ml_flags    = flags;
++  def->ml_doc      = (doc ? strdup(doc) : NULL);
++  listPut(pyolc_methods, def);
++}
++
++PyMODINIT_FUNC
++init_PyOLC(void) {
++  // add all of our methods
++  PyOLC_addMethod("do_olc", pyolc_do_olc, METH_VARARGS,"Enter the OLC editor.");
++  PyOLC_addMethod("item_add_olc", pyolc_item_add_olc, METH_VARARGS, 
++		  "Add a new OLC for editing a Python item type.");
++  PyOLC_addMethod("extend", pyolc_extend, METH_VARARGS,
++		  "Extends an already existing OLC command");
++
++  // create the module
++  PyObject *m = Py_InitModule3("olc", makePyMethods(pyolc_methods),
++			       "The Python module for OLC.");
++
++  // set some important OLC values as well
++  PyObject_SetAttrString(m, "MENU_NOCHOICE", Py_BuildValue("i", MENU_NOCHOICE));
++  PyObject_SetAttrString(m, "MENU_CHOICE_INVALID",
++			 Py_BuildValue("i", MENU_CHOICE_INVALID));
++  PyObject_SetAttrString(m, "MENU_CHOICE_OK",
++			 Py_BuildValue("i", MENU_CHOICE_OK));
++
++  pyitem_olc = PyDict_New();
++}
++#endif // MODULE_OLC2
+diff -ruN versions/nakedmudv3.6/src/scripts/pyolc.h src/scripts/pyolc.h
+--- versions/nakedmudv3.6/src/scripts/pyolc.h	1969-12-31 19:00:00.000000000 -0500
++++ src/scripts/pyolc.h	2008-12-01 01:29:24.000000000 -0500
+@@ -0,0 +1,23 @@
++#ifndef __PYOLC_H
++#define __PYOLC_H
++//*****************************************************************************
++//
++// pyolc.h
++//
++// A set of system level commands and variables that may be needed by python,
++// but which are not neccessarily needed by scripts.
++//
++//*****************************************************************************
++
++// init the Python olc module for use
++PyMODINIT_FUNC init_PyOLC(void);
++
++//
++// Adds a new method function (i.e. void *f) to the olc module. Name is the name
++// of the function, f is the PyCFunction implementing the new method, flags is
++// the type of method beings used (almost always METH_VARARGS), and doc is an
++// (optional) description of what the method does. For examples on how to add
++// new methods, see pymud.c
++void PyOLC_addMethod(const char *name, void *f, int flags, const char *doc);
++
++#endif //__PYOLC_H
+diff -ruN versions/nakedmudv3.6/src/scripts/pyplugs.c src/scripts/pyplugs.c
+--- versions/nakedmudv3.6/src/scripts/pyplugs.c	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pyplugs.c	2008-12-01 22:46:45.000000000 -0500
+@@ -57,10 +57,7 @@
+ bool PyModule_Reload(char *fname, char *mname) {
+   PyObject *code = Py_CompileFile(fname);
+   if(code == NULL) {
+-    char *tb = getPythonTraceback();
+-    log_string("Error in module file: %s\r\n"
+-	       "\r\nTraceback is:\r\n%s\r\n", fname, tb);
+-    free(tb);
++    log_pyerr("Error in module file: %s", fname);
+     return FALSE;
+   }
+   // no errors occured... load the module into our package
+@@ -75,12 +72,8 @@
+ 	PyObject *tbList = PyObject_CallMethod(old_mod, "__unload__", "");
+ 
+ 	// encountered an error with the unload function
+-	if(tbList == NULL) {
+-	  char *tb = getPythonTraceback();
+-	  log_string("Encountered error in %s.__unload__():\r\n"
+-		     "\r\nTraceback is:\r\n%s\r\n", mname, tb);
+-	  free(tb);
+-	}
++	if(tbList == NULL)
++	  log_pyerr("Encountered error in %s.__unload__()", mname);
+ 	Py_XDECREF(tbList);
+       }
+       Py_XDECREF(old_mod);
+@@ -88,10 +81,7 @@
+ 
+     PyObject *module = PyImport_ExecCodeModule(mname, code);
+     if(module == NULL) {
+-      char *tb = getPythonTraceback();
+-      log_string("Error in module file: %s\r\n"
+-		 "\r\nTraceback is:\r\n%s\r\n", fname, tb);
+-      free(tb);
++      log_pyerr("Error in module file: %s", fname);
+       return FALSE;
+     }
+     else
+@@ -173,15 +163,8 @@
+       // we now abandon bootup if we fail to load a Python module, because it
+       // can have potentially dangerous affects on the loading of other modules
+       // Thanks to Thirsteh for pointing this out.
+-      BUFFER *buf = newBuffer(1);
+-      char *tb = getPythonTraceback();
+-      bprintf(buf, "Error loading module, %s:\r\n%s\r\n"
+-	           "Bootup aborted. MUD shutting down.", mname, tb);
+-      log_string(bufferString(buf));
+-      printf("%s", bufferString(buf));
+-      
+-      deleteBuffer(buf);
+-      free(tb);
++      log_pyerr("Error loading module, %s:", mname);
++      log_string("Bootup aborted. MUD shutting down.");
+       closedir(dir);
+       exit(1);
+     }
+@@ -252,6 +235,22 @@
+     return chrRetval;
+ }
+ 
++void log_pyerr(const char *format, ...) {
++  // get the traceback, and print our message
++  char *tb = getPythonTraceback();
++  if(tb != NULL) {
++    static char buf[MAX_BUFFER];
++    va_list args;
++    va_start(args, format);
++    vsnprintf(buf, MAX_BUFFER, format, args);
++    va_end(args);
++
++    log_string("%s\r\n\r\n%s\r\n", buf, tb);
++    free(tb);
++  }
++}
++
++
+ PyGetSetDef *makePyGetSetters(LIST *getsetters) {
+   PyGetSetDef *getsets = calloc(listSize(getsetters)+1,sizeof(PyGetSetDef));
+   LIST_ITERATOR  *gs_i = newListIterator(getsetters);
+diff -ruN versions/nakedmudv3.6/src/scripts/pyplugs.h src/scripts/pyplugs.h
+--- versions/nakedmudv3.6/src/scripts/pyplugs.h	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pyplugs.h	2008-12-01 22:09:17.000000000 -0500
+@@ -17,6 +17,12 @@
+ char *getPythonTraceback(void);
+ 
+ //
++// If we've enountered an error in python, log the traceback along
++// with the specified message
++void log_pyerr(const char *mssg, ...)
++__attribute__ ((format (printf, 1, 2)));
++
++//
+ // initialize all of our plugs with python
+ void init_pyplugs();
+ 
+diff -ruN versions/nakedmudv3.6/src/scripts/pyroom.h src/scripts/pyroom.h
+--- versions/nakedmudv3.6/src/scripts/pyroom.h	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pyroom.h	2008-12-01 03:19:11.000000000 -0500
+@@ -12,6 +12,9 @@
+ //
+ //*****************************************************************************
+ 
++// used by pymudsys. Do not touch!
++PyTypeObject PyRoom_Type;
++
+ // initialize rooms for use. This must be called AFTER all other modules
+ // have added in new get/setters and methods to pyroom
+ PyMODINIT_FUNC init_PyRoom(void);
+diff -ruN versions/nakedmudv3.6/src/scripts/pysocket.h src/scripts/pysocket.h
+--- versions/nakedmudv3.6/src/scripts/pysocket.h	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/pysocket.h	2008-12-01 03:17:54.000000000 -0500
+@@ -12,6 +12,9 @@
+ //
+ //*****************************************************************************
+ 
++// used by pymudsys. Do not touch!
++PyTypeObject PySocket_Type;
++
+ // initialize sockets for use. This must be called AFTER all other modules
+ // have added in new get/setters and methods to pyroom
+ PyMODINIT_FUNC   init_PySocket(void);
+diff -ruN versions/nakedmudv3.6/src/scripts/scripts.c src/scripts/scripts.c
+--- versions/nakedmudv3.6/src/scripts/scripts.c	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/scripts.c	2008-12-03 04:23:11.000000000 -0500
+@@ -40,6 +40,7 @@
+ #include "pystorage.h"
+ #include "pyauxiliary.h"
+ #include "trighooks.h"
++#include "pyolc.h"
+ 
+ // online editor stuff
+ #include "../editor/editor.h"
+@@ -52,6 +53,13 @@
+ 
+ 
+ //*****************************************************************************
++// mandatory modules
++//*****************************************************************************
++#include "../olc2/olc.h"
++
++
++
++//*****************************************************************************
+ // auxiliary data
+ //*****************************************************************************
+ typedef struct {
+@@ -349,6 +357,7 @@
+   init_PyObj();
+   init_PyMud();
+   init_PyHooks();
++  init_PyOLC();
+ 
+   // initialize all of our modules written in Python
+   init_pyplugs();
+@@ -402,6 +411,7 @@
+   if(sys != NULL) {
+     PyObject *exit = PyDict_GetItemString(PyModule_GetDict(sys), "exit");
+     if(exit != NULL) PyDict_SetItemString(dict, "exit", exit);
++    if(exit != NULL) PyDict_SetItemString(dict, "end_script", exit);
+     Py_DECREF(sys);
+   }
+   
+@@ -493,12 +503,8 @@
+     run_code(retval, dict, locale);
+   
+   // did we end up with an error?
+-  if(retval == NULL || !last_script_ok()) {
+-    char *tb = getPythonTraceback();
+-    log_string("Script terminated with an error:\r\n%s\r\n"
+-	       "\r\nTraceback is:\r\n%s\r\n", script, tb);
+-    free(tb);
+-  }
++  if(retval == NULL || !last_script_ok())
++    log_pyerr("Script terminated with an error:\r\n%s", script);
+ 
+   // return our code object
+   return retval;
+@@ -516,12 +522,8 @@
+   PyObject *retval = PyRun_String(statement, Py_eval_input, dict, dict);
+ 
+   // did we encounter an error?
+-  if(retval == NULL) {
+-    char *tb = getPythonTraceback();
+-    log_string("eval_script terminated with an error:\r\n%s\r\n"
+-	       "\r\nTraceback is:\r\n%s\r\n", statement, tb);
+-    free(tb);
+-  }
++  if(retval == NULL)
++    log_pyerr("eval_script terminated with an error:\r\n%s", statement);
+ 
+   free(listPop(locale_stack));
+   return retval;
+diff -ruN versions/nakedmudv3.6/src/scripts/trigedit.c src/scripts/trigedit.c
+--- versions/nakedmudv3.6/src/scripts/trigedit.c	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/trigedit.c	2008-11-24 17:47:28.000000000 -0500
+@@ -100,7 +100,7 @@
+   { "get",            "obj, room" },
+   { "give",           "obj, mob"  },
+   { "receive",        "mob"       },
+-  { "wear",           "mob"       },
++  { "wear",           "obj, mob"  },
+   { "remove",         "obj, mob"  },
+   { "reset",          "room"      },
+   { "combat",         "mob"       },
+diff -ruN versions/nakedmudv3.6/src/scripts/triggers.c src/scripts/triggers.c
+--- versions/nakedmudv3.6/src/scripts/triggers.c	2008-05-31 00:17:59.000000000 -0400
++++ src/scripts/triggers.c	2008-12-01 22:18:18.000000000 -0500
+@@ -131,12 +131,8 @@
+   else {
+     run_code(trigger->pycode, dict, get_key_locale(triggerGetKey(trigger)));
+     
+-    if(!last_script_ok()) {
+-      char *tb = getPythonTraceback();
+-      log_string("Trigger %s terminated with an error:\r\n%s\r\n"
+-		 "\r\nTraceback is:\r\n%s\r\n", 
+-		 trigger->key, bufferString(trigger->code), tb);
+-      free(tb);
+-    }
++    if(!last_script_ok())
++      log_pyerr("Trigger %s terminated with an error:\r\n%s",
++		trigger->key, bufferString(trigger->code));
+   }
+ }
+diff -ruN versions/nakedmudv3.6/src/socket.c src/socket.c
+--- versions/nakedmudv3.6/src/socket.c	2008-05-31 00:17:59.000000000 -0400
++++ src/socket.c	2008-12-01 22:32:14.000000000 -0500
+@@ -402,7 +402,7 @@
+     static char buf[MAX_BUFFER];
+     va_list args;
+     va_start(args, format);
+-    vsprintf(buf, format, args);
++    vsnprintf(buf, MAX_BUFFER, format, args);
+     va_end(args);
+     text_to_buffer(dsock, buf);
+   }
+@@ -790,13 +790,8 @@
+ 	PyObject *retval  = PyEval_CallObject(pair->handler, arglist);
+ 
+ 	// check for an error:
+-	if(retval == NULL) {
+-	  char *tb = getPythonTraceback();
+-	  if(tb != NULL) {
+-	    log_string("Error with a python input handler:\r\n%s\r\n", tb);
+-	    free(tb);
+-	  }
+-	}
++	if(retval == NULL)
++	  log_pyerr("Error with a Python input handler");
+ 	
+ 	// garbage collection
+ 	Py_XDECREF(retval);
+@@ -1094,13 +1089,8 @@
+     PyObject *arglist = Py_BuildValue("(O)", socketGetPyFormBorrowed(sock));
+     PyObject *retval  = PyEval_CallObject(pair->prompt, arglist);
+     // check for an error:
+-    if(retval == NULL) {
+-      char *tb = getPythonTraceback();
+-      if(tb != NULL) {
+-	log_string("Error with a python prompt:\r\n%s\r\n", tb);
+-	free(tb);
+-      }
+-    }
++    if(retval == NULL)
++      log_pyerr("Error with a Python prompt");
+     
+     // garbage collection
+     Py_XDECREF(retval);
+diff -ruN versions/nakedmudv3.6/src/utils.c src/utils.c
+--- versions/nakedmudv3.6/src/utils.c	2008-05-31 00:17:59.000000000 -0400
++++ src/utils.c	2008-12-03 02:20:13.000000000 -0500
+@@ -1309,6 +1309,33 @@
+   }
+ }
+ 
++const char *get_shortkey(const char *key, const char *to) {
++  // are we missing a locale?
++  int pos = next_letter_in(key, '@');
++  if(pos < 0)
++    return key;
++
++  // if 'to' doesn't exist, make sure we return the full thing back.
++  // Only relevant for attaching triggers to characters instead of mobiles
++  if(!*to)
++    return key;
++
++  // is 'to' missing a locale?
++  pos = next_letter_in(to, '@');
++  if(pos < 0)
++    return get_key_name(key);
++
++  // two keys, both with a name and a locale. See if our locales match up
++  static char name[SMALL_BUFFER];
++  static char locale[SMALL_BUFFER];
++  parse_worldkey(key, name, locale);
++  if(!strcmp(locale, get_key_locale(to)))
++    return name;
++
++  // different locales, return the full key
++  return key;
++}
++
+ bool cmd_matches(const char *pattern, const char *cmd) {
+   int len = next_letter_in(pattern, '*');
+   // we have to match exactly
+diff -ruN versions/nakedmudv3.6/src/utils.h src/utils.h
+--- versions/nakedmudv3.6/src/utils.h	2008-05-31 00:17:59.000000000 -0400
++++ src/utils.h	2008-12-03 01:25:06.000000000 -0500
+@@ -197,6 +197,12 @@
+ const char *get_fullkey_relative(const char *key, const char *locale);
+ 
+ //
++// Returns the shortest version of key, relative to the other key, 'to'.
++// If they have separate locales, return the fullkey of key. If they have the
++// same locale, just return the first portion of the key
++const char *get_shortkey(const char *key, const char *to);
++
++//
+ // Returns whether or not the command matches the pattern. Patterns are just
+ // like commands, except they can be terminated with *'s to signify that
+ // "anything can follow at this point". Example matches might include:
+diff -ruN versions/nakedmudv3.6/src/world.c src/world.c
+--- versions/nakedmudv3.6/src/world.c	2008-05-31 00:17:59.000000000 -0400
++++ src/world.c	2008-12-03 16:29:39.000000000 -0500
+@@ -28,10 +28,11 @@
+ #define HUGE_WORLD      250000
+ 
+ typedef struct {
+-  void      *(* read_func)(STORAGE_SET *);
+-  STORAGE_SET     *(* store_func)(void *);
+-  void            (* delete_func)(void *);
+-  void (* key_func)(void *, const char *);
++  void   *read_func;
++  void  *store_func;
++  void *delete_func;
++  void    *key_func;
++  bool    forgetful;
+ } WORLD_TYPE_DATA;
+ 
+ struct world_data {
+@@ -42,12 +43,13 @@
+ };
+ 
+ WORLD_TYPE_DATA *newWorldTypeData(void *reader, void *storer, void *deleter,
+-				  void *keysetter) {
++				  void *keysetter, bool forgetful) {
+   WORLD_TYPE_DATA *data = malloc(sizeof(WORLD_TYPE_DATA));
+   data->read_func       = reader;
+   data->store_func      = storer;
+   data->delete_func     = deleter;
+   data->key_func        = keysetter;
++  data->forgetful       = forgetful;
+   return data;
+ }
+ 
+@@ -304,7 +306,7 @@
+   // add the new type to each of our zones, too
+   if(!hashIn(world->type_table, type)) {
+     hashPut(world->type_table, type, 
+-	    newWorldTypeData(reader, storer, deleter, zonesetter));
++	    newWorldTypeData(reader, storer, deleter, zonesetter, FALSE));
+     HASH_ITERATOR *zone_i = newHashIterator(world->zones);
+     const char       *key = NULL;
+     ZONE_DATA       *zone = NULL;
+@@ -314,6 +316,21 @@
+   }
+ }
+ 
++void worldAddForgetfulType(WORLD_DATA *world, const char *type, void *reader,
++			   void *storer, void *deleter, void *zonesetter) {
++  // add the new type to each of our zones, too
++  if(!hashIn(world->type_table, type)) {
++    hashPut(world->type_table, type, 
++	    newWorldTypeData(reader, storer, deleter, zonesetter, TRUE));
++    HASH_ITERATOR *zone_i = newHashIterator(world->zones);
++    const char       *key = NULL;
++    ZONE_DATA       *zone = NULL;
++    ITERATE_HASH(key, zone, zone_i)
++      zoneAddForgetfulType(zone, type, reader, storer, deleter, zonesetter);
++    deleteHashIterator(zone_i);
++  }
++}
++
+ ZONE_DATA *worldGetZone(WORLD_DATA *world, const char *key) {
+   return hashGet(world->zones, key);
+ }
+diff -ruN versions/nakedmudv3.6/src/world.h src/world.h
+--- versions/nakedmudv3.6/src/world.h	2008-05-31 00:17:59.000000000 -0400
++++ src/world.h	2008-12-03 16:29:27.000000000 -0500
+@@ -42,6 +42,15 @@
+ void     worldAddType(WORLD_DATA *world, const char *type, void *reader,
+ 		      void *storer, void *deleter, void *typesetter);
+ 
++//
++// some types can 'forget' what they are. This is a fudge so Python can add
++// types to the world, and we can do a lookup on the functions that need to
++// be called, without having to explicitly deal with Python in world.c.
++// Forgetful functions are exactly the same as normal functions, except they
++// take an additional initial argument, which is a const string of their type
++void worldAddForgetfulType(WORLD_DATA *world, const char *type, void *reader,
++			   void *storer, void *deleter, void *typesetter);
++
+ ZONE_DATA *worldRemoveZone(WORLD_DATA *world, const char *key);
+ ROOM_DATA    *worldGetRoom(WORLD_DATA *world, const char *key);
+ ROOM_DATA *worldRemoveRoom(WORLD_DATA *world, const char *key);
+diff -ruN versions/nakedmudv3.6/src/zone.c src/zone.c
+--- versions/nakedmudv3.6/src/zone.c	2008-05-31 00:17:59.000000000 -0400
++++ src/zone.c	2008-12-03 16:51:13.000000000 -0500
+@@ -25,24 +25,67 @@
+ // zone type data
+ //*****************************************************************************
+ typedef struct {
++  /*
+   void      *(* read_func)(STORAGE_SET *);
+   STORAGE_SET     *(* store_func)(void *);
+   void            (* delete_func)(void *);
+   void (* key_func)(void *, const char *);
+-  HASHTABLE                  *key_map;
++  */
++  void    *read_func;
++  void   *store_func;
++  void  *delete_func;
++  void     *key_func;
++  bool     forgetful;
++  HASHTABLE *key_map;
++  char         *type;
+ } ZONE_TYPE_DATA;
+ 
+-ZONE_TYPE_DATA *newZoneType(void *reader, void *storer, void *deleter,
+-			    void *keysetter) {
++ZONE_TYPE_DATA *newZoneType(const char *type, void *reader, void *storer, 
++			    void *deleter, void *keysetter, bool forgetful) {
+   ZONE_TYPE_DATA *data = malloc(sizeof(ZONE_TYPE_DATA));
+   data->read_func      = reader;
+   data->store_func     = storer;
+   data->delete_func    = deleter;
+   data->key_func       = keysetter;
++  data->forgetful      = forgetful;
+   data->key_map        = newHashtable();
++  data->type           = strdupsafe(type);
+   return data;
+ }
+ 
++void *do_zone_read(ZONE_TYPE_DATA *tdata, STORAGE_SET *set) {
++  if(tdata->forgetful) {
++    void *(* read_func)(const char *, STORAGE_SET *) = tdata->read_func;
++    return read_func(tdata->type, set);
++  }
++  else {
++    void *(* read_func)(STORAGE_SET *) = tdata->read_func;
++    return read_func(set);
++  }
++}
++
++void do_zone_setkey(ZONE_TYPE_DATA *tdata, void *data, const char *key) {
++  if(tdata->forgetful) {
++    void (* key_func)(const char *, void *, const char *) = tdata->key_func;
++    key_func(tdata->type, data, key);
++  }
++  else {
++    void (* key_func)(void *, const char *) = tdata->key_func;
++    key_func(data, key);
++  }
++}
++
++STORAGE_SET *do_zone_store(ZONE_TYPE_DATA *tdata, void *data) {
++  if(tdata->forgetful) {
++    STORAGE_SET *(* store_func)(const char *, void *) = tdata->store_func;
++    return store_func(tdata->type, data);
++  }
++  else {
++    STORAGE_SET *(* store_func)(void *) = tdata->store_func;
++    return store_func(data);
++  }
++}
++
+ 
+ 
+ //*****************************************************************************
+@@ -304,9 +347,9 @@
+ 	    type, key);
+     STORAGE_SET *set = storage_read(buf);
+     if(set != NULL) {
+-      data = tdata->read_func(set);
++      data = do_zone_read(tdata, set);
+       hashPut(tdata->key_map, key, data);
+-      tdata->key_func(data, get_fullkey(key, zone->key));
++      do_zone_setkey(tdata, data, get_fullkey(key, zone->key));
+       storage_close(set);
+     }
+     return data;
+@@ -330,7 +373,7 @@
+   void *data = zoneGetType(zone, type, key);
+   if(data != NULL) {
+     ZONE_TYPE_DATA *tdata = hashGet(zone->type_table, type);
+-    STORAGE_SET      *set = tdata->store_func(data);
++    STORAGE_SET      *set = do_zone_store(tdata, data);
+     if(set != NULL) {
+       char buf[MAX_BUFFER];
+       sprintf(buf,"%s/%s/%s",worldGetZonePath(zone->world,zone->key),type,key);
+@@ -352,7 +395,7 @@
+     // then remove it from the key map
+     void *data = hashRemove(tdata->key_map, key);
+     if(data != NULL)
+-      tdata->key_func(data, "");
++      do_zone_setkey(tdata, data, "");
+     return data;
+   }
+ }
+@@ -362,15 +405,26 @@
+   ZONE_TYPE_DATA *tdata = hashGet(zone->type_table, type);
+   if(tdata != NULL) {
+     hashPut(tdata->key_map, key, data);
+-    tdata->key_func(data, get_fullkey(key, zone->key));
++    do_zone_setkey(tdata, data, get_fullkey(key, zone->key));
+   }
+ }
+ 
+ void zoneAddType(ZONE_DATA *zone, const char *type, void *reader, 
+ 		 void *storer, void *deleter, void *typesetter) {
+   if(!hashIn(zone->type_table, type)) {
+-    hashPut(zone->type_table, type, newZoneType(reader, storer, deleter, 
+-						typesetter));
++    hashPut(zone->type_table, type, newZoneType(type, reader, storer, deleter, 
++						typesetter, FALSE));
++    char buf[MAX_BUFFER];
++    sprintf(buf, "%s/%s", worldGetZonePath(zone->world, zone->key), type);
++    mkdir(buf, S_IRWXU | S_IRWXG);
++  }
++}
++
++void zoneAddForgetfulType(ZONE_DATA *zone, const char *type, void *reader, 
++			  void *storer, void *deleter, void *typesetter) {
++  if(!hashIn(zone->type_table, type)) {
++    hashPut(zone->type_table, type, newZoneType(type, reader, storer, deleter, 
++						typesetter, TRUE));
+     char buf[MAX_BUFFER];
+     sprintf(buf, "%s/%s", worldGetZonePath(zone->world, zone->key), type);
+     mkdir(buf, S_IRWXU | S_IRWXG);
+diff -ruN versions/nakedmudv3.6/src/zone.h src/zone.h
+--- versions/nakedmudv3.6/src/zone.h	2008-05-31 00:17:59.000000000 -0400
++++ src/zone.h	2008-12-03 16:29:13.000000000 -0500
+@@ -86,4 +86,13 @@
+ 		       void *storer, void *deleter, void *keysetter);
+ LIST  *zoneGetTypeKeys(ZONE_DATA *zone, const char *type);
+ 
++//
++// some types can 'forget' what they are. This is a fudge so Python can add
++// types to zones, and we can do a lookup on the functions that need to
++// be called, without having to explicitly deal with Python in zone.c.
++// Forgetful functions are exactly the same as normal functions, except they
++// take an additional initial argument, which is a const string of their type
++void zoneAddForgetfulType(ZONE_DATA *zone, const char *type, void *reader,
++			  void *storer, void *deleter, void *keysetter);
++
+ #endif // __ZONE_H
+diff -ruN versions/nakedmudv3.6/lib/pymodules/char_gen.py lib/pymodules/char_gen.py
+--- versions/nakedmudv3.6/lib/pymodules/char_gen.py	2008-05-31 00:18:11.000000000 -0400
++++ lib/pymodules/char_gen.py	2008-11-05 14:00:21.000000000 -0500
+@@ -48,7 +48,7 @@
+     if not mud.is_race(arg, True):
+         sock.send("Invalid race selection, try again.")
+     else:
+-        sock.ch.race = arg
++        sock.ch.race = arg.lower()
+         sock.pop_ih()
+ 
+ def cg_finish_handler(sock, arg):
+diff -ruN versions/nakedmudv3.6/lib/pymodules/cmd_admin.py lib/pymodules/cmd_admin.py
+--- versions/nakedmudv3.6/lib/pymodules/cmd_admin.py	2008-05-31 00:18:11.000000000 -0400
++++ lib/pymodules/cmd_admin.py	2008-11-17 23:37:22.000000000 -0500
+@@ -20,7 +20,7 @@
+     ch.send("You must spell out shutdown completely!")
+ 
+ def cmd_copyover(ch, cmd, arg):
+-    '''Restarts the mud, and keep all sockets connected.'''
++    '''Restarts the mud, and keep all sockets connected.''' 
+     mudsys.do_copyover()
+ 
+ def cmd_copyover_net(ch, cmd, arg):
+@@ -49,7 +49,8 @@
+     '''Usage: pulserate <pulses>
+     
+       Changes the number of pulses the mud experiences each second. The mud
+-      makes one loop through the main game handler each pulse.'''
++      makes one loop through the main game handler each pulse.
++      '''
+     if arg == '':
+         ch.send("The mud currently has "+mudsys.sys_getval("pulses_per_second")+
+                 "pulses per second.")
+diff -ruN versions/nakedmudv3.6/lib/pymodules/cmd_manip.py lib/pymodules/cmd_manip.py
+--- versions/nakedmudv3.6/lib/pymodules/cmd_manip.py	2008-05-31 00:18:11.000000000 -0400
++++ lib/pymodules/cmd_manip.py	2008-05-31 04:25:57.000000000 -0400
+@@ -193,7 +193,9 @@
+     elif ch.equip(obj, where):
+         message(ch, None, obj, None, True, "to_char", "You wear $o.")
+         message(ch, None, obj, None, True, "to_room", "$n wears $o.")
+-        # equip hooks are done in the C code
++
++        # run our wear hook
++        hooks.run("wear", hooks.build_info("ch obj", (ch, obj)))
+     else:
+         message(ch, None, obj, None, True, "to_char", "You could not equip $o.")
+ 
+diff -ruN versions/nakedmudv3.6/lib/pymodules/routine.py lib/pymodules/routine.py
+--- versions/nakedmudv3.6/lib/pymodules/routine.py	2008-05-31 00:18:11.000000000 -0400
++++ lib/pymodules/routine.py	2008-12-01 03:33:48.000000000 -0500
+@@ -199,4 +199,9 @@
+ add_cmd("routine", None, cmd_routine, "admin", False)
+ 
+ # misc initialization
+-mud.set_routine = set_routine
++# mud.set_routine = set_routine
++#
++# now use:    ch.set_routine(routine)
++# instead of: mud.set_routine(ch, routine)
++#
++mudsys.add_char_method("set_routine", set_routine)
+diff -ruN versions/nakedmudv3.6/lib/pymodules/utils.py lib/pymodules/utils.py
+--- versions/nakedmudv3.6/lib/pymodules/utils.py	2008-05-31 00:18:11.000000000 -0400
++++ lib/pymodules/utils.py	2008-12-01 20:13:52.000000000 -0500
+@@ -112,3 +112,22 @@
+             else:
+                 ch.send(m_func(thing) % count)
+         else: pass
++
++def olc_display_table(sock, list, num_cols, disp = lambda x: x):
++    '''used by OLC functions to display a list of options in a table form.
++       Also displays each option\'s position number and colorizes everything.'''
++    print_room = (80 - 10*num_cols)/num_cols;
++    fmt        = "  {c%%2d{y) {g%%-%ds%%s" % print_room
++    i          = 0
++
++    # display each cell
++    for item in list:
++        endtag = "   "
++        if i % num_cols == (num_cols - 1):
++            endtag = "\r\n"
++        sock.send_raw(fmt % (i, disp(item), endtag))
++        i += 1
++
++    # do we need to end this with a newline?
++    if i % num_cols != 0:
++        sock.send_raw("\r\n")

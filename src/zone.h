@@ -86,4 +86,13 @@ void       zoneAddType(ZONE_DATA *zone, const char *type, void *reader,
 		       void *storer, void *deleter, void *keysetter);
 LIST  *zoneGetTypeKeys(ZONE_DATA *zone, const char *type);
 
+//
+// some types can 'forget' what they are. This is a fudge so Python can add
+// types to zones, and we can do a lookup on the functions that need to
+// be called, without having to explicitly deal with Python in zone.c.
+// Forgetful functions are exactly the same as normal functions, except they
+// take an additional initial argument, which is a const string of their type
+void zoneAddForgetfulType(ZONE_DATA *zone, const char *type, void *reader,
+			  void *storer, void *deleter, void *keysetter);
+
 #endif // __ZONE_H

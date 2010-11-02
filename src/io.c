@@ -32,11 +32,11 @@ void log_string(const char *txt, ...)
   va_list args;
 
   va_start(args, txt);
-  vsprintf(buf, txt, args);
+  vsnprintf(buf, MAX_BUFFER, txt, args);
   va_end(args);
 
   /* point to the correct logfile */
-  sprintf(logfile, "../log/%6.6s.log", strtime);
+  snprintf(logfile, MAX_BUFFER, "../log/%6.6s.log", strtime);
 
   /* try to open logfile */
   if ((fp = fopen(logfile, "a")) == NULL)
@@ -65,7 +65,7 @@ void bug(const char *txt, ...)
   char *strtime = get_time();
 
   va_start(args, txt);
-  vsprintf(buf, txt, args);
+  vsnprintf(buf, MAX_BUFFER, txt, args);
   va_end(args);
 
   /* try to open logfile */

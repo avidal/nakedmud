@@ -25,6 +25,7 @@
 
 #include "olc.h"
 #include "olc_submenus.h"
+#include "olc_extender.h"
 
 
 
@@ -766,7 +767,6 @@ void exit_from_proto(EXIT_DATA *exit, BUFFER *buf) {
   } while(*code != '\0');
 }
 
-
 ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
   ROOM_OLC  *data = newRoomOLC();
   ROOM_DATA *room = roomOLCGetRoom(data);
@@ -774,97 +774,35 @@ ROOM_OLC *roomOLCFromProto(PROTO_DATA *proto) {
   roomOLCSetParents(data, protoGetParents(proto));
   roomOLCSetAbstract(data, protoIsAbstract(proto));
 
-  // this is a really ugly way to do the conversion, but basically let's
-  // just look through every line in the buffer and if we recognize some
-  // token, parse out whatever is assigned to it
-  char line[MAX_BUFFER];
-  const char *code = protoGetScript(proto);
-  do {
-    code = strcpyto(line, code, '\n');
-    char *lptr = line;
-    if(!strncmp(lptr, "me.name", 7)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      roomSetName(room, lptr);
-    }
-    else if(!strncmp(lptr, "me.desc",  7)) {
-      // we have three "'s to skip by, because this lptr will take the form:
-      // me.desc = me.desc + " " + "..."
-      while(*lptr != '\"') lptr++; lptr++;
-      while(*lptr != '\"') lptr++; lptr++;
-      while(*lptr != '\"') lptr++; lptr++;
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      roomSetDesc(room, lptr);
-      // replace our \"s with "
-      bufferReplace(roomGetDescBuffer(room), "\\\"", "\"", TRUE);
-      bufferFormat(roomGetDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
-    }
-    else if(!strncmp(lptr, "me.terrain", 10)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                      // kill the leading "
-      lptr[strlen(lptr)-1] = '\0'; // kill the ending "
-      roomSetTerrain(room, terrainGetNum(lptr));
-    }
-    else if(!strncmp(lptr, "me.edesc(", 9)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                                              // kill the leading "
-      char *desc_start = lptr + next_letter_in(lptr, '\"') + 1;
-      lptr[next_letter_in(lptr, '\"')] = '\0';             // kill the ending "
-      while(*desc_start != '\"') desc_start++;
-      desc_start++;                                        // kill start and end
-      desc_start[strlen(desc_start)-2] = '\0';             // "s for desc too
-      EDESC_DATA *edesc = newEdesc(lptr, desc_start);
-      // replace our \"s with "
-      bufferReplace(edescGetDescBuffer(edesc), "\\\"", "\"", TRUE);
-      edescSetPut(roomGetEdescs(room), edesc);
-    }
-    else if(!strncmp(lptr, "me.attach(\"", 11)) {
-      char trigname[SMALL_BUFFER];
-      sscanf(lptr, "me.attach(\"%s", trigname);
-      // kill our ending ")
-      trigname[strlen(trigname)-2] = '\0';
-      triggerListAdd(roomGetTriggers(room), trigname);
-    }
-    else if(!strncmp(lptr, "me.bits", 7)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                                  // kill the leading "
-      lptr[next_letter_in(lptr, '\"')] = '\0'; // kill the ending "
-      bitSet(roomGetBits(room), lptr);
-    }
+  // build it from the prototype
+  olc_from_proto(proto, roomOLCGetExtraCode(data), room, roomGetPyFormBorrowed,
+		 room_exist, room_unexist);
+  bufferFormatFromPy(roomGetDescBuffer(room));
+  bufferFormat(roomGetDescBuffer(room), SCREEN_WIDTH, PARA_INDENT);
 
-    else if(!strncmp(lptr, "exit = me.dig(", 14)) {
-      while(*lptr != '\"') lptr++;
-      lptr++;                                              // kill the leading "
-      char *dest = lptr + next_letter_in(lptr, '\"') + 1;
-      lptr[next_letter_in(lptr, '\"')] = '\0';             // kill the ending "
-      while(*dest != '\"') dest++;
-      dest++;                                              // kill start and end
-      dest[next_letter_in(dest, '\"')] = '\0';             // "s for desc too
-      EXIT_DATA *exit = newExit();
-      exitSetTo(exit, dest);
-      roomSetExit(room, lptr, exit);
+  // format the exit desc buffers as well
+  LIST       *ex_list = roomGetExitNames(room);
+  LIST_ITERATOR *ex_i = newListIterator(ex_list);
+  char           *dir = NULL;
+  ITERATE_LIST(dir, ex_i) {
+    bufferFormatFromPy(exitGetDescBuffer(roomGetExit(room, dir)));
+    bufferFormat(exitGetDescBuffer(roomGetExit(room,dir)), 
+		 SCREEN_WIDTH, PARA_INDENT);
+  } deleteListIterator(ex_i);
+  deleteListWith(ex_list, free);
 
-      BUFFER *ex_buf = newBuffer(1);
-      code = strcpyto(line, code, '\n');
-      while(*line && strcmp(line, "### end exit") != 0) {
-	bprintf(ex_buf, "%s\n", line);
-	code = strcpyto(line, code, '\n');
-      }
+  // format our extra descriptions
+  if(listSize(edescSetGetList(roomGetEdescs(room))) > 0) {
+    LIST_ITERATOR *edesc_i= newListIterator(edescSetGetList(roomGetEdescs(room)));
+    EDESC_DATA      *edesc= NULL;
+    ITERATE_LIST(edesc, edesc_i) {
+      bufferFormatFromPy(edescGetDescBuffer(edesc));
+      bufferFormat(edescGetDescBuffer(edesc), SCREEN_WIDTH, PARA_INDENT);
+    } deleteListIterator(edesc_i);
+  }
 
-      exit_from_proto(exit, ex_buf);
-      deleteBuffer(ex_buf);
-    }
-
-    else if(!strcmp(lptr, "### begin extra code")) {
-      code = strcpyto(line, code, '\n');
-      while(strcmp(line, "### end extra code") != 0) {
-	bprintf(roomOLCGetExtraCode(data), "%s\n", line);
-	if(!*code) break;
-	code = strcpyto(line, code, '\n');
-      }
-    }
-  } while(*code != '\0');
+  // do all of our extender data as well
+  extenderFromProto(redit_extend, room);
 
   return data;
 }
@@ -885,9 +823,7 @@ void exit_to_proto(EXIT_DATA *exit, BUFFER *buf) {
     bprintf(buf, "exit.opposite   = \"%s\"\n", exitGetOpposite(exit));
   if(*exitGetDesc(exit)) {
     BUFFER *desc_copy = bufferCopy(exitGetDescBuffer(exit));
-    bufferReplace(desc_copy, "\n", " ", TRUE);
-    bufferReplace(desc_copy, "\r", "",  TRUE);
-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+    bufferFormatPy(desc_copy);
     bprintf(buf, "exit.desc       = \"%s\"\n", bufferString(desc_copy));
     deleteBuffer(desc_copy);
   }
@@ -921,9 +857,7 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
 	    terrainGetName(roomGetTerrain(room)));
   if(*roomGetDesc(room)) {
     BUFFER *desc_copy = bufferCopy(roomGetDescBuffer(room));
-    bufferReplace(desc_copy, "\n", " ", TRUE);
-    bufferReplace(desc_copy, "\r", "",  TRUE);
-    bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+    bufferFormatPy(desc_copy);
     bprintf(buf, "me.desc       = me.desc + \" \" + \"%s\"\n", 
 	    bufferString(desc_copy));
     deleteBuffer(desc_copy);
@@ -937,9 +871,7 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
     EDESC_DATA      *edesc= NULL;
     ITERATE_LIST(edesc, edesc_i) {
       BUFFER *desc_copy = bufferCopy(edescGetDescBuffer(edesc));
-      bufferReplace(desc_copy, "\n", " ", TRUE);
-      bufferReplace(desc_copy, "\r", "",  TRUE);
-      bufferReplace(desc_copy, "\"", "\\\"", TRUE);
+      bufferFormatPy(desc_copy);
       bprintf(buf, "me.edesc(\"%s\", \"%s\")\n", 
 	      edescGetKeywords(edesc), bufferString(desc_copy));
       deleteBuffer(desc_copy);
@@ -948,7 +880,7 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
 
   if(*bitvectorGetBits(roomGetBits(room))) {
     bprintf(buf, "\n### room bits\n");
-    bprintf(buf, "me.bits     = \"%s\" + \", \" + me.bits\n", 
+    bprintf(buf, "me.bits     = ', '.join([me.bits, \"%s\"])\n",
 	    bitvectorGetBits(roomGetBits(room)));
   }
 
@@ -957,7 +889,7 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
     LIST_ITERATOR *trig_i = newListIterator(roomGetTriggers(room));
     char            *trig = NULL;
     ITERATE_LIST(trig, trig_i) {
-      bprintf(buf, "me.attach(\"%s\")\n", trig);
+      bprintf(buf, "me.attach(\"%s\")\n",get_shortkey(trig,protoGetKey(proto)));
     } deleteListIterator(trig_i);
   }
 
@@ -969,11 +901,15 @@ PROTO_DATA *roomOLCToProto(ROOM_OLC *data) {
   ITERATE_LIST(ex_name, ex_i) {
     exit = roomGetExit(room, ex_name);
     bprintf(buf, "\n### begin exit: %s\n", ex_name);
-    bprintf(buf, "exit = me.dig(\"%s\", \"%s\")\n", ex_name, exitGetTo(exit));
+    bprintf(buf, "exit = me.dig(\"%s\", \"%s\")\n",
+	    ex_name, get_shortkey(exitGetTo(exit), protoGetKey(proto)));
     exit_to_proto(exit, buf);
     bprintf(buf, "### end exit\n");
   } deleteListIterator(ex_i);
   deleteListWith(ex_names, free);
+
+  // do all of our extender data as well
+  extenderToProto(redit_extend, roomOLCGetRoom(data), buf);
 
   // extra code
   if(bufferLength(roomOLCGetExtraCode(data)) > 0) {
@@ -1017,7 +953,7 @@ void redit_exit_menu(SOCKET_DATA *sock, ROOM_OLC *data) {
     send_to_socket(sock, "   {g%-10s : %s%-20s%s",
 		   dirGetName(i), 
 		   (ex ? "{c" : "{y" ),
-		   (ex ? exitGetTo(ex) : "nowhere"),
+		   (ex ? get_shortkey(exitGetTo(ex), roomOLCGetKey(data)) : "nowhere"),
 		   (!(i % 2) ? "   "   : "\r\n"));    
   }
 
@@ -1069,6 +1005,9 @@ void redit_menu(SOCKET_DATA *sock, ROOM_OLC *data) {
 		 (roomOLCGetResettable(data) ? "yes" : "no"));
   redit_exit_menu(sock, data);
 
+  // display our extender info
+  extenderDoMenu(sock, redit_extend, roomOLCGetRoom(data));
+
   // only allow code editing for people with scripting priviledges
   send_to_socket(sock, "\n{gC) Extra code%s\r\n", 
 		 ((!socketGetChar(sock) ||  
@@ -1097,6 +1036,7 @@ int redit_chooser(SOCKET_DATA *sock, ROOM_OLC *data, const char *option) {
     roomOLCSetResettable(data, (roomOLCGetResettable(data) + 1) % 2);
     return MENU_NOCHOICE;
   case 'R':
+    roomOLCSetResettable(data, TRUE);
     do_olc(sock, rrledit_menu, rrledit_chooser, rrledit_parser, NULL, NULL,
 	   NULL, NULL, roomOLCGetResets(data));
     return MENU_NOCHOICE;
@@ -1131,7 +1071,7 @@ int redit_chooser(SOCKET_DATA *sock, ROOM_OLC *data, const char *option) {
     socketStartEditor(sock, script_editor, roomOLCGetExtraCode(data));
     return MENU_NOCHOICE;
   default:
-    return MENU_CHOICE_INVALID;
+    return extenderDoOptChoice(sock,redit_extend,roomOLCGetRoom(data),*option);
   }
 }
 
@@ -1200,7 +1140,7 @@ bool redit_parser(SOCKET_DATA *sock, ROOM_OLC *data, int choice,
   }
     
   default:
-    return FALSE;
+    return extenderDoParse(sock,redit_extend,roomOLCGetRoom(data),choice,arg);
   }
 }
 
@@ -1556,19 +1496,18 @@ COMMAND(cmd_instantiate) {
     bool      resettable = FALSE;
 
     // check to see if the source room is resettable
-    if(listGetWith(zoneGetResettable(src_zone),
-		   get_key_name(get_fullkey(src_name, src_locale)),
-		   strcasecmp) != NULL)
+    if(listGetWith(zoneGetResettable(src_zone), src_name, strcasecmp) != NULL)
       resettable = TRUE;
 
     // create each of the rooms to be cloned
     ITERATE_LIST(key, key_i) {
+      const char *src_fullkey = get_fullkey(src_name, src_locale);
       ROOM_OLC *data = newRoomOLC();
       roomOLCSetKey(data, key);
       resetListSetKey(roomOLCGetResets(data), key);
       roomOLCSetAbstract(data, FALSE);
       roomOLCSetResettable(data, resettable);
-      roomOLCSetParents(data, get_fullkey(src_name, src_locale));
+      roomOLCSetParents(data, get_shortkey(src_fullkey, key));
       save_room_olc(data);
       deleteRoomOLC(data);
     } deleteListIterator(key_i);

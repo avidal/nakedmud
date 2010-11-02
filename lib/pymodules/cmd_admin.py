@@ -20,7 +20,7 @@ def cmd_shutdown_net(ch, cmd, arg):
     ch.send("You must spell out shutdown completely!")
 
 def cmd_copyover(ch, cmd, arg):
-    '''Restarts the mud, and keep all sockets connected.'''
+    '''Restarts the mud, and keep all sockets connected.''' 
     mudsys.do_copyover()
 
 def cmd_copyover_net(ch, cmd, arg):
@@ -49,7 +49,8 @@ def cmd_pulserate(ch, cmd, arg):
     '''Usage: pulserate <pulses>
     
       Changes the number of pulses the mud experiences each second. The mud
-      makes one loop through the main game handler each pulse.'''
+      makes one loop through the main game handler each pulse.
+      '''
     if arg == '':
         ch.send("The mud currently has "+mudsys.sys_getval("pulses_per_second")+
                 "pulses per second.")

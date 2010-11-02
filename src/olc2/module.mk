@@ -7,5 +7,6 @@ SRC  += olc2/olc.c        \
 	olc2/bedit.c      \
 	olc2/accedit.c    \
 	olc2/pcedit.c     \
-	olc2/protedit.c
+	olc2/protedit.c   \
+	olc2/olc_extender.c \
 

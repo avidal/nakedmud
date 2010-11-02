@@ -197,6 +197,12 @@ const char *get_fullkey(const char *name, const char *locale);
 const char *get_fullkey_relative(const char *key, const char *locale);
 
 //
+// Returns the shortest version of key, relative to the other key, 'to'.
+// If they have separate locales, return the fullkey of key. If they have the
+// same locale, just return the first portion of the key
+const char *get_shortkey(const char *key, const char *to);
+
+//
 // Returns whether or not the command matches the pattern. Patterns are just
 // like commands, except they can be terminated with *'s to signify that
 // "anything can follow at this point". Example matches might include:

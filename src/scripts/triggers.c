@@ -131,12 +131,8 @@ void triggerRun(TRIGGER_DATA *trigger, PyObject *dict) {
   else {
     run_code(trigger->pycode, dict, get_key_locale(triggerGetKey(trigger)));
     
-    if(!last_script_ok()) {
-      char *tb = getPythonTraceback();
-      log_string("Trigger %s terminated with an error:\r\n%s\r\n"
-		 "\r\nTraceback is:\r\n%s\r\n", 
-		 trigger->key, bufferString(trigger->code), tb);
-      free(tb);
-    }
+    if(!last_script_ok())
+      log_pyerr("Trigger %s terminated with an error:\r\n%s",
+		trigger->key, bufferString(trigger->code));
   }
 }

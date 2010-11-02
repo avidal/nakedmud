@@ -55,4 +55,10 @@ int bufferReplaceLine(BUFFER *buf, const char *newline, int line);
 // format a string with the given arguments
 void bufferFormat(BUFFER *buf, int max_width, int indent);
 
+// format our buffer to be a viable Python string
+void bufferFormatPy(BUFFER *buf);
+
+// format our buffer to be a C string from a Python string
+void bufferFormatFromPy(BUFFER *buf);
+
 #endif // BUFFER_H
