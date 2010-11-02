@@ -500,7 +500,7 @@ void storage_write(STORAGE_SET *set, const char *fname) {
 
 STORAGE_SET *new_storage_set() {
   STORAGE_SET *set = malloc(sizeof(STORAGE_SET));
-  set->entries     = newHashtable(20);
+  set->entries     = newHashtableSize(20);
   set->longest_key = 0;
   set->top_entry   = 0;
   return set;

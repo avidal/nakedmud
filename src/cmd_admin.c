@@ -275,6 +275,7 @@ COMMAND(cmd_visible) {
     send_to_char(ch, "But you're already visible!\r\n");
   else {
     charSetImmInvis(ch, 0);
+    send_to_char(ch, "You fade into existence.\r\n");
     message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
 	    "$n slowly fades into existence.");
   }

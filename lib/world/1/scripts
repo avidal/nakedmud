@@ -162,6 +162,34 @@ list:=
     if obj != None and ch.on == None and obj.vnum == 130:
       me.act("delay 1 say what can I get for you? If you'd like to know what we have on tap, please ask")
   -
+  vnum: 194
+  type: 7
+  narg: 1
+  name: Runnable script example
+  code:~
+    # Scripts aren't only triggers. Scripts can also be run as if they were
+    # their own little programs within the MUD. A script that is of type
+    # runnable can be activated by any immortal of a high enough level by using
+    # the _scrun_ command. scrun needs the vnum of the script to run, and an
+    # optional argument afterward, but that is only neccessary if the script
+    # dictates it. The following script takes in an argument, and sends it to
+    # everyone in the mud
+    #
+    # usage: scrun <script vnum> [argument]
+    
+    # first, make sure that we have an argument
+    if arg == None or arg == '':
+      me.send("What did you want to say to everyone?")
+    
+    # Ok, we have a message. Now say it to everyone
+    else:
+      for ch in all_chars():
+        if ch != me:
+          ch.send(me.name + " says, '" + arg + "'")
+    
+    # now tell ourself that it's all done
+    me.send("Message sent to everyone")
+  -
   vnum: 195
   type: 1
   narg: 0

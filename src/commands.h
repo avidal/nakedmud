@@ -27,13 +27,18 @@ COMMAND(cmd_fill);
 COMMAND(cmd_load);
 COMMAND(cmd_purge);
 COMMAND(cmd_zreset);
+COMMAND(cmd_buildwalk);
 COMMAND(cmd_sclist);
 COMMAND(cmd_rlist);
 COMMAND(cmd_mlist);
 COMMAND(cmd_olist);
 COMMAND(cmd_dlist);
 COMMAND(cmd_zlist);
-COMMAND(cmd_buildwalk);
+COMMAND(cmd_scdelete);
+COMMAND(cmd_rdelete);
+COMMAND(cmd_mdelete);
+COMMAND(cmd_odelete);
+COMMAND(cmd_ddelete);
 
 
 /* cmd_manip.c */

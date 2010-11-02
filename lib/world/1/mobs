@@ -15,20 +15,6 @@ list:=
   race      : human
   dialog    : 100
   auxiliary :-
-    combat_state_data:-
-      health      : 100
-      curr_health : 100
-      power       : 100
-      curr_power  : 100
-      control     : 100
-      curr_control: 100
-      defense     : 100
-      curr_defense: 100
-      agility     : 100
-      curr_agility: 100
-      wits        : 100
-      curr_wits   : 100
-      -
     script_aux_data  :-
       scripts:=
         vnum: 195
@@ -54,20 +40,6 @@ list:=
   race      : human
   dialog    : 101
   auxiliary :-
-    combat_state_data:-
-      health      : 100
-      curr_health : 100
-      power       : 100
-      curr_power  : 100
-      control     : 100
-      curr_control: 100
-      defense     : 100
-      curr_defense: 100
-      agility     : 100
-      curr_agility: 100
-      wits        : 100
-      curr_wits   : 100
-      -
     script_aux_data  :-
       scripts:=
         vnum: 141
@@ -90,22 +62,6 @@ list:=
   sex       : 0
   race      : human
   dialog    : 102
-  auxiliary :-
-    combat_state_data:-
-      health      : 100
-      curr_health : 100
-      power       : 100
-      curr_power  : 100
-      control     : 100
-      curr_control: 100
-      defense     : 100
-      curr_defense: 100
-      agility     : 100
-      curr_agility: 100
-      wits        : 100
-      curr_wits   : 100
-      -
-    -
   -
   vnum      : 130
   name      : a barfly
@@ -123,21 +79,5 @@ list:=
   sex       : 0
   race      : human
   dialog    : -1
-  auxiliary :-
-    combat_state_data:-
-      health      : 100
-      curr_health : 100
-      power       : 100
-      curr_power  : 100
-      control     : 100
-      curr_control: 100
-      defense     : 100
-      curr_defense: 100
-      agility     : 100
-      curr_agility: 100
-      wits        : 100
-      curr_wits   : 100
-      -
-    -
   -
 -

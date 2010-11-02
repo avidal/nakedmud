@@ -1,0 +1,4775 @@
+Binary files nakedmudv2.0/.DS_Store and nakedmudv2.1/.DS_Store differ
+diff -crN nakedmudv2.0/lib/misc/help nakedmudv2.1/lib/misc/help
+*** nakedmudv2.0/lib/misc/help	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/lib/misc/help	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 47,53 ****
+    backups  :=
+      keywords : socials
+      editor   : Alister
+!     timestamp: Jan 29 18:52:49
+      info     :~
+        There are 9 fields assocciated with social editing; two are for messages when
+        the social has no target. Two are for messages when the target is the character
+--- 47,53 ----
+    backups  :=
+      keywords : socials
+      editor   : Alister
+!     timestamp: Jan 29 17:03:12
+      info     :~
+        There are 9 fields assocciated with social editing; two are for messages when
+        the social has no target. Two are for messages when the target is the character
+***************
+*** 70,89 ****
+        
+        To see examples of how to write socials, check some of the pre-existing ones.
+        To generate a list of all socials, type "socials".
+-       
+-       If you would like more than one command to trigger the same social, you can
+-       link a new command to a pre-existing social. Likewise, if you would like to
+-       disable a social command, that is possible too.
+-       
+-       Commands:
+-         hlink [new command] [old command]
+-         hunlink [command]
+-         socedit [social]
+-         socials
+      -
+      keywords : socials
+      editor   : Alister
+!     timestamp: Jan 29 17:03:12
+      info     :~
+        There are 9 fields assocciated with social editing; two are for messages when
+        the social has no target. Two are for messages when the target is the character
+--- 70,79 ----
+        
+        To see examples of how to write socials, check some of the pre-existing ones.
+        To generate a list of all socials, type "socials".
+      -
+      keywords : socials
+      editor   : Alister
+!     timestamp: Jan 29 18:52:49
+      info     :~
+        There are 9 fields assocciated with social editing; two are for messages when
+        the social has no target. Two are for messages when the target is the character
+***************
+*** 106,113 ****
+--- 96,130 ----
+        
+        To see examples of how to write socials, check some of the pre-existing ones.
+        To generate a list of all socials, type "socials".
++       
++       If you would like more than one command to trigger the same social, you can
++       link a new command to a pre-existing social. Likewise, if you would like to
++       disable a social command, that is possible too.
++       
++       Commands:
++         hlink [new command] [old command]
++         hunlink [command]
++         socedit [social]
++         socials
+      -
+    -
++   keywords : scrun
++   editor   : Alister
++   timestamp: Apr 17 02:02:39
++   info     :~
++     Scripts of type runnable can be triggered by immortals. This is done with the
++     scrun command.
++     
++     Syntax is: scrun <script vnum> [argument]
++   -
++   keywords : repeat
++   editor   : Alister
++   timestamp: Apr 17 02:01:17
++   info     :~
++     repeat can be used to execute a command multiple times.
++     
++     Syntax is: repeat <times> <command>
++   -
+    keywords : MCCP
+    editor   : Alister
+    timestamp: Jan 29 18:14:22
+***************
+*** 246,251 ****
+--- 263,281 ----
+      All other OLC commands can set up new things (rooms, objects, mobiles, etc..)
+      simply by using the corresponding edit command on a vnum that has not been used.
+    -
++   keywords : delete, odelete, mdelete, rdelete, ddelete, scdelete
++   editor   : Alister
++   timestamp: Apr 17 01:59:17
++   info     :~
++     As a builder, you may at times create rooms, objects, mobiles, scripts,
++     etc... that you do not want to be part of your zone. You can delete these
++     things with the line of delete functions available. There should be one for
++     each major type of editable zone content. When deleting rooms, anyone in the
++     room will be removed from the game, and sockets will be disconnected.
++     
++     delete commands are: odelete, mdelete, rdelete, scdelete, and ddelete. Syntax
++     is as follows: <delete command> <vnum to delete>
++   -
+    keywords : credits
+    editor   : Alister
+    timestamp: Jan 29 18:16:04
+diff -crN nakedmudv2.0/lib/misc/time nakedmudv2.1/lib/misc/time
+*** nakedmudv2.0/lib/misc/time	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/lib/misc/time	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,6 ****
+! hour        : 23
+! day_of_week : 1
+! day_of_month: 10
+  month       : 1
+  year        : 1
+  -
+--- 1,6 ----
+! hour        : 5
+! day_of_week : 0
+! day_of_month: 24
+  month       : 1
+  year        : 1
+  -
+diff -crN nakedmudv2.0/lib/txt/greeting nakedmudv2.1/lib/txt/greeting
+*** nakedmudv2.0/lib/txt/greeting	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/lib/txt/greeting	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,5 ****
+  {n
+!                    NakedMud(tm) v2.0, content-less MUD engine.
+  
+                                    Created By
+                                   Geoff Hollis
+--- 1,5 ----
+  {n
+!                   NakedMud(tm) v2.1, content-less MUD engine.
+  
+                                    Created By
+                                   Geoff Hollis
+diff -crN nakedmudv2.0/lib/world/1/mobs nakedmudv2.1/lib/world/1/mobs
+*** nakedmudv2.0/lib/world/1/mobs	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/lib/world/1/mobs	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 15,34 ****
+    race      : human
+    dialog    : 100
+    auxiliary :-
+-     combat_state_data:-
+-       health      : 100
+-       curr_health : 100
+-       power       : 100
+-       curr_power  : 100
+-       control     : 100
+-       curr_control: 100
+-       defense     : 100
+-       curr_defense: 100
+-       agility     : 100
+-       curr_agility: 100
+-       wits        : 100
+-       curr_wits   : 100
+-       -
+      script_aux_data  :-
+        scripts:=
+          vnum: 195
+--- 15,20 ----
+***************
+*** 54,73 ****
+    race      : human
+    dialog    : 101
+    auxiliary :-
+-     combat_state_data:-
+-       health      : 100
+-       curr_health : 100
+-       power       : 100
+-       curr_power  : 100
+-       control     : 100
+-       curr_control: 100
+-       defense     : 100
+-       curr_defense: 100
+-       agility     : 100
+-       curr_agility: 100
+-       wits        : 100
+-       curr_wits   : 100
+-       -
+      script_aux_data  :-
+        scripts:=
+          vnum: 141
+--- 40,45 ----
+***************
+*** 90,111 ****
+    sex       : 0
+    race      : human
+    dialog    : 102
+-   auxiliary :-
+-     combat_state_data:-
+-       health      : 100
+-       curr_health : 100
+-       power       : 100
+-       curr_power  : 100
+-       control     : 100
+-       curr_control: 100
+-       defense     : 100
+-       curr_defense: 100
+-       agility     : 100
+-       curr_agility: 100
+-       wits        : 100
+-       curr_wits   : 100
+-       -
+-     -
+    -
+    vnum      : 130
+    name      : a barfly
+--- 62,67 ----
+***************
+*** 123,143 ****
+    sex       : 0
+    race      : human
+    dialog    : -1
+-   auxiliary :-
+-     combat_state_data:-
+-       health      : 100
+-       curr_health : 100
+-       power       : 100
+-       curr_power  : 100
+-       control     : 100
+-       curr_control: 100
+-       defense     : 100
+-       curr_defense: 100
+-       agility     : 100
+-       curr_agility: 100
+-       wits        : 100
+-       curr_wits   : 100
+-       -
+-     -
+    -
+  -
+--- 79,83 ----
+diff -crN nakedmudv2.0/lib/world/1/mobs~ nakedmudv2.1/lib/world/1/mobs~
+*** nakedmudv2.0/lib/world/1/mobs~	1969-12-31 18:00:00.000000000 -0600
+--- nakedmudv2.1/lib/world/1/mobs~	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 0 ****
+--- 1,149 ----
++ list:=
++   vnum      : 100
++   name      : Mysty
++   keywords  : mysty, blonde, waitress
++   rdesc     : A small, buxom blonde is here, serving the tavern patrons.
++   desc      :~
++        She's a rather petite woman - just over five feet.  She has long, curly 
++     blonde hair that hangs down past her shoulders.  Her low-cut, white cotton 
++     shirt reveals her cleavage - and quite a bit of cleavage at that!  She darts 
++     from table to table, always carrying a tray of drinks with amazing balance and 
++     control.  There is always a bounce to her step, and fire in her eyes.  She 
++     seems like she's quite the feisty one.
++   level     : 2
++   sex       : 1
++   race      : human
++   dialog    : 100
++   auxiliary :-
++     stat_data        :-
++       health          : 5
++       curr_health     : 5
++       power           : 5
++       curr_power      : 0
++       awareness       : 5
++       curr_awareness  : 0
++       courage         : 5
++       curr_courage    : 0
++       control         : 5
++       curr_control    : 0
++       speed           : 5
++       curr_speed      : 0
++       personality     : 5
++       curr_personality: 0
++       -
++     script_aux_data  :-
++       scripts:=
++         vnum: 150
++         -
++         vnum: 140
++         -
++       -
++     -
++   -
++   vnum      : 101
++   name      : Julesz
++   keywords  : Julesz, bartender, man
++   rdesc     : A handsome, darkhaired man is here, standing behind the bar.
++   desc      :~
++        He is about average height, with short black hair and piercing grey eyes.
++     He has an air about him that screams mischief.  He looks quite preoccupied 
++     pouring drinks, but you notice he never gets too busy to not glance at the 
++     ladies walking by the bar.
++   level     : 2
++   sex       : 0
++   race      : human
++   dialog    : 101
++   auxiliary :-
++     stat_data        :-
++       health          : 5
++       curr_health     : 5
++       power           : 5
++       curr_power      : 0
++       awareness       : 5
++       curr_awareness  : 0
++       courage         : 5
++       curr_courage    : 0
++       control         : 5
++       curr_control    : 0
++       speed           : 5
++       curr_speed      : 0
++       personality     : 5
++       curr_personality: 0
++       -
++     script_aux_data  :-
++       scripts:=
++         vnum: 141
++         -
++         vnum: 151
++         -
++       -
++     -
++   -
++   vnum      : 102
++   name      : a gruff looking man
++   keywords  : garod, gruff, man
++   rdesc     : A gruff looking man is here, keeping to himself.
++   desc      :~
++        If surly had a poster child, he would be it.  His face is pocked, and he 
++     has a sour look on his face.  His eyebrows are thick and bushy, and he has 
++     a scraggly beard that looks like it has been growing for a few weeks.  He 
++     has a large, bulbous nose and squinty, black eyes.
++   level     : 1
++   sex       : 0
++   race      : human
++   dialog    : 102
++   auxiliary :-
++     stat_data        :-
++       health          : 5
++       curr_health     : 5
++       power           : 5
++       curr_power      : 0
++       awareness       : 5
++       curr_awareness  : 0
++       courage         : 5
++       curr_courage    : 0
++       control         : 5
++       curr_control    : 0
++       speed           : 5
++       curr_speed      : 0
++       personality     : 5
++       curr_personality: 0
++       -
++     -
++   -
++   vnum      : 130
++   name      : a barfly
++   keywords  : barfly
++   rdesc     : A barfly is here, mulling about.
++   desc      :~
++        He is middle aged, and looks like he has led a pretty tough life.  His 
++     hands look strong and calloused.  He might be a miner, or perhaps some kind 
++     of tradesman.  His face is slightly pocked, and his eyebrows are big and 
++     bushy.  He looks a bit too preoccupied with his mug of ale to pay you much 
++     attention.
++   multirdesc: A group of %d barflies are here, mulling about.
++   multiname : a group of %d bar flies
++   level     : 2
++   sex       : 0
++   race      : human
++   dialog    : -1
++   auxiliary :-
++     stat_data        :-
++       health          : 5
++       curr_health     : 5
++       power           : 5
++       curr_power      : 0
++       awareness       : 5
++       curr_awareness  : 0
++       courage         : 5
++       curr_courage    : 0
++       control         : 5
++       curr_control    : 0
++       speed           : 5
++       curr_speed      : 0
++       personality     : 5
++       curr_personality: 0
++       -
++     -
++   -
++ -
+diff -crN nakedmudv2.0/lib/world/1/objs~ nakedmudv2.1/lib/world/1/objs~
+*** nakedmudv2.0/lib/world/1/objs~	1969-12-31 18:00:00.000000000 -0600
+--- nakedmudv2.1/lib/world/1/objs~	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 0 ****
+--- 1,134 ----
++ list:=
++   vnum      : 100
++   weight    : 1.000000
++   name      : a white cotton shirt
++   keywords  : shirt
++   rdesc     : A revealing, white cotton shirt is lying here.
++   desc      :~
++        It is a white cotton shirt, with a rather low cot v-line that would reveal 
++     qutie a bit.  It is small, and looks lke it was made for a rather petite 
++     woman.
++   multiname : %d white cotton shirts
++   multirdesc: A pile of %d white cotton shirts has formed, here.
++   auxiliary :-
++     type_data      :-
++       types:=
++         type: worn
++         data:-
++           type: shirt
++           -
++         -
++       -
++     -
++   -
++   vnum      : 101
++   weight    : 0.100000
++   name      : a pair of long, dangly earrings
++   keywords  : earrings
++   rdesc     : A pair of long, dangly earrings are lying here.
++   desc      :~
++      They are made of long, dangly strips of green-grey metal, and shimmer 
++     whenever they are turned in the light.
++   multiname : %d sets of long dangly earrings
++   multirdesc: %d pairs of long, dangly earrings are lying here.
++   auxiliary :-
++     type_data      :-
++       types:=
++         type: worn
++         data:-
++           type: earrings
++           -
++         -
++       -
++     -
++   -
++   vnum      : 120
++   weight    : 80.000000
++   name      : a wooden table
++   keywords  : table
++   rdesc     : An empty table is here.
++   desc      :~
++        It is made of wood, and is circular.  It stands about four feet off 
++     the ground, and has a few chairs seated around it.  It looks like it 
++     could seat about four or five people at it.
++   multiname : %d wooden tables
++   multirdesc: There are %d empty tables scattered around.
++   auxiliary :-
++     type_data      :-
++       types:=
++         type: furniture
++         data:-
++           capacity: 5
++           type    : 0
++           -
++         -
++       -
++     -
++   -
++   vnum      : 130
++   weight    : 500.000000
++   name      : the bar
++   keywords  : bar
++   rdesc     : A long bar counter is here, lined with seats.
++   desc      :~
++        It is about twenty feet long, and it is lined with stools.  It is made 
++     out of a polished, dark wood.
++   auxiliary :-
++     type_data      :-
++       types:=
++         type: furniture
++         data:-
++           capacity: 9
++           type    : 0
++           -
++         -
++       -
++     -
++   -
++   vnum      : 140
++   weight    : 0.100000
++   name      : a small leather coin pouch
++   keywords  : pouch
++   rdesc     : A small leather coin pouch is here.
++   desc      :~
++        It's small - probably big enough to fit in the palm of your hand.  It 
++     is made of an old, dark leather and it has a frayed drawstring to seal 
++     it shut.  It looks like it could hold a fair share of coins in it.
++   multiname : a collection of %d leather coin pouches
++   multirdesc: A collection of %d leather coin pouches is here.
++   edescs    :-
++     list:=
++       keywords: drawstring
++       desc    :~
++            It looks to be made of a group of tightly wound, interconnecting 
++         threads.  It is a bit frayed, but looks quite durable.
++       -
++     -
++   auxiliary :-
++     type_data      :-
++       types:=
++         type: container
++         data:-
++           capacity : 2.000000
++           key      : -1
++           pick_diff: 0
++           closable : 1
++           closed   : 0
++           locked   : 0
++           -
++         -
++       -
++     -
++   -
++   vnum      : 141
++   weight    : 0.200000
++   name      : a pint of ale
++   keywords  : pintglass, glass, ale
++   rdesc     : A pint of ale has been left here.
++   desc      :~
++        It looks like a typical pint glass.  Its base is a bit smaller than its 
++     top, and it has a little bulge about four fifths of the way up the glass.
++   multiname : %d pints of ale
++   multirdesc: %d pints of ale are scattered about.
++   -
++ -
+diff -crN nakedmudv2.0/lib/world/1/rooms~ nakedmudv2.1/lib/world/1/rooms~
+*** nakedmudv2.0/lib/world/1/rooms~	1969-12-31 18:00:00.000000000 -0600
+--- nakedmudv2.1/lib/world/1/rooms~	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 0 ****
+--- 1,211 ----
++ list:=
++   desc     :~
++        This looks like quite the popular place; many tables are scattered around 
++     the tavern.  Groups of people huddle around them.  Some chat amongst 
++     themselves, some are playing card and dice games, and others are simply 
++     watching the entertainment stage to the north.  The bar is to the south.
++     People are lined up all along it, but you can spot a few open seats.  There 
++     are also a couple empty tables scattered throughout the tavern.  To the north, 
++     you see a small entertainment stage which seems to be attracting quite the 
++     crowd.
++   auxiliary:-
++     time_aux_data  :-
++       night_desc: 
++       -
++     script_aux_data:-
++       scripts:=
++         vnum: 100
++         -
++       -
++     -
++   terrain  : 0
++   vnum     : 100
++   name     : Within a Tavern
++   exits    :=
++     pick_level: 0
++     key       : -1
++     desc      :~
++          The entertainment stage is directly to your north.  Quite a few people have 
++       gathered around it, and it looks like there is a performance going on.
++     closable  : 0
++     enter     : 
++     direction : north
++     hide_level: 0
++     to        : 102
++     leave     : 
++     name      : 
++     keywords  : 
++     -
++     pick_level: 0
++     key       : -1
++     desc      :~
++        You see a rather crowded bar to the south.  There are still a couple of 
++       stools left, but it looks to be filling up fast.
++     closable  : 0
++     enter     : 
++     direction : south
++     hide_level: 0
++     to        : 101
++     leave     : $n makes $s way to the bar.
++     name      : going to the bar
++     keywords  : 
++     -
++     pick_level: 0
++     key       : -1
++     desc      :~
++          The light does not really get to that corner of the tavern.  A few people 
++       sit around tables, but most of them appear to be alone and not wanting any 
++       company.
++     closable  : 0
++     enter     : 
++     direction : southwest
++     hide_level: 0
++     to        : 103
++     leave     : 
++     name      : 
++     keywords  : 
++     -
++   edescs   :-
++     list:=
++     -
++   -
++   desc     :~
++        The bar is fairly busy, but you notice a couple of stools left unoccupied.
++     Servers come past now and then, picking up trays of drinks for their 
++     customers.  Most of the customers at the bar seem to be older on in the years, 
++     paying more attention to their drinks than to the crowd.  The bartenders all 
++     seem to be busy with preparing drinks for the customers.  A crowd seems to be 
++     gathering to the north, by the entertainment stage.  It looks like there is 
++     some sort of performance going on.
++   auxiliary:-
++     time_aux_data  :-
++       night_desc: 
++       -
++     script_aux_data:-
++       scripts:=
++         vnum: 101
++         -
++       -
++     -
++   terrain  : 0
++   vnum     : 101
++   name     : At the Bar
++   exits    :=
++     pick_level: 0
++     key       : -1
++     desc      :~
++          There are various tables scattered about, occupied by groups of people.  At 
++       the northern end of the tavern, you see a small entertainment stage which 
++       seems to have gathered quite the crowd.
++     closable  : 0
++     enter     : 
++     direction : north
++     hide_level: 0
++     to        : 100
++     leave     : 
++     name      : 
++     keywords  : 
++     -
++     pick_level: 0
++     key       : -1
++     desc      :~
++          The light does not really get to that corner of the tavern.  A few people 
++       sit around tables, but most of them appear to be alone and not wanting any 
++       company.
++     closable  : 0
++     enter     : 
++     direction : west
++     hide_level: 0
++     to        : 103
++     leave     : 
++     name      : 
++     keywords  : 
++     -
++   edescs   :-
++     list:=
++     -
++   -
++   desc     :~
++     This room was created by Alister.
++   auxiliary:-
++     time_aux_data  :-
++       night_desc: 
++       -
++     script_aux_data:-
++       scripts:=
++       -
++     -
++   terrain  : 0
++   vnum     : 102
++   name     : By the Stage
++   exits    :=
++     pick_level: 0
++     key       : -1
++     desc      :~
++        Tables are scattered about.  Most of them have groups of people sitting at 
++       them.  At the south end of the tavern, you see the bar.
++     closable  : 0
++     enter     : 
++     direction : south
++     hide_level: 0
++     to        : 100
++     leave     : 
++     name      : 
++     keywords  : 
++     -
++   edescs   :-
++     list:=
++     -
++   -
++   desc     :~
++        The light is much more dim in here than it is in the rest of the tavern.
++     There are also quite a few less people sitting in this area of the tavern.
++     Most that are seem to be keeping to themselves, and don't appear to want 
++     much to do with strangers.
++   auxiliary:-
++     time_aux_data  :-
++       night_desc: 
++       -
++     script_aux_data:-
++       scripts:=
++       -
++     -
++   terrain  : 0
++   vnum     : 103
++   name     : A Poorly Lit Corner
++   exits    :=
++     pick_level: 0
++     key       : -1
++     desc      :~
++          To the east, you see the bar.  It looks like it is starting to fill up 
++       quick, but you spot a couple open stools.  The bartenders look like they are 
++       quite busy with all the customers.
++     closable  : 0
++     enter     : 
++     direction : east
++     hide_level: 0
++     to        : 101
++     leave     : $n makes $s way towards the bar.
++     name      : 
++     keywords  : 
++     -
++     pick_level: 0
++     key       : -1
++     desc      :~
++          There are various tables scattered about, occupied by groups of people.  At 
++       the northern end of the tavern, you see a small entertainment stage which 
++       seems to have gathered quite the crowd.
++     closable  : 0
++     enter     : 
++     direction : northeast
++     hide_level: 0
++     to        : 100
++     leave     : 
++     name      : 
++     keywords  : 
++     -
++   edescs   :-
++     list:=
++     -
++   -
++ -
+diff -crN nakedmudv2.0/lib/world/1/scripts nakedmudv2.1/lib/world/1/scripts
+*** nakedmudv2.0/lib/world/1/scripts	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/lib/world/1/scripts	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 162,167 ****
+--- 162,195 ----
+      if obj != None and ch.on == None and obj.vnum == 130:
+        me.act("delay 1 say what can I get for you? If you'd like to know what we have on tap, please ask")
+    -
++   vnum: 194
++   type: 7
++   narg: 1
++   name: Runnable script example
++   code:~
++     # Scripts aren't only triggers. Scripts can also be run as if they were
++     # their own little programs within the MUD. A script that is of type
++     # runnable can be activated by any immortal of a high enough level by using
++     # the _scrun_ command. scrun needs the vnum of the script to run, and an
++     # optional argument afterward, but that is only neccessary if the script
++     # dictates it. The following script takes in an argument, and sends it to
++     # everyone in the mud
++     #
++     # usage: scrun <script vnum> [argument]
++     
++     # first, make sure that we have an argument
++     if arg == None or arg == '':
++       me.send("What did you want to say to everyone?")
++     
++     # Ok, we have a message. Now say it to everyone
++     else:
++       for ch in all_chars():
++         if ch != me:
++           ch.send(me.name + " says, '" + arg + "'")
++     
++     # now tell ourself that it's all done
++     me.send("Message sent to everyone")
++   -
+    vnum: 195
+    type: 1
+    narg: 0
+diff -crN nakedmudv2.0/lib/world/1/zone~ nakedmudv2.1/lib/world/1/zone~
+*** nakedmudv2.0/lib/world/1/zone~	1969-12-31 18:00:00.000000000 -0600
+--- nakedmudv2.1/lib/world/1/zone~	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 0 ****
+--- 1,10 ----
++ pulse_timer: -1
++ editors    : Alister
++ max        : 199
++ desc       :~
++      The ambition of this zone is to act as a repository for "proofs of 
++   concept".  Hopefully, there will be enough examples in this zone to act as a 
++ name       : The "Proof of Concept" zone
++ vnum       : 1
++ min        : 100
++ -
+diff -crN nakedmudv2.0/log/Apr 24.log nakedmudv2.1/log/Apr 24.log
+*** nakedmudv2.0/log/Apr 24.log	1969-12-31 18:00:00.000000000 -0600
+--- nakedmudv2.1/log/Apr 24.log	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 0 ****
+--- 1,72 ----
++ Apr 24 23:10:10: Initializing MUD settings.
++ Apr 24 23:10:10: Preparing auxiliary data for usage.
++ Apr 24 23:10:10: Initializing bitvectors.
++ Apr 24 23:10:10: Initializing races and default bodies.
++ Apr 24 23:10:10: Initializing command table.
++ Apr 24 23:10:10: Initializing action handler.
++ Apr 24 23:10:10: Initializing event handler.
++ Apr 24 23:10:10: Initializing logging system.
++ Apr 24 23:10:10: Initializing item types.
++ Apr 24 23:10:10: Initializing editor.
++ Apr 24 23:10:10: Initializing character variables.
++ Apr 24 23:10:10: Initializing OLC v2.0.
++ Apr 24 23:10:10: Initializing set utility.
++ Apr 24 23:10:10: Initializing scripts.
++ Apr 24 23:10:10: Initializing aliases.
++ Apr 24 23:10:10: Initializing game time.
++ Apr 24 23:10:10: Initializing socials.
++ Apr 24 23:10:10: Initializing helpfiles.
++ Apr 24 23:10:10: Loading gameworld.
++ Apr 24 23:10:10: Force-resetting world
++ Apr 24 23:10:10: Initializing sockets.
++ Apr 24 23:10:10: Entering game loop
++ Apr 24 23:10:18: Alister is trying to connect.
++ Apr 24 23:10:21: Alister has entered the game.
++ Apr 24 23:11:44: Program terminated without errors.
++ Apr 24 23:12:38: Initializing MUD settings.
++ Apr 24 23:12:38: Preparing auxiliary data for usage.
++ Apr 24 23:12:38: Initializing bitvectors.
++ Apr 24 23:12:38: Initializing races and default bodies.
++ Apr 24 23:12:38: Initializing command table.
++ Apr 24 23:12:38: Initializing action handler.
++ Apr 24 23:12:38: Initializing event handler.
++ Apr 24 23:12:38: Initializing logging system.
++ Apr 24 23:12:38: Initializing item types.
++ Apr 24 23:12:38: Initializing editor.
++ Apr 24 23:12:38: Initializing character variables.
++ Apr 24 23:12:38: Initializing OLC v2.0.
++ Apr 24 23:12:38: Initializing set utility.
++ Apr 24 23:12:38: Initializing scripts.
++ Apr 24 23:12:38: Initializing aliases.
++ Apr 24 23:12:38: Initializing game time.
++ Apr 24 23:12:38: Initializing socials.
++ Apr 24 23:12:38: Initializing helpfiles.
++ Apr 24 23:12:38: Loading gameworld.
++ Apr 24 23:12:38: Force-resetting world
++ Apr 24 23:12:38: Initializing sockets.
++ Apr 24 23:12:38: Entering game loop
++ Apr 24 23:13:07: Initializing MUD settings.
++ Apr 24 23:13:07: Preparing auxiliary data for usage.
++ Apr 24 23:13:07: Initializing bitvectors.
++ Apr 24 23:13:07: Initializing races and default bodies.
++ Apr 24 23:13:07: Initializing command table.
++ Apr 24 23:13:07: Initializing action handler.
++ Apr 24 23:13:07: Initializing event handler.
++ Apr 24 23:13:07: Initializing logging system.
++ Apr 24 23:13:07: Initializing item types.
++ Apr 24 23:13:07: Initializing editor.
++ Apr 24 23:13:07: Initializing character variables.
++ Apr 24 23:13:07: Initializing OLC v2.0.
++ Apr 24 23:13:07: Initializing set utility.
++ Apr 24 23:13:07: Initializing scripts.
++ Apr 24 23:13:07: Initializing aliases.
++ Apr 24 23:13:07: Initializing game time.
++ Apr 24 23:13:07: Initializing socials.
++ Apr 24 23:13:07: Initializing helpfiles.
++ Apr 24 23:13:07: Loading gameworld.
++ Apr 24 23:13:07: Force-resetting world
++ Apr 24 23:13:07: Initializing sockets.
++ Apr 24 23:13:07: Entering game loop
++ Apr 24 23:13:14: Alister is trying to connect.
++ Apr 24 23:13:17: Read_from_socket: EOF
++ Apr 24 23:13:17: Closing link to Alister
+Binary files nakedmudv2.0/log/.DS_Store and nakedmudv2.1/log/.DS_Store differ
+diff -crN nakedmudv2.0/src/alias/alias.c nakedmudv2.1/src/alias/alias.c
+*** nakedmudv2.0/src/alias/alias.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/alias/alias.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 15,28 ****
+  
+  #include "alias.h"
+  
+- // how many buckets are in the alias hashtable?
+- #define ALIAS_TABLE_SIZE           10
+  
+  
+  //*****************************************************************************
+- //
+  // auxiliary data
+- //
+  //*****************************************************************************
+  typedef struct alias_aux_data {
+    HASHTABLE *aliases;
+--- 15,24 ----
+***************
+*** 36,42 ****
+    // Hashtables can take up lots of storage space. Because of this, let's
+    // not create any tables until it's actually needed. This will cut down
+    // on lots of memory usage w.r.t. NPCs who do not use aliases
+!   //  data->aliases        = newHashtable(ALIAS_TABLE_SIZE);
+    //
+    data->aliases        = NULL;
+    return data;
+--- 32,38 ----
+    // Hashtables can take up lots of storage space. Because of this, let's
+    // not create any tables until it's actually needed. This will cut down
+    // on lots of memory usage w.r.t. NPCs who do not use aliases
+!   //  data->aliases        = newHashtable();
+    //
+    data->aliases        = NULL;
+    return data;
+***************
+*** 106,112 ****
+      return newAliasAuxData();
+  
+    ALIAS_AUX_DATA *data   = newAliasAuxData();
+!   data->aliases          = newHashtable(ALIAS_TABLE_SIZE);
+    STORAGE_SET_LIST *list = read_list(set, "aliases");
+    STORAGE_SET *var       = NULL;
+  
+--- 102,108 ----
+      return newAliasAuxData();
+  
+    ALIAS_AUX_DATA *data   = newAliasAuxData();
+!   data->aliases          = newHashtable();
+    STORAGE_SET_LIST *list = read_list(set, "aliases");
+    STORAGE_SET *var       = NULL;
+  
+***************
+*** 149,155 ****
+    ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
+    // if our alias table is NULL, create a new one
+    if(data->aliases == NULL)
+!     data->aliases = newHashtable(ALIAS_TABLE_SIZE);
+  
+    // pull out the last one
+    char *oldcmd = hashRemove(data->aliases, alias);
+--- 145,151 ----
+    ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
+    // if our alias table is NULL, create a new one
+    if(data->aliases == NULL)
+!     data->aliases = newHashtable();
+  
+    // pull out the last one
+    char *oldcmd = hashRemove(data->aliases, alias);
+diff -crN nakedmudv2.0/src/auxiliary.c nakedmudv2.1/src/auxiliary.c
+*** nakedmudv2.0/src/auxiliary.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/auxiliary.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 40,46 ****
+  //*****************************************************************************
+  
+  void init_auxiliaries() {
+!   auxiliary_manip_funcs = newHashtable(100);
+  }
+  
+  AUXILIARY_FUNCS *
+--- 40,46 ----
+  //*****************************************************************************
+  
+  void init_auxiliaries() {
+!   auxiliary_manip_funcs = newHashtable();
+  }
+  
+  AUXILIARY_FUNCS *
+***************
+*** 85,91 ****
+  
+  HASHTABLE *
+  newAuxiliaryData(bitvector_t aux_type) {
+!   HASHTABLE        *data = newHashtable(10);
+    HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
+    AUXILIARY_FUNCS *funcs = NULL;
+    const char       *name = NULL;
+--- 85,91 ----
+  
+  HASHTABLE *
+  newAuxiliaryData(bitvector_t aux_type) {
+!   HASHTABLE        *data = newHashtableSize(25);
+    HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
+    AUXILIARY_FUNCS *funcs = NULL;
+    const char       *name = NULL;
+***************
+*** 147,153 ****
+  
+  HASHTABLE *
+  auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type) {
+!   HASHTABLE        *data = newHashtable(10);
+    HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
+    AUXILIARY_FUNCS *funcs = NULL;
+    const char       *name = NULL;
+--- 147,153 ----
+  
+  HASHTABLE *
+  auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type) {
+!   HASHTABLE        *data = newHashtableSize(25);
+    HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
+    AUXILIARY_FUNCS *funcs = NULL;
+    const char       *name = NULL;
+***************
+*** 193,199 ****
+  
+  HASHTABLE *
+  auxiliaryDataCopy(HASHTABLE *data) {
+!   HASHTABLE *newdata = newHashtable(10);
+    auxiliaryDataCopyTo(data, newdata);
+    return newdata;
+  }
+--- 193,199 ----
+  
+  HASHTABLE *
+  auxiliaryDataCopy(HASHTABLE *data) {
+!   HASHTABLE *newdata = newHashtableSize(25);
+    auxiliaryDataCopyTo(data, newdata);
+    return newdata;
+  }
+diff -crN nakedmudv2.0/src/bitvector.c nakedmudv2.1/src/bitvector.c
+*** nakedmudv2.0/src/bitvector.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/bitvector.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 47,57 ****
+  //*****************************************************************************
+  // local functions, datastructures, and defines
+  //*****************************************************************************
+- 
+- // optimally, this should be about 120% bigger than the number
+- // of distinct types of bitvectors we'd expect to have in the game
+- #define BITVECTOR_TABLE_SIZE      50
+- 
+  // a table of mappings between bitvector names, and the 
+  // data assocciated with them (i.e. bit:value mappings)
+  HASHTABLE *bitvector_table = NULL;
+--- 47,52 ----
+***************
+*** 68,74 ****
+  
+  BITVECTOR_DATA *newBitvectorData(const char *name) {
+    BITVECTOR_DATA *data = malloc(sizeof(BITVECTOR_DATA));
+!   data->bitmap = newHashtable(32);
+    data->name   = strdup(name);
+    return data;
+  }
+--- 63,69 ----
+  
+  BITVECTOR_DATA *newBitvectorData(const char *name) {
+    BITVECTOR_DATA *data = malloc(sizeof(BITVECTOR_DATA));
+!   data->bitmap = newHashtable();
+    data->name   = strdup(name);
+    return data;
+  }
+***************
+*** 81,87 ****
+  //*****************************************************************************
+  void init_bitvectors() {
+    // create the bitvector table
+!   bitvector_table = newHashtable(BITVECTOR_TABLE_SIZE);
+  
+    // and also create some of the basic bitvectors and 
+    // bits that come stock and are required for the core release
+--- 76,82 ----
+  //*****************************************************************************
+  void init_bitvectors() {
+    // create the bitvector table
+!   bitvector_table = newHashtable();
+  
+    // and also create some of the basic bitvectors and 
+    // bits that come stock and are required for the core release
+***************
+*** 248,250 ****
+--- 243,253 ----
+    deleteHashIterator(hash_i);
+    return bits;
+  }
++ 
++ int bitvectorSize(BITVECTOR *v) {
++   return hashSize(v->data->bitmap);
++ }
++ 
++ LIST *bitvectorListBits(BITVECTOR *v) {
++   return hashCollect(v->data->bitmap);
++ }
+diff -crN nakedmudv2.0/src/bitvector.h nakedmudv2.1/src/bitvector.h
+*** nakedmudv2.0/src/bitvector.h	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/bitvector.h	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 97,100 ****
+--- 97,110 ----
+  // return a comma-separated list of the bits the vector has set
+  const char *bitvectorGetBits(BITVECTOR *v);
+  
++ //
++ // returns the number of possible bits that can be set on this bitvector
++ int bitvectorSize(BITVECTOR *v);
++ 
++ //
++ // return a list of the possible bits that this vector can have set. The list
++ // must be deleted after use, as well as all the contents. 
++ // try: listDeleteWith(list, free)
++ LIST *bitvectorListBits(BITVECTOR *v);
++ 
+  #endif // BITVECTOR_H
+diff -crN nakedmudv2.0/src/character.h nakedmudv2.1/src/character.h
+*** nakedmudv2.0/src/character.h	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/character.h	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 19,26 ****
+  // the difference between newChar and newMobile is that newMobile
+  // assigned a new UID whereas newChar does not.
+  //
+! CHAR_DATA   *newChar          ();
+! CHAR_DATA    *newMobile       ();
+  void         deleteChar       (CHAR_DATA *mob);
+  
+  CHAR_DATA    *charRead        (STORAGE_SET *set);
+--- 19,26 ----
+  // the difference between newChar and newMobile is that newMobile
+  // assigned a new UID whereas newChar does not.
+  //
+! CHAR_DATA   *newChar          (void);
+! CHAR_DATA    *newMobile       (void);
+  void         deleteChar       (CHAR_DATA *mob);
+  
+  CHAR_DATA    *charRead        (STORAGE_SET *set);
+diff -crN nakedmudv2.0/src/char_vars/char_vars.c nakedmudv2.1/src/char_vars/char_vars.c
+*** nakedmudv2.0/src/char_vars/char_vars.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/char_vars/char_vars.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 24,32 ****
+  //
+  //*****************************************************************************
+  
+- // the size of the hashtable we store char vars in
+- #define CHAR_VAR_TABLE_SIZE   10
+- 
+  // used in storage_sets to keep track of what kind of data we're saving
+  const char *char_var_types[] = {
+    "string",
+--- 24,29 ----
+***************
+*** 117,123 ****
+    // Hashtables can take up lots of storage space. Because of this, let's
+    // not create any tables until it's actually needed. This will cut down
+    // on lots of memory usage w.r.t. NPCs who do not use character variables
+!   //  data->char_vars        = newHashtable(CHAR_VAR_TABLE_SIZE);
+    data->char_vars         = NULL;
+    return data;
+  }
+--- 114,120 ----
+    // Hashtables can take up lots of storage space. Because of this, let's
+    // not create any tables until it's actually needed. This will cut down
+    // on lots of memory usage w.r.t. NPCs who do not use character variables
+!   //  data->char_vars        = newHashtable();
+    data->char_vars         = NULL;
+    return data;
+  }
+***************
+*** 146,152 ****
+    if(from_size > 0) {
+      // make sure the "to" table exists
+      if(to->char_vars == NULL)
+!       to->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+  
+      // copy everything over
+      HASH_ITERATOR *from_i = newHashIterator(from->char_vars);
+--- 143,149 ----
+    if(from_size > 0) {
+      // make sure the "to" table exists
+      if(to->char_vars == NULL)
+!       to->char_vars = newHashtable();
+  
+      // copy everything over
+      HASH_ITERATOR *from_i = newHashIterator(from->char_vars);
+***************
+*** 194,200 ****
+  
+  
+  HASHTABLE *variableRead(STORAGE_SET *set) {
+!   HASHTABLE *table       = newHashtable(CHAR_VAR_TABLE_SIZE);
+    STORAGE_SET_LIST *list = read_list(set, "list");
+    STORAGE_SET *var       = NULL;
+  
+--- 191,197 ----
+  
+  
+  HASHTABLE *variableRead(STORAGE_SET *set) {
+!   HASHTABLE *table       = newHashtable();
+    STORAGE_SET_LIST *list = read_list(set, "list");
+    STORAGE_SET *var       = NULL;
+  
+***************
+*** 212,218 ****
+    CHAR_VAR_AUX_DATA *data = newCharVarAuxData();
+    STORAGE_SET_LIST  *list = read_list(set, "variables");
+    STORAGE_SET    *var_set = NULL;
+!   data->char_vars         = newHashtable(CHAR_VAR_TABLE_SIZE);
+    
+    while( (var_set = storage_list_next(list)) != NULL) {
+      const char *var_type = read_string(var_set, "type");
+--- 209,215 ----
+    CHAR_VAR_AUX_DATA *data = newCharVarAuxData();
+    STORAGE_SET_LIST  *list = read_list(set, "variables");
+    STORAGE_SET    *var_set = NULL;
+!   data->char_vars         = newHashtable();
+    
+    while( (var_set = storage_list_next(list)) != NULL) {
+      const char *var_type = read_string(var_set, "type");
+***************
+*** 292,298 ****
+    CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+    CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+    if(data->char_vars == NULL && val != 0)
+!     data->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+    if(old != NULL) 
+      deleteCharVar(old);
+    if(val != 0)
+--- 289,295 ----
+    CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+    CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+    if(data->char_vars == NULL && val != 0)
+!     data->char_vars = newHashtable();
+    if(old != NULL) 
+      deleteCharVar(old);
+    if(val != 0)
+***************
+*** 304,310 ****
+    CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+    CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+    if(data->char_vars == NULL && val != 0)
+!     data->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+    if(old != NULL) 
+      deleteCharVar(old);
+    if(val != 0)
+--- 301,307 ----
+    CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+    CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+    if(data->char_vars == NULL && val != 0)
+!     data->char_vars = newHashtable();
+    if(old != NULL) 
+      deleteCharVar(old);
+    if(val != 0)
+***************
+*** 316,322 ****
+    CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+    CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+    if(data->char_vars == NULL && val != 0)
+!     data->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+    if(old != NULL) 
+      deleteCharVar(old);
+    if(val != 0)
+--- 313,319 ----
+    CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+    CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+    if(data->char_vars == NULL && val != 0)
+!     data->char_vars = newHashtable();
+    if(old != NULL) 
+      deleteCharVar(old);
+    if(val != 0)
+***************
+*** 328,334 ****
+    CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+    CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+    if(data->char_vars == NULL && *val != '\0') 
+!     data->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+    if(old != NULL) 
+      deleteCharVar(old);
+    if(*val != '\0')
+--- 325,331 ----
+    CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
+    CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
+    if(data->char_vars == NULL && *val != '\0') 
+!     data->char_vars = newHashtable();
+    if(old != NULL) 
+      deleteCharVar(old);
+    if(*val != '\0')
+diff -crN nakedmudv2.0/src/cmd_admin.c nakedmudv2.1/src/cmd_admin.c
+*** nakedmudv2.0/src/cmd_admin.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/cmd_admin.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 275,280 ****
+--- 275,281 ----
+      send_to_char(ch, "But you're already visible!\r\n");
+    else {
+      charSetImmInvis(ch, 0);
++     send_to_char(ch, "You fade into existence.\r\n");
+      message(ch, NULL, NULL, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+  	    "$n slowly fades into existence.");
+    }
+diff -crN nakedmudv2.0/src/cmd_builder.c nakedmudv2.1/src/cmd_builder.c
+*** nakedmudv2.0/src/cmd_builder.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/cmd_builder.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 122,128 ****
+  // usage: fill [dir]
+  //
+  COMMAND(cmd_fill) {
+-   char buf[MAX_INPUT_LEN];
+    int dir;
+  
+    if(!arg || !*arg) {
+--- 122,127 ----
+***************
+*** 130,145 ****
+      return;
+    }
+  
+!   sscanf(arg, "%s", buf);
+!   dir = dirGetNum(buf);
+  
+    if(dir == DIR_NONE)
+!     dir = dirGetAbbrevNum(buf);
+  
+    if(!canEditZone(worldZoneBounding(gameworld,roomGetVnum(charGetRoom(ch))),ch))
+      send_to_char(ch, "You are not authorized to edit this zone.\r\n");
+    else if(dir == DIR_NONE)
+!     try_specfill(ch, buf);
+    else if(!roomGetExit(charGetRoom(ch), dir))
+      send_to_char(ch, "There doesn't seem to be an exit in that direction.\r\n");
+    else {
+--- 129,143 ----
+      return;
+    }
+  
+!   dir = dirGetNum(arg);
+  
+    if(dir == DIR_NONE)
+!     dir = dirGetAbbrevNum(arg);
+  
+    if(!canEditZone(worldZoneBounding(gameworld,roomGetVnum(charGetRoom(ch))),ch))
+      send_to_char(ch, "You are not authorized to edit this zone.\r\n");
+    else if(dir == DIR_NONE)
+!     try_specfill(ch, arg);
+    else if(!roomGetExit(charGetRoom(ch), dir))
+      send_to_char(ch, "There doesn't seem to be an exit in that direction.\r\n");
+    else {
+***************
+*** 148,155 ****
+  
+      exit_to = worldGetRoom(gameworld,
+  			   exitGetTo(roomGetExit(charGetRoom(ch), dir)));
+!     exit_back = roomGetExit(exit_to,
+! 			    dirGetOpposite(dir));
+  
+      // see if the room we're filling leads back to us... if so, fill it in
+      if(exit_back &&
+--- 146,153 ----
+  
+      exit_to = worldGetRoom(gameworld,
+  			   exitGetTo(roomGetExit(charGetRoom(ch), dir)));
+!     if(exit_to)
+!       exit_back = roomGetExit(exit_to, dirGetOpposite(dir));
+  
+      // see if the room we're filling leads back to us... if so, fill it in
+      if(exit_back &&
+***************
+*** 326,335 ****
+  }
+  
+  
+  //*****************************************************************************
+  //
+  // Functions for listing different types of data (zones, mobs, objs, etc...)
+- //
+  //*****************************************************************************
+  const char *charGetListType(CHAR_DATA *ch) {
+    return charGetRace(ch);
+--- 324,389 ----
+  }
+  
+  
++ 
++ //*****************************************************************************
++ // Functions for deleting different prototype
+  //*****************************************************************************
++ 
++ 
+  //
++ // Delete an object, room, mobile, etc... from the game. First remove it from
++ // the gameworld, and then delete it and its contents. The onus is on the 
++ // builder to make sure deleting a prototype won't screw anything up (e.g.
++ // people standing about in a room when it's deleted).
++ void do_delete(CHAR_DATA *ch, void *remover, void *deleter, 
++ 	       const char *datatype, const char *arg) {
++   void *(* remove_func)(WORLD_DATA *world, int vnum) = remover;
++   void  (* delete_func)(void *data)                  = deleter;
++   
++   if(!arg || !*arg || !isdigit(*arg))
++     send_to_char(ch, "Which %s did you want to delete?\r\n", datatype);
++   else {
++     int vnum = atoi(arg);
++     ZONE_DATA *zone = worldZoneBounding(gameworld, vnum);
++     if(zone == NULL || !canEditZone(zone, ch))
++       send_to_char(ch, "You are not authorized to edit that zone.\r\n");
++     else {
++       void *data = remove_func(gameworld, vnum);
++       if(data == NULL)
++ 	send_to_char(ch, "%s %d does not exist.\r\n", datatype, vnum);
++       else {
++ 	send_to_char(ch, "%s %d deleted.\r\n", datatype, vnum);
++ 	delete_func(data);
++ 	worldSave(gameworld, WORLD_PATH);
++       }
++     }
++   }
++ }
++ 
++ COMMAND(cmd_scdelete) {
++   do_delete(ch, worldRemoveScriptVnum, deleteScript, "script", arg);
++ }
++ 
++ COMMAND(cmd_rdelete) {
++   do_delete(ch, worldRemoveRoomVnum, deleteRoom, "room", arg);
++ }
++ 
++ COMMAND(cmd_mdelete) {
++   do_delete(ch, worldRemoveMobVnum, deleteChar, "mob", arg);
++ }
++ 
++ COMMAND(cmd_odelete) {
++   do_delete(ch, worldRemoveObjVnum, deleteObj, "obj", arg);
++ }
++ 
++ COMMAND(cmd_ddelete) {
++   do_delete(ch, worldRemoveDialogVnum, deleteDialog, "dialog", arg);
++ }
++ 
++ 
++ 
++ //*****************************************************************************
+  // Functions for listing different types of data (zones, mobs, objs, etc...)
+  //*****************************************************************************
+  const char *charGetListType(CHAR_DATA *ch) {
+    return charGetRace(ch);
+diff -crN nakedmudv2.0/src/commands.h nakedmudv2.1/src/commands.h
+*** nakedmudv2.0/src/commands.h	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/commands.h	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 27,39 ****
+  COMMAND(cmd_load);
+  COMMAND(cmd_purge);
+  COMMAND(cmd_zreset);
+  COMMAND(cmd_sclist);
+  COMMAND(cmd_rlist);
+  COMMAND(cmd_mlist);
+  COMMAND(cmd_olist);
+  COMMAND(cmd_dlist);
+  COMMAND(cmd_zlist);
+! COMMAND(cmd_buildwalk);
+  
+  
+  /* cmd_manip.c */
+--- 27,44 ----
+  COMMAND(cmd_load);
+  COMMAND(cmd_purge);
+  COMMAND(cmd_zreset);
++ COMMAND(cmd_buildwalk);
+  COMMAND(cmd_sclist);
+  COMMAND(cmd_rlist);
+  COMMAND(cmd_mlist);
+  COMMAND(cmd_olist);
+  COMMAND(cmd_dlist);
+  COMMAND(cmd_zlist);
+! COMMAND(cmd_scdelete);
+! COMMAND(cmd_rdelete);
+! COMMAND(cmd_mdelete);
+! COMMAND(cmd_odelete);
+! COMMAND(cmd_ddelete);
+  
+  
+  /* cmd_manip.c */
+diff -crN nakedmudv2.0/src/editor/editor.c nakedmudv2.1/src/editor/editor.c
+*** nakedmudv2.0/src/editor/editor.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/editor/editor.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 57,65 ****
+  // an editor for dialog. Essentially, text without newlines
+  EDITOR *dialog_editor = NULL;
+  
+- // how many buckets are in our command table?
+- #define EDITOR_CMD_TABLE_SIZE       20
+- 
+  struct editor_data {
+    HASHTABLE *cmds;  // mappings from commands to their functions and descs
+    void (* prompt)(SOCKET_DATA *sock); // the prompt display
+--- 57,62 ----
+***************
+*** 194,199 ****
+--- 191,198 ----
+    int line = atoi(tmp);
+    if(!isdigit(*tmp) || !bufferRemove(buf, line))
+      text_to_buffer(sock, "Line does not exist.\r\n");
++   else
++     text_to_buffer(sock, "Line deleted.\r\n");
+  }
+  
+  void editorEditLine(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
+***************
+*** 202,207 ****
+--- 201,208 ----
+    int line = atoi(tmp);
+    if(!isdigit(*tmp) || !bufferReplaceLine(buf, arg, line))
+      text_to_buffer(sock, "Line does not exist.\r\n");
++   else
++     text_to_buffer(sock, "Line replaced.\r\n");
+  }
+  
+  void editorInsertLine(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
+***************
+*** 210,215 ****
+--- 211,218 ----
+    int line = atoi(tmp);
+    if(!isdigit(*tmp) || !bufferInsert(buf, arg, line))
+      text_to_buffer(sock, "Insertion failed.\r\n");
++   else
++     text_to_buffer(sock, "Line inserted.\r\n");
+  }
+  
+  void editorListDialogBuffer(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
+***************
+*** 264,273 ****
+--- 267,278 ----
+  
+  void editorClear(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
+    bufferClear(buf);
++   text_to_buffer(sock, "Buffer cleared.\r\n");
+  }
+  
+  void editorFormatBuffer(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
+    bufferFormat(buf, 80, 3);
++   text_to_buffer(sock, "Buffer formatted.\r\n");
+  }
+  
+  
+***************
+*** 293,299 ****
+  EDITOR *newEditor() {
+    EDITOR *editor = malloc(sizeof(EDITOR));
+    // set up the default commands
+!   editor->cmds = newHashtable(EDITOR_CMD_TABLE_SIZE);
+    hashPut(editor->cmds, "q", 
+  	  newEditorCommand("        Quit editor and save changes",
+  			   editorQuit, TRUE));
+--- 298,304 ----
+  EDITOR *newEditor() {
+    EDITOR *editor = malloc(sizeof(EDITOR));
+    // set up the default commands
+!   editor->cmds = newHashtable();
+    hashPut(editor->cmds, "q", 
+  	  newEditorCommand("        Quit editor and save changes",
+  			   editorQuit, TRUE));
+diff -crN nakedmudv2.0/src/hashtable.c nakedmudv2.1/src/hashtable.c
+*** nakedmudv2.0/src/hashtable.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/hashtable.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 13,18 ****
+--- 13,21 ----
+  #include "list.h"
+  #include "hashtable.h"
+  
++ // how big of a size do our hashtables start out at?
++ #define DEFAULT_HASH_SIZE        5
++ 
+  struct hashtable_iterator {
+    int curr_bucket;
+    HASHTABLE *table;
+***************
+*** 25,35 ****
+--- 28,42 ----
+  } HASH_ENTRY;
+  
+  struct hashtable {
++   int size;
+    int num_buckets;
+    LIST **buckets;
+  };
+  
+  
++ //
++ // this is a fairly simple hashing function. It could do 
++ // with some major speeding up.
+  int hash(const char *key) {
+    int i;
+    const int BASE = 2;
+***************
+*** 48,54 ****
+  
+  //
+  // an internal form of hashGet that returns the entire entry (key and val)
+- //
+  HASH_ENTRY *hashGetEntry(HASHTABLE *table, const char *key){
+    int bucket = hash(key) % table->num_buckets;
+  
+--- 55,60 ----
+***************
+*** 80,107 ****
+  }
+  
+  
+- //*****************************************************************************
+  //
+  // implementation of hashtable.h
+  // documentation in hashtable.h
+- //
+  //*****************************************************************************
+! HASHTABLE *newHashtable(int num_buckets) {
+    int i;
+!   HASHTABLE *table = malloc(sizeof(HASHTABLE));
+    table->num_buckets = num_buckets;
+    table->buckets = malloc(sizeof(LIST *) * num_buckets);
+    for(i = 0; i < num_buckets; i++)
+      table->buckets[i] = NULL;
+    return table;
+  }
+  
+  void  deleteHashtable(HASHTABLE *table) {
+    int i;
+    for(i = 0; i < table->num_buckets; i++) {
+      if(table->buckets[i]) {
+        HASH_ENTRY *entry = NULL;
+!       while((entry=(HASH_ENTRY *)listPop(table->buckets[i])) !=NULL)
+  	deleteHashtableEntry(entry);
+        deleteList(table->buckets[i]);
+      }
+--- 86,135 ----
+  }
+  
+  
+  //
++ // Collect all of the HASH_ENTRYs in a hashtable into a single list
++ LIST *hashCollectEntries(HASHTABLE *table) {
++   LIST *list = newList();
++   int i;
++   for(i = 0; i < table->num_buckets; i++) {
++     if(table->buckets[i] == NULL) continue;
++     LIST_ITERATOR *list_i = newListIterator(table->buckets[i]);
++     HASH_ENTRY      *elem = NULL;
++     for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
++       listPut(list, elem);
++     deleteListIterator(list_i);
++   }
++   return list;
++ }
++ 
++ 
++ 
++ //*****************************************************************************
+  // implementation of hashtable.h
+  // documentation in hashtable.h
+  //*****************************************************************************
+! HASHTABLE *newHashtableSize(int num_buckets) {
+    int i;
+!   HASHTABLE *table   = malloc(sizeof(HASHTABLE));
+    table->num_buckets = num_buckets;
++   table->size        = 0;
+    table->buckets = malloc(sizeof(LIST *) * num_buckets);
+    for(i = 0; i < num_buckets; i++)
+      table->buckets[i] = NULL;
+    return table;
+  }
+  
++ HASHTABLE *newHashtable(void) {
++   return newHashtableSize(DEFAULT_HASH_SIZE);
++ }
++ 
++ 
+  void  deleteHashtable(HASHTABLE *table) {
+    int i;
+    for(i = 0; i < table->num_buckets; i++) {
+      if(table->buckets[i]) {
+        HASH_ENTRY *entry = NULL;
+!       while((entry=listPop(table->buckets[i])) !=NULL)
+  	deleteHashtableEntry(entry);
+        deleteList(table->buckets[i]);
+      }
+***************
+*** 111,116 ****
+--- 139,175 ----
+    free(table);
+  }
+  
++ 
++ //
++ // expand a hashtable to the new size
++ void hashExpand(HASHTABLE *table, int size) {
++   // collect all of the key:value pairs
++   LIST     *entries = hashCollectEntries(table);
++   HASH_ENTRY *entry = NULL;
++   int i;
++ 
++   // delete all of the current buckets
++   for(i = 0; i < table->num_buckets; i++) {
++     if(table->buckets[i] == NULL) continue;
++     deleteList(table->buckets[i]);
++   }
++   free(table->buckets);
++ 
++   // now, make new buckets and set them to NULL
++   table->buckets = malloc(sizeof(LIST *) * size);
++   bzero(table->buckets, sizeof(LIST *) * size);
++   table->num_buckets = size;
++ 
++   // now, we put all of our entries back into the new buckets
++   while((entry = listPop(entries)) != NULL) {
++     int bucket = hash(entry->key) % table->num_buckets;
++     if(table->buckets[bucket] == NULL) table->buckets[bucket] = newList();
++     listPut(table->buckets[bucket], entry);
++   }
++   deleteList(entries);
++ }
++ 
++ 
+  int  hashPut    (HASHTABLE *table, const char *key, void *val) {
+    HASH_ENTRY *elem = hashGetEntry(table, key);
+  
+***************
+*** 120,125 ****
+--- 179,188 ----
+      return 1;
+    }
+    else {
++     // first, see if we'll need to expand the table
++     if((table->size * 80)/100 > table->num_buckets)
++       hashExpand(table, (table->num_buckets * 150)/100);
++ 
+      int bucket = hash(key) % table->num_buckets;
+  
+      // if the bucket doesn't exist yet, create it
+***************
+*** 128,133 ****
+--- 191,197 ----
+  
+      HASH_ENTRY *entry = newHashtableEntry(key, val);
+      listPut(table->buckets[bucket], entry);
++     table->size++;
+      return 1;
+    }
+  }
+***************
+*** 158,163 ****
+--- 222,228 ----
+        void *val = elem->val;
+        listRemove(table->buckets[bucket], elem);
+        deleteHashtableEntry(elem);
++       table->size--;
+        return val;
+      }
+      else
+***************
+*** 188,209 ****
+  }
+  
+  int   hashSize   (HASHTABLE *table) {
+!   int i;
+!   int size = 0;
+  
+!   for(i = 0; i < table->num_buckets; i++)
+!     if(table->buckets[i])
+!       size += listSize(table->buckets[i]);
+  
+!   return size;
+  }
+  
+  
+  //*****************************************************************************
+- //
+  // implementation of the hashtable iterator
+  // documentation in hashtable.h
+- //
+  //*****************************************************************************
+  HASH_ITERATOR *newHashIterator(HASHTABLE *table) {
+    HASH_ITERATOR *I = malloc(sizeof(HASH_ITERATOR));
+--- 253,281 ----
+  }
+  
+  int   hashSize   (HASHTABLE *table) {
+!   return table->size;
+! }
+  
+! LIST *hashCollect(HASHTABLE *table) {
+!   LIST *list = newList();
+!   int i;
+  
+!   for(i = 0; i < table->num_buckets; i++) {
+!     if(table->buckets[i] == NULL) continue;
+!     LIST_ITERATOR *list_i = newListIterator(table->buckets[i]);
+!     HASH_ENTRY      *elem = NULL;
+!     for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
+!       listPut(list, strdup(elem->key));
+!     deleteListIterator(list_i);
+!   }
+!   return list;
+  }
+  
+  
++ 
+  //*****************************************************************************
+  // implementation of the hashtable iterator
+  // documentation in hashtable.h
+  //*****************************************************************************
+  HASH_ITERATOR *newHashIterator(HASHTABLE *table) {
+    HASH_ITERATOR *I = malloc(sizeof(HASH_ITERATOR));
+***************
+*** 263,269 ****
+    if(!I->bucket_i) 
+      return NULL;
+    else {
+!     HASH_ENTRY *entry = ((HASH_ENTRY *) listIteratorCurrent(I->bucket_i));
+      if(entry)
+        return entry->key;
+      else
+--- 335,341 ----
+    if(!I->bucket_i) 
+      return NULL;
+    else {
+!     HASH_ENTRY *entry = listIteratorCurrent(I->bucket_i);
+      if(entry)
+        return entry->key;
+      else
+***************
+*** 276,282 ****
+    if(!I->bucket_i) 
+      return NULL;
+    else {
+!     HASH_ENTRY *entry = ((HASH_ENTRY *) listIteratorCurrent(I->bucket_i));
+      if(entry)
+        return entry->val;
+      else
+--- 348,354 ----
+    if(!I->bucket_i) 
+      return NULL;
+    else {
+!     HASH_ENTRY *entry = listIteratorCurrent(I->bucket_i);
+      if(entry)
+        return entry->val;
+      else
+diff -crN nakedmudv2.0/src/hashtable.h nakedmudv2.1/src/hashtable.h
+*** nakedmudv2.0/src/hashtable.h	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/hashtable.h	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 12,19 ****
+  typedef struct hashtable                  HASHTABLE;
+  typedef struct hashtable_iterator         HASH_ITERATOR;
+  
+  
+- HASHTABLE *newHashtable(int num_buckets);
+  void  deleteHashtable(HASHTABLE *table);
+  
+  int   hashPut    (HASHTABLE *table, const char *key, void *val);
+--- 12,25 ----
+  typedef struct hashtable                  HASHTABLE;
+  typedef struct hashtable_iterator         HASH_ITERATOR;
+  
++ //
++ // create a new hashtable with the specified number of buckets in it
++ HASHTABLE *newHashtableSize(int num_buckets);
++ 
++ //
++ // create a new hashtable. the default number of buckets are used
++ HASHTABLE *newHashtable(void);
+  
+  void  deleteHashtable(HASHTABLE *table);
+  
+  int   hashPut    (HASHTABLE *table, const char *key, void *val);
+***************
+*** 22,27 ****
+--- 28,45 ----
+  int   hashIn     (HASHTABLE *table, const char *key);
+  int   hashSize   (HASHTABLE *table);
+  
++ //
++ // expand a hashtable to the new size. Hashtables will automagically expand
++ // themselves as needed, but if you know that you are going to need a rather
++ // large hashtable apriori, you may wish to call this function after the table
++ // is created, to prevent unneccessary deallocations and reallocations of memory
++ void hashExpand(HASHTABLE *table, int size);
++ 
++ //
++ // returns a list of all the keys in the hashtable. The keys and the list
++ // must be deleted after use. Try: deleteListWith(list, free)
++ LIST *hashCollect(HASHTABLE *table);
++ 
+  HASH_ITERATOR *newHashIterator     (HASHTABLE *table);
+  void        deleteHashIterator     (HASH_ITERATOR *I);
+  
+***************
+*** 30,34 ****
+  const char *hashIteratorCurrentKey (HASH_ITERATOR *I);
+  void       *hashIteratorCurrentVal (HASH_ITERATOR *I);
+  
+- 
+  #endif // __HASHTABLE_H
+--- 48,51 ----
+diff -crN nakedmudv2.0/src/interpret.c nakedmudv2.1/src/interpret.c
+*** nakedmudv2.0/src/interpret.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/interpret.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 129,134 ****
+--- 129,136 ----
+  	  LEVEL_BUILDER, FALSE, FALSE);
+    add_cmd("dlist",      NULL, cmd_dlist,    0, POS_UNCONCIOUS, POS_FLYING,
+  	  LEVEL_BUILDER, FALSE, FALSE);
++   add_cmd("ddelete",    NULL, cmd_ddelete,  0, POS_UNCONCIOUS, POS_FLYING,
++ 	  LEVEL_BUILDER, FALSE, FALSE);
+    add_cmd("drop",       NULL, cmd_drop,     0, POS_SITTING,  POS_FLYING,
+  	  LEVEL_PLAYER, TRUE, TRUE );
+  
+***************
+*** 181,192 ****
+--- 183,198 ----
+    // M
+    add_cmd("mlist",      NULL, cmd_mlist,    0, POS_UNCONCIOUS, POS_FLYING,
+  	  LEVEL_BUILDER, FALSE, FALSE);
++   add_cmd("mdelete",    NULL, cmd_mdelete,  0, POS_UNCONCIOUS, POS_FLYING,
++ 	  LEVEL_BUILDER, FALSE, FALSE);
+    add_cmd("more",       NULL, cmd_more,     0, POS_UNCONCIOUS, POS_FLYING,
+  	  LEVEL_PLAYER, TRUE, FALSE);
+  
+    // O
+    add_cmd("olist",      NULL, cmd_olist,    0, POS_UNCONCIOUS, POS_FLYING,
+  	  LEVEL_BUILDER, FALSE, FALSE);
++   add_cmd("odelete",    NULL, cmd_odelete,  0, POS_UNCONCIOUS, POS_FLYING,
++ 	  LEVEL_BUILDER, FALSE, FALSE);
+    add_cmd("open",       NULL, cmd_open,     0, POS_STANDING, POS_FLYING,
+  	  LEVEL_PLAYER, TRUE, TRUE );
+  
+***************
+*** 207,212 ****
+--- 213,220 ----
+  	  LEVEL_PLAYER, TRUE, TRUE );
+    add_cmd("rlist",      NULL, cmd_rlist,    0, POS_UNCONCIOUS, POS_FLYING,
+  	  LEVEL_BUILDER, FALSE, FALSE);
++   add_cmd("rdelete",    NULL, cmd_rdelete,  0, POS_UNCONCIOUS, POS_FLYING,
++ 	  LEVEL_BUILDER, FALSE, FALSE);
+    add_cmd("repeat",     NULL, cmd_repeat,   0, POS_UNCONCIOUS, POS_FLYING,
+  	  LEVEL_ADMIN, FALSE, FALSE);
+  
+***************
+*** 232,237 ****
+--- 240,247 ----
+    // which wouldn't be accessable from outside of builder.c
+    add_cmd("sclist",     NULL, cmd_sclist,   0, POS_UNCONCIOUS, POS_FLYING,
+  	  LEVEL_BUILDER, FALSE, FALSE);
++   add_cmd("sdelete",    NULL, cmd_scdelete, 0, POS_UNCONCIOUS, POS_FLYING,
++ 	  LEVEL_BUILDER, FALSE, FALSE);
+  
+    // T
+    add_cmd("take",       NULL, cmd_get,      0, POS_SITTING,  POS_FLYING,
+diff -crN nakedmudv2.0/src/items/container.c nakedmudv2.1/src/items/container.c
+*** nakedmudv2.0/src/items/container.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/items/container.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 167,174 ****
+  		 data->pick_diff);
+  }
+  
+! int  iedit_container_chooser(SOCKET_DATA *sock, CONTAINER_DATA *data, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new weight capacity for the container: ");
+      return IEDIT_CONTAINER_CAPACITY;
+--- 167,175 ----
+  		 data->pick_diff);
+  }
+  
+! int  iedit_container_chooser(SOCKET_DATA *sock, CONTAINER_DATA *data, 
+! 			     const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new weight capacity for the container: ");
+      return IEDIT_CONTAINER_CAPACITY;
+diff -crN nakedmudv2.0/src/items/furniture.c nakedmudv2.1/src/items/furniture.c
+*** nakedmudv2.0/src/items/furniture.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/items/furniture.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 122,134 ****
+  		 furnitureTypeGetName(data->type));
+  }
+  
+! int  iedit_furniture_chooser(SOCKET_DATA *sock, FURNITURE_DATA *data, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new weight capacity for the furniture: ");
+      return IEDIT_FURNITURE_CAPACITY;
+    case '2':
+      olc_display_table(sock, furnitureTypeGetName, NUM_FURNITURES, 1);
+      return IEDIT_FURNITURE_TYPE;
+    default: return MENU_CHOICE_INVALID;
+    }
+--- 122,136 ----
+  		 furnitureTypeGetName(data->type));
+  }
+  
+! int  iedit_furniture_chooser(SOCKET_DATA *sock, FURNITURE_DATA *data, 
+! 			     const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new weight capacity for the furniture: ");
+      return IEDIT_FURNITURE_CAPACITY;
+    case '2':
+      olc_display_table(sock, furnitureTypeGetName, NUM_FURNITURES, 1);
++     text_to_buffer(sock, "Pick a furniture type: ");
+      return IEDIT_FURNITURE_TYPE;
+    default: return MENU_CHOICE_INVALID;
+    }
+diff -crN nakedmudv2.0/src/items/iedit.c nakedmudv2.1/src/items/iedit.c
+*** nakedmudv2.0/src/items/iedit.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/items/iedit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 28,45 ****
+  //*****************************************************************************
+  // local functions, variables, and datastructures
+  //*****************************************************************************
+- 
+- //
+- // how many buckets will be in our item_olc_table? This should be about 120%
+- // bigger than the number of item types we have, although it's not a huge deal.
+- #define IEDIT_TABLE_SIZE       50
+- 
+  // used to store the different sub-olc functions for different item types
+  HASHTABLE *item_olc_table = NULL;
+  
+  typedef struct item_olc_data {
+    void    (* menu)(SOCKET_DATA *sock, void *data);
+!   int  (* chooser)(SOCKET_DATA *sock, void *data, char option);
+    bool  (* parser)(SOCKET_DATA *sock, void *data, int choice, const char *arg);
+  } ITEM_OLC_DATA;
+  
+--- 28,39 ----
+  //*****************************************************************************
+  // local functions, variables, and datastructures
+  //*****************************************************************************
+  // used to store the different sub-olc functions for different item types
+  HASHTABLE *item_olc_table = NULL;
+  
+  typedef struct item_olc_data {
+    void    (* menu)(SOCKET_DATA *sock, void *data);
+!   int  (* chooser)(SOCKET_DATA *sock, void *data, const char *option);
+    bool  (* parser)(SOCKET_DATA *sock, void *data, int choice, const char *arg);
+  } ITEM_OLC_DATA;
+  
+***************
+*** 103,110 ****
+  		 "    D) delete type\r\n");
+  }
+  
+! int  iedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, char option) {
+!   switch(toupper(option)) {
+    case 'E':
+      text_to_buffer(sock, "Which item type would you like to edit: ");
+      return IEDIT_EDIT;
+--- 97,104 ----
+  		 "    D) delete type\r\n");
+  }
+  
+! int  iedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, const char *option) {
+!   switch(toupper(*option)) {
+    case 'E':
+      text_to_buffer(sock, "Which item type would you like to edit: ");
+      return IEDIT_EDIT;
+***************
+*** 142,146 ****
+  // initialization of item olc
+  //*****************************************************************************
+  void init_item_olc() {
+!   item_olc_table = newHashtable(IEDIT_TABLE_SIZE);
+  }
+--- 136,140 ----
+  // initialization of item olc
+  //*****************************************************************************
+  void init_item_olc() {
+!   item_olc_table = newHashtable();
+  }
+diff -crN nakedmudv2.0/src/items/iedit.h nakedmudv2.1/src/items/iedit.h
+*** nakedmudv2.0/src/items/iedit.h	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/items/iedit.h	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 22,28 ****
+  //
+  // these functions will be needed by oedit
+  void iedit_menu(SOCKET_DATA *sock, OBJ_DATA *obj);
+! int  iedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, char option);
+  bool iedit_parser(SOCKET_DATA *sock, OBJ_DATA *obj,int choice, const char *arg);
+  
+  #endif // IEDIT_H
+--- 22,28 ----
+  //
+  // these functions will be needed by oedit
+  void iedit_menu(SOCKET_DATA *sock, OBJ_DATA *obj);
+! int  iedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, const char *option);
+  bool iedit_parser(SOCKET_DATA *sock, OBJ_DATA *obj,int choice, const char *arg);
+  
+  #endif // IEDIT_H
+diff -crN nakedmudv2.0/src/items/items.c nakedmudv2.1/src/items/items.c
+*** nakedmudv2.0/src/items/items.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/items/items.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 26,41 ****
+  //*****************************************************************************
+  // local functions, datastructures, and defines
+  //*****************************************************************************
+- // this is the size of the table where we store all of the functions for 
+- // creating/deleting/copying/etc... data of item types. Ideally, this will be
+- // about 120% bigger than the total number of item types we have installed.
+- #define TYPE_TABLE_SIZE       50
+- 
+- // objects can have more than one item type; this is the size of the table
+- // that holds all of the item types for a single object. I'm doubtful an item
+- // will ever have more than 2-3 types, so 5 is a very generous size
+- #define ITEM_TABLE_SIZE        5
+- 
+  // a table of all our item types, and their assocciated new/delete/etc.. funcs
+  HASHTABLE *type_table = NULL;
+  
+--- 26,31 ----
+***************
+*** 114,120 ****
+  // Creates a new item table and copies the contents of the old one 
+  // over to the new one 
+  HASHTABLE *copyItemTable(HASHTABLE *table) {
+!   HASHTABLE *newtable = newHashtable(ITEM_TABLE_SIZE);
+    copyItemTableTo(table, newtable);
+    return newtable;
+  }
+--- 104,110 ----
+  // Creates a new item table and copies the contents of the old one 
+  // over to the new one 
+  HASHTABLE *copyItemTable(HASHTABLE *table) {
+!   HASHTABLE *newtable = newHashtable();
+    copyItemTableTo(table, newtable);
+    return newtable;
+  }
+***************
+*** 130,136 ****
+  
+  ITEM_DATA *newItemData() {
+    ITEM_DATA *data  = malloc(sizeof(ITEM_DATA));
+!   data->item_table = newHashtable(ITEM_TABLE_SIZE);
+    return data;
+  }
+  
+--- 120,126 ----
+  
+  ITEM_DATA *newItemData() {
+    ITEM_DATA *data  = malloc(sizeof(ITEM_DATA));
+!   data->item_table = newHashtable();
+    return data;
+  }
+  
+***************
+*** 200,206 ****
+  // implementation of items.h
+  //*****************************************************************************
+  void init_items(void) {
+!   type_table = newHashtable(TYPE_TABLE_SIZE);
+    auxiliariesInstall("type_data",
+  		     newAuxiliaryFuncs(AUXILIARY_TYPE_OBJ, newItemData, 
+  				       deleteItemData, itemDataCopyTo,
+--- 190,196 ----
+  // implementation of items.h
+  //*****************************************************************************
+  void init_items(void) {
+!   type_table = newHashtable();
+    auxiliariesInstall("type_data",
+  		     newAuxiliaryFuncs(AUXILIARY_TYPE_OBJ, newItemData, 
+  				       deleteItemData, itemDataCopyTo,
+diff -crN nakedmudv2.0/src/items/#portal.c# nakedmudv2.1/src/items/#portal.c#
+*** nakedmudv2.0/src/items/#portal.c#	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/items/#portal.c#	1969-12-31 18:00:00.000000000 -0600
+***************
+*** 1,194 ****
+- //*****************************************************************************
+- //
+- // portal.c
+- //
+- // handles all of the functioning of the portal item type. Stores data about 
+- // the destination vnums of a portal, and does all the legwork for retreiving 
+- // destinations when someone wants to interact with a portal.
+- //
+- //*****************************************************************************
+- 
+- #include "../mud.h"
+- #include "../utils.h"
+- #include "../storage.h"
+- #include "../character.h"
+- #include "../socket.h"
+- #include "../room.h"
+- #include "../world.h"
+- #include "../movement.h"
+- #include "../inform.h"
+- #include "../handler.h"
+- #include "items.h"
+- 
+- #include "../olc2/olc.h"
+- #include "iedit.h"
+- 
+- 
+- //*****************************************************************************
+- // item data for portals
+- //*****************************************************************************
+- typedef struct portal_data {
+-   int dest;
+- } PORTAL_DATA;
+- 
+- PORTAL_DATA *newPortalData() {
+-   PORTAL_DATA *data = malloc(sizeof(PORTAL_DATA));
+-   data->dest = NOWHERE;
+-   return data;
+- }
+- 
+- void deletePortalData(PORTAL_DATA *data) {
+-   free(data);
+- }
+- 
+- void portalDataCopyTo(PORTAL_DATA *from, PORTAL_DATA *to) {
+-   to->dest = from->dest;
+- }
+- 
+- PORTAL_DATA *portalDataCopy(PORTAL_DATA *data) {
+-   PORTAL_DATA *new_data = newPortalData();
+-   portalDataCopyTo(data, new_data);
+-   return new_data;
+- }
+- 
+- STORAGE_SET *portalDataStore(PORTAL_DATA *data) {
+-   STORAGE_SET *set = new_storage_set();
+-   store_int(set, "dest", data->dest);
+-   return set;
+- }
+- 
+- PORTAL_DATA *portalDataRead(STORAGE_SET *set) {
+-   PORTAL_DATA *data = newPortalData();
+-   data->dest = read_int(set, "dest");
+-   return data;
+- }
+- 
+- 
+- 
+- //*****************************************************************************
+- // functions for interacting with portals
+- //*****************************************************************************
+- int portalGetDest(OBJ_DATA *obj) {
+-   PORTAL_DATA *data = objGetTypeData(obj, "portal");
+-   return data->dest;
+- }
+- 
+- void portalSetDest(OBJ_DATA *obj, int dest) {
+-   PORTAL_DATA *data = objGetTypeData(obj, "portal");
+-   data->dest = dest;
+- }
+- 
+- 
+- //
+- // cmd_enter is used to go through portals
+- //   usage: enter [object]
+- //
+- //   examples:
+- //     enter portal         enter the thing called "portal" in your room
+- COMMAND(cmd_enter) {
+-   if(!arg || !*arg)
+-     send_to_char(ch, "What did you want to enter?\r\n");
+-   else {
+-     int found_type = FOUND_NONE;
+-     void *found = generic_find(ch, arg,
+- 			       FIND_TYPE_OBJ | FIND_TYPE_EXIT,
+- 			       FIND_SCOPE_IMMEDIATE,
+- 			       FALSE, &found_type);
+- 
+- 
+-     // we're trying to enter an exit
+-     if(found && found_type == FOUND_EXIT)
+-       try_exit(ch, found, DIR_NONE);
+- 
+-     // we're trying to enter a portal
+-     else if(found && found_type == FOUND_OBJ) {
+-       if(!objIsType(found, "portal"))
+- 	send_to_char(ch, "You cannot seem to find an enterance.\r\n");
+-       else {
+- 	ROOM_DATA *dest = worldGetRoom(gameworld, portalGetDest(found));
+- 	if(!dest)
+- 	  send_to_char(ch, 
+- 		       "You go to enter the portal, "
+- 		       "but dark forces prevent you!\r\n");
+- 	else {
+- 	  send_to_char(ch, "You step through %s.\r\n", see_obj_as(ch, found));
+- 	  message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+- 		  "$n steps through $o.");
+- 	  char_from_room(ch);
+- 	  char_to_room(ch, dest);
+- 	  look_at_room(ch, dest);
+- 	  message(ch, NULL, found, NULL, TRUE, TO_ROOM | TO_NOTCHAR,
+- 		  "$n arrives after travelling through $o.");
+- 	}
+-       }
+-     }
+-     else
+-       send_to_char(ch, "What were you trying to enter?\r\n");
+-   }
+- }
+- 
+- 
+- 
+- //*****************************************************************************
+- // portal olc
+- //*****************************************************************************
+- #define IEDIT_PORTAL_DEST      1
+- 
+- // the resedit olc needs these declared
+- void iedit_portal_menu   (SOCKET_DATA *sock, PORTAL_DATA *data) {
+-   ROOM_DATA *dest = worldGetRoom(gameworld, data->dest);
+-   send_to_socket(sock, "{g1) Destination: {c%d (%s)\r\n", data->dest,
+- 		 (dest ? roomGetName(dest) : "nowhere"));
+- }
+- 
+- int  iedit_portal_chooser(SOCKET_DATA *sock, PORTAL_DATA *data, char option) {
+-   switch(toupper(option)) {
+-   case '1': 
+-     text_to_buffer(sock, "Enter new destination (-1 for none): ");
+-     return IEDIT_PORTAL_DEST;
+-   default:
+-     return MENU_CHOICE_INVALID;
+-   }
+- }
+- 
+- bool iedit_portal_parser (SOCKET_DATA *sock, PORTAL_DATA *data, int choice, 
+- 			  const char *arg) {
+-   switch(choice) {
+-   case IEDIT_PORTAL_DEST: {
+-     int dest = atoi(arg);
+-     // ugh... ugly logic. Clean this up one day?
+-     //   Make sure what we're getting is a positive number or make sure it is
+-     //   the NOWHERE number (-1). Also make sure that, if it's not NOWHERE, it
+-     //   corresponds to a vnum of a room already created.
+-     if((dest != NOWHERE && !worldGetRoom(gameworld, dest)) ||
+-        (dest != NOWHERE && !isdigit(*arg)))
+-       return FALSE;
+-     data->dest = dest;
+-     return TRUE;
+-   }
+-   default:
+-     return FALSE;
+-   }
+- }
+- 
+- 
+- 
+- //*****************************************************************************
+- // install the portal item type
+- //*****************************************************************************
+- 
+- //
+- // this will need to be called by init_items() in items/items.c
+- void init_portal(void) {
+-   item_add_type("portal", 
+- 		newPortalData, deletePortalData,
+- 		portalDataCopyTo, portalDataCopy, 
+- 		portalDataStore, portalDataRead);
+- 
+-   // set up the portal OLC too
+-   item_add_olc("portal", iedit_portal_menu, iedit_portal_chooser, 
+- 	       iedit_portal_parser);
+- 
+-   add_cmd("enter", NULL, cmd_enter, 0, POS_STANDING, POS_FLYING,
+- 	  LEVEL_PLAYER, TRUE, TRUE);
+- }
+--- 0 ----
+diff -crN nakedmudv2.0/src/items/portal.c nakedmudv2.1/src/items/portal.c
+*** nakedmudv2.0/src/items/portal.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/items/portal.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 141,148 ****
+  		 (dest ? roomGetName(dest) : "nowhere"));
+  }
+  
+! int  iedit_portal_chooser(SOCKET_DATA *sock, PORTAL_DATA *data, char option) {
+!   switch(toupper(option)) {
+    case '1': 
+      text_to_buffer(sock, "Enter new destination (-1 for none): ");
+      return IEDIT_PORTAL_DEST;
+--- 141,149 ----
+  		 (dest ? roomGetName(dest) : "nowhere"));
+  }
+  
+! int  iedit_portal_chooser(SOCKET_DATA *sock, PORTAL_DATA *data, 
+! 			  const char *option) {
+!   switch(toupper(*option)) {
+    case '1': 
+      text_to_buffer(sock, "Enter new destination (-1 for none): ");
+      return IEDIT_PORTAL_DEST;
+diff -crN nakedmudv2.0/src/items/worn.c nakedmudv2.1/src/items/worn.c
+*** nakedmudv2.0/src/items/worn.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/items/worn.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 39,50 ****
+  //*****************************************************************************
+  // local functions, variables, datastructures, and defines
+  //*****************************************************************************
+- 
+- // how big of a table will we need to hold all of the worn data we might have?
+- // optimally, this should be about 120% bigger than the number of worn types
+- // that we have.
+- #define WORN_TABLE_SIZE     50
+- 
+  HASHTABLE *worn_table = NULL;
+  
+  typedef struct worn_entry {
+--- 39,44 ----
+***************
+*** 179,186 ****
+  		 data->type, wornTypeGetPositions(data->type));
+  }
+  
+! int  iedit_worn_chooser(SOCKET_DATA *sock, WORN_DATA *data, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      iedit_worn_show_types(sock);
+      text_to_buffer(sock, "enter choice: ");
+--- 173,180 ----
+  		 data->type, wornTypeGetPositions(data->type));
+  }
+  
+! int  iedit_worn_chooser(SOCKET_DATA *sock, WORN_DATA *data, const char *option){
+!   switch(toupper(*option)) {
+    case '1':
+      iedit_worn_show_types(sock);
+      text_to_buffer(sock, "enter choice: ");
+***************
+*** 222,228 ****
+  //
+  // this will need to be called by init_items() in items/items.c
+  void init_worn(void) {
+!   worn_table = newHashtable(WORN_TABLE_SIZE);
+    item_add_type("worn", 
+  		newWornData, deleteWornData,
+  		wornDataCopyTo, wornDataCopy, 
+--- 216,222 ----
+  //
+  // this will need to be called by init_items() in items/items.c
+  void init_worn(void) {
+!   worn_table = newHashtable();
+    item_add_type("worn", 
+  		newWornData, deleteWornData,
+  		wornDataCopyTo, wornDataCopy, 
+diff -crN nakedmudv2.0/src/log.c nakedmudv2.1/src/log.c
+*** nakedmudv2.0/src/log.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/log.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 86,92 ****
+  
+  
+  void init_logs() {
+!   logkeys = newHashtable(50);
+  
+    STORAGE_SET       *set = storage_read(LOG_LIST);
+    if(set != NULL) {
+--- 86,92 ----
+  
+  
+  void init_logs() {
+!   logkeys = newHashtable();
+  
+    STORAGE_SET       *set = storage_read(LOG_LIST);
+    if(set != NULL) {
+diff -crN nakedmudv2.0/src/olc2/bedit.c nakedmudv2.1/src/olc2/bedit.c
+*** nakedmudv2.0/src/olc2/bedit.c	1969-12-31 18:00:00.000000000 -0600
+--- nakedmudv2.1/src/olc2/bedit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 0 ****
+--- 1,49 ----
++ //*****************************************************************************
++ //
++ // bedit.c
++ //
++ // bedit is the OLC for bitvector editing. Allows people to turn on/off bits for
++ // a bitvector.
++ //
++ //*****************************************************************************
++ 
++ #include "../mud.h"
++ #include "../socket.h"
++ #include "../bitvector.h"
++ 
++ #include "olc.h"
++ 
++ 
++ 
++ //*****************************************************************************
++ // bitvector editing functions
++ //*****************************************************************************
++ void bedit_menu   (SOCKET_DATA *sock, BITVECTOR *vector) {
++   LIST *bits = bitvectorListBits(vector);
++   send_to_socket(sock, "{wCurrent bits: {c%s\r\n", bitvectorGetBits(vector));
++   olc_display_list(sock, bits, 3);
++   deleteListWith(bits, free);
++ }
++ 
++ int  bedit_chooser(SOCKET_DATA *sock, BITVECTOR *vector, const char *option) {
++   if(!isdigit(*option)) 
++     return MENU_CHOICE_INVALID;
++   else {
++     int choice = atoi(option);
++     if(choice < 0 || choice >= bitvectorSize(vector))
++       return MENU_CHOICE_INVALID;
++     else {
++       LIST *bits = bitvectorListBits(vector);
++       char  *bit = listGet(bits, choice);
++       bitToggle(vector, bit);
++       deleteListWith(bits, free);
++       return MENU_NOCHOICE;
++     }
++   }
++ }
++ 
++ bool bedit_parser (SOCKET_DATA *sock, BITVECTOR *vector, int choice, 
++ 		   const char *arg) {
++   // no parser... everything is done in the chooser
++   return FALSE;
++ }
+diff -crN nakedmudv2.0/src/olc2/bedit.d nakedmudv2.1/src/olc2/bedit.d
+*** nakedmudv2.0/src/olc2/bedit.d	1969-12-31 18:00:00.000000000 -0600
+--- nakedmudv2.1/src/olc2/bedit.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 0 ****
+--- 1,2 ----
++ olc2/bedit.d olc2/bedit.o: olc2/bedit.c mud.h wrapsock.h property_table.h list.h map.h \
++   hashtable.h set.h buffer.h bitvector.h socket.h olc2/olc.h
+diff -crN nakedmudv2.0/src/olc2/dedit.c nakedmudv2.1/src/olc2/dedit.c
+*** nakedmudv2.0/src/olc2/dedit.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/dedit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 36,43 ****
+  		 );
+  }
+  
+! int respedit_chooser(SOCKET_DATA *sock, RESPONSE_DATA *response, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new list of keywords: ");
+      return RESPEDIT_KEYWORDS;
+--- 36,44 ----
+  		 );
+  }
+  
+! int respedit_chooser(SOCKET_DATA *sock, RESPONSE_DATA *response, 
+! 		     const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new list of keywords: ");
+      return RESPEDIT_KEYWORDS;
+***************
+*** 106,113 ****
+  }
+  
+  
+! int dedit_chooser(SOCKET_DATA *sock, DIALOG_DATA *dialog, char option) {
+!   switch(toupper(option)) {
+    case 'T':
+      text_to_buffer(sock, "Enter a new title for the dialog: ");
+      return DEDIT_TITLE;
+--- 107,114 ----
+  }
+  
+  
+! int dedit_chooser(SOCKET_DATA *sock, DIALOG_DATA *dialog, const char *option) {
+!   switch(toupper(*option)) {
+    case 'T':
+      text_to_buffer(sock, "Enter a new title for the dialog: ");
+      return DEDIT_TITLE;
+diff -crN nakedmudv2.0/src/olc2/esedit.c nakedmudv2.1/src/olc2/esedit.c
+*** nakedmudv2.0/src/olc2/esedit.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/esedit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 32,39 ****
+  		 );
+  }
+  
+! int  edesc_chooser(SOCKET_DATA *sock, EDESC_DATA *edesc, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new list of keywords: ");
+      return EDEDIT_KEYWORD;
+--- 32,39 ----
+  		 );
+  }
+  
+! int  edesc_chooser(SOCKET_DATA *sock, EDESC_DATA *edesc, const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new list of keywords: ");
+      return EDEDIT_KEYWORD;
+***************
+*** 81,88 ****
+  		 );
+  }
+  
+! int  edesc_set_chooser(SOCKET_DATA *sock, EDESC_SET *set, char option) {
+!   switch(toupper(option)) {
+    case 'E':
+      text_to_buffer(sock, "Enter the number of the edesc to edit: ");
+      return ESEDIT_EDIT;
+--- 81,88 ----
+  		 );
+  }
+  
+! int  edesc_set_chooser(SOCKET_DATA *sock, EDESC_SET *set, const char *option) {
+!   switch(toupper(*option)) {
+    case 'E':
+      text_to_buffer(sock, "Enter the number of the edesc to edit: ");
+      return ESEDIT_EDIT;
+diff -crN nakedmudv2.0/src/olc2/medit.c nakedmudv2.1/src/olc2/medit.c
+*** nakedmudv2.0/src/olc2/medit.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/medit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 9,14 ****
+--- 9,15 ----
+  #include "../utils.h"
+  #include "../socket.h"
+  #include "../character.h"
++ #include "../handler.h"
+  #include "../races.h"
+  #include "../world.h"
+  #include "../dialog.h"
+***************
+*** 73,80 ****
+  		 );
+  }
+  
+! int  medit_chooser(SOCKET_DATA *sock, CHAR_DATA *mob, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      text_to_buffer(sock, "Enter name: ");
+      return MEDIT_NAME;
+--- 74,81 ----
+  		 );
+  }
+  
+! int  medit_chooser(SOCKET_DATA *sock, CHAR_DATA *mob, const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter name: ");
+      return MEDIT_NAME;
+***************
+*** 96,105 ****
+      return MENU_NOCHOICE;
+    case 'R':
+      send_to_socket(sock, "%s\r\n\r\n", raceGetList(FALSE));
+!     send_to_socket(sock, "Please select a race: ");
+      return MEDIT_RACE;
+    case 'G':
+      olc_display_table(sock, sexGetName, NUM_SEXES, 1);
+      return MEDIT_SEX;
+    case 'D':
+      text_to_buffer(sock, "Enter the dialog vnum (-1 for none): ");
+--- 97,107 ----
+      return MENU_NOCHOICE;
+    case 'R':
+      send_to_socket(sock, "%s\r\n\r\n", raceGetList(FALSE));
+!     text_to_buffer(sock, "Please select a race: ");
+      return MEDIT_RACE;
+    case 'G':
+      olc_display_table(sock, sexGetName, NUM_SEXES, 1);
++     text_to_buffer(sock, "Pick a gender: ");
+      return MEDIT_SEX;
+    case 'D':
+      text_to_buffer(sock, "Enter the dialog vnum (-1 for none): ");
+***************
+*** 157,170 ****
+  }
+  
+  COMMAND(cmd_medit) {
+-   ZONE_DATA *zone;
+    CHAR_DATA *mob;
+-   mob_vnum vnum;
+  
+!   if(!arg || !*arg || !isdigit(*arg))
+      send_to_char(ch, "Invalid vnum! Try again.\r\n");
+    else {
+!     vnum = atoi(arg);
+  
+      // make sure there is a corresponding zone ...
+      if((zone = worldZoneBounding(gameworld, vnum)) == NULL)
+--- 159,185 ----
+  }
+  
+  COMMAND(cmd_medit) {
+    CHAR_DATA *mob;
+  
+!   if(!arg || !*arg)
+      send_to_char(ch, "Invalid vnum! Try again.\r\n");
++ 
++   // we're trying to edit a mob by name... must be something in the world
++   else if(!isdigit(*arg)) {
++     mob = generic_find(ch, arg, FIND_TYPE_CHAR, FIND_SCOPE_ROOM,
++ 		       FALSE, NULL);
++     if(mob == NULL)
++       send_to_char(ch, "Who were you trying to edit?\r\n");
++     else {
++       do_olc(charGetSocket(ch), medit_menu, medit_chooser, medit_parser,
++ 	     NULL, NULL, NULL, NULL, mob);
++     }
++   }
++ 
++   // we're editing a mobile by vnum... edit the prototype
+    else {
+!     ZONE_DATA *zone = NULL;
+!     mob_vnum vnum   = atoi(arg);
+  
+      // make sure there is a corresponding zone ...
+      if((zone = worldZoneBounding(gameworld, vnum)) == NULL)
+***************
+*** 177,183 ****
+  
+        // make our mobile
+        if(mob == NULL) {
+! 	mob = newMobile(vnum);
+  	zoneAddMob(zone, mob);
+  	charSetName(mob, "an unfinished mobile");
+  	charSetKeywords(mob, "mobile, unfinshed");
+--- 192,199 ----
+  
+        // make our mobile
+        if(mob == NULL) {
+! 	mob = newMobile();
+! 	charSetVnum(mob, vnum);
+  	zoneAddMob(zone, mob);
+  	charSetName(mob, "an unfinished mobile");
+  	charSetKeywords(mob, "mobile, unfinshed");
+diff -crN nakedmudv2.0/src/olc2/medit.d nakedmudv2.1/src/olc2/medit.d
+*** nakedmudv2.0/src/olc2/medit.d	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/medit.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,4 ****
+  olc2/medit.d olc2/medit.o: olc2/medit.c mud.h wrapsock.h property_table.h list.h map.h \
+    hashtable.h set.h buffer.h bitvector.h utils.h socket.h character.h \
+!   races.h world.h dialog.h zone.h olc2/olc.h scripts/script.h \
+    editor/editor.h
+--- 1,4 ----
+  olc2/medit.d olc2/medit.o: olc2/medit.c mud.h wrapsock.h property_table.h list.h map.h \
+    hashtable.h set.h buffer.h bitvector.h utils.h socket.h character.h \
+!   handler.h races.h world.h dialog.h zone.h olc2/olc.h scripts/script.h \
+    editor/editor.h
+diff -crN nakedmudv2.0/src/olc2/module.mk nakedmudv2.1/src/olc2/module.mk
+*** nakedmudv2.0/src/olc2/module.mk	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/module.mk	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,2 ****
+  SRC  += olc2/olc.c olc2/redit.c olc2/zedit.c olc2/esedit.c olc2/dedit.c \
+! 	olc2/medit.c olc2/oedit.c
+--- 1,2 ----
+  SRC  += olc2/olc.c olc2/redit.c olc2/zedit.c olc2/esedit.c olc2/dedit.c \
+! 	olc2/medit.c olc2/oedit.c olc2/bedit.c
+diff -crN nakedmudv2.0/src/olc2/oedit.c nakedmudv2.1/src/olc2/oedit.c
+*** nakedmudv2.0/src/olc2/oedit.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/oedit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 10,18 ****
+--- 10,20 ----
+  #include "../utils.h"
+  #include "../socket.h"
+  #include "../character.h"
++ #include "../handler.h"
+  #include "../object.h"
+  #include "../world.h"
+  #include "../zone.h"
++ #include "../bitvector.h"
+  
+  #include "olc.h"
+  #include "olc_submenus.h"
+***************
+*** 56,61 ****
+--- 58,64 ----
+  		 "{c%s\r\n"
+  		 "{gW) Weight:    {c%1.3lf\r\n"
+  		 "{gT) Edit item types: {c%s\r\n"
++ 		 "{gB) Edit bitvector : {c%s\r\n"
+  		 "{gS) Script menu\r\n"
+  		 "{gX) Extra Descriptions menu\r\n",
+  		 objGetVnum(obj),
+***************
+*** 66,77 ****
+  		 objGetMultiRdesc(obj),
+  		 objGetDesc(obj),
+  		 objGetWeightRaw(obj),
+! 		 objGetTypes(obj)
+  		 );
+  }
+  
+! int  oedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      text_to_buffer(sock, "Enter name: ");
+      return OEDIT_NAME;
+--- 69,81 ----
+  		 objGetMultiRdesc(obj),
+  		 objGetDesc(obj),
+  		 objGetWeightRaw(obj),
+! 		 objGetTypes(obj),
+! 		 bitvectorGetBits(objGetBits(obj))
+  		 );
+  }
+  
+! int  oedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter name: ");
+      return OEDIT_NAME;
+***************
+*** 102,107 ****
+--- 106,115 ----
+      do_olc(sock, iedit_menu, iedit_chooser, iedit_parser, NULL, NULL, NULL,
+  	   NULL, obj);
+      return MENU_NOCHOICE;
++   case 'B':
++     do_olc(sock, bedit_menu, bedit_chooser, bedit_parser, NULL, NULL, NULL,
++ 	   NULL, objGetBits(obj));
++     return MENU_NOCHOICE;
+    case 'S':
+      do_olc(sock, ssedit_menu, ssedit_chooser, ssedit_parser,
+  	   NULL, NULL, NULL, NULL, objGetScripts(obj));
+***************
+*** 139,153 ****
+  }
+  
+  COMMAND(cmd_oedit) {
+-   ZONE_DATA *zone;
+    OBJ_DATA *obj;
+-   obj_vnum vnum;
+  
+    // if no argument is supplied, default to the current obj
+    if(!arg || !*arg)
+      send_to_char(ch, "Please supply the vnum of a obj you wish to edit.\r\n");
+    else {
+!     vnum = atoi(arg);
+  
+      // make sure there is a corresponding zone ...
+      if((zone = worldZoneBounding(gameworld, vnum)) == NULL)
+--- 147,174 ----
+  }
+  
+  COMMAND(cmd_oedit) {
+    OBJ_DATA *obj;
+  
+    // if no argument is supplied, default to the current obj
+    if(!arg || !*arg)
+      send_to_char(ch, "Please supply the vnum of a obj you wish to edit.\r\n");
++ 
++   // we're trying to edit an object by name... must be something in the world
++   else if(!isdigit(*arg)) {
++     obj = generic_find(ch, arg, FIND_TYPE_OBJ, FIND_SCOPE_INV | FIND_SCOPE_ROOM,
++ 		       FALSE, NULL);
++     if(obj == NULL)
++       send_to_char(ch, "What were you trying to edit?\r\n");
++     else {
++       do_olc(charGetSocket(ch), oedit_menu, oedit_chooser, oedit_parser,
++ 	     NULL, NULL, NULL, NULL, obj);
++     }
++   }
++ 
++   // we're editing an object by vnum... edit the prototype
+    else {
+!     ZONE_DATA *zone = NULL;
+!     obj_vnum   vnum = atoi(arg);
+  
+      // make sure there is a corresponding zone ...
+      if((zone = worldZoneBounding(gameworld, vnum)) == NULL)
+***************
+*** 156,167 ****
+        send_to_char(ch, "You are not authorized to edit this zone.\r\n");  
+      else {
+        // find the obj
+!       obj = worldGetObj(gameworld, vnum);
+  
+        // make our obj
+        if(obj == NULL) {
+  	obj = newObj(vnum);
+  	objSetVnum(obj, vnum);
+  	objSetName      (obj, "an unfinished object");
+  	objSetKeywords  (obj, "object, unfinshed");
+  	objSetRdesc     (obj, "an unfinished object is lying here.");
+--- 177,189 ----
+        send_to_char(ch, "You are not authorized to edit this zone.\r\n");  
+      else {
+        // find the obj
+!       obj = zoneGetObj(zone, vnum);
+  
+        // make our obj
+        if(obj == NULL) {
+  	obj = newObj(vnum);
+  	objSetVnum(obj, vnum);
++ 	zoneAddObj(zone, obj);
+  	objSetName      (obj, "an unfinished object");
+  	objSetKeywords  (obj, "object, unfinshed");
+  	objSetRdesc     (obj, "an unfinished object is lying here.");
+diff -crN nakedmudv2.0/src/olc2/oedit.d nakedmudv2.1/src/olc2/oedit.d
+*** nakedmudv2.0/src/olc2/oedit.d	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/oedit.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,4 ****
+  olc2/oedit.d olc2/oedit.o: olc2/oedit.c mud.h wrapsock.h property_table.h list.h map.h \
+    hashtable.h set.h buffer.h bitvector.h utils.h socket.h character.h \
+!   object.h world.h zone.h olc2/olc.h olc2/olc_submenus.h scripts/script.h \
+!   editor/editor.h items/iedit.h items/items.h
+--- 1,4 ----
+  olc2/oedit.d olc2/oedit.o: olc2/oedit.c mud.h wrapsock.h property_table.h list.h map.h \
+    hashtable.h set.h buffer.h bitvector.h utils.h socket.h character.h \
+!   handler.h object.h world.h zone.h olc2/olc.h olc2/olc_submenus.h \
+!   scripts/script.h editor/editor.h items/iedit.h items/items.h
+diff -crN nakedmudv2.0/src/olc2/olc.c nakedmudv2.1/src/olc2/olc.c
+*** nakedmudv2.0/src/olc2/olc.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/olc.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 28,34 ****
+  //*****************************************************************************
+  typedef struct olc_data {
+    void    (* menu)(SOCKET_DATA *, void *);
+!   int  (* chooser)(SOCKET_DATA *, void *, char);
+    bool  (* parser)(SOCKET_DATA *, void *, int, const char *);
+    void *(* copier)(void *);
+    void  (* copyto)(void *, void *);
+--- 28,34 ----
+  //*****************************************************************************
+  typedef struct olc_data {
+    void    (* menu)(SOCKET_DATA *, void *);
+!   int  (* chooser)(SOCKET_DATA *, void *, const char *);
+    bool  (* parser)(SOCKET_DATA *, void *, int, const char *);
+    void *(* copier)(void *);
+    void  (* copyto)(void *, void *);
+***************
+*** 40,46 ****
+  } OLC_DATA;
+  
+  OLC_DATA *newOLC(void    (* menu)(SOCKET_DATA *, void *),
+! 		 int  (* chooser)(SOCKET_DATA *, void *, char),
+  		 bool  (* parser)(SOCKET_DATA *, void *, int, const char *),
+  		 void *(* copier)(void *),
+  		 void  (* copyto)(void *, void *),
+--- 40,46 ----
+  } OLC_DATA;
+  
+  OLC_DATA *newOLC(void    (* menu)(SOCKET_DATA *, void *),
+! 		 int  (* chooser)(SOCKET_DATA *, void *, const char *),
+  		 bool  (* parser)(SOCKET_DATA *, void *, int, const char *),
+  		 void *(* copier)(void *),
+  		 void  (* copyto)(void *, void *),
+***************
+*** 201,207 ****
+        break;
+  
+      default: {
+!       int cmd = olc->chooser(sock, olc->working_copy, *arg);
+        // the menu choice we entered wasn't a valid one. redisplay the menu
+        if(cmd == MENU_CHOICE_INVALID)
+  	olc_menu(sock);
+--- 201,207 ----
+        break;
+  
+      default: {
+!       int cmd = olc->chooser(sock, olc->working_copy, arg);
+        // the menu choice we entered wasn't a valid one. redisplay the menu
+        if(cmd == MENU_CHOICE_INVALID)
+  	olc_menu(sock);
+***************
+*** 275,281 ****
+  void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
+  		       int num_vals, int num_cols) {
+    int i, print_room;
+!   static char fmt[SMALL_BUFFER];
+  
+    print_room = (80 - 10*num_cols)/num_cols;
+    sprintf(fmt, "  {c%%2d{y) {g%%-%ds%%s", print_room);
+--- 275,281 ----
+  void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
+  		       int num_vals, int num_cols) {
+    int i, print_room;
+!   static char fmt[100];
+  
+    print_room = (80 - 10*num_cols)/num_cols;
+    sprintf(fmt, "  {c%%2d{y) {g%%-%ds%%s", print_room);
+***************
+*** 286,291 ****
+  
+    if(i % num_cols != 0)
+      send_to_socket(sock, "\r\n");
+  
+!   text_to_buffer(sock, "Pick an option: ");
+  }
+--- 286,309 ----
+  
+    if(i % num_cols != 0)
+      send_to_socket(sock, "\r\n");
++ }
++ 
++ void olc_display_list(SOCKET_DATA *sock, LIST *list, int num_cols) {
++   static char fmt[100];
++   LIST_ITERATOR *list_i = newListIterator(list);
++   int print_room, i = 0;
++   char *str = NULL;
++   
++   print_room = (80 - 10*num_cols)/num_cols;
++   sprintf(fmt, "  {c%%2d{y) {g%%-%ds%%s", print_room);
+  
+!   ITERATE_LIST(str, list_i) {
+!     send_to_socket(sock, fmt, i, str, (i % num_cols == (num_cols - 1) ? 
+! 				       "\r\n" : "   "));
+!     i++;
+!   }
+!   deleteListIterator(list_i);
+! 
+!   if(i % num_cols != 0)
+!     send_to_socket(sock, "\r\n");
+  }
+diff -crN nakedmudv2.0/src/olc2/olc.h nakedmudv2.1/src/olc2/olc.h
+*** nakedmudv2.0/src/olc2/olc.h	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/olc.h	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 40,46 ****
+  //                 will be passed to the modifier() function to perform changes
+  //                 after an argument is passed in.
+  //       the chooser function is of the form:
+! //       int chooser(SOCKET_DATA *sock, datatype *to_edit, char option)
+  //
+  // parser: This function is used to parse an argument, given a choice from the
+  //       menu. The choice is provided by the chooser() function, and an argument
+--- 40,46 ----
+  //                 will be passed to the modifier() function to perform changes
+  //                 after an argument is passed in.
+  //       the chooser function is of the form:
+! //       int chooser(SOCKET_DATA *sock, datatype *to_edit, const char *option)
+  //
+  // parser: This function is used to parse an argument, given a choice from the
+  //       menu. The choice is provided by the chooser() function, and an argument
+***************
+*** 108,111 ****
+--- 108,115 ----
+  void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
+  		       int num_vals, int num_cols);
+  
++ //
++ // Same deal as olc_display_table, except that it takes in a list of strings
++ void olc_display_list(SOCKET_DATA *sock, LIST *list, int num_cols);
++ 
+  #endif // OLC2_H
+diff -crN nakedmudv2.0/src/olc2/olc_submenus.h nakedmudv2.1/src/olc2/olc_submenus.h
+*** nakedmudv2.0/src/olc2/olc_submenus.h	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/olc_submenus.h	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 16,21 ****
+  void edesc_set_menu   (SOCKET_DATA *sock, EDESC_SET *set);
+  bool edesc_set_parser (SOCKET_DATA *sock, EDESC_SET *set, int choice,
+  		       const char *arg);
+! int  edesc_set_chooser(SOCKET_DATA *sock, char option, EDESC_SET *set);
+  
+  #endif // OLC_SUBMENUS_H
+--- 16,26 ----
+  void edesc_set_menu   (SOCKET_DATA *sock, EDESC_SET *set);
+  bool edesc_set_parser (SOCKET_DATA *sock, EDESC_SET *set, int choice,
+  		       const char *arg);
+! int  edesc_set_chooser(SOCKET_DATA *sock, EDESC_SET *set, const char *option);
+! 
+! // for bitvectors
+! void bedit_menu   (SOCKET_DATA *sock, BITVECTOR *v);
+! bool bedit_parser (SOCKET_DATA *sock, BITVECTOR *v, int choice,const char *arg);
+! int  bedit_chooser(SOCKET_DATA *sock, BITVECTOR *v, const char *option);
+  
+  #endif // OLC_SUBMENUS_H
+diff -crN nakedmudv2.0/src/olc2/redit.c nakedmudv2.1/src/olc2/redit.c
+*** nakedmudv2.0/src/olc2/redit.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/redit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 46,52 ****
+  
+  // the resedit olc needs these declared
+  void rrledit_menu(SOCKET_DATA *sock, LIST *list);
+! int  rrledit_chooser(SOCKET_DATA *sock, LIST *list, char option);
+  bool rrledit_parser(SOCKET_DATA *sock, LIST *list, int choice, const char *arg);
+  
+  const char *write_reset_arg(int type, const char *arg) {
+--- 46,52 ----
+  
+  // the resedit olc needs these declared
+  void rrledit_menu(SOCKET_DATA *sock, LIST *list);
+! int  rrledit_chooser(SOCKET_DATA *sock, LIST *list, const char *option);
+  bool rrledit_parser(SOCKET_DATA *sock, LIST *list, int choice, const char *arg);
+  
+  const char *write_reset_arg(int type, const char *arg) {
+***************
+*** 193,202 ****
+  		 );
+  }
+  
+! int resedit_chooser(SOCKET_DATA *sock, RESET_DATA *data, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      olc_display_table(sock, resetTypeGetName, NUM_RESETS, 1);
+      return RESEDIT_TYPE;
+    case '2':
+      text_to_buffer(sock, "How many times should the reset execute: ");
+--- 193,203 ----
+  		 );
+  }
+  
+! int resedit_chooser(SOCKET_DATA *sock, RESET_DATA *data, const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      olc_display_table(sock, resetTypeGetName, NUM_RESETS, 1);
++     text_to_buffer(sock, "Pick a reset type: ");
+      return RESEDIT_TYPE;
+    case '2':
+      text_to_buffer(sock, "How many times should the reset execute: ");
+***************
+*** 316,323 ****
+  }
+  
+  
+! int rrledit_chooser(SOCKET_DATA *sock, LIST *list, char option) {
+!   switch(toupper(option)) {
+    case 'N': {
+      RESET_DATA *data = newReset();
+      listQueue(list, data);
+--- 317,324 ----
+  }
+  
+  
+! int rrledit_chooser(SOCKET_DATA *sock, LIST *list, const char *option) {
+!   switch(toupper(*option)) {
+    case 'N': {
+      RESET_DATA *data = newReset();
+      listQueue(list, data);
+***************
+*** 403,410 ****
+  		 );
+  }
+  
+! int exedit_chooser(SOCKET_DATA *sock, EXIT_DATA *exit, char option) {
+!   switch(option) {
+    case '1':
+      text_to_buffer(sock, "Enter a new name: ");
+      return EXEDIT_NAME;
+--- 404,411 ----
+  		 );
+  }
+  
+! int exedit_chooser(SOCKET_DATA *sock, EXIT_DATA *exit, const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new name: ");
+      return EXEDIT_NAME;
+***************
+*** 545,552 ****
+  }
+  
+  
+! int redit_chooser(SOCKET_DATA *sock, ROOM_DATA *room, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new room name: ");
+      return REDIT_NAME;
+--- 546,553 ----
+  }
+  
+  
+! int redit_chooser(SOCKET_DATA *sock, ROOM_DATA *room, const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new room name: ");
+      return REDIT_NAME;
+***************
+*** 562,567 ****
+--- 563,569 ----
+  #endif
+    case 'T':
+      olc_display_table(sock, terrainGetName, NUM_TERRAINS, 3);
++     text_to_buffer(sock, "Pick a terrain type: ");
+      return REDIT_TERRAIN;
+    case 'F':
+      text_to_buffer(sock, "What is the name of the exit you wish to fill: ");
+diff -crN nakedmudv2.0/src/olc2/zedit.c nakedmudv2.1/src/olc2/zedit.c
+*** nakedmudv2.0/src/olc2/zedit.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/olc2/zedit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 42,49 ****
+  }
+  
+  
+! int zedit_chooser(SOCKET_DATA *sock, ZONE_DATA *zone, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new zone name: ");
+      return ZEDIT_NAME;
+--- 42,49 ----
+  }
+  
+  
+! int zedit_chooser(SOCKET_DATA *sock, ZONE_DATA *zone, const char *option) {
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new zone name: ");
+      return ZEDIT_NAME;
+diff -crN nakedmudv2.0/src/property_table.c nakedmudv2.1/src/property_table.c
+*** nakedmudv2.0/src/property_table.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/property_table.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 34,54 ****
+  
+  
+  //*****************************************************************************
+- //
+  // local functions
+- //
+  //*****************************************************************************
+  
+- 
+  //
+  // Find the bucket the key belongs to
+- //
+  int find_bucket(int key, int num_buckets) {
+    // simple for now: just take the modulo
+    return key % num_buckets;
+  };
+  
+  
+  //*****************************************************************************
+  //
+  // implementation of property_table.h
+--- 34,51 ----
+  
+  
+  //*****************************************************************************
+  // local functions
+  //*****************************************************************************
+  
+  //
+  // Find the bucket the key belongs to
+  int find_bucket(int key, int num_buckets) {
+    // simple for now: just take the modulo
+    return key % num_buckets;
+  };
+  
+  
++ 
+  //*****************************************************************************
+  //
+  // implementation of property_table.h
+diff -crN nakedmudv2.0/src/races.c nakedmudv2.1/src/races.c
+*** nakedmudv2.0/src/races.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/races.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 54,60 ****
+  //*****************************************************************************
+  void init_races() {
+    // create the table for holding race data
+!   race_table = newHashtable(RACE_TABLE_SIZE);
+  
+    // make the default human body
+    BODY_DATA *body = newBody();
+--- 54,60 ----
+  //*****************************************************************************
+  void init_races() {
+    // create the table for holding race data
+!   race_table = newHashtable();
+  
+    // make the default human body
+    BODY_DATA *body = newBody();
+diff -crN nakedmudv2.0/src/room.c nakedmudv2.1/src/room.c
+*** nakedmudv2.0/src/room.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/room.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 77,83 ****
+    for(i = 0; i < NUM_DIRS; i++)
+      room->exits[i] = NULL;
+  
+!   room->special_exits  = newHashtable(SPECIAL_EXIT_BUCKETS);
+    room->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_ROOM);
+  
+    room->edescs     = newEdescSet();
+--- 77,83 ----
+    for(i = 0; i < NUM_DIRS; i++)
+      room->exits[i] = NULL;
+  
+!   room->special_exits  = newHashtableSize(SPECIAL_EXIT_BUCKETS);
+    room->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_ROOM);
+  
+    room->edescs     = newEdescSet();
+***************
+*** 229,235 ****
+      roomSetExitSpecial(to, spec_exits[i], NULL);
+    free(spec_exits);
+    deleteHashtable(to->special_exits);
+!   to->special_exits = newHashtable(SPECIAL_EXIT_BUCKETS);
+  
+  
+    // set the special exits of the <to> room
+--- 229,235 ----
+      roomSetExitSpecial(to, spec_exits[i], NULL);
+    free(spec_exits);
+    deleteHashtable(to->special_exits);
+!   to->special_exits = newHashtableSize(SPECIAL_EXIT_BUCKETS);
+  
+  
+    // set the special exits of the <to> room
+diff -crN nakedmudv2.0/src/scripts/pychar.c nakedmudv2.1/src/scripts/pychar.c
+*** nakedmudv2.0/src/scripts/pychar.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/pychar.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 20,25 ****
+--- 20,26 ----
+  #include "../utils.h"
+  
+  #include "script.h"
++ #include "script_set.h"
+  #include "pychar.h"
+  #include "pyroom.h"
+  #include "pyobj.h"
+***************
+*** 38,47 ****
+  } PyChar;
+  
+  
+  //*****************************************************************************
+- //
+  // allocation, deallocation, and initialiation
+- //
+  //*****************************************************************************
+  static void
+  PyChar_dealloc(PyChar *self) {
+--- 39,47 ----
+  } PyChar;
+  
+  
++ 
+  //*****************************************************************************
+  // allocation, deallocation, and initialiation
+  //*****************************************************************************
+  static void
+  PyChar_dealloc(PyChar *self) {
+***************
+*** 82,92 ****
+  
+  
+  
+- 
+  //*****************************************************************************
+- //
+  // methods and stuff for building the class
+- //
+  //*****************************************************************************
+  
+  //
+--- 82,89 ----
+***************
+*** 203,209 ****
+  
+  //
+  // Set the value of a variable assocciated with the character
+- //
+  static PyObject *
+  PyChar_setvar(PyChar *self, PyObject *args) {  
+    char     *var = NULL;
+--- 200,205 ----
+***************
+*** 215,221 ****
+      return NULL;
+    }
+  
+- 
+    CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
+    if(ch != NULL) {
+      if(PyInt_Check(val))
+--- 211,216 ----
+***************
+*** 241,266 ****
+  }
+  
+  
+  
+  static PyMethodDef PyChar_methods[] = {
+!     {"send", (PyCFunction)PyChar_send, METH_VARARGS,
+!      "send a message to the character." },
+!     {"sendaround", (PyCFunction)PyChar_sendaround, METH_VARARGS,
+!      "send a message to everyone around a character."},
+!     {"act", (PyCFunction)PyChar_act, METH_VARARGS,
+!      "make the character perform an action." },
+!     {"getvar", (PyCFunction)PyChar_getvar, METH_VARARGS,
+!      "get the value of a special variable the character has."},
+!     {"setvar", (PyCFunction)PyChar_setvar, METH_VARARGS,
+!      "set the value of a special variable."},
+!     {NULL}  /* Sentinel */
+  };
+  
+  
+  //*****************************************************************************
+- //
+  // character attributes - mostly get and set
+- //
+  //*****************************************************************************
+  static PyObject *
+  PyChar_getname(PyChar *self, void *closure) {
+--- 236,318 ----
+  }
+  
+  
++ static PyObject *
++ PyChar_attach(PyChar *self, PyObject *args) {  
++   long vnum = NOTHING;
++ 
++   // make sure we're getting passed the right type of data
++   if (!PyArg_ParseTuple(args, "i", &vnum)) {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "To attach a script, the vnum must be suppplied.");
++     return NULL;
++   }
++ 
++   // pull out the character and do the attaching
++   CHAR_DATA       *ch = propertyTableGet(mob_table, self->uid);
++   SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++   if(ch != NULL && script != NULL) {
++     scriptSetAdd(charGetScripts(ch), vnum);
++     return Py_BuildValue("i", 1);
++   }
++   else {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "Tried to attach script to nonexistant char, %d, or script %d "
++ 		 "does not exit.", self->uid, (int)vnum);
++     return NULL;
++   }
++ }
++ 
++ 
++ static PyObject *
++ PyChar_detach(PyChar *self, PyObject *args) {  
++   long vnum = NOTHING;
++ 
++   // make sure we're getting passed the right type of data
++   if (!PyArg_ParseTuple(args, "i", &vnum)) {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "To detach a script, the vnum must be suppplied.");
++     return NULL;
++   }
++ 
++   // pull out the character and do the attaching
++   CHAR_DATA       *ch = propertyTableGet(mob_table, self->uid);
++   SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++   if(ch != NULL && script != NULL) {
++     scriptSetRemove(charGetScripts(ch), vnum);
++     return Py_BuildValue("i", 1);
++   }
++   else {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "Tried to detach script from nonexistant char, %d, or script "
++ 		 "%d does not exit.", self->uid, (int)vnum);
++     return NULL;
++   }
++ }
++ 
++ 
+  
+  static PyMethodDef PyChar_methods[] = {
+!   {"attach", (PyCFunction)PyChar_attach, METH_VARARGS,
+!    "attach a new script to the character." },
+!   {"detach", (PyCFunction)PyChar_detach, METH_VARARGS,
+!    "detach a script from the character." },
+!   {"send", (PyCFunction)PyChar_send, METH_VARARGS,
+!    "send a message to the character." },
+!   {"sendaround", (PyCFunction)PyChar_sendaround, METH_VARARGS,
+!    "send a message to everyone around a character."},
+!   {"act", (PyCFunction)PyChar_act, METH_VARARGS,
+!    "make the character perform an action." },
+!   {"getvar", (PyCFunction)PyChar_getvar, METH_VARARGS,
+!    "get the value of a special variable the character has."},
+!   {"setvar", (PyCFunction)PyChar_setvar, METH_VARARGS,
+!    "set the value of a special variable."},
+!   {NULL}  /* Sentinel */
+  };
+  
+  
++ 
+  //*****************************************************************************
+  // character attributes - mostly get and set
+  //*****************************************************************************
+  static PyObject *
+  PyChar_getname(PyChar *self, void *closure) {
+***************
+*** 692,705 ****
+  
+  
+  //*****************************************************************************
+- //
+  // comparators, getattr, setattr, and all that other class stuff
+- //
+  //*****************************************************************************
+  
+  //
+  // compare one character to another
+- //
+  static int
+  PyChar_compare(PyChar *ch1, PyChar *ch2) {
+    if(ch1->uid == ch2->uid)
+--- 744,754 ----
+***************
+*** 755,763 ****
+  
+  
+  //*****************************************************************************
+- //
+  // the char module
+- //
+  //*****************************************************************************
+  static PyObject *
+  PyChar_load_mob(PyObject *self, PyObject *args) {
+--- 804,810 ----
+***************
+*** 901,907 ****
+--- 948,969 ----
+  }
+  
+  
++ static PyObject *
++ PyChar_all_chars(PyObject *self) {
++   PyObject      *list = PyList_New(0);
++   LIST_ITERATOR *ch_i = newListIterator(mobile_list);
++   CHAR_DATA       *ch = NULL;
++   ITERATE_LIST(ch, ch_i)
++     PyList_Append(list, newPyChar(ch));
++   deleteListIterator(ch_i);
++   return Py_BuildValue("O", list);
++ }
++ 
++ 
++ 
+  static PyMethodDef char_module_methods[] = {
++   { "all_chars", (PyCFunction)PyChar_all_chars, METH_NOARGS,
++     "Return a python list containing an entry for every character in game." },
+    { "load_mob", PyChar_load_mob, METH_VARARGS,
+      "load a mobile with the specified vnum to a room." },
+    { "count_mobs", PyChar_count_mobs, METH_VARARGS,
+diff -crN nakedmudv2.0/src/scripts/pychar.d nakedmudv2.1/src/scripts/pychar.d
+*** nakedmudv2.0/src/scripts/pychar.d	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/pychar.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,4 ****
+- scripts/pychar.d scripts/pychar.o: scripts/pychar.c mud.h wrapsock.h property_table.h list.h map.h \
+-   hashtable.h set.h buffer.h bitvector.h world.h room.h character.h \
+-   object.h races.h handler.h utils.h scripts/script.h scripts/pychar.h \
+-   scripts/pyroom.h scripts/pyobj.h char_vars/char_vars.h items/items.h
+--- 0 ----
+diff -crN nakedmudv2.0/src/scripts/pymud.d nakedmudv2.1/src/scripts/pymud.d
+*** nakedmudv2.0/src/scripts/pymud.d	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/pymud.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,3 ****
+- scripts/pymud.d scripts/pymud.o: scripts/pymud.c mud.h wrapsock.h property_table.h list.h map.h \
+-   hashtable.h set.h buffer.h bitvector.h scripts/script.h \
+-   scripts/pyroom.h scripts/pychar.h scripts/pyobj.h
+--- 0 ----
+diff -crN nakedmudv2.0/src/scripts/pyobj.c nakedmudv2.1/src/scripts/pyobj.c
+*** nakedmudv2.0/src/scripts/pyobj.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/pyobj.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 20,25 ****
+--- 20,26 ----
+  #include "../utils.h"
+  
+  #include "script.h"
++ #include "script_set.h"
+  #include "pychar.h"
+  #include "pyroom.h"
+  #include "pyobj.h"
+***************
+*** 81,88 ****
+  // methods and stuff for building the class
+  //
+  //*****************************************************************************
+  static PyMethodDef PyObj_methods[] = {
+!     {NULL}  /* Sentinel */
+  };
+  
+  
+--- 82,148 ----
+  // methods and stuff for building the class
+  //
+  //*****************************************************************************
++ 
++ static PyObject *
++ PyObj_attach(PyObj *self, PyObject *args) {  
++   long vnum = NOTHING;
++ 
++   // make sure we're getting passed the right type of data
++   if (!PyArg_ParseTuple(args, "i", &vnum)) {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "To attach a script, the vnum must be suppplied.");
++     return NULL;
++   }
++ 
++   // pull out the character and do the attaching
++   OBJ_DATA       *obj = propertyTableGet(obj_table, self->uid);
++   SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++   if(obj != NULL && script != NULL) {
++     scriptSetAdd(objGetScripts(obj), vnum);
++     return Py_BuildValue("i", 1);
++   }
++   else {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "Tried to attach script to nonexistant obj, %d, or script %d "
++ 		 "does not exit.", self->uid, (int)vnum);
++     return NULL;
++   }
++ }
++ 
++ 
++ static PyObject *
++ PyObj_detach(PyObj *self, PyObject *args) {  
++   long vnum = NOTHING;
++ 
++   // make sure we're getting passed the right type of data
++   if (!PyArg_ParseTuple(args, "i", &vnum)) {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "To detach a script, the vnum must be suppplied.");
++     return NULL;
++   }
++ 
++   // pull out the character and do the attaching
++   OBJ_DATA       *obj = propertyTableGet(obj_table, self->uid);
++   SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++   if(obj != NULL && script != NULL) {
++     scriptSetRemove(objGetScripts(obj), vnum);
++     return Py_BuildValue("i", 1);
++   }
++   else {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "Tried to detach script from nonexistant obj, %d, or script "
++ 		 "%d does not exit.", self->uid, (int)vnum);
++     return NULL;
++   }
++ }
++ 
++ 
+  static PyMethodDef PyObj_methods[] = {
+!   {"attach", (PyCFunction)PyObj_attach, METH_VARARGS,
+!    "attach a new script to the object." },
+!   {"detach", (PyCFunction)PyObj_detach, METH_VARARGS,
+!    "detach a script from the object." },
+!   {NULL}  /* Sentinel */
+  };
+  
+  
+diff -crN nakedmudv2.0/src/scripts/pyobj.d nakedmudv2.1/src/scripts/pyobj.d
+*** nakedmudv2.0/src/scripts/pyobj.d	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/pyobj.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,4 ****
+- scripts/pyobj.d scripts/pyobj.o: scripts/pyobj.c mud.h wrapsock.h property_table.h list.h map.h \
+-   hashtable.h set.h buffer.h bitvector.h world.h room.h character.h \
+-   object.h races.h handler.h utils.h scripts/script.h scripts/pychar.h \
+-   scripts/pyroom.h scripts/pyobj.h
+--- 0 ----
+diff -crN nakedmudv2.0/src/scripts/pyroom.c nakedmudv2.1/src/scripts/pyroom.c
+*** nakedmudv2.0/src/scripts/pyroom.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/pyroom.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 20,25 ****
+--- 20,26 ----
+  #include "../utils.h"
+  
+  #include "script.h"
++ #include "script_set.h"
+  #include "pyroom.h"
+  #include "pychar.h"
+  #include "pyobj.h"
+***************
+*** 30,39 ****
+  } PyRoom;
+  
+  
+  //*****************************************************************************
+- //
+  // allocation, deallocation, and initialiation
+- //
+  //*****************************************************************************
+  static void
+  PyRoom_dealloc(PyRoom *self) {
+--- 31,39 ----
+  } PyRoom;
+  
+  
++ 
+  //*****************************************************************************
+  // allocation, deallocation, and initialiation
+  //*****************************************************************************
+  static void
+  PyRoom_dealloc(PyRoom *self) {
+***************
+*** 75,88 ****
+  
+  
+  //*****************************************************************************
+- //
+  // methods and stuff for building the class
+- //
+  //*****************************************************************************
+  
+  //
+  // Send a newline-tagged message to everyone in the room
+- //
+  static PyObject *
+  PyRoom_send(PyRoom *self, PyObject *value) {
+    char *mssg = NULL;
+--- 75,85 ----
+***************
+*** 108,114 ****
+  
+  //
+  // close a door in the specified direction
+- //
+  static PyObject *
+  PyRoom_close(PyRoom *self, PyObject *value) {
+    ROOM_DATA *room = NULL;
+--- 105,110 ----
+***************
+*** 161,167 ****
+  
+  //
+  // lock a door in the specified direction
+- //
+  static PyObject *
+  PyRoom_lock(PyRoom *self, PyObject *value) {
+    ROOM_DATA *room = NULL;
+--- 157,162 ----
+***************
+*** 221,227 ****
+  
+  //
+  // lock a door in the specified direction
+- //
+  static PyObject *
+  PyRoom_unlock(PyRoom *self, PyObject *value) {
+    ROOM_DATA *room = NULL;
+--- 216,221 ----
+***************
+*** 280,286 ****
+  
+  //
+  // close a door in the specified direction
+- //
+  static PyObject *
+  PyRoom_open(PyRoom *self, PyObject *value) {
+    ROOM_DATA *room = NULL;
+--- 274,279 ----
+***************
+*** 325,350 ****
+  }
+  
+  
+  
+  static PyMethodDef PyRoom_methods[] = {
+!     {"close", (PyCFunction)PyRoom_close, METH_VARARGS,
+!      "close a door in the specified direction." },
+!     {"open", (PyCFunction)PyRoom_open, METH_VARARGS,
+!      "open a door in the specified direction. Unlocks it if neccessary." },
+!     {"lock", (PyCFunction)PyRoom_lock, METH_VARARGS,
+!      "lock a door in the specified direction, closing it if it is open." },
+!     {"unlock", (PyCFunction)PyRoom_unlock, METH_VARARGS,
+!      "unlocks the door in the specified direction." },
+!     {"send", (PyCFunction)PyRoom_send, METH_VARARGS,
+!      "send a message to everyone in the room."},
+!     {NULL}  /* Sentinel */
+  };
+  
+  
+  //*****************************************************************************
+- //
+  // character attributes - mostly get and set
+- //
+  //*****************************************************************************
+  static PyObject *
+  PyRoom_getvnum(PyRoom *self, void *closure) {
+--- 318,398 ----
+  }
+  
+  
++ static PyObject *
++ PyRoom_attach(PyRoom *self, PyObject *args) {  
++   long vnum = NOTHING;
++ 
++   // make sure we're getting passed the right type of data
++   if (!PyArg_ParseTuple(args, "i", &vnum)) {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "To attach a script, the vnum must be supplied.");
++     return NULL;
++   }
++ 
++   // pull out the character and do the attaching
++   ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
++   SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
++   if(room != NULL && script != NULL) {
++     scriptSetAdd(roomGetScripts(room), vnum);
++     return Py_BuildValue("i", 1);
++   }
++   else {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "Tried to attach script to nonexistant room, %d, or script %d "
++ 		 "does not exit.", self->vnum, (int)vnum);
++     return NULL;
++   }
++ }
++ 
++ 
++ static PyObject *
++ PyRoom_detach(PyRoom *self, PyObject *args) {  
++   long vnum = NOTHING;
++ 
++   // make sure we're getting passed the right type of data
++   if (!PyArg_ParseTuple(args, "i", &vnum)) {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "To detach a script, the vnum must be suppplied.");
++     return NULL;
++   }
++ 
++   // pull out the character and do the attaching
++   ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
++   SCRIPT_DATA *script = worldGetScript(gameworld, (int)vnum);
++   if(room != NULL && script != NULL) {
++     scriptSetRemove(roomGetScripts(room), vnum);
++     return Py_BuildValue("i", 1);
++   }
++   else {
++     PyErr_Format(PyExc_TypeError, 
++ 		 "Tried to detach script from nonexistant room, %d, or script "
++ 		 "%d does not exit.", self->vnum, (int)vnum);
++     return NULL;
++   }
++ }
++ 
+  
+  static PyMethodDef PyRoom_methods[] = {
+!   {"attach", (PyCFunction)PyRoom_attach, METH_VARARGS,
+!    "attach a new script to the room." },
+!   {"detach", (PyCFunction)PyRoom_detach, METH_VARARGS,
+!    "detach a script from the room." },
+!   {"close", (PyCFunction)PyRoom_close, METH_VARARGS,
+!    "close a door in the specified direction." },
+!   {"open", (PyCFunction)PyRoom_open, METH_VARARGS,
+!    "open a door in the specified direction. Unlocks it if neccessary." },
+!   {"lock", (PyCFunction)PyRoom_lock, METH_VARARGS,
+!    "lock a door in the specified direction, closing it if it is open." },
+!   {"unlock", (PyCFunction)PyRoom_unlock, METH_VARARGS,
+!    "unlocks the door in the specified direction." },
+!   {"send", (PyCFunction)PyRoom_send, METH_VARARGS,
+!    "send a message to everyone in the room."},
+!   {NULL}  /* Sentinel */
+  };
+  
+  
+  //*****************************************************************************
+  // character attributes - mostly get and set
+  //*****************************************************************************
+  static PyObject *
+  PyRoom_getvnum(PyRoom *self, void *closure) {
+***************
+*** 405,413 ****
+  
+  
+  //*****************************************************************************
+- //
+  // comparators, getattr, setattr, and all that other class stuff
+- //
+  //*****************************************************************************
+  
+  //
+--- 453,459 ----
+***************
+*** 468,476 ****
+  
+  
+  //*****************************************************************************
+- //
+  // the room module
+- //
+  //*****************************************************************************
+  static PyMethodDef room_module_methods[] = {
+    {NULL, NULL, 0, NULL}  /* Sentinel */
+--- 514,520 ----
+diff -crN nakedmudv2.0/src/scripts/pyroom.d nakedmudv2.1/src/scripts/pyroom.d
+*** nakedmudv2.0/src/scripts/pyroom.d	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/pyroom.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,4 ****
+- scripts/pyroom.d scripts/pyroom.o: scripts/pyroom.c mud.h wrapsock.h property_table.h list.h map.h \
+-   hashtable.h set.h buffer.h bitvector.h world.h room.h exit.h \
+-   character.h races.h handler.h utils.h scripts/script.h scripts/pyroom.h \
+-   scripts/pychar.h scripts/pyobj.h
+--- 0 ----
+diff -crN nakedmudv2.0/src/scripts/script.c nakedmudv2.1/src/scripts/script.c
+*** nakedmudv2.0/src/scripts/script.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/script.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 10,24 ****
+  // script stuff
+  #include <Python.h>
+  #include <structmember.h>
+- #include <compile.h>
+- #include <eval.h>
+- #include <node.h>
+- //PyAPI_FUNC(PyObject *) PyEval_EvalCode(PyCodeObject *, PyObject *, PyObject *);
+  
+  // mud stuff
+  #include "../mud.h"
+  #include "../utils.h"
+  #include "../socket.h"
+  #include "../character.h"
+  #include "../room.h"
+  #include "../object.h"
+--- 10,21 ----
+  // script stuff
+  #include <Python.h>
+  #include <structmember.h>
+  
+  // mud stuff
+  #include "../mud.h"
+  #include "../utils.h"
+  #include "../socket.h"
++ #include "../world.h"
+  #include "../character.h"
+  #include "../room.h"
+  #include "../object.h"
+***************
+*** 40,50 ****
+  
+  
+  //*****************************************************************************
+  //
+  // Auxiliary script data that we need to install into players, objects and
+  // rooms. Essentially, this just allows these datastructures to actually have
+  // scripts installed on them.
+- //
+  //*****************************************************************************
+  typedef struct script_aux_data {
+    SCRIPT_SET *scripts;    // the set of scripts that we have
+--- 37,80 ----
+  
+  
+  //*****************************************************************************
++ // local functions and commands
++ //*****************************************************************************
++ 
+  //
++ // Takes a script and runs it. Unlike typical scripts, this is not a trigger.
++ // This is like running a program, in the form of a script.
++ //    usage: scrun <vnum> [arguments] 
++ COMMAND(cmd_scrun) {
++   // make sure we at least have a vnum
++   if(!arg || !*arg)
++     send_to_char(ch, "Which script would you like to run?\r\n");
++   else {
++     char buf[SMALL_BUFFER];
++ 
++     // pull out the vnum
++     arg = one_arg(arg, buf);
++ 
++     SCRIPT_DATA *script = worldGetScript(gameworld, atoi(buf));
++     if(script == NULL || !isdigit(*buf))
++       send_to_char(ch, "No script with that vnum exists!\r\n");
++     else if(scriptGetType(script) != SCRIPT_TYPE_RUNNABLE)
++       send_to_char(ch, "That script is not runnable!\r\n");
++     else if(charGetLevel(ch) < scriptGetNumArg(script))
++       send_to_char(ch, "You are not high enough level to run that script!\r\n");
++     else {
++       send_to_char(ch, "Ok.\r\n");
++       run_script(scriptGetCode(script), ch, SCRIPTOR_CHAR, NULL, NULL, NULL,
++ 		 NULL, arg, 0);
++     }
++   }
++ }
++ 
++ 
++ 
++ //*****************************************************************************
+  // Auxiliary script data that we need to install into players, objects and
+  // rooms. Essentially, this just allows these datastructures to actually have
+  // scripts installed on them.
+  //*****************************************************************************
+  typedef struct script_aux_data {
+    SCRIPT_SET *scripts;    // the set of scripts that we have
+***************
+*** 103,111 ****
+  
+  
+  //*****************************************************************************
+- //
+  // functions for getting script data from various datastructures
+- //
+  //*****************************************************************************
+  SCRIPT_SET *roomGetScripts(const ROOM_DATA *room) {
+    SCRIPT_AUX_DATA *data = roomGetAuxiliaryData(room, "script_aux_data");
+--- 133,139 ----
+***************
+*** 143,151 ****
+  
+  
+  //*****************************************************************************
+- //
+  // functions 'n such for the script object
+- //
+  //*****************************************************************************
+  struct script_data {
+    script_vnum vnum;
+--- 171,177 ----
+***************
+*** 163,176 ****
+    "Give/Receive",
+    "Enter",
+    "Exit",
+!   "Command"
+  };
+  
+  const char *scriptTypeName(int num) {
+    return script_type_info[num];
+  }
+  
+! SCRIPT_DATA *newScript() {
+    SCRIPT_DATA *script = malloc(sizeof(SCRIPT_DATA));
+    bzero(script, sizeof(*script));
+    
+--- 189,203 ----
+    "Give/Receive",
+    "Enter",
+    "Exit",
+!   "Command",
+!   "Runnable"
+  };
+  
+  const char *scriptTypeName(int num) {
+    return script_type_info[num];
+  }
+  
+! SCRIPT_DATA *newScript(void) {
+    SCRIPT_DATA *script = malloc(sizeof(SCRIPT_DATA));
+    bzero(script, sizeof(*script));
+    
+***************
+*** 293,301 ****
+  
+  
+  //*****************************************************************************
+- //
+  // stuff we need for trying to run scripts
+- //
+  //*****************************************************************************
+  
+  //
+--- 320,326 ----
+***************
+*** 456,461 ****
+--- 481,488 ----
+    extern COMMAND(cmd_scedit); // define the command
+    add_cmd("scedit", NULL, cmd_scedit, 0, POS_UNCONCIOUS, POS_FLYING,
+  	  LEVEL_SCRIPTER, FALSE, TRUE);
++   add_cmd("scrun", NULL, cmd_scrun, 0, POS_UNCONCIOUS, POS_FLYING,
++ 	  LEVEL_BUILDER, FALSE, FALSE);
+  
+    init_script_editor();
+  }
+***************
+*** 522,530 ****
+  
+  
+  //*****************************************************************************
+- //
+  // Stuff we need for formatting and coloring scripts on screen
+- //
+  //*****************************************************************************
+  void format_script(char **script, int max_len) {
+    // python chokes on carriage returns
+--- 549,555 ----
+***************
+*** 680,688 ****
+  
+  
+  //*****************************************************************************
+- //
+  // tries for various speech triggers
+- //
+  //*****************************************************************************
+  void try_speech_script_with(CHAR_DATA *ch, CHAR_DATA *listener, char *speech) {
+    LIST *speech_scripts = scriptSetList(charGetScripts(listener), 
+--- 705,711 ----
+***************
+*** 793,802 ****
+      scripts = scriptSetList(roomGetScripts(me), script_type);
+    if(me_type == SCRIPTOR_OBJ)
+      scripts = scriptSetList(objGetScripts(me), script_type);
+-   /*
+-   if(me_type == SCRIPTOR_EXIT)
+-     scripts = scriptSetGetList(exitGetScripts(me), script_type);
+-   */
+  
+    // see if we meet the script requirements
+    while( (script = listPop(scripts)) != NULL) {
+--- 816,821 ----
+diff -crN nakedmudv2.0/src/scripts/script.d nakedmudv2.1/src/scripts/script.d
+*** nakedmudv2.0/src/scripts/script.d	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/script.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,5 ****
+- scripts/script.d scripts/script.o: scripts/script.c mud.h wrapsock.h property_table.h list.h map.h \
+-   hashtable.h set.h buffer.h bitvector.h utils.h socket.h character.h \
+-   room.h object.h storage.h auxiliary.h scripts/script.h \
+-   scripts/script_set.h scripts/pychar.h scripts/pyroom.h scripts/pyobj.h \
+-   scripts/pymud.h editor/editor.h scripts/script_editor.h olc2/olc.h
+--- 0 ----
+diff -crN nakedmudv2.0/src/scripts/script_edit.c nakedmudv2.1/src/scripts/script_edit.c
+*** nakedmudv2.0/src/scripts/script_edit.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/script_edit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 51,58 ****
+  		 );
+  }
+  
+! int  ssedit_chooser(SOCKET_DATA *sock, SCRIPT_SET *set, char option) {
+!   switch(toupper(option)) {
+    case 'N':
+      text_to_buffer(sock, "Which script would you like to add (-1 for none): ");
+      return SSEDIT_NEW;
+--- 51,58 ----
+  		 );
+  }
+  
+! int  ssedit_chooser(SOCKET_DATA *sock, SCRIPT_SET *set, const char *option) {
+!   switch(toupper(*option)) {
+    case 'N':
+      text_to_buffer(sock, "Which script would you like to add (-1 for none): ");
+      return SSEDIT_NEW;
+***************
+*** 106,118 ****
+    script_display(sock, scriptGetCode(script), FALSE);
+  }
+  
+! int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new name for the script: ");
+      return SCEDIT_NAME;
+    case '2':
+      olc_display_table(sock, scriptTypeName, NUM_SCRIPTS, 1);
+      return SCEDIT_TYPE;
+    case '3':
+      text_to_buffer(sock, "Enter new arguments: ");
+--- 106,119 ----
+    script_display(sock, scriptGetCode(script), FALSE);
+  }
+  
+! int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, const char *option){
+!   switch(toupper(*option)) {
+    case '1':
+      text_to_buffer(sock, "Enter a new name for the script: ");
+      return SCEDIT_NAME;
+    case '2':
+      olc_display_table(sock, scriptTypeName, NUM_SCRIPTS, 1);
++     text_to_buffer(sock, "Pick a script type: ");
+      return SCEDIT_TYPE;
+    case '3':
+      text_to_buffer(sock, "Enter new arguments: ");
+***************
+*** 134,139 ****
+--- 135,145 ----
+  		     "Enter choice : ");
+        return SCEDIT_NARG;
+  
++     case SCRIPT_TYPE_RUNNABLE:
++       send_to_socket(sock,
++ 		     "Enter the minimum level that can run this script: ");
++       return SCEDIT_NARG;
++ 
+      case SCRIPT_TYPE_COMMAND:
+        send_to_socket(sock,
+  		     "Control for the actual MUD command:\r\n"
+***************
+*** 180,185 ****
+--- 186,195 ----
+      case SCRIPT_TYPE_COMMAND:
+        scriptSetNumArg(script, MIN(1, MAX(0, atoi(arg))));
+        break;
++       // narg = minimum level that can run this script
++     case SCRIPT_TYPE_RUNNABLE:
++       scriptSetNumArg(script, MIN(MAX_LEVEL, MAX(0, atoi(arg))));
++       break;
+      }
+      return TRUE;
+  
+diff -crN nakedmudv2.0/src/scripts/script_editor.c nakedmudv2.1/src/scripts/script_editor.c
+*** nakedmudv2.0/src/scripts/script_editor.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/script_editor.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 45,50 ****
+--- 45,51 ----
+  void scriptEditorIndent(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
+    SCRIPT_EDITOR_AUX_DATA *data = socketGetAuxiliaryData(sock, "script_editor_aux_data");
+    data->indent += 2;
++   send_to_socket(sock, "Editor indented to %d spaces.\r\n", data->indent);
+  }
+  
+  //
+***************
+*** 54,59 ****
+--- 55,61 ----
+    data->indent -= 2;
+    if(data->indent < 0)
+      data->indent = 0;
++   send_to_socket(sock, "Editor undented to %d spaces.\r\n", data->indent);
+  }
+  
+  //
+***************
+*** 103,108 ****
+--- 105,111 ----
+  // \r really screws up python; this function makes sure they're all stripped out
+  void scriptEditorFormat(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
+    bufferReplace(buf, "\r", "", TRUE);
++   text_to_buffer(sock, "Script formatted.\r\n");
+  }
+  
+  //
+***************
+*** 112,117 ****
+--- 115,135 ----
+    data->indent = 0;
+  }
+  
++ //
++ // bufferInsert appends a carriage return to the end of the argument, but this
++ // makes Python choke. Soooo... we have to do the append, and then remove the
++ // carriage return that was inserted.
++ void scriptEditorInsert(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
++   char tmp[SMALL_BUFFER];
++   arg = one_arg(arg, tmp);
++   int line = atoi(tmp);
++   if(!isdigit(*tmp) || !bufferInsert(buf, arg, line))
++     text_to_buffer(sock, "Insertion failed.\r\n");
++   else {
++     text_to_buffer(sock, "Line inserted");
++     bufferReplace(buf, "\r", "", TRUE);    
++   }
++ }
+  
+  
+  //*****************************************************************************
+***************
+*** 129,134 ****
+--- 147,154 ----
+  		   scriptEditorList);
+    editorAddCommand(script_editor, "f", "        Strips all bad characters out of the script",
+  		   scriptEditorFormat);
++   editorAddCommand(script_editor, "i", "# <txt> Insert new text at the specified line number",
++ 		   scriptEditorInsert);
+  
+    auxiliariesInstall("script_editor_aux_data", 
+  		     newAuxiliaryFuncs(AUXILIARY_TYPE_SOCKET,
+diff -crN nakedmudv2.0/src/scripts/script_editor.d nakedmudv2.1/src/scripts/script_editor.d
+*** nakedmudv2.0/src/scripts/script_editor.d	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/script_editor.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,4 ****
+- scripts/script_editor.d scripts/script_editor.o: scripts/script_editor.c mud.h wrapsock.h \
+-   property_table.h list.h map.h hashtable.h set.h buffer.h bitvector.h \
+-   socket.h auxiliary.h editor/editor.h scripts/script_editor.h \
+-   scripts/script.h
+--- 0 ----
+diff -crN nakedmudv2.0/src/scripts/script.h nakedmudv2.1/src/scripts/script.h
+*** nakedmudv2.0/src/scripts/script.h	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/script.h	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 136,141 ****
+--- 136,156 ----
+  //     arg  = the argument supplied to the command
+  
+  //*****************************************************************************
++ // SCRIPT_TYPE_RUNNABLE
++ //   Description:
++ //     Gods can use scrun to run a script of this type
++ //   Arguments:
++ //     The Arguments to be passed to the script
++ //   Numeric Arguments:
++ //     Argument is the minimum level of a person who is allowed to 
++ //     run this this script
++ //   Works with:
++ //     mobiles (gods)
++ //   Parameters:
++ //     me   = the person running the script
++ //     arg  = the argument supplied to scrun
++ 
++ //*****************************************************************************
+  #define SCRIPT_TYPE_NONE          (-1)
+  #define SCRIPT_TYPE_INIT            0 // when the room/mob/obj resets or loads
+  #define SCRIPT_TYPE_SPEECH          1 // when someone says a keyword
+***************
+*** 144,155 ****
+  #define SCRIPT_TYPE_ENTER           4 // when a char enters the room
+  #define SCRIPT_TYPE_EXIT            5 // when the character exits the room 
+  #define SCRIPT_TYPE_COMMAND         6 // when a command is issued
+! #define NUM_SCRIPTS                 7
+  
+  
+  const char *scriptTypeName(int num);
+  
+! SCRIPT_DATA *newScript   ();
+  void         deleteScript(SCRIPT_DATA *script);
+  
+  STORAGE_SET *scriptStore(SCRIPT_DATA *script);
+--- 159,171 ----
+  #define SCRIPT_TYPE_ENTER           4 // when a char enters the room
+  #define SCRIPT_TYPE_EXIT            5 // when the character exits the room 
+  #define SCRIPT_TYPE_COMMAND         6 // when a command is issued
+! #define SCRIPT_TYPE_RUNNABLE        7 // intended for people to run
+! #define NUM_SCRIPTS                 8
+  
+  
+  const char *scriptTypeName(int num);
+  
+! SCRIPT_DATA *newScript   (void);
+  void         deleteScript(SCRIPT_DATA *script);
+  
+  STORAGE_SET *scriptStore(SCRIPT_DATA *script);
+***************
+*** 193,203 ****
+  //
+  #ifdef MODULE_OLC2
+  void ssedit_menu   (SOCKET_DATA *sock, SCRIPT_SET *set);
+! int  ssedit_chooser(SOCKET_DATA *sock, SCRIPT_SET *set, char option);
+  bool ssedit_parser (SOCKET_DATA *sock, SCRIPT_SET *set, int choice, 
+  		    const char *arg);
+  void scedit_menu   (SOCKET_DATA *sock, SCRIPT_DATA *script);
+! int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, char option);
+  bool scedit_parser (SOCKET_DATA *sock, SCRIPT_DATA *script, int choice, 
+  		    const char *arg);
+  #endif // MODULE_OLC2
+--- 209,219 ----
+  //
+  #ifdef MODULE_OLC2
+  void ssedit_menu   (SOCKET_DATA *sock, SCRIPT_SET *set);
+! int  ssedit_chooser(SOCKET_DATA *sock, SCRIPT_SET *set, const char *option);
+  bool ssedit_parser (SOCKET_DATA *sock, SCRIPT_SET *set, int choice, 
+  		    const char *arg);
+  void scedit_menu   (SOCKET_DATA *sock, SCRIPT_DATA *script);
+! int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, const char *option);
+  bool scedit_parser (SOCKET_DATA *sock, SCRIPT_DATA *script, int choice, 
+  		    const char *arg);
+  #endif // MODULE_OLC2
+diff -crN nakedmudv2.0/src/scripts/script_set.d nakedmudv2.1/src/scripts/script_set.d
+*** nakedmudv2.0/src/scripts/script_set.d	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/scripts/script_set.d	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 1,3 ****
+- scripts/script_set.d scripts/script_set.o: scripts/script_set.c mud.h wrapsock.h property_table.h \
+-   list.h map.h hashtable.h set.h buffer.h bitvector.h utils.h world.h \
+-   scripts/script_set.h scripts/script.h
+--- 0 ----
+diff -crN nakedmudv2.0/src/set.c nakedmudv2.1/src/set.c
+*** nakedmudv2.0/src/set.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/set.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 12,17 ****
+--- 12,18 ----
+  
+  struct set_data {
+    int    num_buckets;
++   int    size;
+    LIST **buckets;
+  };
+  
+***************
+*** 22,53 ****
+  };
+  
+  
+  //*****************************************************************************
+- //
+  // local functions
+- //
+  //*****************************************************************************
+  
+  
+  //
+  // Find the bucket the set element belongs to
+- //
+  int set_elem_bucket(void *elem, int num_buckets) {
+    // simple for now: just take the modulo
+    return ((int)elem) % num_buckets;
+  };
+  
+  
+  //*****************************************************************************
+- //
+  // implementation of set.h
+- //
+  //*****************************************************************************
+  SET *newSet(int num_buckets) {
+    int i;
+  
+    SET *set = malloc(sizeof(SET));
+    set->buckets = malloc(sizeof(LIST *) * num_buckets);
+  
+    // all NULL until they actually get a content
+    for(i = 0; i < num_buckets; i++)
+--- 23,52 ----
+  };
+  
+  
++ 
+  //*****************************************************************************
+  // local functions
+  //*****************************************************************************
+  
+  
+  //
+  // Find the bucket the set element belongs to
+  int set_elem_bucket(void *elem, int num_buckets) {
+    // simple for now: just take the modulo
+    return ((int)elem) % num_buckets;
+  };
+  
+  
++ 
+  //*****************************************************************************
+  // implementation of set.h
+  //*****************************************************************************
+  SET *newSet(int num_buckets) {
+    int i;
+  
+    SET *set = malloc(sizeof(SET));
+    set->buckets = malloc(sizeof(LIST *) * num_buckets);
++   set->size    = 0;
+  
+    // all NULL until they actually get a content
+    for(i = 0; i < num_buckets; i++)
+***************
+*** 57,63 ****
+    return set;
+  };
+  
+- 
+  void deleteSet(SET *set) {
+    int i;
+  
+--- 56,61 ----
+***************
+*** 69,75 ****
+    free(set);
+  };
+  
+- 
+  void setPut(SET *set, void *elem) {
+    // find out what bucket we belong to
+    int hash_bucket = set_elem_bucket(elem, set->num_buckets);
+--- 67,72 ----
+***************
+*** 81,87 ****
+    listPut(set->buckets[hash_bucket], elem);
+  };
+  
+- 
+  void setRemove(SET *set, void *elem) {
+    // find out what bucket we belong to
+    int hash_bucket = set_elem_bucket(elem, set->num_buckets);
+--- 78,83 ----
+***************
+*** 91,97 ****
+      listRemove(set->buckets[hash_bucket], elem);
+  };
+  
+- 
+  int setIn(SET *set, void *elem) {
+    // find out what bucket we belong to
+    int hash_bucket = set_elem_bucket(elem, set->num_buckets);
+--- 87,92 ----
+***************
+*** 103,115 ****
+  };
+  
+  
+  //*****************************************************************************
+- //
+  // set iterator
+  //
+  // we may sometimes want to iterate across all of the elements in a set.
+  // this lets us do so.
+- //
+  //*****************************************************************************
+  SET_ITERATOR *newSetIterator(SET *S) {
+    SET_ITERATOR *I = malloc(sizeof(SET_ITERATOR));
+--- 98,109 ----
+  };
+  
+  
++ 
+  //*****************************************************************************
+  // set iterator
+  //
+  // we may sometimes want to iterate across all of the elements in a set.
+  // this lets us do so.
+  //*****************************************************************************
+  SET_ITERATOR *newSetIterator(SET *S) {
+    SET_ITERATOR *I = malloc(sizeof(SET_ITERATOR));
+diff -crN nakedmudv2.0/src/set_val/set_val.c nakedmudv2.1/src/set_val/set_val.c
+*** nakedmudv2.0/src/set_val/set_val.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/set_val/set_val.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 32,38 ****
+  // local defines, datastructures, functions, and commands
+  //
+  //*****************************************************************************
+- #define SET_TABLE_SIZE        10
+  HASHTABLE *char_set_table = NULL;
+  HASHTABLE *obj_set_table  = NULL;
+  HASHTABLE *room_set_table = NULL;
+--- 32,37 ----
+***************
+*** 179,187 ****
+  //*****************************************************************************
+  void init_set() {
+    // build all of our tables
+!   char_set_table = newHashtable(SET_TABLE_SIZE);
+!   obj_set_table  = newHashtable(SET_TABLE_SIZE);
+!   room_set_table = newHashtable(SET_TABLE_SIZE);
+  
+    // add in the default sets for the core of the MUD
+    /************************************************************/
+--- 178,186 ----
+  //*****************************************************************************
+  void init_set() {
+    // build all of our tables
+!   char_set_table = newHashtable();
+!   obj_set_table  = newHashtable();
+!   room_set_table = newHashtable();
+  
+    // add in the default sets for the core of the MUD
+    /************************************************************/
+diff -crN nakedmudv2.0/src/socials/socedit.c nakedmudv2.1/src/socials/socedit.c
+*** nakedmudv2.0/src/socials/socedit.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/socials/socedit.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 56,63 ****
+  		 );
+  }
+  
+! int  socedit_chooser(SOCKET_DATA *sock, SOCIAL_DATA *social, char option) {
+!   switch(toupper(option)) {
+    case '1':
+      send_to_socket(sock, 
+  		   "The message to character when no target is supplied : ");
+--- 56,63 ----
+  		 );
+  }
+  
+! int  socedit_chooser(SOCKET_DATA *sock, SOCIAL_DATA *social,const char *option){
+!   switch(toupper(*option)) {
+    case '1':
+      send_to_socket(sock, 
+  		   "The message to character when no target is supplied : ");
+***************
+*** 88,96 ****
+--- 88,98 ----
+      return SOCEDIT_ROOM_TGT;
+    case '8':
+      olc_display_table(sock, posGetName, NUM_POSITIONS, 2);
++     text_to_buffer(sock, "Pick a minimum position: ");
+      return SOCEDIT_MIN_POS;
+    case '9':
+      olc_display_table(sock, posGetName, NUM_POSITIONS, 2);
++     text_to_buffer(sock, "Pick a maximum position: ");
+      return SOCEDIT_MAX_POS;
+    default: 
+      return MENU_CHOICE_INVALID;
+diff -crN nakedmudv2.0/src/socials/socials.c nakedmudv2.1/src/socials/socials.c
+*** nakedmudv2.0/src/socials/socials.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/socials/socials.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 30,38 ****
+  // the file where all of the socials are stored
+  #define SOCIALS_FILE "../lib/misc/socials"
+  
+- // how many buckets are there in the social table
+- #define SOCIAL_TABLE_SIZE              100
+- 
+  // the table we store all of the socials in
+  HASHTABLE *social_table = NULL;
+  
+--- 30,35 ----
+***************
+*** 439,445 ****
+  
+  void init_socials() {
+    // create the social table
+!   social_table = newHashtable(SOCIAL_TABLE_SIZE);
+  
+    // open up the storage set
+    STORAGE_SET       *set = storage_read(SOCIALS_FILE);
+--- 436,442 ----
+  
+  void init_socials() {
+    // create the social table
+!   social_table = newHashtable();
+  
+    // open up the storage set
+    STORAGE_SET       *set = storage_read(SOCIALS_FILE);
+diff -crN nakedmudv2.0/src/storage.c nakedmudv2.1/src/storage.c
+*** nakedmudv2.0/src/storage.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/storage.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 500,506 ****
+  
+  STORAGE_SET *new_storage_set() {
+    STORAGE_SET *set = malloc(sizeof(STORAGE_SET));
+!   set->entries     = newHashtable(20);
+    set->longest_key = 0;
+    set->top_entry   = 0;
+    return set;
+--- 500,506 ----
+  
+  STORAGE_SET *new_storage_set() {
+    STORAGE_SET *set = malloc(sizeof(STORAGE_SET));
+!   set->entries     = newHashtableSize(20);
+    set->longest_key = 0;
+    set->top_entry   = 0;
+    return set;
+diff -crN nakedmudv2.0/src/utils.c nakedmudv2.1/src/utils.c
+*** nakedmudv2.0/src/utils.c	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/utils.c	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 881,890 ****
+    return count;
+  }
+  
+- 
+- //
+- // returns a random number in the specified range (inclusive)
+- //
+  int rand_number(int min, int max) {
+    if(min > max) {
+      log_string("ERROR: rand_number passed a min (%d) higher than its max (%d).",
+--- 881,886 ----
+***************
+*** 895,900 ****
+--- 891,904 ----
+    return min + rand() % (max-min + 1);
+  }
+  
++ double rand_percent(void) {
++   double rnd = rand_number(0, RAND_MAX);
++   return rnd / (double)RAND_MAX;
++ }
++ 
++ double gaussian(void) {
++   return sqrt(-2.0 * log(rand_percent())) * cos(2.0 * PI * rand_percent());
++ }
+  
+  //
+  // returns "st", "nd", "rd", or "th", based on the number passed in
+diff -crN nakedmudv2.0/src/utils.h nakedmudv2.1/src/utils.h
+*** nakedmudv2.0/src/utils.h	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/src/utils.h	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 15,25 ****
+--- 15,45 ----
+  // Utilities for numbers
+  //
+  //*****************************************************************************
++ #define MAX_INT               214743648
++ #define PI                    3.14159265
++ 
+  #define UMIN(a, b)	      ((a) < (b) ? (a) : (b))
+  #define MIN(a, b)             ((a) < (b) ? (a) : (b))
+  #define MAX(a, b)             ((a) < (b) ? (b) : (a))
+  
++ 
++ //
++ // return a random number pulled from a uniform distribution 
++ // between the two bounds
+  int rand_number(int min, int max);
++ 
++ 
++ //
++ // Returns a random number between 0 and 1. Numbers are evenly distributed
++ double rand_percent(void);
++ 
++ //
++ // Return a random number pulled from N(0, 1)
++ double gaussian(void);
++ 
++ 
++ //
++ // return the rd, th, nd, for a number
+  const char *numth(int num);
+  
+  
+diff -crN nakedmudv2.0/TODO nakedmudv2.1/TODO
+*** nakedmudv2.0/TODO	2010-11-01 15:54:18.000000000 -0500
+--- nakedmudv2.1/TODO	2010-11-01 15:54:18.000000000 -0500
+***************
+*** 7,16 ****
+  
+  +-- NOT COMPLETE
+   +-- HIGH PRIORITY
+!    * bedit -> bitvector edit
+!    * create an insert function for the script editor that kills carraige returns
+     * redo sets to be in a tree form rather than a table form
+!    * redo hashtables so that they will auto-enlarge themselves
+     * Rewrite the character creation input handling stuff; it's kludgy
+     * character positions and changing of positions is a bit of a hack.
+       it could really do with some cleaning up. Move their defines to mud.h
+--- 7,16 ----
+  
+  +-- NOT COMPLETE
+   +-- HIGH PRIORITY
+!    * set up accounts instead of having players log in directly
+!    * make python objects (mob, obj, room) extendable from outside modules
+     * redo sets to be in a tree form rather than a table form
+!    * make property tables auto-enlarge theirselves when they get too big
+     * Rewrite the character creation input handling stuff; it's kludgy
+     * character positions and changing of positions is a bit of a hack.
+       it could really do with some cleaning up. Move their defines to mud.h
+***************
+*** 22,36 ****
+       editing stuff (it's a hack...).
+  
+   +-- LOW PRIORITY
+!    * Mysty's Dialog
+!      * Betta
+!      * Oren
+     * make tracking use BFS instead of DFS
+     * Bulletin board/forum system
+     * soft-code chat channels
+     * spellchecking in the text editor
+     * mounts and vehicles
+!    * shops (for mobiles and players)
+     * customized prompts
+     * DOCUMENT DOCUMENT DOCUMENT!! Most of the major headers need full
+       documentation still.
+--- 22,34 ----
+       editing stuff (it's a hack...).
+  
+   +-- LOW PRIORITY
+!    * Mysty's Dialog: Betta, Oren
+     * make tracking use BFS instead of DFS
+     * Bulletin board/forum system
+     * soft-code chat channels
+     * spellchecking in the text editor
+     * mounts and vehicles
+!    * currency and shops (for mobiles and players)
+     * customized prompts
+     * DOCUMENT DOCUMENT DOCUMENT!! Most of the major headers need full
+       documentation still.
+***************
+*** 46,48 ****
+--- 44,48 ----
+      responses
+  
+  +-- NEEDS DEBUGGING
++    * redo hashtables so that they will auto-enlarge themselves
++    * olc should pass a whole argument to the command funcs

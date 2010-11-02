@@ -12,6 +12,7 @@
 
 struct set_data {
   int    num_buckets;
+  int    size;
   LIST **buckets;
 };
 
@@ -22,32 +23,30 @@ struct set_iterator {
 };
 
 
+
 //*****************************************************************************
-//
 // local functions
-//
 //*****************************************************************************
 
 
 //
 // Find the bucket the set element belongs to
-//
 int set_elem_bucket(void *elem, int num_buckets) {
   // simple for now: just take the modulo
   return ((int)elem) % num_buckets;
 };
 
 
+
 //*****************************************************************************
-//
 // implementation of set.h
-//
 //*****************************************************************************
 SET *newSet(int num_buckets) {
   int i;
 
   SET *set = malloc(sizeof(SET));
   set->buckets = malloc(sizeof(LIST *) * num_buckets);
+  set->size    = 0;
 
   // all NULL until they actually get a content
   for(i = 0; i < num_buckets; i++)
@@ -56,7 +55,6 @@ SET *newSet(int num_buckets) {
 
   return set;
 };
-
 
 void deleteSet(SET *set) {
   int i;
@@ -69,7 +67,6 @@ void deleteSet(SET *set) {
   free(set);
 };
 
-
 void setPut(SET *set, void *elem) {
   // find out what bucket we belong to
   int hash_bucket = set_elem_bucket(elem, set->num_buckets);
@@ -81,7 +78,6 @@ void setPut(SET *set, void *elem) {
   listPut(set->buckets[hash_bucket], elem);
 };
 
-
 void setRemove(SET *set, void *elem) {
   // find out what bucket we belong to
   int hash_bucket = set_elem_bucket(elem, set->num_buckets);
@@ -90,7 +86,6 @@ void setRemove(SET *set, void *elem) {
   if(set->buckets[hash_bucket] != NULL)
     listRemove(set->buckets[hash_bucket], elem);
 };
-
 
 int setIn(SET *set, void *elem) {
   // find out what bucket we belong to
@@ -103,13 +98,12 @@ int setIn(SET *set, void *elem) {
 };
 
 
+
 //*****************************************************************************
-//
 // set iterator
 //
 // we may sometimes want to iterate across all of the elements in a set.
 // this lets us do so.
-//
 //*****************************************************************************
 SET_ITERATOR *newSetIterator(SET *S) {
   SET_ITERATOR *I = malloc(sizeof(SET_ITERATOR));

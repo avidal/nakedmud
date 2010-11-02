@@ -20,6 +20,7 @@
 #include "../utils.h"
 
 #include "script.h"
+#include "script_set.h"
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
@@ -38,10 +39,9 @@ typedef struct {
 } PyChar;
 
 
+
 //*****************************************************************************
-//
 // allocation, deallocation, and initialiation
-//
 //*****************************************************************************
 static void
 PyChar_dealloc(PyChar *self) {
@@ -82,11 +82,8 @@ PyChar_init(PyChar *self, PyObject *args, PyObject *kwds) {
 
 
 
-
 //*****************************************************************************
-//
 // methods and stuff for building the class
-//
 //*****************************************************************************
 
 //
@@ -203,7 +200,6 @@ PyChar_getvar(PyChar *self, PyObject *arg) {
 
 //
 // Set the value of a variable assocciated with the character
-//
 static PyObject *
 PyChar_setvar(PyChar *self, PyObject *args) {  
   char     *var = NULL;
@@ -214,7 +210,6 @@ PyChar_setvar(PyChar *self, PyObject *args) {
 		 "Character setvar must be supplied with a var name and integer value.");
     return NULL;
   }
-
 
   CHAR_DATA *ch = propertyTableGet(mob_table, self->uid);
   if(ch != NULL) {
@@ -241,26 +236,83 @@ PyChar_setvar(PyChar *self, PyObject *args) {
 }
 
 
+static PyObject *
+PyChar_attach(PyChar *self, PyObject *args) {  
+  long vnum = NOTHING;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To attach a script, the vnum must be suppplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  CHAR_DATA       *ch = propertyTableGet(mob_table, self->uid);
+  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+  if(ch != NULL && script != NULL) {
+    scriptSetAdd(charGetScripts(ch), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to attach script to nonexistant char, %d, or script %d "
+		 "does not exit.", self->uid, (int)vnum);
+    return NULL;
+  }
+}
+
+
+static PyObject *
+PyChar_detach(PyChar *self, PyObject *args) {  
+  long vnum = NOTHING;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To detach a script, the vnum must be suppplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  CHAR_DATA       *ch = propertyTableGet(mob_table, self->uid);
+  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+  if(ch != NULL && script != NULL) {
+    scriptSetRemove(charGetScripts(ch), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to detach script from nonexistant char, %d, or script "
+		 "%d does not exit.", self->uid, (int)vnum);
+    return NULL;
+  }
+}
+
+
 
 static PyMethodDef PyChar_methods[] = {
-    {"send", (PyCFunction)PyChar_send, METH_VARARGS,
-     "send a message to the character." },
-    {"sendaround", (PyCFunction)PyChar_sendaround, METH_VARARGS,
-     "send a message to everyone around a character."},
-    {"act", (PyCFunction)PyChar_act, METH_VARARGS,
-     "make the character perform an action." },
-    {"getvar", (PyCFunction)PyChar_getvar, METH_VARARGS,
-     "get the value of a special variable the character has."},
-    {"setvar", (PyCFunction)PyChar_setvar, METH_VARARGS,
-     "set the value of a special variable."},
-    {NULL}  /* Sentinel */
+  {"attach", (PyCFunction)PyChar_attach, METH_VARARGS,
+   "attach a new script to the character." },
+  {"detach", (PyCFunction)PyChar_detach, METH_VARARGS,
+   "detach a script from the character." },
+  {"send", (PyCFunction)PyChar_send, METH_VARARGS,
+   "send a message to the character." },
+  {"sendaround", (PyCFunction)PyChar_sendaround, METH_VARARGS,
+   "send a message to everyone around a character."},
+  {"act", (PyCFunction)PyChar_act, METH_VARARGS,
+   "make the character perform an action." },
+  {"getvar", (PyCFunction)PyChar_getvar, METH_VARARGS,
+   "get the value of a special variable the character has."},
+  {"setvar", (PyCFunction)PyChar_setvar, METH_VARARGS,
+   "set the value of a special variable."},
+  {NULL}  /* Sentinel */
 };
 
 
+
 //*****************************************************************************
-//
 // character attributes - mostly get and set
-//
 //*****************************************************************************
 static PyObject *
 PyChar_getname(PyChar *self, void *closure) {
@@ -692,14 +744,11 @@ static PyGetSetDef PyChar_getseters[] = {
 
 
 //*****************************************************************************
-//
 // comparators, getattr, setattr, and all that other class stuff
-//
 //*****************************************************************************
 
 //
 // compare one character to another
-//
 static int
 PyChar_compare(PyChar *ch1, PyChar *ch2) {
   if(ch1->uid == ch2->uid)
@@ -755,9 +804,7 @@ static PyTypeObject PyChar_Type = {
 
 
 //*****************************************************************************
-//
 // the char module
-//
 //*****************************************************************************
 static PyObject *
 PyChar_load_mob(PyObject *self, PyObject *args) {
@@ -901,7 +948,22 @@ PyChar_count_mobs(PyObject *self, PyObject *args) {
 }
 
 
+static PyObject *
+PyChar_all_chars(PyObject *self) {
+  PyObject      *list = PyList_New(0);
+  LIST_ITERATOR *ch_i = newListIterator(mobile_list);
+  CHAR_DATA       *ch = NULL;
+  ITERATE_LIST(ch, ch_i)
+    PyList_Append(list, newPyChar(ch));
+  deleteListIterator(ch_i);
+  return Py_BuildValue("O", list);
+}
+
+
+
 static PyMethodDef char_module_methods[] = {
+  { "all_chars", (PyCFunction)PyChar_all_chars, METH_NOARGS,
+    "Return a python list containing an entry for every character in game." },
   { "load_mob", PyChar_load_mob, METH_VARARGS,
     "load a mobile with the specified vnum to a room." },
   { "count_mobs", PyChar_count_mobs, METH_VARARGS,

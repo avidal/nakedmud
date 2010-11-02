@@ -122,7 +122,6 @@ COMMAND(cmd_dig) {
 // usage: fill [dir]
 //
 COMMAND(cmd_fill) {
-  char buf[MAX_INPUT_LEN];
   int dir;
 
   if(!arg || !*arg) {
@@ -130,16 +129,15 @@ COMMAND(cmd_fill) {
     return;
   }
 
-  sscanf(arg, "%s", buf);
-  dir = dirGetNum(buf);
+  dir = dirGetNum(arg);
 
   if(dir == DIR_NONE)
-    dir = dirGetAbbrevNum(buf);
+    dir = dirGetAbbrevNum(arg);
 
   if(!canEditZone(worldZoneBounding(gameworld,roomGetVnum(charGetRoom(ch))),ch))
     send_to_char(ch, "You are not authorized to edit this zone.\r\n");
   else if(dir == DIR_NONE)
-    try_specfill(ch, buf);
+    try_specfill(ch, arg);
   else if(!roomGetExit(charGetRoom(ch), dir))
     send_to_char(ch, "There doesn't seem to be an exit in that direction.\r\n");
   else {
@@ -148,8 +146,8 @@ COMMAND(cmd_fill) {
 
     exit_to = worldGetRoom(gameworld,
 			   exitGetTo(roomGetExit(charGetRoom(ch), dir)));
-    exit_back = roomGetExit(exit_to,
-			    dirGetOpposite(dir));
+    if(exit_to)
+      exit_back = roomGetExit(exit_to, dirGetOpposite(dir));
 
     // see if the room we're filling leads back to us... if so, fill it in
     if(exit_back &&
@@ -326,10 +324,66 @@ COMMAND(cmd_buildwalk) {
 }
 
 
+
 //*****************************************************************************
+// Functions for deleting different prototype
+//*****************************************************************************
+
+
 //
+// Delete an object, room, mobile, etc... from the game. First remove it from
+// the gameworld, and then delete it and its contents. The onus is on the 
+// builder to make sure deleting a prototype won't screw anything up (e.g.
+// people standing about in a room when it's deleted).
+void do_delete(CHAR_DATA *ch, void *remover, void *deleter, 
+	       const char *datatype, const char *arg) {
+  void *(* remove_func)(WORLD_DATA *world, int vnum) = remover;
+  void  (* delete_func)(void *data)                  = deleter;
+  
+  if(!arg || !*arg || !isdigit(*arg))
+    send_to_char(ch, "Which %s did you want to delete?\r\n", datatype);
+  else {
+    int vnum = atoi(arg);
+    ZONE_DATA *zone = worldZoneBounding(gameworld, vnum);
+    if(zone == NULL || !canEditZone(zone, ch))
+      send_to_char(ch, "You are not authorized to edit that zone.\r\n");
+    else {
+      void *data = remove_func(gameworld, vnum);
+      if(data == NULL)
+	send_to_char(ch, "%s %d does not exist.\r\n", datatype, vnum);
+      else {
+	send_to_char(ch, "%s %d deleted.\r\n", datatype, vnum);
+	delete_func(data);
+	worldSave(gameworld, WORLD_PATH);
+      }
+    }
+  }
+}
+
+COMMAND(cmd_scdelete) {
+  do_delete(ch, worldRemoveScriptVnum, deleteScript, "script", arg);
+}
+
+COMMAND(cmd_rdelete) {
+  do_delete(ch, worldRemoveRoomVnum, deleteRoom, "room", arg);
+}
+
+COMMAND(cmd_mdelete) {
+  do_delete(ch, worldRemoveMobVnum, deleteChar, "mob", arg);
+}
+
+COMMAND(cmd_odelete) {
+  do_delete(ch, worldRemoveObjVnum, deleteObj, "obj", arg);
+}
+
+COMMAND(cmd_ddelete) {
+  do_delete(ch, worldRemoveDialogVnum, deleteDialog, "dialog", arg);
+}
+
+
+
+//*****************************************************************************
 // Functions for listing different types of data (zones, mobs, objs, etc...)
-//
 //*****************************************************************************
 const char *charGetListType(CHAR_DATA *ch) {
   return charGetRace(ch);

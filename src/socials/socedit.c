@@ -56,8 +56,8 @@ void socedit_menu(SOCKET_DATA *sock, SOCIAL_DATA *social) {
 		 );
 }
 
-int  socedit_chooser(SOCKET_DATA *sock, SOCIAL_DATA *social, char option) {
-  switch(toupper(option)) {
+int  socedit_chooser(SOCKET_DATA *sock, SOCIAL_DATA *social,const char *option){
+  switch(toupper(*option)) {
   case '1':
     send_to_socket(sock, 
 		   "The message to character when no target is supplied : ");
@@ -88,9 +88,11 @@ int  socedit_chooser(SOCKET_DATA *sock, SOCIAL_DATA *social, char option) {
     return SOCEDIT_ROOM_TGT;
   case '8':
     olc_display_table(sock, posGetName, NUM_POSITIONS, 2);
+    text_to_buffer(sock, "Pick a minimum position: ");
     return SOCEDIT_MIN_POS;
   case '9':
     olc_display_table(sock, posGetName, NUM_POSITIONS, 2);
+    text_to_buffer(sock, "Pick a maximum position: ");
     return SOCEDIT_MAX_POS;
   default: 
     return MENU_CHOICE_INVALID;

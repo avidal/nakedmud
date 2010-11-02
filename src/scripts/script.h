@@ -136,6 +136,21 @@
 //     arg  = the argument supplied to the command
 
 //*****************************************************************************
+// SCRIPT_TYPE_RUNNABLE
+//   Description:
+//     Gods can use scrun to run a script of this type
+//   Arguments:
+//     The Arguments to be passed to the script
+//   Numeric Arguments:
+//     Argument is the minimum level of a person who is allowed to 
+//     run this this script
+//   Works with:
+//     mobiles (gods)
+//   Parameters:
+//     me   = the person running the script
+//     arg  = the argument supplied to scrun
+
+//*****************************************************************************
 #define SCRIPT_TYPE_NONE          (-1)
 #define SCRIPT_TYPE_INIT            0 // when the room/mob/obj resets or loads
 #define SCRIPT_TYPE_SPEECH          1 // when someone says a keyword
@@ -144,12 +159,13 @@
 #define SCRIPT_TYPE_ENTER           4 // when a char enters the room
 #define SCRIPT_TYPE_EXIT            5 // when the character exits the room 
 #define SCRIPT_TYPE_COMMAND         6 // when a command is issued
-#define NUM_SCRIPTS                 7
+#define SCRIPT_TYPE_RUNNABLE        7 // intended for people to run
+#define NUM_SCRIPTS                 8
 
 
 const char *scriptTypeName(int num);
 
-SCRIPT_DATA *newScript   ();
+SCRIPT_DATA *newScript   (void);
 void         deleteScript(SCRIPT_DATA *script);
 
 STORAGE_SET *scriptStore(SCRIPT_DATA *script);
@@ -193,11 +209,11 @@ void        charSetScripts(CHAR_DATA *mob, SCRIPT_SET *scripts);
 //
 #ifdef MODULE_OLC2
 void ssedit_menu   (SOCKET_DATA *sock, SCRIPT_SET *set);
-int  ssedit_chooser(SOCKET_DATA *sock, SCRIPT_SET *set, char option);
+int  ssedit_chooser(SOCKET_DATA *sock, SCRIPT_SET *set, const char *option);
 bool ssedit_parser (SOCKET_DATA *sock, SCRIPT_SET *set, int choice, 
 		    const char *arg);
 void scedit_menu   (SOCKET_DATA *sock, SCRIPT_DATA *script);
-int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, char option);
+int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, const char *option);
 bool scedit_parser (SOCKET_DATA *sock, SCRIPT_DATA *script, int choice, 
 		    const char *arg);
 #endif // MODULE_OLC2

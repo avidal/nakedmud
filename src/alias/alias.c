@@ -15,14 +15,10 @@
 
 #include "alias.h"
 
-// how many buckets are in the alias hashtable?
-#define ALIAS_TABLE_SIZE           10
 
 
 //*****************************************************************************
-//
 // auxiliary data
-//
 //*****************************************************************************
 typedef struct alias_aux_data {
   HASHTABLE *aliases;
@@ -36,7 +32,7 @@ newAliasAuxData() {
   // Hashtables can take up lots of storage space. Because of this, let's
   // not create any tables until it's actually needed. This will cut down
   // on lots of memory usage w.r.t. NPCs who do not use aliases
-  //  data->aliases        = newHashtable(ALIAS_TABLE_SIZE);
+  //  data->aliases        = newHashtable();
   //
   data->aliases        = NULL;
   return data;
@@ -106,7 +102,7 @@ ALIAS_AUX_DATA *aliasAuxDataRead(STORAGE_SET *set) {
     return newAliasAuxData();
 
   ALIAS_AUX_DATA *data   = newAliasAuxData();
-  data->aliases          = newHashtable(ALIAS_TABLE_SIZE);
+  data->aliases          = newHashtable();
   STORAGE_SET_LIST *list = read_list(set, "aliases");
   STORAGE_SET *var       = NULL;
 
@@ -149,7 +145,7 @@ void charSetAlias(CHAR_DATA *ch, const char *alias, const char *cmd){
   ALIAS_AUX_DATA *data = charGetAuxiliaryData(ch, "alias_aux_data");
   // if our alias table is NULL, create a new one
   if(data->aliases == NULL)
-    data->aliases = newHashtable(ALIAS_TABLE_SIZE);
+    data->aliases = newHashtable();
 
   // pull out the last one
   char *oldcmd = hashRemove(data->aliases, alias);

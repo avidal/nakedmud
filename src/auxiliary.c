@@ -40,7 +40,7 @@ HASHTABLE *auxiliary_manip_funcs = NULL;
 //*****************************************************************************
 
 void init_auxiliaries() {
-  auxiliary_manip_funcs = newHashtable(100);
+  auxiliary_manip_funcs = newHashtable();
 }
 
 AUXILIARY_FUNCS *
@@ -85,7 +85,7 @@ auxiliariesGetFuncs(const char *name) {
 
 HASHTABLE *
 newAuxiliaryData(bitvector_t aux_type) {
-  HASHTABLE        *data = newHashtable(10);
+  HASHTABLE        *data = newHashtableSize(25);
   HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
@@ -147,7 +147,7 @@ auxiliaryDataStore(HASHTABLE *data) {
 
 HASHTABLE *
 auxiliaryDataRead(STORAGE_SET *set, bitvector_t aux_type) {
-  HASHTABLE        *data = newHashtable(10);
+  HASHTABLE        *data = newHashtableSize(25);
   HASH_ITERATOR  *hash_i = newHashIterator(auxiliary_manip_funcs);
   AUXILIARY_FUNCS *funcs = NULL;
   const char       *name = NULL;
@@ -193,7 +193,7 @@ auxiliaryDataCopyTo(HASHTABLE *from, HASHTABLE *to) {
 
 HASHTABLE *
 auxiliaryDataCopy(HASHTABLE *data) {
-  HASHTABLE *newdata = newHashtable(10);
+  HASHTABLE *newdata = newHashtableSize(25);
   auxiliaryDataCopyTo(data, newdata);
   return newdata;
 }

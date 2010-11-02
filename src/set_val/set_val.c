@@ -32,7 +32,6 @@
 // local defines, datastructures, functions, and commands
 //
 //*****************************************************************************
-#define SET_TABLE_SIZE        10
 HASHTABLE *char_set_table = NULL;
 HASHTABLE *obj_set_table  = NULL;
 HASHTABLE *room_set_table = NULL;
@@ -179,9 +178,9 @@ COMMAND(cmd_set) {
 //*****************************************************************************
 void init_set() {
   // build all of our tables
-  char_set_table = newHashtable(SET_TABLE_SIZE);
-  obj_set_table  = newHashtable(SET_TABLE_SIZE);
-  room_set_table = newHashtable(SET_TABLE_SIZE);
+  char_set_table = newHashtable();
+  obj_set_table  = newHashtable();
+  room_set_table = newHashtable();
 
   // add in the default sets for the core of the MUD
   /************************************************************/

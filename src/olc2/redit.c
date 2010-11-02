@@ -46,7 +46,7 @@
 
 // the resedit olc needs these declared
 void rrledit_menu(SOCKET_DATA *sock, LIST *list);
-int  rrledit_chooser(SOCKET_DATA *sock, LIST *list, char option);
+int  rrledit_chooser(SOCKET_DATA *sock, LIST *list, const char *option);
 bool rrledit_parser(SOCKET_DATA *sock, LIST *list, int choice, const char *arg);
 
 const char *write_reset_arg(int type, const char *arg) {
@@ -193,10 +193,11 @@ void resedit_menu(SOCKET_DATA *sock, RESET_DATA *data) {
 		 );
 }
 
-int resedit_chooser(SOCKET_DATA *sock, RESET_DATA *data, char option) {
-  switch(toupper(option)) {
+int resedit_chooser(SOCKET_DATA *sock, RESET_DATA *data, const char *option) {
+  switch(toupper(*option)) {
   case '1':
     olc_display_table(sock, resetTypeGetName, NUM_RESETS, 1);
+    text_to_buffer(sock, "Pick a reset type: ");
     return RESEDIT_TYPE;
   case '2':
     text_to_buffer(sock, "How many times should the reset execute: ");
@@ -316,8 +317,8 @@ void rrledit_menu(SOCKET_DATA *sock, LIST *list) {
 }
 
 
-int rrledit_chooser(SOCKET_DATA *sock, LIST *list, char option) {
-  switch(toupper(option)) {
+int rrledit_chooser(SOCKET_DATA *sock, LIST *list, const char *option) {
+  switch(toupper(*option)) {
   case 'N': {
     RESET_DATA *data = newReset();
     listQueue(list, data);
@@ -403,8 +404,8 @@ void exedit_menu(SOCKET_DATA *sock, EXIT_DATA *exit) {
 		 );
 }
 
-int exedit_chooser(SOCKET_DATA *sock, EXIT_DATA *exit, char option) {
-  switch(option) {
+int exedit_chooser(SOCKET_DATA *sock, EXIT_DATA *exit, const char *option) {
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter a new name: ");
     return EXEDIT_NAME;
@@ -545,8 +546,8 @@ void redit_menu(SOCKET_DATA *sock, ROOM_DATA *room) {
 }
 
 
-int redit_chooser(SOCKET_DATA *sock, ROOM_DATA *room, char option) {
-  switch(toupper(option)) {
+int redit_chooser(SOCKET_DATA *sock, ROOM_DATA *room, const char *option) {
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter a new room name: ");
     return REDIT_NAME;
@@ -562,6 +563,7 @@ int redit_chooser(SOCKET_DATA *sock, ROOM_DATA *room, char option) {
 #endif
   case 'T':
     olc_display_table(sock, terrainGetName, NUM_TERRAINS, 3);
+    text_to_buffer(sock, "Pick a terrain type: ");
     return REDIT_TERRAIN;
   case 'F':
     text_to_buffer(sock, "What is the name of the exit you wish to fill: ");

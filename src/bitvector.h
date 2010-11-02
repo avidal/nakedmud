@@ -97,4 +97,14 @@ void bitToggle(BITVECTOR *v, const char *name);
 // return a comma-separated list of the bits the vector has set
 const char *bitvectorGetBits(BITVECTOR *v);
 
+//
+// returns the number of possible bits that can be set on this bitvector
+int bitvectorSize(BITVECTOR *v);
+
+//
+// return a list of the possible bits that this vector can have set. The list
+// must be deleted after use, as well as all the contents. 
+// try: listDeleteWith(list, free)
+LIST *bitvectorListBits(BITVECTOR *v);
+
 #endif // BITVECTOR_H

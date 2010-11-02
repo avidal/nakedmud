@@ -86,7 +86,7 @@ void save_logkeys() {
 
 
 void init_logs() {
-  logkeys = newHashtable(50);
+  logkeys = newHashtable();
 
   STORAGE_SET       *set = storage_read(LOG_LIST);
   if(set != NULL) {

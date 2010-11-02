@@ -20,6 +20,7 @@
 #include "../utils.h"
 
 #include "script.h"
+#include "script_set.h"
 #include "pychar.h"
 #include "pyroom.h"
 #include "pyobj.h"
@@ -81,8 +82,67 @@ PyObj_init(PyObj *self, PyObject *args, PyObject *kwds) {
 // methods and stuff for building the class
 //
 //*****************************************************************************
+
+static PyObject *
+PyObj_attach(PyObj *self, PyObject *args) {  
+  long vnum = NOTHING;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To attach a script, the vnum must be suppplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  OBJ_DATA       *obj = propertyTableGet(obj_table, self->uid);
+  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+  if(obj != NULL && script != NULL) {
+    scriptSetAdd(objGetScripts(obj), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to attach script to nonexistant obj, %d, or script %d "
+		 "does not exit.", self->uid, (int)vnum);
+    return NULL;
+  }
+}
+
+
+static PyObject *
+PyObj_detach(PyObj *self, PyObject *args) {  
+  long vnum = NOTHING;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To detach a script, the vnum must be suppplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  OBJ_DATA       *obj = propertyTableGet(obj_table, self->uid);
+  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+  if(obj != NULL && script != NULL) {
+    scriptSetRemove(objGetScripts(obj), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to detach script from nonexistant obj, %d, or script "
+		 "%d does not exit.", self->uid, (int)vnum);
+    return NULL;
+  }
+}
+
+
 static PyMethodDef PyObj_methods[] = {
-    {NULL}  /* Sentinel */
+  {"attach", (PyCFunction)PyObj_attach, METH_VARARGS,
+   "attach a new script to the object." },
+  {"detach", (PyCFunction)PyObj_detach, METH_VARARGS,
+   "detach a script from the object." },
+  {NULL}  /* Sentinel */
 };
 
 

@@ -40,7 +40,7 @@ void init_olc2();
 //                 will be passed to the modifier() function to perform changes
 //                 after an argument is passed in.
 //       the chooser function is of the form:
-//       int chooser(SOCKET_DATA *sock, datatype *to_edit, char option)
+//       int chooser(SOCKET_DATA *sock, datatype *to_edit, const char *option)
 //
 // parser: This function is used to parse an argument, given a choice from the
 //       menu. The choice is provided by the chooser() function, and an argument
@@ -107,5 +107,9 @@ void save_world(void *olc_data);
 // elements, and num_cols of those elements will be displayed per row.
 void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
 		       int num_vals, int num_cols);
+
+//
+// Same deal as olc_display_table, except that it takes in a list of strings
+void olc_display_list(SOCKET_DATA *sock, LIST *list, int num_cols);
 
 #endif // OLC2_H

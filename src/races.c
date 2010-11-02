@@ -54,7 +54,7 @@ RACE_DATA *newRace(const char *name, const char *abbrev, BODY_DATA *body,
 //*****************************************************************************
 void init_races() {
   // create the table for holding race data
-  race_table = newHashtable(RACE_TABLE_SIZE);
+  race_table = newHashtable();
 
   // make the default human body
   BODY_DATA *body = newBody();

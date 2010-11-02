@@ -42,8 +42,8 @@ void zedit_menu(SOCKET_DATA *sock, ZONE_DATA *zone) {
 }
 
 
-int zedit_chooser(SOCKET_DATA *sock, ZONE_DATA *zone, char option) {
-  switch(toupper(option)) {
+int zedit_chooser(SOCKET_DATA *sock, ZONE_DATA *zone, const char *option) {
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter a new zone name: ");
     return ZEDIT_NAME;

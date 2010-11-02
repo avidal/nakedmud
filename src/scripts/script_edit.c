@@ -51,8 +51,8 @@ void ssedit_menu   (SOCKET_DATA *sock, SCRIPT_SET *set) {
 		 );
 }
 
-int  ssedit_chooser(SOCKET_DATA *sock, SCRIPT_SET *set, char option) {
-  switch(toupper(option)) {
+int  ssedit_chooser(SOCKET_DATA *sock, SCRIPT_SET *set, const char *option) {
+  switch(toupper(*option)) {
   case 'N':
     text_to_buffer(sock, "Which script would you like to add (-1 for none): ");
     return SSEDIT_NEW;
@@ -106,13 +106,14 @@ void scedit_menu   (SOCKET_DATA *sock, SCRIPT_DATA *script) {
   script_display(sock, scriptGetCode(script), FALSE);
 }
 
-int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, char option) {
-  switch(toupper(option)) {
+int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, const char *option){
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter a new name for the script: ");
     return SCEDIT_NAME;
   case '2':
     olc_display_table(sock, scriptTypeName, NUM_SCRIPTS, 1);
+    text_to_buffer(sock, "Pick a script type: ");
     return SCEDIT_TYPE;
   case '3':
     text_to_buffer(sock, "Enter new arguments: ");
@@ -132,6 +133,11 @@ int  scedit_chooser(SOCKET_DATA *sock, SCRIPT_DATA *script, char option) {
 		     "  1 = triggers if the scriptor can see the char\r\n"
 		     "\r\n"
 		     "Enter choice : ");
+      return SCEDIT_NARG;
+
+    case SCRIPT_TYPE_RUNNABLE:
+      send_to_socket(sock,
+		     "Enter the minimum level that can run this script: ");
       return SCEDIT_NARG;
 
     case SCRIPT_TYPE_COMMAND:
@@ -179,6 +185,10 @@ bool scedit_parser (SOCKET_DATA *sock, SCRIPT_DATA *script, int choice,
       // 1 = cancel normal command
     case SCRIPT_TYPE_COMMAND:
       scriptSetNumArg(script, MIN(1, MAX(0, atoi(arg))));
+      break;
+      // narg = minimum level that can run this script
+    case SCRIPT_TYPE_RUNNABLE:
+      scriptSetNumArg(script, MIN(MAX_LEVEL, MAX(0, atoi(arg))));
       break;
     }
     return TRUE;

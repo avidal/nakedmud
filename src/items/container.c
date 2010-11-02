@@ -167,8 +167,9 @@ void iedit_container_menu   (SOCKET_DATA *sock, CONTAINER_DATA *data) {
 		 data->pick_diff);
 }
 
-int  iedit_container_chooser(SOCKET_DATA *sock, CONTAINER_DATA *data, char option) {
-  switch(toupper(option)) {
+int  iedit_container_chooser(SOCKET_DATA *sock, CONTAINER_DATA *data, 
+			     const char *option) {
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter a new weight capacity for the container: ");
     return IEDIT_CONTAINER_CAPACITY;

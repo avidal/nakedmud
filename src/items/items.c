@@ -26,16 +26,6 @@
 //*****************************************************************************
 // local functions, datastructures, and defines
 //*****************************************************************************
-// this is the size of the table where we store all of the functions for 
-// creating/deleting/copying/etc... data of item types. Ideally, this will be
-// about 120% bigger than the total number of item types we have installed.
-#define TYPE_TABLE_SIZE       50
-
-// objects can have more than one item type; this is the size of the table
-// that holds all of the item types for a single object. I'm doubtful an item
-// will ever have more than 2-3 types, so 5 is a very generous size
-#define ITEM_TABLE_SIZE        5
-
 // a table of all our item types, and their assocciated new/delete/etc.. funcs
 HASHTABLE *type_table = NULL;
 
@@ -114,7 +104,7 @@ void copyItemTableTo(HASHTABLE *from, HASHTABLE *to) {
 // Creates a new item table and copies the contents of the old one 
 // over to the new one 
 HASHTABLE *copyItemTable(HASHTABLE *table) {
-  HASHTABLE *newtable = newHashtable(ITEM_TABLE_SIZE);
+  HASHTABLE *newtable = newHashtable();
   copyItemTableTo(table, newtable);
   return newtable;
 }
@@ -130,7 +120,7 @@ typedef struct item_data {
 
 ITEM_DATA *newItemData() {
   ITEM_DATA *data  = malloc(sizeof(ITEM_DATA));
-  data->item_table = newHashtable(ITEM_TABLE_SIZE);
+  data->item_table = newHashtable();
   return data;
 }
 
@@ -200,7 +190,7 @@ ITEM_DATA *itemDataRead(STORAGE_SET *set) {
 // implementation of items.h
 //*****************************************************************************
 void init_items(void) {
-  type_table = newHashtable(TYPE_TABLE_SIZE);
+  type_table = newHashtable();
   auxiliariesInstall("type_data",
 		     newAuxiliaryFuncs(AUXILIARY_TYPE_OBJ, newItemData, 
 				       deleteItemData, itemDataCopyTo,

@@ -57,9 +57,6 @@ EDITOR *text_editor = NULL;
 // an editor for dialog. Essentially, text without newlines
 EDITOR *dialog_editor = NULL;
 
-// how many buckets are in our command table?
-#define EDITOR_CMD_TABLE_SIZE       20
-
 struct editor_data {
   HASHTABLE *cmds;  // mappings from commands to their functions and descs
   void (* prompt)(SOCKET_DATA *sock); // the prompt display
@@ -194,6 +191,8 @@ void editorDeleteLine(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   int line = atoi(tmp);
   if(!isdigit(*tmp) || !bufferRemove(buf, line))
     text_to_buffer(sock, "Line does not exist.\r\n");
+  else
+    text_to_buffer(sock, "Line deleted.\r\n");
 }
 
 void editorEditLine(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
@@ -202,6 +201,8 @@ void editorEditLine(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   int line = atoi(tmp);
   if(!isdigit(*tmp) || !bufferReplaceLine(buf, arg, line))
     text_to_buffer(sock, "Line does not exist.\r\n");
+  else
+    text_to_buffer(sock, "Line replaced.\r\n");
 }
 
 void editorInsertLine(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
@@ -210,6 +211,8 @@ void editorInsertLine(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   int line = atoi(tmp);
   if(!isdigit(*tmp) || !bufferInsert(buf, arg, line))
     text_to_buffer(sock, "Insertion failed.\r\n");
+  else
+    text_to_buffer(sock, "Line inserted.\r\n");
 }
 
 void editorListDialogBuffer(SOCKET_DATA *sock, char *arg, BUFFER *buf) { 
@@ -264,10 +267,12 @@ void editorReplaceAllString(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
 
 void editorClear(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   bufferClear(buf);
+  text_to_buffer(sock, "Buffer cleared.\r\n");
 }
 
 void editorFormatBuffer(SOCKET_DATA *sock, char *arg, BUFFER *buf) {
   bufferFormat(buf, 80, 3);
+  text_to_buffer(sock, "Buffer formatted.\r\n");
 }
 
 
@@ -293,7 +298,7 @@ void init_editor() {
 EDITOR *newEditor() {
   EDITOR *editor = malloc(sizeof(EDITOR));
   // set up the default commands
-  editor->cmds = newHashtable(EDITOR_CMD_TABLE_SIZE);
+  editor->cmds = newHashtable();
   hashPut(editor->cmds, "q", 
 	  newEditorCommand("        Quit editor and save changes",
 			   editorQuit, TRUE));

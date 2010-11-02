@@ -141,8 +141,9 @@ void iedit_portal_menu   (SOCKET_DATA *sock, PORTAL_DATA *data) {
 		 (dest ? roomGetName(dest) : "nowhere"));
 }
 
-int  iedit_portal_chooser(SOCKET_DATA *sock, PORTAL_DATA *data, char option) {
-  switch(toupper(option)) {
+int  iedit_portal_chooser(SOCKET_DATA *sock, PORTAL_DATA *data, 
+			  const char *option) {
+  switch(toupper(*option)) {
   case '1': 
     text_to_buffer(sock, "Enter new destination (-1 for none): ");
     return IEDIT_PORTAL_DEST;

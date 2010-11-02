@@ -10,9 +10,11 @@
 #include "../utils.h"
 #include "../socket.h"
 #include "../character.h"
+#include "../handler.h"
 #include "../object.h"
 #include "../world.h"
 #include "../zone.h"
+#include "../bitvector.h"
 
 #include "olc.h"
 #include "olc_submenus.h"
@@ -56,6 +58,7 @@ void oedit_menu(SOCKET_DATA *sock, OBJ_DATA *obj) {
 		 "{c%s\r\n"
 		 "{gW) Weight:    {c%1.3lf\r\n"
 		 "{gT) Edit item types: {c%s\r\n"
+		 "{gB) Edit bitvector : {c%s\r\n"
 		 "{gS) Script menu\r\n"
 		 "{gX) Extra Descriptions menu\r\n",
 		 objGetVnum(obj),
@@ -66,12 +69,13 @@ void oedit_menu(SOCKET_DATA *sock, OBJ_DATA *obj) {
 		 objGetMultiRdesc(obj),
 		 objGetDesc(obj),
 		 objGetWeightRaw(obj),
-		 objGetTypes(obj)
+		 objGetTypes(obj),
+		 bitvectorGetBits(objGetBits(obj))
 		 );
 }
 
-int  oedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, char option) {
-  switch(toupper(option)) {
+int  oedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, const char *option) {
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter name: ");
     return OEDIT_NAME;
@@ -101,6 +105,10 @@ int  oedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, char option) {
   case 'T':
     do_olc(sock, iedit_menu, iedit_chooser, iedit_parser, NULL, NULL, NULL,
 	   NULL, obj);
+    return MENU_NOCHOICE;
+  case 'B':
+    do_olc(sock, bedit_menu, bedit_chooser, bedit_parser, NULL, NULL, NULL,
+	   NULL, objGetBits(obj));
     return MENU_NOCHOICE;
   case 'S':
     do_olc(sock, ssedit_menu, ssedit_chooser, ssedit_parser,
@@ -139,15 +147,28 @@ bool oedit_parser(SOCKET_DATA *sock, OBJ_DATA *obj, int choice,
 }
 
 COMMAND(cmd_oedit) {
-  ZONE_DATA *zone;
   OBJ_DATA *obj;
-  obj_vnum vnum;
 
   // if no argument is supplied, default to the current obj
   if(!arg || !*arg)
     send_to_char(ch, "Please supply the vnum of a obj you wish to edit.\r\n");
+
+  // we're trying to edit an object by name... must be something in the world
+  else if(!isdigit(*arg)) {
+    obj = generic_find(ch, arg, FIND_TYPE_OBJ, FIND_SCOPE_INV | FIND_SCOPE_ROOM,
+		       FALSE, NULL);
+    if(obj == NULL)
+      send_to_char(ch, "What were you trying to edit?\r\n");
+    else {
+      do_olc(charGetSocket(ch), oedit_menu, oedit_chooser, oedit_parser,
+	     NULL, NULL, NULL, NULL, obj);
+    }
+  }
+
+  // we're editing an object by vnum... edit the prototype
   else {
-    vnum = atoi(arg);
+    ZONE_DATA *zone = NULL;
+    obj_vnum   vnum = atoi(arg);
 
     // make sure there is a corresponding zone ...
     if((zone = worldZoneBounding(gameworld, vnum)) == NULL)
@@ -156,12 +177,13 @@ COMMAND(cmd_oedit) {
       send_to_char(ch, "You are not authorized to edit this zone.\r\n");  
     else {
       // find the obj
-      obj = worldGetObj(gameworld, vnum);
+      obj = zoneGetObj(zone, vnum);
 
       // make our obj
       if(obj == NULL) {
 	obj = newObj(vnum);
 	objSetVnum(obj, vnum);
+	zoneAddObj(zone, obj);
 	objSetName      (obj, "an unfinished object");
 	objSetKeywords  (obj, "object, unfinshed");
 	objSetRdesc     (obj, "an unfinished object is lying here.");

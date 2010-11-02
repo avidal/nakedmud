@@ -30,9 +30,6 @@
 // the file where all of the socials are stored
 #define SOCIALS_FILE "../lib/misc/socials"
 
-// how many buckets are there in the social table
-#define SOCIAL_TABLE_SIZE              100
-
 // the table we store all of the socials in
 HASHTABLE *social_table = NULL;
 
@@ -439,7 +436,7 @@ bool in_social_init = TRUE;
 
 void init_socials() {
   // create the social table
-  social_table = newHashtable(SOCIAL_TABLE_SIZE);
+  social_table = newHashtable();
 
   // open up the storage set
   STORAGE_SET       *set = storage_read(SOCIALS_FILE);

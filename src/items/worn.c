@@ -39,12 +39,6 @@
 //*****************************************************************************
 // local functions, variables, datastructures, and defines
 //*****************************************************************************
-
-// how big of a table will we need to hold all of the worn data we might have?
-// optimally, this should be about 120% bigger than the number of worn types
-// that we have.
-#define WORN_TABLE_SIZE     50
-
 HASHTABLE *worn_table = NULL;
 
 typedef struct worn_entry {
@@ -179,8 +173,8 @@ void iedit_worn_menu   (SOCKET_DATA *sock, WORN_DATA *data) {
 		 data->type, wornTypeGetPositions(data->type));
 }
 
-int  iedit_worn_chooser(SOCKET_DATA *sock, WORN_DATA *data, char option) {
-  switch(toupper(option)) {
+int  iedit_worn_chooser(SOCKET_DATA *sock, WORN_DATA *data, const char *option){
+  switch(toupper(*option)) {
   case '1':
     iedit_worn_show_types(sock);
     text_to_buffer(sock, "enter choice: ");
@@ -222,7 +216,7 @@ void worn_add_type(const char *type, const char *required_positions) {
 //
 // this will need to be called by init_items() in items/items.c
 void init_worn(void) {
-  worn_table = newHashtable(WORN_TABLE_SIZE);
+  worn_table = newHashtable();
   item_add_type("worn", 
 		newWornData, deleteWornData,
 		wornDataCopyTo, wornDataCopy, 

@@ -19,8 +19,8 @@
 // the difference between newChar and newMobile is that newMobile
 // assigned a new UID whereas newChar does not.
 //
-CHAR_DATA   *newChar          ();
-CHAR_DATA    *newMobile       ();
+CHAR_DATA   *newChar          (void);
+CHAR_DATA    *newMobile       (void);
 void         deleteChar       (CHAR_DATA *mob);
 
 CHAR_DATA    *charRead        (STORAGE_SET *set);

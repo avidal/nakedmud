@@ -22,7 +22,7 @@ void item_add_olc(const char *type, void *menu, void *chooser, void *parser);
 //
 // these functions will be needed by oedit
 void iedit_menu(SOCKET_DATA *sock, OBJ_DATA *obj);
-int  iedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, char option);
+int  iedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, const char *option);
 bool iedit_parser(SOCKET_DATA *sock, OBJ_DATA *obj,int choice, const char *arg);
 
 #endif // IEDIT_H

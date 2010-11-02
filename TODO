@@ -7,10 +7,10 @@ GEOFF'S TO DO LIST
 
 +-- NOT COMPLETE
  +-- HIGH PRIORITY
-   * bedit -> bitvector edit
-   * create an insert function for the script editor that kills carraige returns
+   * set up accounts instead of having players log in directly
+   * make python objects (mob, obj, room) extendable from outside modules
    * redo sets to be in a tree form rather than a table form
-   * redo hashtables so that they will auto-enlarge themselves
+   * make property tables auto-enlarge theirselves when they get too big
    * Rewrite the character creation input handling stuff; it's kludgy
    * character positions and changing of positions is a bit of a hack.
      it could really do with some cleaning up. Move their defines to mud.h
@@ -22,15 +22,13 @@ GEOFF'S TO DO LIST
      editing stuff (it's a hack...).
 
  +-- LOW PRIORITY
-   * Mysty's Dialog
-     * Betta
-     * Oren
+   * Mysty's Dialog: Betta, Oren
    * make tracking use BFS instead of DFS
    * Bulletin board/forum system
    * soft-code chat channels
    * spellchecking in the text editor
    * mounts and vehicles
-   * shops (for mobiles and players)
+   * currency and shops (for mobiles and players)
    * customized prompts
    * DOCUMENT DOCUMENT DOCUMENT!! Most of the major headers need full
      documentation still.
@@ -46,3 +44,5 @@ GEOFF'S TO DO LIST
     responses
 
 +-- NEEDS DEBUGGING
+   * redo hashtables so that they will auto-enlarge themselves
+   * olc should pass a whole argument to the command funcs

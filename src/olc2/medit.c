@@ -9,6 +9,7 @@
 #include "../utils.h"
 #include "../socket.h"
 #include "../character.h"
+#include "../handler.h"
 #include "../races.h"
 #include "../world.h"
 #include "../dialog.h"
@@ -73,8 +74,8 @@ void medit_menu(SOCKET_DATA *sock, CHAR_DATA *mob) {
 		 );
 }
 
-int  medit_chooser(SOCKET_DATA *sock, CHAR_DATA *mob, char option) {
-  switch(toupper(option)) {
+int  medit_chooser(SOCKET_DATA *sock, CHAR_DATA *mob, const char *option) {
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter name: ");
     return MEDIT_NAME;
@@ -96,10 +97,11 @@ int  medit_chooser(SOCKET_DATA *sock, CHAR_DATA *mob, char option) {
     return MENU_NOCHOICE;
   case 'R':
     send_to_socket(sock, "%s\r\n\r\n", raceGetList(FALSE));
-    send_to_socket(sock, "Please select a race: ");
+    text_to_buffer(sock, "Please select a race: ");
     return MEDIT_RACE;
   case 'G':
     olc_display_table(sock, sexGetName, NUM_SEXES, 1);
+    text_to_buffer(sock, "Pick a gender: ");
     return MEDIT_SEX;
   case 'D':
     text_to_buffer(sock, "Enter the dialog vnum (-1 for none): ");
@@ -157,14 +159,27 @@ bool medit_parser(SOCKET_DATA *sock, CHAR_DATA *mob, int choice,
 }
 
 COMMAND(cmd_medit) {
-  ZONE_DATA *zone;
   CHAR_DATA *mob;
-  mob_vnum vnum;
 
-  if(!arg || !*arg || !isdigit(*arg))
+  if(!arg || !*arg)
     send_to_char(ch, "Invalid vnum! Try again.\r\n");
+
+  // we're trying to edit a mob by name... must be something in the world
+  else if(!isdigit(*arg)) {
+    mob = generic_find(ch, arg, FIND_TYPE_CHAR, FIND_SCOPE_ROOM,
+		       FALSE, NULL);
+    if(mob == NULL)
+      send_to_char(ch, "Who were you trying to edit?\r\n");
+    else {
+      do_olc(charGetSocket(ch), medit_menu, medit_chooser, medit_parser,
+	     NULL, NULL, NULL, NULL, mob);
+    }
+  }
+
+  // we're editing a mobile by vnum... edit the prototype
   else {
-    vnum = atoi(arg);
+    ZONE_DATA *zone = NULL;
+    mob_vnum vnum   = atoi(arg);
 
     // make sure there is a corresponding zone ...
     if((zone = worldZoneBounding(gameworld, vnum)) == NULL)
@@ -177,7 +192,8 @@ COMMAND(cmd_medit) {
 
       // make our mobile
       if(mob == NULL) {
-	mob = newMobile(vnum);
+	mob = newMobile();
+	charSetVnum(mob, vnum);
 	zoneAddMob(zone, mob);
 	charSetName(mob, "an unfinished mobile");
 	charSetKeywords(mob, "mobile, unfinshed");

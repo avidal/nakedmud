@@ -24,9 +24,6 @@
 //
 //*****************************************************************************
 
-// the size of the hashtable we store char vars in
-#define CHAR_VAR_TABLE_SIZE   10
-
 // used in storage_sets to keep track of what kind of data we're saving
 const char *char_var_types[] = {
   "string",
@@ -117,7 +114,7 @@ newCharVarAuxData() {
   // Hashtables can take up lots of storage space. Because of this, let's
   // not create any tables until it's actually needed. This will cut down
   // on lots of memory usage w.r.t. NPCs who do not use character variables
-  //  data->char_vars        = newHashtable(CHAR_VAR_TABLE_SIZE);
+  //  data->char_vars        = newHashtable();
   data->char_vars         = NULL;
   return data;
 }
@@ -146,7 +143,7 @@ charVarAuxDataCopyTo(CHAR_VAR_AUX_DATA *from, CHAR_VAR_AUX_DATA *to) {
   if(from_size > 0) {
     // make sure the "to" table exists
     if(to->char_vars == NULL)
-      to->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+      to->char_vars = newHashtable();
 
     // copy everything over
     HASH_ITERATOR *from_i = newHashIterator(from->char_vars);
@@ -194,7 +191,7 @@ STORAGE_SET *charVarAuxDataStore(CHAR_VAR_AUX_DATA *data) {
 
 
 HASHTABLE *variableRead(STORAGE_SET *set) {
-  HASHTABLE *table       = newHashtable(CHAR_VAR_TABLE_SIZE);
+  HASHTABLE *table       = newHashtable();
   STORAGE_SET_LIST *list = read_list(set, "list");
   STORAGE_SET *var       = NULL;
 
@@ -212,7 +209,7 @@ CHAR_VAR_AUX_DATA *charVarAuxDataRead(STORAGE_SET *set) {
   CHAR_VAR_AUX_DATA *data = newCharVarAuxData();
   STORAGE_SET_LIST  *list = read_list(set, "variables");
   STORAGE_SET    *var_set = NULL;
-  data->char_vars         = newHashtable(CHAR_VAR_TABLE_SIZE);
+  data->char_vars         = newHashtable();
   
   while( (var_set = storage_list_next(list)) != NULL) {
     const char *var_type = read_string(var_set, "type");
@@ -292,7 +289,7 @@ void charSetInt(CHAR_DATA *ch, const char *key, int val) {
   CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
   CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
   if(data->char_vars == NULL && val != 0)
-    data->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+    data->char_vars = newHashtable();
   if(old != NULL) 
     deleteCharVar(old);
   if(val != 0)
@@ -304,7 +301,7 @@ void charSetLong(CHAR_DATA *ch, const char *key, long val) {
   CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
   CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
   if(data->char_vars == NULL && val != 0)
-    data->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+    data->char_vars = newHashtable();
   if(old != NULL) 
     deleteCharVar(old);
   if(val != 0)
@@ -316,7 +313,7 @@ void charSetDouble(CHAR_DATA *ch, const char *key, double val) {
   CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
   CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
   if(data->char_vars == NULL && val != 0)
-    data->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+    data->char_vars = newHashtable();
   if(old != NULL) 
     deleteCharVar(old);
   if(val != 0)
@@ -328,7 +325,7 @@ void charSetString(CHAR_DATA *ch, const char *key, const char *val) {
   CHAR_VAR_AUX_DATA *data = charGetAuxiliaryData(ch, "char_var_aux_data");
   CHAR_VAR *old = (data->char_vars ? hashRemove(data->char_vars, key) : NULL);
   if(data->char_vars == NULL && *val != '\0') 
-    data->char_vars = newHashtable(CHAR_VAR_TABLE_SIZE);
+    data->char_vars = newHashtable();
   if(old != NULL) 
     deleteCharVar(old);
   if(*val != '\0')

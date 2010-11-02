@@ -28,18 +28,12 @@
 //*****************************************************************************
 // local functions, variables, and datastructures
 //*****************************************************************************
-
-//
-// how many buckets will be in our item_olc_table? This should be about 120%
-// bigger than the number of item types we have, although it's not a huge deal.
-#define IEDIT_TABLE_SIZE       50
-
 // used to store the different sub-olc functions for different item types
 HASHTABLE *item_olc_table = NULL;
 
 typedef struct item_olc_data {
   void    (* menu)(SOCKET_DATA *sock, void *data);
-  int  (* chooser)(SOCKET_DATA *sock, void *data, char option);
+  int  (* chooser)(SOCKET_DATA *sock, void *data, const char *option);
   bool  (* parser)(SOCKET_DATA *sock, void *data, int choice, const char *arg);
 } ITEM_OLC_DATA;
 
@@ -103,8 +97,8 @@ void iedit_menu(SOCKET_DATA *sock, OBJ_DATA *obj) {
 		 "    D) delete type\r\n");
 }
 
-int  iedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, char option) {
-  switch(toupper(option)) {
+int  iedit_chooser(SOCKET_DATA *sock, OBJ_DATA *obj, const char *option) {
+  switch(toupper(*option)) {
   case 'E':
     text_to_buffer(sock, "Which item type would you like to edit: ");
     return IEDIT_EDIT;
@@ -142,5 +136,5 @@ bool iedit_parser(SOCKET_DATA *sock, OBJ_DATA *obj,int choice, const char *arg){
 // initialization of item olc
 //*****************************************************************************
 void init_item_olc() {
-  item_olc_table = newHashtable(IEDIT_TABLE_SIZE);
+  item_olc_table = newHashtable();
 }

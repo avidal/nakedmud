@@ -77,7 +77,7 @@ ROOM_DATA *newRoom() {
   for(i = 0; i < NUM_DIRS; i++)
     room->exits[i] = NULL;
 
-  room->special_exits  = newHashtable(SPECIAL_EXIT_BUCKETS);
+  room->special_exits  = newHashtableSize(SPECIAL_EXIT_BUCKETS);
   room->auxiliary_data = newAuxiliaryData(AUXILIARY_TYPE_ROOM);
 
   room->edescs     = newEdescSet();
@@ -229,7 +229,7 @@ void roomCopyTo(ROOM_DATA *from, ROOM_DATA *to) {
     roomSetExitSpecial(to, spec_exits[i], NULL);
   free(spec_exits);
   deleteHashtable(to->special_exits);
-  to->special_exits = newHashtable(SPECIAL_EXIT_BUCKETS);
+  to->special_exits = newHashtableSize(SPECIAL_EXIT_BUCKETS);
 
 
   // set the special exits of the <to> room

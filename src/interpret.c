@@ -129,6 +129,8 @@ void init_commands() {
 	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("dlist",      NULL, cmd_dlist,    0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
+  add_cmd("ddelete",    NULL, cmd_ddelete,  0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("drop",       NULL, cmd_drop,     0, POS_SITTING,  POS_FLYING,
 	  LEVEL_PLAYER, TRUE, TRUE );
 
@@ -181,11 +183,15 @@ void init_commands() {
   // M
   add_cmd("mlist",      NULL, cmd_mlist,    0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
+  add_cmd("mdelete",    NULL, cmd_mdelete,  0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("more",       NULL, cmd_more,     0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_PLAYER, TRUE, FALSE);
 
   // O
   add_cmd("olist",      NULL, cmd_olist,    0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
+  add_cmd("odelete",    NULL, cmd_odelete,  0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("open",       NULL, cmd_open,     0, POS_STANDING, POS_FLYING,
 	  LEVEL_PLAYER, TRUE, TRUE );
@@ -206,6 +212,8 @@ void init_commands() {
   add_cmd("remove",     NULL, cmd_remove,   0, POS_SITTING, POS_FLYING,
 	  LEVEL_PLAYER, TRUE, TRUE );
   add_cmd("rlist",      NULL, cmd_rlist,    0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
+  add_cmd("rdelete",    NULL, cmd_rdelete,  0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
   add_cmd("repeat",     NULL, cmd_repeat,   0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_ADMIN, FALSE, FALSE);
@@ -231,6 +239,8 @@ void init_commands() {
   // very nice functions in builder.c that cmd_sclist uses to print scripts,
   // which wouldn't be accessable from outside of builder.c
   add_cmd("sclist",     NULL, cmd_sclist,   0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
+  add_cmd("sdelete",    NULL, cmd_scdelete, 0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_BUILDER, FALSE, FALSE);
 
   // T

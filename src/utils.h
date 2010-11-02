@@ -15,11 +15,31 @@
 // Utilities for numbers
 //
 //*****************************************************************************
+#define MAX_INT               214743648
+#define PI                    3.14159265
+
 #define UMIN(a, b)	      ((a) < (b) ? (a) : (b))
 #define MIN(a, b)             ((a) < (b) ? (a) : (b))
 #define MAX(a, b)             ((a) < (b) ? (b) : (a))
 
+
+//
+// return a random number pulled from a uniform distribution 
+// between the two bounds
 int rand_number(int min, int max);
+
+
+//
+// Returns a random number between 0 and 1. Numbers are evenly distributed
+double rand_percent(void);
+
+//
+// Return a random number pulled from N(0, 1)
+double gaussian(void);
+
+
+//
+// return the rd, th, nd, for a number
 const char *numth(int num);
 
 

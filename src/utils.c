@@ -881,10 +881,6 @@ int fgetline(FILE *file, char *p, int maxlen)
   return count;
 }
 
-
-//
-// returns a random number in the specified range (inclusive)
-//
 int rand_number(int min, int max) {
   if(min > max) {
     log_string("ERROR: rand_number passed a min (%d) higher than its max (%d).",
@@ -895,6 +891,14 @@ int rand_number(int min, int max) {
   return min + rand() % (max-min + 1);
 }
 
+double rand_percent(void) {
+  double rnd = rand_number(0, RAND_MAX);
+  return rnd / (double)RAND_MAX;
+}
+
+double gaussian(void) {
+  return sqrt(-2.0 * log(rand_percent())) * cos(2.0 * PI * rand_percent());
+}
 
 //
 // returns "st", "nd", "rd", or "th", based on the number passed in

@@ -13,6 +13,9 @@
 #include "list.h"
 #include "hashtable.h"
 
+// how big of a size do our hashtables start out at?
+#define DEFAULT_HASH_SIZE        5
+
 struct hashtable_iterator {
   int curr_bucket;
   HASHTABLE *table;
@@ -25,11 +28,15 @@ typedef struct hashtable_entry {
 } HASH_ENTRY;
 
 struct hashtable {
+  int size;
   int num_buckets;
   LIST **buckets;
 };
 
 
+//
+// this is a fairly simple hashing function. It could do 
+// with some major speeding up.
 int hash(const char *key) {
   int i;
   const int BASE = 2;
@@ -48,7 +55,6 @@ int hash(const char *key) {
 
 //
 // an internal form of hashGet that returns the entire entry (key and val)
-//
 HASH_ENTRY *hashGetEntry(HASHTABLE *table, const char *key){
   int bucket = hash(key) % table->num_buckets;
 
@@ -80,28 +86,50 @@ void deleteHashtableEntry(HASH_ENTRY *entry) {
 }
 
 
-//*****************************************************************************
 //
+// Collect all of the HASH_ENTRYs in a hashtable into a single list
+LIST *hashCollectEntries(HASHTABLE *table) {
+  LIST *list = newList();
+  int i;
+  for(i = 0; i < table->num_buckets; i++) {
+    if(table->buckets[i] == NULL) continue;
+    LIST_ITERATOR *list_i = newListIterator(table->buckets[i]);
+    HASH_ENTRY      *elem = NULL;
+    for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
+      listPut(list, elem);
+    deleteListIterator(list_i);
+  }
+  return list;
+}
+
+
+
+//*****************************************************************************
 // implementation of hashtable.h
 // documentation in hashtable.h
-//
 //*****************************************************************************
-HASHTABLE *newHashtable(int num_buckets) {
+HASHTABLE *newHashtableSize(int num_buckets) {
   int i;
-  HASHTABLE *table = malloc(sizeof(HASHTABLE));
+  HASHTABLE *table   = malloc(sizeof(HASHTABLE));
   table->num_buckets = num_buckets;
+  table->size        = 0;
   table->buckets = malloc(sizeof(LIST *) * num_buckets);
   for(i = 0; i < num_buckets; i++)
     table->buckets[i] = NULL;
   return table;
 }
 
+HASHTABLE *newHashtable(void) {
+  return newHashtableSize(DEFAULT_HASH_SIZE);
+}
+
+
 void  deleteHashtable(HASHTABLE *table) {
   int i;
   for(i = 0; i < table->num_buckets; i++) {
     if(table->buckets[i]) {
       HASH_ENTRY *entry = NULL;
-      while((entry=(HASH_ENTRY *)listPop(table->buckets[i])) !=NULL)
+      while((entry=listPop(table->buckets[i])) !=NULL)
 	deleteHashtableEntry(entry);
       deleteList(table->buckets[i]);
     }
@@ -110,6 +138,37 @@ void  deleteHashtable(HASHTABLE *table) {
   free(table->buckets);
   free(table);
 }
+
+
+//
+// expand a hashtable to the new size
+void hashExpand(HASHTABLE *table, int size) {
+  // collect all of the key:value pairs
+  LIST     *entries = hashCollectEntries(table);
+  HASH_ENTRY *entry = NULL;
+  int i;
+
+  // delete all of the current buckets
+  for(i = 0; i < table->num_buckets; i++) {
+    if(table->buckets[i] == NULL) continue;
+    deleteList(table->buckets[i]);
+  }
+  free(table->buckets);
+
+  // now, make new buckets and set them to NULL
+  table->buckets = malloc(sizeof(LIST *) * size);
+  bzero(table->buckets, sizeof(LIST *) * size);
+  table->num_buckets = size;
+
+  // now, we put all of our entries back into the new buckets
+  while((entry = listPop(entries)) != NULL) {
+    int bucket = hash(entry->key) % table->num_buckets;
+    if(table->buckets[bucket] == NULL) table->buckets[bucket] = newList();
+    listPut(table->buckets[bucket], entry);
+  }
+  deleteList(entries);
+}
+
 
 int  hashPut    (HASHTABLE *table, const char *key, void *val) {
   HASH_ENTRY *elem = hashGetEntry(table, key);
@@ -120,6 +179,10 @@ int  hashPut    (HASHTABLE *table, const char *key, void *val) {
     return 1;
   }
   else {
+    // first, see if we'll need to expand the table
+    if((table->size * 80)/100 > table->num_buckets)
+      hashExpand(table, (table->num_buckets * 150)/100);
+
     int bucket = hash(key) % table->num_buckets;
 
     // if the bucket doesn't exist yet, create it
@@ -128,6 +191,7 @@ int  hashPut    (HASHTABLE *table, const char *key, void *val) {
 
     HASH_ENTRY *entry = newHashtableEntry(key, val);
     listPut(table->buckets[bucket], entry);
+    table->size++;
     return 1;
   }
 }
@@ -158,6 +222,7 @@ void *hashRemove (HASHTABLE *table, const char *key) {
       void *val = elem->val;
       listRemove(table->buckets[bucket], elem);
       deleteHashtableEntry(elem);
+      table->size--;
       return val;
     }
     else
@@ -188,22 +253,29 @@ int   hashIn     (HASHTABLE *table, const char *key) {
 }
 
 int   hashSize   (HASHTABLE *table) {
+  return table->size;
+}
+
+LIST *hashCollect(HASHTABLE *table) {
+  LIST *list = newList();
   int i;
-  int size = 0;
 
-  for(i = 0; i < table->num_buckets; i++)
-    if(table->buckets[i])
-      size += listSize(table->buckets[i]);
-
-  return size;
+  for(i = 0; i < table->num_buckets; i++) {
+    if(table->buckets[i] == NULL) continue;
+    LIST_ITERATOR *list_i = newListIterator(table->buckets[i]);
+    HASH_ENTRY      *elem = NULL;
+    for(;(elem=listIteratorCurrent(list_i)) != NULL;listIteratorNext(list_i))
+      listPut(list, strdup(elem->key));
+    deleteListIterator(list_i);
+  }
+  return list;
 }
 
 
+
 //*****************************************************************************
-//
 // implementation of the hashtable iterator
 // documentation in hashtable.h
-//
 //*****************************************************************************
 HASH_ITERATOR *newHashIterator(HASHTABLE *table) {
   HASH_ITERATOR *I = malloc(sizeof(HASH_ITERATOR));
@@ -263,7 +335,7 @@ const char *hashIteratorCurrentKey (HASH_ITERATOR *I) {
   if(!I->bucket_i) 
     return NULL;
   else {
-    HASH_ENTRY *entry = ((HASH_ENTRY *) listIteratorCurrent(I->bucket_i));
+    HASH_ENTRY *entry = listIteratorCurrent(I->bucket_i);
     if(entry)
       return entry->key;
     else
@@ -276,7 +348,7 @@ void       *hashIteratorCurrentVal (HASH_ITERATOR *I) {
   if(!I->bucket_i) 
     return NULL;
   else {
-    HASH_ENTRY *entry = ((HASH_ENTRY *) listIteratorCurrent(I->bucket_i));
+    HASH_ENTRY *entry = listIteratorCurrent(I->bucket_i);
     if(entry)
       return entry->val;
     else

@@ -122,13 +122,15 @@ void iedit_furniture_menu(SOCKET_DATA *sock, FURNITURE_DATA *data) {
 		 furnitureTypeGetName(data->type));
 }
 
-int  iedit_furniture_chooser(SOCKET_DATA *sock, FURNITURE_DATA *data, char option) {
-  switch(toupper(option)) {
+int  iedit_furniture_chooser(SOCKET_DATA *sock, FURNITURE_DATA *data, 
+			     const char *option) {
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter a new weight capacity for the furniture: ");
     return IEDIT_FURNITURE_CAPACITY;
   case '2':
     olc_display_table(sock, furnitureTypeGetName, NUM_FURNITURES, 1);
+    text_to_buffer(sock, "Pick a furniture type: ");
     return IEDIT_FURNITURE_TYPE;
   default: return MENU_CHOICE_INVALID;
   }

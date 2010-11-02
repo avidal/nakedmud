@@ -47,6 +47,32 @@ helpfiles:=
   backups  :=
     keywords : socials
     editor   : Alister
+    timestamp: Jan 29 17:03:12
+    info     :~
+      There are 9 fields assocciated with social editing; two are for messages when
+      the social has no target. Two are for messages when the target is the character
+      performing the social. Three are for situations when a target other than the
+      character is provided for the social. The remaining two are the minimum and
+      maximum positions the socials can be used from. If a social is not to have a
+      target, the "target" fields can be left blank. Likewise, if the social is never
+      to have the character as a target, the assocciated fields can be left blank.
+      When trying to reference character information, the following symbols can be
+      used:
+      
+        $n character name
+        $N target name
+        $e character he/she
+        $E target he/she
+        $m character him/her
+        $M target him/her
+        $s character his/hers
+        $S target his/hers
+      
+      To see examples of how to write socials, check some of the pre-existing ones.
+      To generate a list of all socials, type "socials".
+    -
+    keywords : socials
+    editor   : Alister
     timestamp: Jan 29 18:52:49
     info     :~
       There are 9 fields assocciated with social editing; two are for messages when
@@ -81,32 +107,23 @@ helpfiles:=
         socedit [social]
         socials
     -
-    keywords : socials
-    editor   : Alister
-    timestamp: Jan 29 17:03:12
-    info     :~
-      There are 9 fields assocciated with social editing; two are for messages when
-      the social has no target. Two are for messages when the target is the character
-      performing the social. Three are for situations when a target other than the
-      character is provided for the social. The remaining two are the minimum and
-      maximum positions the socials can be used from. If a social is not to have a
-      target, the "target" fields can be left blank. Likewise, if the social is never
-      to have the character as a target, the assocciated fields can be left blank.
-      When trying to reference character information, the following symbols can be
-      used:
-      
-        $n character name
-        $N target name
-        $e character he/she
-        $E target he/she
-        $m character him/her
-        $M target him/her
-        $s character his/hers
-        $S target his/hers
-      
-      To see examples of how to write socials, check some of the pre-existing ones.
-      To generate a list of all socials, type "socials".
-    -
+  -
+  keywords : scrun
+  editor   : Alister
+  timestamp: Apr 17 02:02:39
+  info     :~
+    Scripts of type runnable can be triggered by immortals. This is done with the
+    scrun command.
+    
+    Syntax is: scrun <script vnum> [argument]
+  -
+  keywords : repeat
+  editor   : Alister
+  timestamp: Apr 17 02:01:17
+  info     :~
+    repeat can be used to execute a command multiple times.
+    
+    Syntax is: repeat <times> <command>
   -
   keywords : MCCP
   editor   : Alister
@@ -245,6 +262,19 @@ helpfiles:=
     
     All other OLC commands can set up new things (rooms, objects, mobiles, etc..)
     simply by using the corresponding edit command on a vnum that has not been used.
+  -
+  keywords : delete, odelete, mdelete, rdelete, ddelete, scdelete
+  editor   : Alister
+  timestamp: Apr 17 01:59:17
+  info     :~
+    As a builder, you may at times create rooms, objects, mobiles, scripts,
+    etc... that you do not want to be part of your zone. You can delete these
+    things with the line of delete functions available. There should be one for
+    each major type of editable zone content. When deleting rooms, anyone in the
+    room will be removed from the game, and sockets will be disconnected.
+    
+    delete commands are: odelete, mdelete, rdelete, scdelete, and ddelete. Syntax
+    is as follows: <delete command> <vnum to delete>
   -
   keywords : credits
   editor   : Alister

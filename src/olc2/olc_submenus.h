@@ -16,6 +16,11 @@
 void edesc_set_menu   (SOCKET_DATA *sock, EDESC_SET *set);
 bool edesc_set_parser (SOCKET_DATA *sock, EDESC_SET *set, int choice,
 		       const char *arg);
-int  edesc_set_chooser(SOCKET_DATA *sock, char option, EDESC_SET *set);
+int  edesc_set_chooser(SOCKET_DATA *sock, EDESC_SET *set, const char *option);
+
+// for bitvectors
+void bedit_menu   (SOCKET_DATA *sock, BITVECTOR *v);
+bool bedit_parser (SOCKET_DATA *sock, BITVECTOR *v, int choice,const char *arg);
+int  bedit_chooser(SOCKET_DATA *sock, BITVECTOR *v, const char *option);
 
 #endif // OLC_SUBMENUS_H

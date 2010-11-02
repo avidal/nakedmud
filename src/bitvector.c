@@ -47,11 +47,6 @@
 //*****************************************************************************
 // local functions, datastructures, and defines
 //*****************************************************************************
-
-// optimally, this should be about 120% bigger than the number
-// of distinct types of bitvectors we'd expect to have in the game
-#define BITVECTOR_TABLE_SIZE      50
-
 // a table of mappings between bitvector names, and the 
 // data assocciated with them (i.e. bit:value mappings)
 HASHTABLE *bitvector_table = NULL;
@@ -68,7 +63,7 @@ struct bitvector {
 
 BITVECTOR_DATA *newBitvectorData(const char *name) {
   BITVECTOR_DATA *data = malloc(sizeof(BITVECTOR_DATA));
-  data->bitmap = newHashtable(32);
+  data->bitmap = newHashtable();
   data->name   = strdup(name);
   return data;
 }
@@ -81,7 +76,7 @@ BITVECTOR_DATA *newBitvectorData(const char *name) {
 //*****************************************************************************
 void init_bitvectors() {
   // create the bitvector table
-  bitvector_table = newHashtable(BITVECTOR_TABLE_SIZE);
+  bitvector_table = newHashtable();
 
   // and also create some of the basic bitvectors and 
   // bits that come stock and are required for the core release
@@ -247,4 +242,12 @@ const char *bitvectorGetBits(BITVECTOR *v) {
   }
   deleteHashIterator(hash_i);
   return bits;
+}
+
+int bitvectorSize(BITVECTOR *v) {
+  return hashSize(v->data->bitmap);
+}
+
+LIST *bitvectorListBits(BITVECTOR *v) {
+  return hashCollect(v->data->bitmap);
 }

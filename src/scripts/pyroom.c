@@ -20,6 +20,7 @@
 #include "../utils.h"
 
 #include "script.h"
+#include "script_set.h"
 #include "pyroom.h"
 #include "pychar.h"
 #include "pyobj.h"
@@ -30,10 +31,9 @@ typedef struct {
 } PyRoom;
 
 
+
 //*****************************************************************************
-//
 // allocation, deallocation, and initialiation
-//
 //*****************************************************************************
 static void
 PyRoom_dealloc(PyRoom *self) {
@@ -75,14 +75,11 @@ PyRoom_init(PyRoom *self, PyObject *args, PyObject *kwds) {
 
 
 //*****************************************************************************
-//
 // methods and stuff for building the class
-//
 //*****************************************************************************
 
 //
 // Send a newline-tagged message to everyone in the room
-//
 static PyObject *
 PyRoom_send(PyRoom *self, PyObject *value) {
   char *mssg = NULL;
@@ -108,7 +105,6 @@ PyRoom_send(PyRoom *self, PyObject *value) {
 
 //
 // close a door in the specified direction
-//
 static PyObject *
 PyRoom_close(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
@@ -161,7 +157,6 @@ PyRoom_close(PyRoom *self, PyObject *value) {
 
 //
 // lock a door in the specified direction
-//
 static PyObject *
 PyRoom_lock(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
@@ -221,7 +216,6 @@ PyRoom_lock(PyRoom *self, PyObject *value) {
 
 //
 // lock a door in the specified direction
-//
 static PyObject *
 PyRoom_unlock(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
@@ -280,7 +274,6 @@ PyRoom_unlock(PyRoom *self, PyObject *value) {
 
 //
 // close a door in the specified direction
-//
 static PyObject *
 PyRoom_open(PyRoom *self, PyObject *value) {
   ROOM_DATA *room = NULL;
@@ -325,26 +318,81 @@ PyRoom_open(PyRoom *self, PyObject *value) {
 }
 
 
+static PyObject *
+PyRoom_attach(PyRoom *self, PyObject *args) {  
+  long vnum = NOTHING;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To attach a script, the vnum must be supplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
+  SCRIPT_DATA *script = worldGetScript(gameworld, vnum);
+  if(room != NULL && script != NULL) {
+    scriptSetAdd(roomGetScripts(room), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to attach script to nonexistant room, %d, or script %d "
+		 "does not exit.", self->vnum, (int)vnum);
+    return NULL;
+  }
+}
+
+
+static PyObject *
+PyRoom_detach(PyRoom *self, PyObject *args) {  
+  long vnum = NOTHING;
+
+  // make sure we're getting passed the right type of data
+  if (!PyArg_ParseTuple(args, "i", &vnum)) {
+    PyErr_Format(PyExc_TypeError, 
+		 "To detach a script, the vnum must be suppplied.");
+    return NULL;
+  }
+
+  // pull out the character and do the attaching
+  ROOM_DATA     *room = worldGetRoom(gameworld, self->vnum);
+  SCRIPT_DATA *script = worldGetScript(gameworld, (int)vnum);
+  if(room != NULL && script != NULL) {
+    scriptSetRemove(roomGetScripts(room), vnum);
+    return Py_BuildValue("i", 1);
+  }
+  else {
+    PyErr_Format(PyExc_TypeError, 
+		 "Tried to detach script from nonexistant room, %d, or script "
+		 "%d does not exit.", self->vnum, (int)vnum);
+    return NULL;
+  }
+}
+
 
 static PyMethodDef PyRoom_methods[] = {
-    {"close", (PyCFunction)PyRoom_close, METH_VARARGS,
-     "close a door in the specified direction." },
-    {"open", (PyCFunction)PyRoom_open, METH_VARARGS,
-     "open a door in the specified direction. Unlocks it if neccessary." },
-    {"lock", (PyCFunction)PyRoom_lock, METH_VARARGS,
-     "lock a door in the specified direction, closing it if it is open." },
-    {"unlock", (PyCFunction)PyRoom_unlock, METH_VARARGS,
-     "unlocks the door in the specified direction." },
-    {"send", (PyCFunction)PyRoom_send, METH_VARARGS,
-     "send a message to everyone in the room."},
-    {NULL}  /* Sentinel */
+  {"attach", (PyCFunction)PyRoom_attach, METH_VARARGS,
+   "attach a new script to the room." },
+  {"detach", (PyCFunction)PyRoom_detach, METH_VARARGS,
+   "detach a script from the room." },
+  {"close", (PyCFunction)PyRoom_close, METH_VARARGS,
+   "close a door in the specified direction." },
+  {"open", (PyCFunction)PyRoom_open, METH_VARARGS,
+   "open a door in the specified direction. Unlocks it if neccessary." },
+  {"lock", (PyCFunction)PyRoom_lock, METH_VARARGS,
+   "lock a door in the specified direction, closing it if it is open." },
+  {"unlock", (PyCFunction)PyRoom_unlock, METH_VARARGS,
+   "unlocks the door in the specified direction." },
+  {"send", (PyCFunction)PyRoom_send, METH_VARARGS,
+   "send a message to everyone in the room."},
+  {NULL}  /* Sentinel */
 };
 
 
 //*****************************************************************************
-//
 // character attributes - mostly get and set
-//
 //*****************************************************************************
 static PyObject *
 PyRoom_getvnum(PyRoom *self, void *closure) {
@@ -405,9 +453,7 @@ static PyGetSetDef PyRoom_getseters[] = {
 
 
 //*****************************************************************************
-//
 // comparators, getattr, setattr, and all that other class stuff
-//
 //*****************************************************************************
 
 //
@@ -468,9 +514,7 @@ static PyTypeObject PyRoom_Type = {
 
 
 //*****************************************************************************
-//
 // the room module
-//
 //*****************************************************************************
 static PyMethodDef room_module_methods[] = {
   {NULL, NULL, 0, NULL}  /* Sentinel */

@@ -36,8 +36,9 @@ void respedit_menu(SOCKET_DATA *sock, RESPONSE_DATA *response) {
 		 );
 }
 
-int respedit_chooser(SOCKET_DATA *sock, RESPONSE_DATA *response, char option) {
-  switch(toupper(option)) {
+int respedit_chooser(SOCKET_DATA *sock, RESPONSE_DATA *response, 
+		     const char *option) {
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter a new list of keywords: ");
     return RESPEDIT_KEYWORDS;
@@ -106,8 +107,8 @@ void dedit_menu(SOCKET_DATA *sock, DIALOG_DATA *dialog) {
 }
 
 
-int dedit_chooser(SOCKET_DATA *sock, DIALOG_DATA *dialog, char option) {
-  switch(toupper(option)) {
+int dedit_chooser(SOCKET_DATA *sock, DIALOG_DATA *dialog, const char *option) {
+  switch(toupper(*option)) {
   case 'T':
     text_to_buffer(sock, "Enter a new title for the dialog: ");
     return DEDIT_TITLE;

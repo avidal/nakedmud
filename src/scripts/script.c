@@ -10,15 +10,12 @@
 // script stuff
 #include <Python.h>
 #include <structmember.h>
-#include <compile.h>
-#include <eval.h>
-#include <node.h>
-//PyAPI_FUNC(PyObject *) PyEval_EvalCode(PyCodeObject *, PyObject *, PyObject *);
 
 // mud stuff
 #include "../mud.h"
 #include "../utils.h"
 #include "../socket.h"
+#include "../world.h"
 #include "../character.h"
 #include "../room.h"
 #include "../object.h"
@@ -40,11 +37,44 @@
 
 
 //*****************************************************************************
+// local functions and commands
+//*****************************************************************************
+
 //
+// Takes a script and runs it. Unlike typical scripts, this is not a trigger.
+// This is like running a program, in the form of a script.
+//    usage: scrun <vnum> [arguments] 
+COMMAND(cmd_scrun) {
+  // make sure we at least have a vnum
+  if(!arg || !*arg)
+    send_to_char(ch, "Which script would you like to run?\r\n");
+  else {
+    char buf[SMALL_BUFFER];
+
+    // pull out the vnum
+    arg = one_arg(arg, buf);
+
+    SCRIPT_DATA *script = worldGetScript(gameworld, atoi(buf));
+    if(script == NULL || !isdigit(*buf))
+      send_to_char(ch, "No script with that vnum exists!\r\n");
+    else if(scriptGetType(script) != SCRIPT_TYPE_RUNNABLE)
+      send_to_char(ch, "That script is not runnable!\r\n");
+    else if(charGetLevel(ch) < scriptGetNumArg(script))
+      send_to_char(ch, "You are not high enough level to run that script!\r\n");
+    else {
+      send_to_char(ch, "Ok.\r\n");
+      run_script(scriptGetCode(script), ch, SCRIPTOR_CHAR, NULL, NULL, NULL,
+		 NULL, arg, 0);
+    }
+  }
+}
+
+
+
+//*****************************************************************************
 // Auxiliary script data that we need to install into players, objects and
 // rooms. Essentially, this just allows these datastructures to actually have
 // scripts installed on them.
-//
 //*****************************************************************************
 typedef struct script_aux_data {
   SCRIPT_SET *scripts;    // the set of scripts that we have
@@ -103,9 +133,7 @@ scriptAuxDataStore(SCRIPT_AUX_DATA *data) {
 
 
 //*****************************************************************************
-//
 // functions for getting script data from various datastructures
-//
 //*****************************************************************************
 SCRIPT_SET *roomGetScripts(const ROOM_DATA *room) {
   SCRIPT_AUX_DATA *data = roomGetAuxiliaryData(room, "script_aux_data");
@@ -143,9 +171,7 @@ void charSetScripts(CHAR_DATA *ch, SCRIPT_SET *scripts) {
 
 
 //*****************************************************************************
-//
 // functions 'n such for the script object
-//
 //*****************************************************************************
 struct script_data {
   script_vnum vnum;
@@ -163,14 +189,15 @@ const char *script_type_info[NUM_SCRIPTS] = {
   "Give/Receive",
   "Enter",
   "Exit",
-  "Command"
+  "Command",
+  "Runnable"
 };
 
 const char *scriptTypeName(int num) {
   return script_type_info[num];
 }
 
-SCRIPT_DATA *newScript() {
+SCRIPT_DATA *newScript(void) {
   SCRIPT_DATA *script = malloc(sizeof(SCRIPT_DATA));
   bzero(script, sizeof(*script));
   
@@ -293,9 +320,7 @@ void scriptSetCode(SCRIPT_DATA *script, const char *code) {
 
 
 //*****************************************************************************
-//
 // stuff we need for trying to run scripts
-//
 //*****************************************************************************
 
 //
@@ -456,6 +481,8 @@ void init_scripts() {
   extern COMMAND(cmd_scedit); // define the command
   add_cmd("scedit", NULL, cmd_scedit, 0, POS_UNCONCIOUS, POS_FLYING,
 	  LEVEL_SCRIPTER, FALSE, TRUE);
+  add_cmd("scrun", NULL, cmd_scrun, 0, POS_UNCONCIOUS, POS_FLYING,
+	  LEVEL_BUILDER, FALSE, FALSE);
 
   init_script_editor();
 }
@@ -522,9 +549,7 @@ void run_script(const char *script, void *me, int me_type,
 
 
 //*****************************************************************************
-//
 // Stuff we need for formatting and coloring scripts on screen
-//
 //*****************************************************************************
 void format_script(char **script, int max_len) {
   // python chokes on carriage returns
@@ -680,9 +705,7 @@ void script_display(SOCKET_DATA *sock, const char *script, bool show_line_nums){
 
 
 //*****************************************************************************
-//
 // tries for various speech triggers
-//
 //*****************************************************************************
 void try_speech_script_with(CHAR_DATA *ch, CHAR_DATA *listener, char *speech) {
   LIST *speech_scripts = scriptSetList(charGetScripts(listener), 
@@ -793,10 +816,6 @@ int try_scripts(int script_type,
     scripts = scriptSetList(roomGetScripts(me), script_type);
   if(me_type == SCRIPTOR_OBJ)
     scripts = scriptSetList(objGetScripts(me), script_type);
-  /*
-  if(me_type == SCRIPTOR_EXIT)
-    scripts = scriptSetGetList(exitGetScripts(me), script_type);
-  */
 
   // see if we meet the script requirements
   while( (script = listPop(scripts)) != NULL) {

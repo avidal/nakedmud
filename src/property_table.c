@@ -34,19 +34,16 @@ struct property_table_iterator {
 
 
 //*****************************************************************************
-//
 // local functions
-//
 //*****************************************************************************
-
 
 //
 // Find the bucket the key belongs to
-//
 int find_bucket(int key, int num_buckets) {
   // simple for now: just take the modulo
   return key % num_buckets;
 };
+
 
 
 //*****************************************************************************

@@ -28,7 +28,7 @@
 //*****************************************************************************
 typedef struct olc_data {
   void    (* menu)(SOCKET_DATA *, void *);
-  int  (* chooser)(SOCKET_DATA *, void *, char);
+  int  (* chooser)(SOCKET_DATA *, void *, const char *);
   bool  (* parser)(SOCKET_DATA *, void *, int, const char *);
   void *(* copier)(void *);
   void  (* copyto)(void *, void *);
@@ -40,7 +40,7 @@ typedef struct olc_data {
 } OLC_DATA;
 
 OLC_DATA *newOLC(void    (* menu)(SOCKET_DATA *, void *),
-		 int  (* chooser)(SOCKET_DATA *, void *, char),
+		 int  (* chooser)(SOCKET_DATA *, void *, const char *),
 		 bool  (* parser)(SOCKET_DATA *, void *, int, const char *),
 		 void *(* copier)(void *),
 		 void  (* copyto)(void *, void *),
@@ -201,7 +201,7 @@ void olc_handler(SOCKET_DATA *sock, char *arg) {
       break;
 
     default: {
-      int cmd = olc->chooser(sock, olc->working_copy, *arg);
+      int cmd = olc->chooser(sock, olc->working_copy, arg);
       // the menu choice we entered wasn't a valid one. redisplay the menu
       if(cmd == MENU_CHOICE_INVALID)
 	olc_menu(sock);
@@ -275,7 +275,7 @@ void save_world(void *olc_data) {
 void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
 		       int num_vals, int num_cols) {
   int i, print_room;
-  static char fmt[SMALL_BUFFER];
+  static char fmt[100];
 
   print_room = (80 - 10*num_cols)/num_cols;
   sprintf(fmt, "  {c%%2d{y) {g%%-%ds%%s", print_room);
@@ -286,6 +286,24 @@ void olc_display_table(SOCKET_DATA *sock, const char *getName(int val),
 
   if(i % num_cols != 0)
     send_to_socket(sock, "\r\n");
+}
 
-  text_to_buffer(sock, "Pick an option: ");
+void olc_display_list(SOCKET_DATA *sock, LIST *list, int num_cols) {
+  static char fmt[100];
+  LIST_ITERATOR *list_i = newListIterator(list);
+  int print_room, i = 0;
+  char *str = NULL;
+  
+  print_room = (80 - 10*num_cols)/num_cols;
+  sprintf(fmt, "  {c%%2d{y) {g%%-%ds%%s", print_room);
+
+  ITERATE_LIST(str, list_i) {
+    send_to_socket(sock, fmt, i, str, (i % num_cols == (num_cols - 1) ? 
+				       "\r\n" : "   "));
+    i++;
+  }
+  deleteListIterator(list_i);
+
+  if(i % num_cols != 0)
+    send_to_socket(sock, "\r\n");
 }

@@ -32,8 +32,8 @@ void edesc_menu(SOCKET_DATA *sock, EDESC_DATA *edesc) {
 		 );
 }
 
-int  edesc_chooser(SOCKET_DATA *sock, EDESC_DATA *edesc, char option) {
-  switch(toupper(option)) {
+int  edesc_chooser(SOCKET_DATA *sock, EDESC_DATA *edesc, const char *option) {
+  switch(toupper(*option)) {
   case '1':
     text_to_buffer(sock, "Enter a new list of keywords: ");
     return EDEDIT_KEYWORD;
@@ -81,8 +81,8 @@ void edesc_set_menu(SOCKET_DATA *sock, EDESC_SET *set) {
 		 );
 }
 
-int  edesc_set_chooser(SOCKET_DATA *sock, EDESC_SET *set, char option) {
-  switch(toupper(option)) {
+int  edesc_set_chooser(SOCKET_DATA *sock, EDESC_SET *set, const char *option) {
+  switch(toupper(*option)) {
   case 'E':
     text_to_buffer(sock, "Enter the number of the edesc to edit: ");
     return ESEDIT_EDIT;
